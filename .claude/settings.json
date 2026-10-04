@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash(node *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)"
+    ]
+  }
+}

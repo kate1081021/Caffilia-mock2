@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>カフィーリア シナジーモック v2</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>カフィーリア <span>シナジーモック v2</span></h1>
+    <div class="status">
+      <span id="turnLabel" class="pill">ターン 1</span>
+      <span id="modeLabel" class="pill mode">プレイ中</span>
+    </div>
+    <label class="scenario">シナリオ
+      <select id="scenarioSelect"></select>
+    </label>
+    <div class="buttons">
+      <button id="btnEndTurn" type="button">ターン終了 <kbd>T</kbd></button>
+      <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
+      <button id="btnReset" type="button">リセット</button>
+      <button id="btnEdit" type="button">エディット <kbd>E</kbd></button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="board-area">
+      <div id="hint" class="hint" aria-live="polite"></div>
+      <div id="boardWrap" class="board-wrap">
+        <div id="board" class="board" role="grid" aria-label="盤面"></div>
+        <div id="fx" class="fx-layer"></div>
+        <div id="banner" class="banner" aria-live="assertive"></div>
+      </div>
+      <div id="preview" class="preview-box"></div>
+      <label class="toggle small"><input id="showForecast" type="checkbox" checked> 敵の予告・ターン終了の予告を表示</label>
+    </section>
+
+    <aside class="side">
+      <div id="playPanel" class="panel">
+        <h2>味方 <small>クリックか 1〜3 キーで選ぶ</small></h2>
+        <div id="roster" class="roster"></div>
+
+        <div id="actPanel" class="act-panel">
+          <div id="actInfo" class="act-info"></div>
+          <div class="act-grid">
+            <div class="dirpad" role="group" aria-label="向き">
+              <button type="button" class="dir" data-dir="up" title="上を向く（↑）">↑</button>
+              <button type="button" class="dir" data-dir="left" title="左を向く（←）">←</button>
+              <span class="dir-center" id="dirCenter"></span>
+              <button type="button" class="dir" data-dir="right" title="右を向く（→）">→</button>
+              <button type="button" class="dir" data-dir="down" title="下を向く（↓）">↓</button>
+            </div>
+            <div class="act-buttons">
+              <button id="btnStay" type="button">その場で撃つ <kbd>Space</kbd></button>
+              <button id="btnShoot" type="button" class="primary">撃つ <kbd>Enter</kbd></button>
+              <button id="btnWait" type="button">待機 <kbd>W</kbd></button>
+            </div>
+          </div>
+        </div>
+
+        <h2>敵 <small>予告は今の盤面での計算</small></h2>
+        <div id="enemyList" class="enemy-list"></div>
+      </div>
+
+      <div id="editPanel" class="panel edit-panel" hidden>
+        <h2>エディット</h2>
+        <div class="edit-group">
+          <h3>地形を塗る <small>ドラッグで続けて塗れる</small></h3>
+          <div id="tilePalette" class="palette"></div>
+        </div>
+        <div class="edit-group">
+          <h3>ユニット</h3>
+          <div id="unitTools" class="palette unit-tools"></div>
+        </div>
+        <div class="edit-group">
+          <h3>ユニットの魔法と向き</h3>
+          <div id="unitList" class="unit-list"></div>
+        </div>
+        <div class="edit-group row">
+          <label class="toggle"><input id="enemyActs" type="checkbox" checked> 敵が行動する</label>
+        </div>
+        <div class="edit-group row">
+          <label>盤面サイズ <input id="boardSize" type="number" min="5" max="9" step="1" value="6"></label>
+          <button id="btnResize" type="button">変更</button>
+          <button id="btnClearTiles" type="button">地形を全部空きに</button>
+        </div>
+        <div class="edit-group">
+          <h3>保存と読み込み</h3>
+          <div class="row">
+            <input id="saveName" type="text" placeholder="配置の名前" maxlength="40">
+            <button id="btnSave" type="button">保存</button>
+          </div>
+          <div class="row">
+            <select id="savedList"></select>
+            <button id="btnLoadSaved" type="button">読み込む</button>
+            <button id="btnDeleteSaved" type="button">削除</button>
+          </div>
+          <p id="storeNote" class="note"></p>
+          <details>
+            <summary>JSON の書き出し・読み込み</summary>
+            <textarea id="jsonBox" rows="4" spellcheck="false" placeholder="ここに JSON を貼り付けて「JSON を読み込む」"></textarea>
+            <div class="row">
+              <button id="btnExport" type="button">JSON を書き出す</button>
+              <button id="btnDownload" type="button">ファイルに保存</button>
+              <button id="btnImport" type="button">JSON を読み込む</button>
+              <label class="file-label">ファイルから <input id="fileInput" type="file" accept=".json,application/json"></label>
+            </div>
+          </details>
+        </div>
+        <p class="note">エディットを抜けたときの配置が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
+        <button id="btnEditDone" type="button" class="primary">エディット終了</button>
+      </div>
+
+      <div class="panel log-panel">
+        <h2>ログ</h2>
+        <ol id="log" class="log"></ol>
+      </div>
+
+      <details class="panel help">
+        <summary>遊び方・ルール早見</summary>
+        <ol class="howto">
+          <li>味方を選ぶ → 緑のマスをクリックで移動先を決める（最大2マス。動かないなら「その場で撃つ」）</li>
+          <li>向きを選ぶ（矢印キーか向きボタン）。盤面に結果の予測が出る</li>
+          <li>「撃つ」（Enter）で確定。撃ったらその味方の手番は終わり。撃たずに終えるなら「待機」</li>
+        </ol>
+        <p>魔法の着弾点は選べません。立ち位置と向きで決まります。緑のマスの ◆ ＝ そこから撃つと決め手が起きる、・ ＝ 変化が起きる。</p>
+        <table class="synergy">
+          <thead><tr><th>魔法</th><th>進み方</th><th>形・効果</th></tr></thead>
+          <tbody>
+            <tr><th>草</th><td>置く</td><td>2マス先＋3マス先の横3つ。空き→森</td></tr>
+            <tr><th>土</th><td>置く</td><td>2〜3マス先の左寄り3つ。空き→山、川→泥沼</td></tr>
+            <tr><th>火</th><td>点ける</td><td>1マス先と3マス先。空き→小さな炎、森→炎、山→マグマ</td></tr>
+            <tr><th>水</th><td>流れる</td><td>正面へ最大4マス。空き→川、炎を消す、<b class="fin">マグマで水蒸気爆発</b></td></tr>
+            <tr><th>風</th><td>吹き抜ける</td><td>正面へ最大4マス。ユニットと川を1マス運ぶ。山の陰には届かない。<b class="fin">炎に当たると燃え広がり</b></td></tr>
+          </tbody>
+        </table>
+        <p class="note">形のマスにいるユニットには直撃（敵・味方の区別なし）。1発で同じユニットに当たるダメージは1回だけ（大きい方）。</p>
+        <p class="note">キー: <kbd>1</kbd>〜<kbd>3</kbd> 味方 / 矢印 向き / <kbd>Enter</kbd> 撃つ / <kbd>Space</kbd> その場で / <kbd>W</kbd> 待機 / <kbd>Esc</kbd> 取り消し / <kbd>T</kbd> ターン終了 / <kbd>Z</kbd> 1手戻す / <kbd>E</kbd> エディット</p>
+      </details>
+    </aside>
+  </main>
+
+  <script src="balance.js"></script>
+  <script src="rules.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>

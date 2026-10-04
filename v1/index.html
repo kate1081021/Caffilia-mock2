@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>カフィーリア シナジーモック</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>カフィーリア <span>シナジーモック</span></h1>
+    <div class="status">
+      <span id="turnLabel" class="pill">ターン 1</span>
+      <span id="modeLabel" class="pill mode">プレイ中</span>
+    </div>
+    <div class="buttons">
+      <button id="btnEndTurn" type="button">ターン終了 <kbd>Enter</kbd></button>
+      <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
+      <button id="btnReset" type="button">リセット</button>
+      <button id="btnEdit" type="button">エディット</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="board-area">
+      <div id="hint" class="hint" aria-live="polite"></div>
+      <div id="boardWrap" class="board-wrap">
+        <div id="board" class="board" role="grid" aria-label="盤面"></div>
+        <div id="dirPicker" class="dir-picker" hidden>
+          <button type="button" data-dir="up" title="上">↑</button>
+          <button type="button" data-dir="right" title="右">→</button>
+          <button type="button" data-dir="down" title="下">↓</button>
+          <button type="button" data-dir="left" title="左">←</button>
+        </div>
+        <div id="banner" class="banner" aria-live="assertive"></div>
+      </div>
+      <div id="preview" class="preview-box"></div>
+    </section>
+
+    <aside class="side">
+      <div id="playPanel" class="panel">
+        <h2>味方 <small>クリックか 1〜3 キーで選ぶ</small></h2>
+        <div id="roster" class="roster"></div>
+        <div class="mode-buttons">
+          <button id="btnModeMove" type="button">移動 <kbd>M</kbd></button>
+          <button id="btnModeCast" type="button">魔法 <kbd>C</kbd></button>
+        </div>
+        <h2>敵</h2>
+        <div id="enemyList" class="enemy-list"></div>
+      </div>
+
+      <div id="editPanel" class="panel edit-panel" hidden>
+        <h2>エディット</h2>
+        <div class="edit-group">
+          <h3>地形を塗る <small>ドラッグで続けて塗れる</small></h3>
+          <div id="tilePalette" class="palette"></div>
+        </div>
+        <div class="edit-group">
+          <h3>ユニット</h3>
+          <div id="unitTools" class="palette unit-tools"></div>
+        </div>
+        <div class="edit-group">
+          <h3>味方の魔法</h3>
+          <div id="allyMagic" class="ally-magic"></div>
+        </div>
+        <div class="edit-group row">
+          <label class="toggle"><input id="enemyMoves" type="checkbox" checked> 敵が動く</label>
+        </div>
+        <div class="edit-group row">
+          <label>盤面サイズ <input id="boardSize" type="number" min="5" max="11" step="1" value="7"></label>
+          <button id="btnResize" type="button">変更</button>
+          <button id="btnClearTiles" type="button">地形を全部空きに</button>
+        </div>
+        <p class="note">エディットを抜けたときの配置が「リセット」の戻り先になります（HP は満タンに戻ります）。</p>
+        <button id="btnEditDone" type="button" class="primary">エディット終了</button>
+      </div>
+
+      <div class="panel log-panel">
+        <h2>ログ</h2>
+        <ol id="log" class="log"></ol>
+      </div>
+
+      <details class="panel help">
+        <summary>遊び方・ルール早見</summary>
+        <ol class="howto">
+          <li>味方をクリックで選ぶ → 緑のマスをクリックで移動（最大2マス・省略可）</li>
+          <li>魔法を撃つマスをクリック（射程なし）。風と「山に水」は向きを選ぶ（矢印ボタン／矢印キー）</li>
+          <li>3人とも撃つと自動でターン終了。敵が動き、炎や渦巻きが働く</li>
+        </ol>
+        <p>マスにカーソルを乗せると何が起きるか予測が出ます。薄く光るマス＝変化が起きる、強く光るマス＝<b>決め手</b>。</p>
+        <table class="synergy">
+          <thead><tr><th>マス＼撃つ</th><th>水</th><th>土</th><th>火</th><th>風</th></tr></thead>
+          <tbody>
+            <tr><th>空き</th><td>川</td><td>山</td><td>小さな炎</td><td>押す</td></tr>
+            <tr><th>森</th><td>—</td><td>—</td><td>炎</td><td>—</td></tr>
+            <tr><th>山</th><td>川が流れる</td><td>—</td><td>マグマ</td><td>—</td></tr>
+            <tr><th>川</th><td>—</td><td>泥沼</td><td>—</td><td>渦巻き</td></tr>
+            <tr><th>炎・小さな炎</th><td>消火</td><td>—</td><td>—</td><td class="fin">燃え広がり</td></tr>
+            <tr><th>マグマ</th><td class="fin">水蒸気爆発</td><td>—</td><td>—</td><td>—</td></tr>
+            <tr><th>渦巻き</th><td>—</td><td>—</td><td class="fin">センタクキ</td><td>—</td></tr>
+          </tbody>
+        </table>
+        <p class="note">草は空きマスに森を作るだけ。どの魔法も、撃ったマスのユニットに直撃ダメージ（敵・味方とも）。</p>
+        <p class="note">キー: <kbd>1</kbd>〜<kbd>3</kbd> 味方選択 / <kbd>M</kbd> 移動 / <kbd>C</kbd> 魔法 / 矢印 向き / <kbd>Esc</kbd> やめる / <kbd>Enter</kbd> ターン終了 / <kbd>Z</kbd> 1手戻す / <kbd>E</kbd> エディット</p>
+      </details>
+    </aside>
+  </main>
+
+  <script src="balance.js"></script>
+  <script src="rules.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
