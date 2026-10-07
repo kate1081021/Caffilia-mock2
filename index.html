@@ -38,6 +38,7 @@
     </label>
     <div class="buttons">
       <span class="demo-pick"><select id="demoSelect" aria-label="見るスーパープレイ"></select><button id="btnDemo" type="button" class="demo">スーパープレイを見る ▶</button></span>
+      <span class="demo-pick" id="checkPick" hidden><select id="checkSelect" aria-label="見る新案プレイ"></select><button id="btnCheck" type="button" class="check">新案プレイ ▶</button></span>
       <button id="btnEndTurn" type="button">ターン終了 <kbd>T</kbd></button>
       <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
       <button id="btnReset" type="button">リセット</button>
@@ -51,6 +52,7 @@
   <main class="layout">
     <section class="board-area">
       <div id="missionBar" class="mission-bar" aria-live="polite"></div>
+      <div id="checkCaption" class="check-caption" aria-live="polite" hidden></div>
       <div id="hint" class="hint" aria-live="polite"></div>
       <div id="boardWrap" class="board-wrap">
         <div id="board" class="board" role="grid" aria-label="盤面"></div>
@@ -237,6 +239,7 @@
   <script src="tune.js"></script>
   <script src="rules.js"></script>
   <script src="demos.js"></script>
+  <script src="checks.js"></script>
   <script src="ui.js"></script>
   <script src="tune_ui.js"></script>
 </body>

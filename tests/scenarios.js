@@ -341,5 +341,43 @@ DEMOS.forEach(function (d) {
   });
 });
 
+
+// ---------------------------------------------------------------
+// 新案プレイ（checks.js）の手順が今のルールで最後まで通り、見せたい盤面になるか
+var CHECKS = require('../checks.js');
+function getPath(o, p) { return p.split('.').reduce(function (a, k) { return a[k]; }, o); }
+function setPath(o, p, v) { var ks = p.split('.'), last = ks.pop(); ks.reduce(function (a, k) { return a[k]; }, o)[last] = v; }
+CHECKS.forEach(function (c) {
+  var saved = {};
+  scenario('新案プレイ: ' + c.name, function () {
+    B.tornadoRecipe = 'off'; B.windMode = 'breeze'; B.sakura.from = 'grass';
+    Object.keys(c.set || {}).forEach(function (p) { saved[p] = getPath(B, p); setPath(B, p, c.set[p]); });
+    var st = R.buildPreset(c.layout);
+    if (c.enemyActs === false) st = R.editSetEnemyActs(st, false).state;
+    return R.startBattle(st).state;
+  }, function (g) {
+    try {
+      c.turns.forEach(function (turn) {
+        turn.forEach(function (a) { if (a.id && !g.state.result) g.act(a.id, a.to, a.dir, a.shoot); });
+      });
+      var ex = c.expect || {};
+      Object.keys(ex.tiles || {}).forEach(function (k) {
+        var p = k.split(',').map(Number);
+        check(g.tile(p[0], p[1]) === ex.tiles[k], '(' + k + ') が ' + ex.tiles[k] + '（今: ' + g.tile(p[0], p[1]) + '）');
+      });
+      Object.keys(ex.at || {}).forEach(function (id) {
+        var u = g.unit(id);
+        check(u && u.x === ex.at[id][0] && u.y === ex.at[id][1], id + ' が (' + ex.at[id] + ') にいる');
+      });
+      Object.keys(ex.hp || {}).forEach(function (id) {
+        var u = g.unit(id);
+        check(u && u.hp === ex.hp[id], id + ' の HP が ' + ex.hp[id] + '（今: ' + (u && u.hp) + '）');
+      });
+    } finally {
+      Object.keys(saved).forEach(function (p) { setPath(B, p, saved[p]); });
+    }
+  });
+});
+
 console.log('\n' + (failures ? failures + ' 件の確認に失敗' : 'すべてのシナリオが期待どおり'));
 if (failures) process.exitCode = 1;

@@ -22,6 +22,7 @@
     empty:     { name: '空き',     label: '',   passable: true  },
     forest:    { name: '森',       label: '森', passable: true  },
     mountain:  { name: '山',       label: '山', passable: false },
+    hill:      { name: '丘',       label: '丘', passable: true  },   // 【育つ】土の一段目。入ると止まる。上から撃つと形が1マス先へ（高台）
     river:     { name: '川',       label: '川', passable: false },
     fire:      { name: '炎',       label: '炎', passable: true  },
     smallfire: { name: '小さな炎', label: '火', passable: true  },
@@ -150,6 +151,18 @@
     var F = DIRS[facing];
     var Rx = -F.dy, Ry = F.dx;    // 術者から見て右
     return [rx * Rx + ry * F.dx, rx * Ry + ry * F.dy];
+  }
+
+  // 魔法の起点。【育つ】丘の上（高台）から撃つと、正面へ1マス先から撃ったことになる
+  function castOrigin(s, u, facing) {
+    if (getTile(s, u.x, u.y) !== 'hill') return { x: u.x, y: u.y };
+    var F = DIRS[facing];
+    return { x: u.x + F.dx, y: u.y + F.dy };
+  }
+  // 術者 u が facing へ撃つ魔法の形のマス
+  function castCells(s, u, facing) {
+    var o = castOrigin(s, u, facing);
+    return shapeCells(s, u.magic, o.x, o.y, facing);
   }
 
   // 魔法の形のマス（盤の外は除く）。術者に近い順
@@ -507,7 +520,7 @@
   // 置く（草・土）・点ける（火）・【新案】走る（雷）
   function placeOrIgnite(s, u, facing, ctx, ev) {
     var shocked = {}, erupted = {}, planted = [];
-    shapeCells(s, u.magic, u.x, u.y, facing).forEach(function (c) {
+    castCells(s, u, facing).forEach(function (c) {
       var x = c[0], y = c[1];
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
@@ -517,9 +530,12 @@
         if (!o && t === 'empty') { setTile(s, x, y, 'forest'); ctx.phrases.push('森ができた'); planted.push([x, y]); }
         else if (!o && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); }
       } else if (u.magic === 'earth') {
-        if (!o && t === 'empty') { setTile(s, x, y, 'mountain'); ctx.phrases.push('山ができた'); }
+        // 【育つ】入のときは、空きに土で丘、丘に土で山に育つ。火を埋めても丘
+        var low = B.grow.enabled ? 'hill' : 'mountain';
+        if (!o && t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた'); }
+        else if (!o && t === 'hill' && B.grow.enabled) { setTile(s, x, y, 'mountain'); ctx.phrases.push('【育つ】丘が山に育った'); }
         else if (!o && (t === 'river' || t === 'puddle')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); }
-        else if (!o && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, 'mountain'); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（山になった）'); }
+        else if (!o && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); }
       } else if (u.magic === 'senpu') {
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
@@ -555,13 +571,13 @@
   // 【新案】走る（雷）: ジグザグに走り、最初に当たった高いもの（森・山・火山・ユニット）か水に落ちる
   //   森 → 燃える。水（川・水たまり）→ つながった水全体に走って感電。ユニット → 直撃。山・火山 → 落ちるだけ
   function strike(s, u, facing, ctx, ev) {
-    var cells = shapeCells(s, u.magic, u.x, u.y, facing);
+    var cells = castCells(s, u, facing);
     for (var i = 0; i < cells.length; i++) {
       var x = cells[i][0], y = cells[i][1];
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
-      var tall = o || t === 'forest' || t === 'mountain' || t === 'volcano' || t === 'sakura' || t === 'deadforest' || t === 'haunted';
+      var tall = o || t === 'forest' || t === 'mountain' || t === 'hill' || t === 'volcano' || t === 'sakura' || t === 'deadforest' || t === 'haunted';
       var water = t === 'river' || t === 'puddle';
       if (!tall && !water) continue;
       if (o) addHit(ctx, o, u.power, 'direct');
@@ -583,7 +599,7 @@
   // 【新案】凍らせる（氷）: 冷気が正面へ進み、最初に当たったものに作用して止まる
   //   水（川・水たまり）→ つながった水がまとめて凍る（凍結）。炎 → 消える。ユニット → 直撃して足が凍りつく。森・山・火山 → 止まる
   function chill(s, u, facing, ctx, ev) {
-    var cells = shapeCells(s, u.magic, u.x, u.y, facing);
+    var cells = castCells(s, u, facing);
     for (var i = 0; i < cells.length; i++) {
       var x = cells[i][0], y = cells[i][1];
       ctx.cells.push([x, y]);
@@ -857,7 +873,7 @@
   //   （ダメージなし。自然は動かさない。もともと隣にいる者は動かない）
   //   そのマスのユニット → 直撃。森 → 命を吸って、つながった森がまとめて死の森（水を凍らせるのは、いったん外した）
   function darken(s, u, facing, ctx, ev) {
-    var c = shapeCells(s, u.magic, u.x, u.y, facing)[0];
+    var c = castCells(s, u, facing)[0];
     if (!c) return;
     var x = c[0], y = c[1];
     ctx.cells.push([x, y]);
@@ -946,21 +962,21 @@
   // 流れる（水）
   //   【新案】水だけなら正面に小さな池（waterLength マス）。山に当たると山を下って、盤の端まで川になる（源流）
   function flow(s, u, facing, ctx, ev) {
-    var F = DIRS[facing];
+    var F = DIRS[facing], from = castOrigin(s, u, facing);   // 【育つ】丘の上からは1マス先から流れる
     var made = 0, pond = 0, stop = null, sourced = false, tornadoHit = null, whirlHit = null;
     for (var i = 1; ; i++) {
       if (!sourced && i > B.waterLength) break;
-      var x = u.x + F.dx * i, y = u.y + F.dy * i;
+      var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) { if (sourced) stop = '盤の端まで流れた'; break; }
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
       if (o) { addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった'; break; }
-      if (t === 'mountain') {
+      if (t === 'mountain' || t === 'hill') {   // 【育つ】丘からも川は流れる（丘は丘のまま）
         if (!sourced) {
           sourced = true;
           if (made) ctx.phrases.push('池ができた（' + made + 'マス）');
-          ctx.phrases.push('【新案】山に当たって川になった');
+          ctx.phrases.push('【新案】' + tileName(t) + 'に当たって川になった');
           pond = made; made = 0;
         }
         continue;
@@ -990,12 +1006,12 @@
 
   // 吹き抜ける（風）＝ 運ぶ
   function blow(s, u, facing, ctx, ev) {
-    var F = DIRS[facing];
+    var F = DIRS[facing], from = castOrigin(s, u, facing);   // 【育つ】丘の上からは1マス先から吹く
     var path = [];
     var origin = null, volcano = null, whirl = null, blocked = false;
     var breezeMode = B.windMode === 'breeze';
     for (var i = 1; i <= (breezeMode ? B.breezeLength : B.lineLength); i++) {
-      var x = u.x + F.dx * i, y = u.y + F.dy * i;
+      var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
       if (t === 'mountain') { ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
@@ -1125,7 +1141,8 @@
       var c = queue.shift();
       var cd = dist[key(c[0], c[1])];
       if (cd >= u.move) continue;
-      if (cd > 0 && getTile(s, c[0], c[1]) === 'mud') continue;
+      var ct = getTile(s, c[0], c[1]);
+      if (cd > 0 && (ct === 'mud' || ct === 'hill')) continue;   // 泥沼・【育つ】丘に入ったらそこで止まる
       neighbors(s, c[0], c[1]).forEach(function (n) {
         var k = key(n.x, n.y);
         if (dist[k] !== undefined) return;
@@ -2040,7 +2057,7 @@
   // 初期シナリオ
   //   . 空き  F 森  M 山  R 川  X 炎  s 小さな炎  V 火山  D 泥沼  P 水たまり  H 蜃気楼  I 氷  L 溶岩  W つむじ風  T 竜巻
   // ---------------------------------------------------------------
-  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted' };
+  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill' };
   var PRESETS = [
     {
       id: 'mDefense', name: '【お題】防衛', mission: 'defense',
@@ -2177,7 +2194,10 @@
 
   function loadPreset(id) {
     var p = PRESETS.filter(function (x) { return x.id === id; })[0];
-    if (!p) return null;
+    return p ? buildPreset(p) : null;
+  }
+  // シナリオの形（rows・allies・enemies…）から盤面を作る。新案プレイ（checks.js）の盤面もこれで作る
+  function buildPreset(p) {
     var s = blankState(p.rows.length, true);
     p.rows.forEach(function (row, y) {
       for (var x = 0; x < row.length; x++) setTile(s, x, y, CH[row[x]]);
@@ -2263,7 +2283,7 @@
     editPaint: editPaint, editPlaceUnit: editPlaceUnit, editRemoveUnit: editRemoveUnit,
     editMoveUnit: editMoveUnit, editSetMagic: editSetMagic, editSetFacing: editSetFacing, editSetPersona: editSetPersona,
     editSetEnemyActs: editSetEnemyActs, editResize: editResize, normalizeForPlay: normalizeForPlay,
-    exportLayout: exportLayout, importLayout: importLayout, loadPreset: loadPreset,
+    exportLayout: exportLayout, importLayout: importLayout, loadPreset: loadPreset, buildPreset: buildPreset,
     // お題
     MISSION_INFO: MISSION_INFO, MISSIONS: MISSIONS, OBJECT_INFO: OBJECT_INFO,
     objectsOf: objectsOf, addObject: addObject, missionTargets: missionTargets, missionInfo: missionInfo,

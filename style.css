@@ -85,6 +85,14 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .newtag { display: inline-block; font-size: 11px; font-weight: bold; color: #fff; background: #db2777; border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; }
 .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 button.demo, button.demo:hover:not(:disabled) { background: linear-gradient(135deg, #f59e0b, #dc2626); border-color: #c2410c; color: #fff; font-weight: bold; }
+/* 新案プレイ（checks.js）: スーパープレイと見分けるため、新案の桃色 */
+button.check, button.check:hover:not(:disabled) { background: linear-gradient(135deg, #ec4899, #9333ea); border-color: #9d174d; color: #fff; font-weight: bold; }
+.check-caption { margin: 0 0 8px; padding: 10px 14px; border: 2px solid #ec4899; border-radius: 10px; background: #fdf2f8; color: #4a1d36; }
+.check-caption .cc-head { font-size: 13px; color: #9d174d; }
+.check-caption .cc-head b { background: #db2777; color: #fff; border-radius: 4px; padding: 0 6px; margin-right: 4px; }
+.check-caption .cc-set { margin-left: 8px; font-size: 12px; color: #6b21a8; background: #f3e8ff; border-radius: 4px; padding: 0 6px; }
+.check-caption .cc-say { margin-top: 6px; font-size: 16px; font-weight: bold; line-height: 1.5; }
+.check-caption .cc-done { margin-top: 6px; font-size: 12px; color: #6b7280; }
 
 /* ---------- レイアウト ---------- */
 .layout { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
@@ -151,6 +159,9 @@ button.demo, button.demo:hover:not(:disabled) { background: linear-gradient(135d
   pointer-events: none;
 }
 .t-forest    { background: linear-gradient(160deg, #5b9c4b, var(--t-forest)); }
+/* 【育つ】丘は低い盛り上がり（山より小さく、マスの下半分だけ） */
+.t-hill { background: radial-gradient(ellipse 70% 48% at 50% 100%, #b7a487 0 60%, #9c8a6f 61% 98%, transparent 100%), var(--t-empty); }
+.t-hill .tile-label { color: #4a3f30; text-shadow: none; }
 /* 【新案】つながった山は1つの大きな山として描く */
 .t-mountain, .t-volcano { background: var(--t-empty); }
 .t-mountain .tile-label, .t-volcano .tile-label { z-index: 2; }

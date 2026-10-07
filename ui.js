@@ -11,13 +11,14 @@
   var DIR_ARROW = { up: '↑', right: '→', down: '↓', left: '←' };
   var DIR_ROT = { up: 0, right: 90, down: 180, left: 270 };
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
-  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ' };
+  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘' };
   var STORE_KEY = 'cafilia-mock-v2-layouts';
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
     forest: '通れる。火で炎になる。燃え広がりに巻き込まれると、つながった森ごと燃える。',
     mountain: '通れない。風をさえぎる（山の陰）。火が点くと、つながった山ごと火山になる【新案】。水が当たると山を下って、盤の端まで川になる【新案: 源流】。',
+    hill: '【育つ】通れるが、入るとそこで止まる。上から撃つと、形が正面へ1マス先にずれる（高台）。低いので風も燃え広がりも通す。雷は落ちる。土をもう一度当てると山に育つ。水が当たると川が流れる（源流）。火は何も起きない。',
     river: '通れない。燃え広がりを止める（防火帯）。土で泥沼。風が吹くと水が運ばれて水たまりになる【新案】。雷が触れると、つながった水全体に走る【新案: 感電】。',
     // 数値は調整パネルで変わるので、見るたびに作る
     get fire() { return '通れる。ターン終了時、上にいる者に' + B.fireTileDamage + 'ダメージ、隣の森へ燃え移る。できてからターン終了を' + B.fire.burnOutTurns + '回迎えると燃え尽きて空きに戻る（「尽」が予告）。水で消える。風が当たると燃え広がり（燃えた森の上は強い炎' + B.fire.strongDamage + '、ほかは弱い炎' + B.fire.weakDamage + '＋火傷）。'; },
@@ -77,7 +78,7 @@
     'enemyActs', 'boardSize', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
-    'missionBar', 'missionSelect', 'missionTools'].forEach(function (id) { el[id] = $(id); });
+    'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
     return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -455,18 +456,22 @@
     }
   }
 
+  // opts.check: 新案プレイ（checks.js）の盤面を読む。それ以外を読むときは、新案プレイの切り替えを元に戻す
   function loadScenario(id, opts) {
     if (app.busy) skipPlayback();
-    var s = id ? R.loadPreset(id) : R.createState();
+    var check = opts && opts.check;
+    if (!check) endCheck();
+    var s = check ? R.buildPreset(check.layout) : id ? R.loadPreset(id) : R.createState();
     if (opts && opts.enemyActs === false) s = R.editSetEnemyActs(s, false).state;
-    var preset = id ? R.PRESETS.filter(function (p) { return p.id === id; })[0] : null;
-    var name = preset ? preset.name : '標準';
+    var preset = !check && id ? R.PRESETS.filter(function (p) { return p.id === id; })[0] : null;
+    var name = check ? check.name : preset ? preset.name : '標準';
     if (preset && preset.recipe) setRecipe(preset.recipe);
     if (preset && preset.windMode) setWindMode(preset.windMode);
     if (preset && preset.sakuraFrom) setSakuraFrom(preset.sakuraFrom);
-    app.scenario = id;
-    addLog('シナリオ「' + name + '」を読み込んだ', 'system');
-    if (id) addLog(R.PRESETS.filter(function (p) { return p.id === id; })[0].desc, 'system');
+    app.scenario = check ? 'check:' + check.id : id;
+    addLog((check ? '新案プレイの盤面' : 'シナリオ') + '「' + name + '」を読み込んだ', 'system');
+    if (check) addLog(check.desc, 'system');
+    else if (id) addLog(preset.desc, 'system');
     if (opts && opts.enemyActs === false) addLog('（このデモでは敵は何もしない設定）', 'system');
     setState(begin(s));
     app.resetPoint = R.clone(app.state);
@@ -524,18 +529,82 @@
     app.demo.timer = setTimeout(demoNext, 1000);
   }
 
+  // ---------------------------------------------------------------
+  // 新案プレイ（checks.js）: 試し中の新案を見て確かめる再生。スーパープレイと同じ進み方で、
+  //   再生中だけ新案の切り替え（set）を BALANCE に重ね、1手ごとに「見るところ」を盤面の上に出す
+  // ---------------------------------------------------------------
+  var CHECK_WAIT = { say: 3200, aim: 3400 };
+
+  function setLabel(path, v) {
+    var T = window.Tune;
+    var label = (T && T.LABELS[path]) || path;
+    return label.replace(/（.*）$/, '') + ': ' + (v === true ? '入' : v === false ? '切' : v);
+  }
+  function applyCheckSet(set) {
+    endCheck();
+    app.checkSaved = {};
+    Object.keys(set || {}).forEach(function (p) {
+      var parts = p.split('.'), last = parts.pop();
+      var obj = parts.reduce(function (o, k) { return o[k]; }, B);
+      app.checkSaved[p] = { obj: obj, key: last, v: obj[last] };
+      obj[last] = set[p];
+    });
+    app.cache = {};
+    sideSig = '';
+  }
+  // 新案プレイの切り替えを元に戻し、説明を消す
+  function endCheck() {
+    if (app.checkSaved) {
+      Object.keys(app.checkSaved).forEach(function (p) { var c = app.checkSaved[p]; c.obj[c.key] = c.v; });
+      app.checkSaved = null;
+      app.cache = {};
+      sideSig = '';
+    }
+    app.check = null;
+    el.checkCaption.hidden = true;
+  }
+  function showCaption(text, done) {
+    var c = app.check;
+    if (!c) return;
+    var sets = Object.keys(c.set || {}).map(function (p) { return setLabel(p, c.set[p]); }).join('・');
+    el.checkCaption.innerHTML = '<div class="cc-head"><b>新案プレイ</b> ' + esc(c.name) + (sets ? '<span class="cc-set">' + esc(sets) + '</span>' : '') + '</div>' +
+      (text ? '<div class="cc-say">' + esc(text) + '</div>' : '') +
+      (done ? '<div class="cc-done">■ 新案プレイ終了（「1手戻す」でさかのぼれます。続けて手で遊ぶこともできます。この設定はほかのシナリオを読むと元に戻ります）</div>' : '');
+    el.checkCaption.hidden = false;
+  }
+  function playCheck(c) {
+    stopDemo();
+    if (app.editMode) setEditMode(false);
+    setRecipe('off');
+    setWindMode('breeze');
+    applyCheckSet(c.set);
+    loadScenario(null, { check: c, enemyActs: c.enemyActs });
+    app.check = c;
+    var queue = [];
+    c.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); });
+    app.demo = { queue: queue, i: 0, timer: null, name: c.name, check: c };
+    addLog('▶ 新案プレイ: ' + c.name, 'system');
+    showCaption('');
+    render();
+    app.demo.timer = setTimeout(demoNext, 1000);
+  }
+
   function demoNext() {
     var d = app.demo;
     if (!d) return;
     if (app.busy) { d.timer = setTimeout(demoNext, 150); return; }
     if (d.i >= d.queue.length || app.state.result) {
-      addLog('■ デモ終了（「1手戻す」で1手ずつさかのぼれます）', 'system');
+      addLog('■ ' + (d.check ? '新案プレイ' : 'デモ') + '終了（「1手戻す」で1手ずつさかのぼれます）', 'system');
+      if (d.check) showCaption(d.lastSay, true);
       app.demo = null;
       render();
       return;
     }
     var a = d.queue[d.i++];
+    if (a.say && d.check) { d.lastSay = a.say; showCaption(a.say); addLog('💬 ' + a.say, 'system'); }
+    if (!a.id) { d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // 説明だけの項目
     if (!R.findUnit(app.state, a.id)) { demoNext(); return; }
+    var aimWait = d.check ? CHECK_WAIT.aim : DEMO_WAIT.aim;
     select(a.id);
     d.timer = setTimeout(function () {
       if (app.demo !== d) return;
@@ -549,7 +618,7 @@
           if (app.demo !== d) return;
           doAct(a.shoot !== false);
           d.timer = setTimeout(demoNext, DEMO_WAIT.after);
-        }, DEMO_WAIT.aim);
+        }, aimWait);
       }, DEMO_WAIT.move);
     }, DEMO_WAIT.select);
   }
@@ -1266,6 +1335,14 @@
   });
   // 【新案】竜巻を外している間は、竜巻のデモ・シナリオは一覧に出さない（コードとテストには残す）
   el.demoSelect.innerHTML = (window.DEMOS || []).filter(function (d) { return !d.recipe; }).map(function (d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+  // 新案プレイ: 試し中の新案があるときだけ出す
+  var CHECKS = window.CHECKS || [];
+  el.checkPick.hidden = !CHECKS.length;
+  el.checkSelect.innerHTML = CHECKS.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }).join('');
+  el.btnCheck.addEventListener('click', function () {
+    var c = CHECKS.filter(function (x) { return x.id === el.checkSelect.value; })[0] || CHECKS[0];
+    if (c) playCheck(c);
+  });
   el.btnUndo.addEventListener('click', undo);
   el.btnReset.addEventListener('click', reset);
   el.btnEdit.addEventListener('click', function () { setEditMode(!app.editMode); });
@@ -1437,9 +1514,18 @@
     if (app.editMode) setEditMode(false);
     app.cache = {};
     sideSig = '';
-    loadScenario(app.scenario);
+    // 反映で値は全部入れ直されているので、新案プレイの前の値には戻さない。新案プレイの盤面なら、切り替えを重ね直して読み直す
+    var c = app.check;
+    app.checkSaved = null;
+    if (c) {
+      applyCheckSet(c.set);
+      loadScenario(null, { check: c, enemyActs: c.enemyActs });
+      app.check = c;
+      showCaption('');
+    } else loadScenario(app.scenario);
   };
   app.scenarioName = function () {
+    if (app.check) return app.check.name;
     var p = R.PRESETS.filter(function (x) { return x.id === app.scenario; })[0];
     return p ? p.name : '標準';
   };

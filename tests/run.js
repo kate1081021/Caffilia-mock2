@@ -1663,6 +1663,118 @@ test('エディットで置きもの・印・宝を置ける（馬車は1台ま�
 });
 
 // ---------------------------------------------------------------
+console.log('\n■ 育つ（IMPROVE_grow）: 土 — 丘と山');
+// grow.enabled を入れて試す（終わったら元に戻す）
+function withGrow(fn) {
+  var was = B.grow.enabled;
+  B.grow.enabled = true;
+  try { fn(); } finally { B.grow.enabled = was; }
+}
+CH.h = 'hill';
+
+test('育つ: 切っているときは今までどおり、空きに土で山', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'earth', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 1, 3), tile(r.state, 2, 3), tile(r.state, 1, 2)], ['mountain', 'mountain', 'mountain']);
+});
+test('育つ: 空きに土で丘、丘にもう一度土で山に育つ', function () { withGrow(function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'earth', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 1, 3), tile(r.state, 2, 3), tile(r.state, 1, 2)], ['hill', 'hill', 'hill']);
+  var s2 = r.state; R.findUnit(s2, a.id).acted = false;
+  var r2 = fire(s2, a, 'up');
+  eq([tile(r2.state, 1, 3), tile(r2.state, 2, 3), tile(r2.state, 1, 2)], ['mountain', 'mountain', 'mountain']);
+  ok(r2.events.some(function (e) { return /丘が山に育った/.test(e.text || ''); }), 'ログに「育った」');
+}); });
+test('育つ: ユニットのいる丘は育たない（直撃だけ）', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..h...', '......', '......']);
+  var a = R.addAlly(s, 'earth', 2, 5);
+  var e = tough(s, R.addEnemy(s, 'fire', 2, 3));
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 3), 'hill');
+  eq(dealt(r, e.id), 1);
+}); });
+test('育つ: 炎・小さな炎に土をかぶせると丘になる', function () { withGrow(function () {
+  var s = board(['......', '......', '.s....', '.X....', '......', '......']);
+  var a = R.addAlly(s, 'earth', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 1, 3), tile(r.state, 1, 2)], ['hill', 'hill']);
+}); });
+test('丘: 入ると止まる（その先へは進めない）', function () {
+  var s = board(['.h....', '......', '......', '......', '......', '......']);
+  var a = R.addAlly(s, 'fire', 0, 0);
+  var reach = R.reachableCells(s, a.id);
+  ok(reach['1,0'] !== undefined, '丘には入れる');
+  ok(reach['2,0'] === undefined, '丘の先へは進めない');
+  ok(reach['1,1'] !== undefined, 'ほかの道はそのまま');
+});
+test('丘: 丘の上から動き出すのは自由', function () {
+  var s = board(['......', '......', '......', '......', '..h...', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var reach = R.reachableCells(s, a.id);
+  ok(reach['2,2'] !== undefined && reach['4,4'] !== undefined, '2マス動ける');
+});
+test('丘: 丘の上から撃つと形が正面へ1マス先にずれる（高台）', function () {
+  var s = board(['......', '......', '......', '......', '..h...', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2)], ['empty', 'smallfire']);
+});
+test('丘: 高台は流れる・吹き抜ける魔法も1マス先から', function () {
+  var s = board(['......', '......', '......', '......', '..h...', '......']);
+  var w = R.addAlly(s, 'water', 2, 4);
+  var r = fire(s, w, 'up');
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 1)], ['empty', 'river', 'river']);
+  var s2 = board(['......', '......', '......', '......', '..h...', '......']);
+  var b = R.addAlly(s2, 'wind', 2, 4);
+  var e = tough(s2, R.addEnemy(s2, 'fire', 2, 1));
+  var r2 = fire(s2, b, 'up');
+  eq(pos(r2.state, e.id), [2, 0], '2マス先の敵まで風が届く');
+});
+test('丘: 水が当たると丘から川が流れる（源流）。丘は丘のまま', function () {
+  var s = board(['......', '......', '......', '..h...', '......', '......']);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 0)], ['river', 'hill', 'river', 'river']);
+});
+test('丘: 低いので風をさえぎらない（丘の先の敵も運ぶ）', function () {
+  var s = board(['......', '......', '......', '......', '..h...', '......']);
+  var a = R.addAlly(s, 'wind', 2, 5);
+  var e = tough(s, R.addEnemy(s, 'fire', 2, 3));
+  var r = fire(s, a, 'up');
+  eq(pos(r.state, e.id), [2, 2]);
+  eq(tile(r.state, 2, 4), 'hill');
+});
+test('丘: 燃え広がりは丘を通り抜ける（丘は丘のまま、その先の森が燃える）', function () {
+  var s = board(['......', '..F...', '..h...', '..X...', '......', '......']);
+  var a = R.addAlly(s, 'wind', 2, 4);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 2), tile(r.state, 2, 1)], ['hill', 'fire']);
+});
+test('丘: 雷は高い所に落ちる（丘に落ちる）', function () {
+  var s = board(['......', '......', '......', '..h...', '......', '......']);
+  var a = R.addAlly(s, 'thunder', 2, 4);
+  var r = fire(s, a, 'up');
+  ok(r.events.some(function (e) { return /雷が丘に落ちた/.test(e.text || ''); }), r.events.map(function (e) { return e.text; }).join(' / '));
+});
+test('丘: 火を点けても何も起きない（火山になるのは山だけ）', function () {
+  var s = board(['......', '......', '......', '..h...', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 3), 'hill');
+});
+test('育つ: 敵の土も同じく、丘を山に育てる', function () { withGrow(function () {
+  var s = board(['......', '......', '..h...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'earth', 2, 0);
+  R.addAlly(s, 'fire', 0, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  eq([tile(r.state, 2, 2), tile(r.state, 3, 2), tile(r.state, 3, 3)], ['mountain', 'hill', 'hill']);
+}); });
+
+// ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) {
   console.log('失敗: ' + failed.join(' / '));
