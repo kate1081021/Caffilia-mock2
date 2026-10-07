@@ -16,6 +16,9 @@
     <label class="scenario">シナリオ
       <select id="scenarioSelect"></select>
     </label>
+    <label class="scenario">見本（縮尺）
+      <select id="worldSelect" aria-label="縮尺の見本"></select>
+    </label>
     <label class="scenario">風の形
       <select id="windModeSelect">
         <option value="line">元: 正面4マスを吹き抜ける</option>
@@ -113,7 +116,7 @@
           <label class="toggle"><input id="enemyActs" type="checkbox" checked> 敵が行動する</label>
         </div>
         <div class="edit-group row">
-          <label>盤面サイズ <input id="boardSize" type="number" min="5" max="9" step="1" value="6"></label>
+          <label>盤面サイズ <input id="boardSize" type="number" min="5" max="12" step="1" value="6"></label>
           <button id="btnResize" type="button">変更</button>
           <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>

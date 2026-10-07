@@ -180,11 +180,14 @@
     return shapeCells(s, u.magic, o.x, o.y, facing);
   }
 
+  var FRONT_ONE = { grass: true, earth: true, fire: true };
   // 魔法の形のマス（盤の外は除く）。術者に近い順
   function shapeCells(s, magic, x, y, facing) {
     var out = [];
-    if (B.shapes[magic]) {
-      var list = B.shapes[magic].map(function (p, i) { return { rx: p[0], ry: p[1], i: i }; });
+    // 【縮尺】shape.frontOne: 草・土・火の形を正面1マスにする（水・風は流れる・吹く長さを1マスに）
+    var shp = B.shape.frontOne && FRONT_ONE[magic] ? [[0, 1]] : B.shapes[magic];
+    if (shp) {
+      var list = shp.map(function (p, i) { return { rx: p[0], ry: p[1], i: i }; });
       list.sort(function (a, b) {
         var da = Math.abs(a.rx) + Math.abs(a.ry), db = Math.abs(b.rx) + Math.abs(b.ry);
         return da - db || a.i - b.i;
@@ -1070,7 +1073,7 @@
     var growOn = B.grow.enabled, pondName = growOn ? '水たまり' : '池';
     var growing = false, left = 0, river = null;   // 【育つ】水たまりから川に育っている途中か、あと何マス進めるか、育った川のマス
     for (var i = 1; ; i++) {
-      if (!sourced && !growing && i > B.waterLength) break;
+      if (!sourced && !growing && i > (B.shape.frontOne ? 1 : B.waterLength)) break;   // 【縮尺】正面1マスなら池（水たまり）も1マス
       if (growing && B.grow.riverLength > 0 && left <= 0) break;
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) { if (sourced || growing) stop = '盤の端まで流れた'; break; }
@@ -1167,7 +1170,7 @@
     var path = [];
     var origin = null, volcano = null, whirl = null, blocked = false;
     var breezeMode = B.windMode === 'breeze';
-    var limit = breezeMode ? B.breezeLength : B.lineLength;
+    var limit = B.shape.frontOne ? 1 : breezeMode ? B.breezeLength : B.lineLength;   // 【縮尺】正面1マスなら風も1マス
     var galeAt = -1;   // 【育つ】強風になった通り道の位置（path の番号）。-1 は強風なし
     for (var i = 1; i <= limit; i++) {
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
@@ -2353,7 +2356,29 @@
     }
   ];
 
+  // 【縮尺】広場: 見本ごとの大きさ n で作る遊び場【仮】。味方は下の段に3人（草・土・風）、敵は上の段に火の敵2体（狙いは「近い人」と「自然」）。
+  //   真ん中に、魔法で作れる自然を少し（森2つ・水たまり・丘。育つを切っているときは丘の代わりに山）
+  function plazaLayout(n) {
+    n = clampSize(n);
+    var rows = [];
+    for (var y = 0; y < n; y++) rows.push(new Array(n + 1).join('.'));
+    function put(x, y, ch) { rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); }
+    var mid = Math.floor(n / 2), q = Math.max(1, Math.floor(n / 4));
+    put(q, mid - 1, 'F'); put(q, mid, 'F');
+    put(mid, mid - 1, 'P');
+    put(n - 1 - q, mid, B.grow.enabled ? 'h' : 'M');
+    var ax = [mid - 2, mid, mid + 2].map(function (x) { return Math.max(0, Math.min(n - 1, x)); });
+    return {
+      id: 'plaza', name: '広場（' + n + '×' + n + '）',
+      desc: '縮尺くらべ用の広場。味方は下の段に草・土・風、敵は上の段に火の敵2体（狙いは近い人と自然）。盤面の大きさ・移動・形・育つは、上のバーの見本か調整パネルで変わる。',
+      rows: rows,
+      allies: [['grass', ax[0], n - 1], ['earth', ax[1], n - 1], ['wind', ax[2], n - 1]],
+      enemies: [['fire', q, 0, { aim: 'near' }], ['fire', n - 1 - q, 0, { aim: 'nature' }]]
+    };
+  }
+
   function loadPreset(id) {
+    if (id === 'plaza') return buildPreset(plazaLayout(B.boardSize));
     var p = PRESETS.filter(function (x) { return x.id === id; })[0];
     return p ? buildPreset(p) : null;
   }
@@ -2444,7 +2469,7 @@
     editPaint: editPaint, editPlaceUnit: editPlaceUnit, editRemoveUnit: editRemoveUnit,
     editMoveUnit: editMoveUnit, editSetMagic: editSetMagic, editSetFacing: editSetFacing, editSetPersona: editSetPersona,
     editSetEnemyActs: editSetEnemyActs, editResize: editResize, normalizeForPlay: normalizeForPlay,
-    exportLayout: exportLayout, importLayout: importLayout, loadPreset: loadPreset, buildPreset: buildPreset,
+    exportLayout: exportLayout, importLayout: importLayout, loadPreset: loadPreset, buildPreset: buildPreset, plazaLayout: plazaLayout,
     // お題
     MISSION_INFO: MISSION_INFO, MISSIONS: MISSIONS, OBJECT_INFO: OBJECT_INFO,
     objectsOf: objectsOf, addObject: addObject, missionTargets: missionTargets, missionInfo: missionInfo,

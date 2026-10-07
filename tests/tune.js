@@ -23,12 +23,13 @@ var DEF = T.clone(B);
 
 console.log('調整パネル');
 
-test('数値と true/false を全部拾う（盤面サイズ・配列・文字列は拾わない）', function () {
+test('数値と true/false を全部拾う（盤面サイズの上限・下限、配列・文字列は拾わない）', function () {
   var paths = T.items(DEF).map(function (it) { return it.path; });
   ok(paths.indexOf('ally.hp') !== -1, 'ally.hp');
   ok(paths.indexOf('mission.defense.turns') !== -1, '深い階層も拾う');
   ok(paths.indexOf('ideas.iceSlide') !== -1, 'true/false も拾う');
-  ok(paths.indexOf('boardSize') === -1, '盤面サイズは出さない');
+  ok(paths.indexOf('boardSize') !== -1, '【縮尺】盤面の大きさは出す');
+  ok(paths.indexOf('maxBoardSize') === -1 && paths.indexOf('minBoardSize') === -1, '上限・下限は出さない');
   ok(paths.indexOf('windMode') === -1, '文字列は出さない');
   ok(!paths.some(function (p) { return /^shapes|nextHints|defaultMagics/.test(p); }), '配列は出さない');
 });

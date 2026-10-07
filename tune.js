@@ -10,10 +10,11 @@
   'use strict';
 
   // 調整パネルに出さない項目（盤面サイズはエディットで変える）
-  var SKIP = ['boardSize', 'minBoardSize', 'maxBoardSize'];
+  var SKIP = ['minBoardSize', 'maxBoardSize'];   // 【縮尺】盤面の大きさ（boardSize）は出す。今のシナリオは自分の大きさのまま、広場と標準がこの大きさになる
 
   // よく触る項目（パネルの一番上にまとめる）【仮】
   var FAVORITES = [
+    'boardSize', 'shape.frontOne',
     'grow.enabled', 'grow.mountainSize', 'grow.mountainSlope', 'grow.pushOut', 'grow.forestSize', 'grow.riverLength', 'grow.galeLength', 'grow.galeSpreadBonus', 'grow.grassBurnOut', 'grow.forestBurnOut', 'fire.plantStrong',
     'ally.hp', 'ally.move', 'ally.power',
     'enemy.hp', 'enemy.move', 'enemy.power',
@@ -27,7 +28,7 @@
     _fav: 'よく触る', _top: 'そのほか',
     ally: '味方', enemy: '敵', mission: 'お題', fire: '炎', spread: '燃え広がり', shock: '感電',
     funka: '噴火', fireTornado: '火炎竜巻', sentakuki: 'センタクキ', dark: '闇', haunt: 'オバケヤシキ',
-    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方'
+    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方', shape: '形'
   };
 
   // 項目の日本語ラベル。ここにない項目は元の名前をそのまま出す
@@ -48,6 +49,8 @@
     'fireTornado.damage': '火炎竜巻のダメージ', 'sentakuki.damage': 'センタクキのダメージ',
     'dark.pullRange': '闇が引き寄せる範囲',
     'haunt.pullRange': 'オバケヤシキが引き寄せる範囲', 'haunt.damage': 'オバケヤシキのダメージ',
+    'boardSize': '盤面の大きさ（広場・標準のシナリオ。5〜12）',
+    'shape.frontOne': '形を正面1マスに（草・土・火・水・風）',
     'grow.enabled': '育つ（1回目は小さく、同じ魔法をもう1回で育つ）',
     'grow.mountainSize': '育つ: 山の大きさ（1・4・5・9マス）',
     'grow.mountainSlope': '育つ: 山のまわりは丘（グラデーション）',
@@ -67,6 +70,16 @@
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',
     'ideas.windClearsMirage': '風で蜃気楼が晴れる', 'ideas.spreadMeltsIce': '燃え広がりは氷を溶かす'
   };
+
+  // 【縮尺】見本（縮尺のプリセット）。選ぶと調整パネルの値がこうなり、その大きさの「広場」が始まる。見本は出発点で、そのあと数を変えてもよい
+  //   2×2 の敵（enemy.size）は重いので今回は入れていない（大きい世界も1マスの敵）
+  var WORLDS = [
+    { id: 'now', name: '今のまま（6×6）', set: { boardSize: 6, 'ally.move': 2, 'shape.frontOne': false, 'grow.enabled': false, 'grow.mountainSize': 5, 'grow.forestSize': 5, 'grow.riverLength': 4 } },
+    { id: 'nowGrow', name: '今のまま＋育つ（6×6）', set: { boardSize: 6, 'ally.move': 2, 'shape.frontOne': false, 'grow.enabled': true, 'grow.mountainSize': 5, 'grow.forestSize': 5, 'grow.riverLength': 4 } },
+    { id: 'small', name: '小さい世界（6×6・正面1マス）', set: { boardSize: 6, 'ally.move': 2, 'shape.frontOne': true, 'grow.enabled': true, 'grow.mountainSize': 4, 'grow.forestSize': 5, 'grow.riverLength': 4 } },
+    { id: 'mid', name: '中くらい（8×8）', set: { boardSize: 8, 'ally.move': 2, 'shape.frontOne': false, 'grow.enabled': true, 'grow.mountainSize': 5, 'grow.forestSize': 5, 'grow.riverLength': 0 } },
+    { id: 'large', name: '大きい世界（10×10・移動3）', set: { boardSize: 10, 'ally.move': 3, 'shape.frontOne': false, 'grow.enabled': true, 'grow.mountainSize': 9, 'grow.forestSize': 9, 'grow.riverLength': 0 } }
+  ];
 
   var PREFIX = 'CAFFILIA-TUNE:';
 
@@ -221,7 +234,7 @@
   }
 
   var Tune = {
-    SKIP: SKIP, FAVORITES: FAVORITES, LABELS: LABELS, GROUPS: GROUPS, PREFIX: PREFIX,
+    WORLDS: WORLDS, SKIP: SKIP, FAVORITES: FAVORITES, LABELS: LABELS, GROUPS: GROUPS, PREFIX: PREFIX,
     clone: clone, getPath: getPath, items: items, groups: groups, sanitize: sanitize, overlay: overlay,
     applyTo: applyTo, diff: diff, encode: encode, decode: decode, linkFor: linkFor, fromHash: fromHash,
     exportText: exportText, parseText: parseText, fmt: fmt

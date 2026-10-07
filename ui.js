@@ -489,7 +489,7 @@
     if (!check) endCheck();
     var s = check ? R.buildPreset(check.layout) : id ? R.loadPreset(id) : R.createState();
     if (opts && opts.enemyActs === false) s = R.editSetEnemyActs(s, false).state;
-    var preset = !check && id ? R.PRESETS.filter(function (p) { return p.id === id; })[0] : null;
+    var preset = !check && id ? (id === 'plaza' ? R.plazaLayout(B.boardSize) : R.PRESETS.filter(function (p) { return p.id === id; })[0]) : null;   // 【縮尺】広場は今の盤面の大きさで作る
     var name = check ? check.name : preset ? preset.name : '標準';
     if (preset && preset.recipe) setRecipe(preset.recipe);
     if (preset && preset.windMode) setWindMode(preset.windMode);
@@ -1426,7 +1426,8 @@
   el.scenarioSelect.innerHTML =
     '<optgroup label="お題（防衛・護衛・奪取）">' + shown.filter(function (p) { return p.mission; }).map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="戦闘（敵の全滅）"><option value="">標準（火・水・風 / 敵1体）</option>' +
-    shown.filter(function (p) { return !p.mission; }).map(presetOpt).join('') + '</optgroup>';
+    shown.filter(function (p) { return !p.mission; }).map(presetOpt).join('') + '</optgroup>' +
+    '<optgroup label="縮尺くらべ"><option value="plaza">広場（見本・調整パネルの盤面の大きさ）</option></optgroup>';
   el.scenarioSelect.addEventListener('change', function () { loadScenario(el.scenarioSelect.value); el.scenarioSelect.blur(); });
   el.recipeSelect.value = B.tornadoRecipe;
   el.windModeSelect.value = B.windMode;
@@ -1595,8 +1596,11 @@
       showCaption('');
     } else loadScenario(app.scenario);
   };
+  // 調整パネル（見本）から: 次にやり直すシナリオを決める（新案プレイの切り替えは外す）
+  app.setScenario = function (id) { stopDemo(); endCheck(); app.scenario = id; };
   app.scenarioName = function () {
     if (app.check) return app.check.name;
+    if (app.scenario === 'plaza') return R.plazaLayout(B.boardSize).name;
     var p = R.PRESETS.filter(function (x) { return x.id === app.scenario; })[0];
     return p ? p.name : '標準';
   };

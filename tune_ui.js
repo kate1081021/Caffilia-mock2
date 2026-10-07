@@ -15,7 +15,7 @@
   var el = {};
   ['btnTune', 'btnHowto', 'tuneBar', 'tunePanel', 'tuneClose', 'tuneApply', 'tuneResetAll', 'tuneNote', 'tuneList',
     'tuneComment', 'tuneExport', 'tuneLink', 'tuneOut', 'tuneIn', 'tuneImport', 'tuneSave',
-    'howto', 'howtoClose', 'versionTag'].forEach(function (id) { el[id] = $(id); });
+    'howto', 'howtoClose', 'versionTag', 'worldSelect'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
     return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -123,10 +123,29 @@
       T.source = Object.keys(applied).length ? 'local' : 'none';
     }
     app.restart();
+    if (el.worldSelect) el.worldSelect.value = currentWorld();
     note('反映して、シナリオ「' + app.scenarioName() + '」を最初からやり直しました。' + (T.source === 'link' ? '（リンクの設定なので、この端末には保存していません）' : ''));
     refresh();
   }
   el.tuneApply.addEventListener('click', apply);
+
+  // 【縮尺】見本: 選ぶと調整パネルの値を見本の値にして反映し、その大きさの広場を最初から始める（ほかの変えた分はそのまま）
+  function currentWorld() {
+    var w = T.WORLDS.filter(function (w) { return Object.keys(w.set).every(function (k) { return same(T.getPath(B, k), w.set[k]); }); })[0];
+    return w ? w.id : '';
+  }
+  el.worldSelect.innerHTML = '<option value="">（見本を選ぶ）</option>' + T.WORLDS.map(function (w) { return '<option value="' + w.id + '">' + esc(w.name) + '</option>'; }).join('');
+  el.worldSelect.value = currentWorld();
+  el.worldSelect.addEventListener('change', function () {
+    var w = T.WORLDS.filter(function (x) { return x.id === el.worldSelect.value; })[0];
+    el.worldSelect.blur();
+    if (!w) return;
+    draft = T.clone(applied);
+    Object.keys(w.set).forEach(function (k) { draft[k] = w.set[k]; });
+    app.setScenario('plaza');
+    apply();
+    note('見本「' + w.name + '」にして、広場を最初から始めました。調整パネルでさらに変えられます。');
+  });
   el.tuneResetAll.addEventListener('click', function () {
     draft = {};
     note('全部を初期値にしました。「反映してやり直す」で遊びに反映します。');
