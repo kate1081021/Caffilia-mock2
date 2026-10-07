@@ -11,7 +11,7 @@
   var DIR_ARROW = { up: '↑', right: '→', down: '↓', left: '←' };
   var DIR_ROT = { up: 0, right: 90, down: 180, left: 270 };
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
-  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら' };
+  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風' };
   var STORE_KEY = 'cafilia-mock-v2-layouts';
 
   var TILE_DESC = {
@@ -30,6 +30,7 @@
     mirage: '【新案】通れる。水たまりに火を点けると立ちのぼる。中にいる者は敵から見つからない（狙われない）。水が流れると川に戻る。',
     ice: '【新案】通れる（凍った川は歩いて渡れる）。氷の魔法が水に触れると、つながった水がまとめて凍る。火で溶けて水たまりに戻る。',
     lava: '【新案】通れない。火が山に点くと、山脈ごと噴火してあふれ出る（山脈が大きいほど遠くまで）。水が流れてきたり冷気が当たったりすると、冷えて山になる。燃え広がりを止める。',
+    gale: '【育つ】通れる。風が残るマスにもう一度風を当てると、そこから奥へ4マス吹き抜ける強い風。通り道の者を2マス運ぶ。強風で起こした燃え広がりは遠くまで走る。ターン終了でやむ。',
     breeze: '【新案・試し】通れる。風（2マス）が吹いたあとに残り、ターン終了で消える。火を入れると火の渦（火が風を強くして2×2の渦に）。',
     sakura: '【新案・試し】通れない（山と同じ）。山に草を植えると咲く。風が当たると桜吹雪（花びらが扇形に舞い、桜は散って山に戻る）。',
     petals: '【新案・試し】通れる。桜吹雪の跡。ターン終了で散る。',

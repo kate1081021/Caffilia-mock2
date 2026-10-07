@@ -785,3 +785,7 @@ button.primary.pending { box-shadow: 0 0 0 3px #fde68a; }
 .rise.fire { width: 44px; height: 60px; margin: -34px 0 0 -22px; clip-path: none; border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%; background: radial-gradient(ellipse at 50% 75%, #fff3b0, #ffb347 35%, #e4572e 70%, transparent 72%); }
 /* 【育つ】川が育つ瞬間は、水しぶきが奥へ順に走る */
 .rise.river { width: 50px; height: 50px; margin: -25px 0 0 -25px; clip-path: none; border-radius: 50%; background: radial-gradient(circle, #e0f2fe 0 18%, #5aa0e0 45%, rgba(58, 127, 196, .5) 62%, transparent 70%); }
+/* 【育つ】強風は太く濃い風の筋（速く流れる） */
+.t-gale { background: repeating-linear-gradient(115deg, rgba(14, 165, 233, 0) 0 8px, rgba(14, 165, 233, .75) 8px 16px), #dbeefa; background-size: 200% 200%; animation: breezebg .7s linear infinite; }
+.t-gale .tile-label { color: #075985; text-shadow: 0 0 3px #fff; }
+.rise.gale { width: 60px; height: 30px; margin: -15px 0 0 -30px; clip-path: none; border-radius: 40%; background: repeating-linear-gradient(115deg, rgba(14, 165, 233, 0) 0 6px, rgba(14, 165, 233, .9) 6px 12px); }

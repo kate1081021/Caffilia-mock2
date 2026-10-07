@@ -40,6 +40,7 @@
     whirlwind: { name: 'つむじ風', label: '旋', passable: true  },   // 【新案】風が吹き抜けた先に残る
     tornado:   { name: '竜巻',     label: '竜', passable: false },   // 【新案】つむじ風に風で2×2に育つ
     breeze:    { name: '風',       label: '風', passable: true  },   // 【新案・試し】風の形（2マス）に残る風。ターン終了で消える
+    gale:      { name: '強風',     label: '嵐', passable: true  },   // 【育つ】風の残るマスにもう一度風で、そこから奥へ吹く強い風。ターン終了でやむ
     firewhirl: { name: '火の渦',   label: '渦', passable: false }    // 【新案・試し】風に火で2×2。水でセンタクキ。ターン終了で解けて炎
   };
   var TILES = Object.keys(TILE_INFO);
@@ -67,6 +68,8 @@
 
   // 【育つ】燃える植物（森・草むら）と、燃えて強い炎になる植物（今は森だけ）
   function isPlant(t) { return t === 'forest' || t === 'thicket'; }
+  // 【育つ】吹いている風（風・強風）
+  function isWind(t) { return t === 'breeze' || t === 'gale'; }
   function burnsStrong(t) { return t === 'forest' || (t === 'thicket' && B.fire.plantStrong); }   // 【育つ】plantStrong で草むらも強い炎
 
   // 燃え広がりを止めるマス
@@ -394,7 +397,8 @@
   // ---------------------------------------------------------------
 
   // 燃え広がり: 風が炎か小さな炎に当たる
-  function doSpread(s, ox, oy, dir, ctx, ev) {
+  // bonus: 【育つ】強風で起こしたときに長くなるマス数
+  function doSpread(s, ox, oy, dir, ctx, ev, bonus) {
     var F = DIRS[dir];
     var path = [];
     var burned = {}, burnedList = [];
@@ -412,7 +416,7 @@
       }
     }
 
-    for (var i = 1; i <= B.spread.maxLength; i++) {
+    for (var i = 1; i <= B.spread.maxLength + (bonus || 0); i++) {
       var x = ox + F.dx * i, y = oy + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
@@ -624,7 +628,7 @@
         if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
         else if (t === 'smallfire' && B.grow.enabled) { setTile(s, x, y, 'fire'); ctx.phrases.push('【育つ】小さな炎が炎に育った'); ctx.grows.push({ origin: [x, y], tile: 'fire', cells: [[x, y]], tiles: ['fire'], wave: [0], blocked: [], pushed: [] }); }
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
-        else if (t === 'breeze') { ctx.phrases.push('【新案】吹いている風に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
+        else if (isWind(t)) { ctx.phrases.push('【新案】吹いている' + tileName(t) + 'に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
         else if (isPlant(t)) { setTile(s, x, y, 'fire'); ctx.phrases.push(tileName(t) + 'が燃えた'); }
         else if (t === 'mountain' && !erupted[key(x, y)]) { ctx.phrases.push('【新案】山に火が点いた'); doFunka(s, x, y, ctx, ev, erupted); }
         else if (t === 'puddle') { setTile(s, x, y, 'mirage'); ctx.phrases.push('【新案】水たまりが蜃気楼になった'); }
@@ -809,14 +813,14 @@
   //   （風が先、火が後。火が先で風が後なら、火が風下へ広がる燃え広がり）
   //   火が入った風のマスを含む2×2のうち、風のマスを多く含むもの → 火を入れた者から見て奥 → 右 の順に選ぶ
   //   2×2の全部が空き・小さな炎・炎・風・つむじ風・森のときだけ。中の全員に一定のダメージ。火の渦は残り、ターン終了で解けて炎になる
-  var WHIRL_OK = { empty: true, smallfire: true, fire: true, breeze: true, whirlwind: true, forest: true };
+  var WHIRL_OK = { empty: true, smallfire: true, fire: true, breeze: true, gale: true, whirlwind: true, forest: true };
   function doFireWhirl(s, x, y, facing, ctx, ev) {
     var F = DIRS[facing], Rx = -F.dy, Ry = F.dx;
     var best = null;
     [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]].forEach(function (tl) {
       var sq = [[tl[0], tl[1]], [tl[0] + 1, tl[1]], [tl[0], tl[1] + 1], [tl[0] + 1, tl[1] + 1]];
       if (!sq.every(function (c) { return inBounds(s, c[0], c[1]) && WHIRL_OK[getTile(s, c[0], c[1])]; })) return;
-      var wind = sq.filter(function (c) { return getTile(s, c[0], c[1]) === 'breeze'; }).length;
+      var wind = sq.filter(function (c) { return isWind(getTile(s, c[0], c[1])); }).length;
       var ahead = (tl[0] + 0.5 - x) * F.dx + (tl[1] + 0.5 - y) * F.dy;   // 火を入れた者から見て奥ほど大きい
       var right = (tl[0] + 0.5 - x) * Rx + (tl[1] + 0.5 - y) * Ry;       // 右ほど大きい
       if (!best || wind > best.wind || (wind === best.wind && (ahead > best.ahead || (ahead === best.ahead && right > best.right)))) best = { sq: sq, wind: wind, ahead: ahead, right: right };
@@ -1159,10 +1163,18 @@
     var path = [];
     var origin = null, volcano = null, whirl = null, blocked = false;
     var breezeMode = B.windMode === 'breeze';
-    for (var i = 1; i <= (breezeMode ? B.breezeLength : B.lineLength); i++) {
+    var limit = breezeMode ? B.breezeLength : B.lineLength;
+    var galeAt = -1;   // 【育つ】強風になった通り道の位置（path の番号）。-1 は強風なし
+    for (var i = 1; i <= limit; i++) {
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
+      // 【育つ】通り道に風が残っていれば、そこから奥が強風に育つ（術者の向きへ grow.galeLength マス）
+      if (B.grow.enabled && breezeMode && galeAt < 0 && isWind(t)) {
+        galeAt = path.length;
+        limit = i + B.grow.galeLength - 1;
+        ctx.phrases.push('【育つ】' + tileName(t) + 'に風が重なって強風に育った');
+      }
       if (t === 'mountain') { ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
       if (t === 'tornado') { ctx.phrases.push('【新案】風が竜巻に吸いこまれた'); blocked = true; break; }
       if (t === 'whirlwind' && B.tornadoRecipe === 'windWind') { whirl = [x, y]; ctx.cells.push([x, y]); break; }
@@ -1192,16 +1204,26 @@
       var o = unitAt(s, cx, cy);
       if (!o) continue;
       addHit(ctx, o, u.power, 'direct');
-      pushOne(s, o, facing, ev, unitLabel(s, o) + 'を' + F.name + 'へ1マス運んだ');
+      var moved = pushOne(s, o, facing, ev, unitLabel(s, o) + 'を' + F.name + 'へ1マス運んだ');
+      // 【育つ】強風の通り道の者は、もう1マス運ぶ（押せなくなったら、泥沼にはまったらそこで止まる）
+      if (moved && galeAt >= 0 && k >= galeAt && getTile(s, o.x, o.y) !== 'mud') pushOne(s, o, facing, ev, '【育つ】強風で' + unitLabel(s, o) + 'をさらに' + F.name + 'へ1マス運んだ');
     }
     if (whirl) {
       growTornado(s, whirl[0], whirl[1], facing, ctx, ev);
     } else if (breezeMode) {
       // 【新案・試し】風の形のマスに、風が残る（空きだけ。ユニットがいてもよい）。ターン終了で消える
       if (!origin && !volcano) {
-        var left = 0;
-        path.forEach(function (c) { if (getTile(s, c[0], c[1]) === 'empty') { setTile(s, c[0], c[1], 'breeze'); left++; } });
+        var left = 0, galeLeft = 0, gale = null;
+        path.forEach(function (c, j) {
+          var tt = getTile(s, c[0], c[1]);
+          if (galeAt >= 0 && j >= galeAt) {
+            // 【育つ】強風の通り道は、空きと風のマスに強風が残る
+            if (!gale) { gale = { origin: c.slice(), tile: 'gale', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }; ctx.grows.push(gale); }
+            if (tt === 'empty' || tt === 'breeze') { setTile(s, c[0], c[1], 'gale'); galeLeft++; gale.cells.push(c.slice()); gale.tiles.push('gale'); gale.wave.push(j - galeAt); }
+          } else if (tt === 'empty') { setTile(s, c[0], c[1], 'breeze'); left++; }
+        });
         if (left) ctx.phrases.push('【新案】風が' + left + 'マス吹いている（ターン終了まで）');
+        if (galeLeft) ctx.phrases.push('【育つ】強風が' + galeLeft + 'マス吹いている（ターン終了まで）');
       }
     } else if (!origin && !volcano && path.length && (B.tornadoRecipe === 'windWater' || B.tornadoRecipe === 'windWind')) {
       // 【新案】吹き抜けた先の最後のマスに、つむじ風が残る（空きで、ユニットがいないときだけ）
@@ -1213,7 +1235,7 @@
     }
     if (origin) {
       ctx.phrases.push(tileName(getTile(s, origin[0], origin[1])) + 'に風が当たった');
-      doSpread(s, origin[0], origin[1], facing, ctx, ev);
+      doSpread(s, origin[0], origin[1], facing, ctx, ev, galeAt >= 0 ? B.grow.galeSpreadBonus : 0);   // 【育つ】強風で起こした燃え広がりは遠くまで走る
     } else if (volcano) {
       ctx.phrases.push('【新案】' + tileName(getTile(s, volcano[0], volcano[1])) + 'に風が当たった');
       doEruption(s, volcano[0], volcano[1], facing, ctx, ev);
@@ -1729,6 +1751,8 @@
     if (fallen.length) ev.push({ type: 'smallfireOut', cells: fallen, text: '【新案】花びらが散った（' + fallen.length + 'マス）' });
     var calm = sweep('breeze', 'empty');
     if (calm.length) ev.push({ type: 'smallfireOut', cells: calm, text: '【新案】吹いていた風がやんだ（' + calm.length + 'マス）' });
+    var calmGale = sweep('gale', 'empty');
+    if (calmGale.length) ev.push({ type: 'smallfireOut', cells: calmGale, text: '【育つ】強風がやんだ（' + calmGale.length + 'マス）' });
     var undone = sweep('firewhirl', 'fire');
     if (undone.length) ev.push({ type: 'fireSpread', cells: undone, text: '【新案】火の渦が解けて炎になった（' + undone.length + 'マス）' });
     step();
@@ -2190,7 +2214,7 @@
   // 初期シナリオ
   //   . 空き  F 森  M 山  R 川  X 炎  s 小さな炎  V 火山  D 泥沼  P 水たまり  H 蜃気楼  I 氷  L 溶岩  W つむじ風  T 竜巻
   // ---------------------------------------------------------------
-  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill', g: 'thicket' };
+  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill', g: 'thicket', b: 'gale' };
   var PRESETS = [
     {
       id: 'mDefense', name: '【お題】防衛', mission: 'defense',

@@ -2112,6 +2112,70 @@ test('水: 敵の水も同じく、こちらの水たまりを川に育てる', 
 }, { riverLength: 4 }); });
 
 // ---------------------------------------------------------------
+console.log('\n■ 育つ（IMPROVE_grow）: 風 — 風と強風');
+CH.B = 'breeze'; CH.b = 'gale';
+test('風: 切っているときは、風の残るマスに風を当てても今までどおり', function () {
+  var s = board(['......', '......', '......', '......', '..B...', '......']);
+  var a = R.addAlly(s, 'wind', 2, 5);
+  var r = fire(s, a, 'up');
+  eq(col(r.state, 2), ['empty', 'empty', 'empty', 'breeze', 'breeze', 'empty']);
+});
+test('風: 通り道に風が残っていれば、そこから奥へ強風に育つ（4マス）', function () { withGrow(function () {
+  var s = board(['.......', '.......', '.......', '.......', '.......', '...B...', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 6);
+  var r = fire(s, a, 'up');
+  eq(col(r.state, 3), ['empty', 'empty', 'gale', 'gale', 'gale', 'gale', 'empty']);
+  ok(r.events.some(function (e) { return /風に風が重なって強風に育った/.test(e.text || ''); }), 'ログ');
+}, { galeLength: 4 }); });
+test('強風: 通り道の者は2マス運ばれる（強風の手前の者は1マス）', function () { withGrow(function () {
+  var s = board(['.......', '.......', '.......', '.......', '...B...', '.......', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 6);
+  var e1 = tough(s, R.addEnemy(s, 'fire', 3, 5));   // 風の手前（強風になる前）
+  var e2 = tough(s, R.addEnemy(s, 'fire', 3, 3));   // 強風の中
+  var r = fire(s, a, 'up');
+  eq([pos(r.state, e1.id), pos(r.state, e2.id)], [[3, 4], [3, 1]]);
+}, { galeLength: 4 }); });
+test('強風: 2マス目に押せなければ1マスで止まる', function () { withGrow(function () {
+  var s = board(['.......', '...M...', '.......', '.......', '...B...', '.......', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 5);
+  var e = tough(s, R.addEnemy(s, 'fire', 3, 3));
+  var r = fire(s, a, 'up');
+  eq(pos(r.state, e.id), [3, 2]);
+}, { galeLength: 4 }); });
+test('強風: 山で止まる（丘は通り抜ける）', function () { withGrow(function () {
+  var s = board(['.......', '...M...', '...h...', '.......', '...B...', '.......', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 5);
+  var r = fire(s, a, 'up');
+  eq(col(r.state, 3).slice(0, 5), ['empty', 'mountain', 'hill', 'gale', 'gale']);
+}, { galeLength: 4 }); });
+test('強風: 強風で起こした燃え広がりは遠くまで走る（＋2マス）', function () { withGrow(function () {
+  var rows = []; for (var y = 0; y < 10; y++) rows.push('..........');
+  rows[8] = '...B......'; rows[7] = '...X......';
+  var s = board(rows);
+  var a = R.addAlly(s, 'wind', 3, 9);
+  var r = fire(s, a, 'up');
+  // 炎 (3,7) から上へ、ふつうは4マス（(3,6)〜(3,3)）、強風なら6マス（〜(3,1)）
+  eq([tile(r.state, 3, 1), tile(r.state, 3, 0)], ['smallfire', 'empty']);
+}, { galeLength: 4, galeSpreadBonus: 2 }); });
+test('強風: 火を入れると火の渦（風と同じ）。ターン終了でやむ', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..b...', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var r = fire(s, a, 'up');
+  eq(names(r.events, 'finisher'), ['火の渦']);
+  var s2 = board(['......', '......', '......', '..b...', '......', '......']);
+  R.addAlly(s2, 'fire', 0, 5);
+  eq(tile(R.endTurn(s2).state, 2, 3), 'empty');
+}); });
+test('風: 敵の風も同じく、こちらの風を強風に育てる', function () { withGrow(function () {
+  var s = board(['......', '......', '..B...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'wind', 2, 0);
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  ok(r.events.some(function (ev) { return /強風に育った/.test(ev.text || ''); }), r.events.map(function (ev) { return ev.text; }).join(' / '));
+}); });
+
+// ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) {
   console.log('失敗: ' + failed.join(' / '));
