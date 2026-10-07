@@ -14,7 +14,7 @@
 
   // よく触る項目（パネルの一番上にまとめる）【仮】
   var FAVORITES = [
-    'grow.enabled',
+    'grow.enabled', 'grow.mountainSize',
     'ally.hp', 'ally.move', 'ally.power',
     'enemy.hp', 'enemy.move', 'enemy.power',
     'fire.strongDamage', 'fire.weakDamage', 'fire.burnDamage', 'fire.burnTurns', 'fire.burnOutTurns', 'fireTileDamage',
@@ -27,7 +27,7 @@
     _fav: 'よく触る', _top: 'そのほか',
     ally: '味方', enemy: '敵', mission: 'お題', fire: '炎', spread: '燃え広がり', shock: '感電',
     funka: '噴火', fireTornado: '火炎竜巻', sentakuki: 'センタクキ', dark: '闇', haunt: 'オバケヤシキ',
-    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）'
+    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方'
   };
 
   // 項目の日本語ラベル。ここにない項目は元の名前をそのまま出す
@@ -49,6 +49,8 @@
     'dark.pullRange': '闇が引き寄せる範囲',
     'haunt.pullRange': 'オバケヤシキが引き寄せる範囲', 'haunt.damage': 'オバケヤシキのダメージ',
     'grow.enabled': '育つ（1回目は小さく、同じ魔法をもう1回で育つ）',
+    'grow.mountainSize': '育つ: 山の大きさ（1・4・5・9マス）',
+    'fx.grow': '育つ瞬間を波で見せる',
     'eruption.depth': '桜吹雪の奥行き（段）', 'eruption.base': '桜吹雪のダメージ', 'eruption.perVolcano': '桜吹雪: 火山1つごとの追加',
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',
     'ideas.windClearsMirage': '風で蜃気楼が晴れる', 'ideas.spreadMeltsIce': '燃え広がりは氷を溶かす'

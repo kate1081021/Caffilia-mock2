@@ -259,6 +259,21 @@
     });
   }
 
+  // 【育つ】育つ瞬間: 元のマスから育つ先へ、順に盛り上がって見せる
+  function fxGrow(g) {
+    g.cells.forEach(function (c, i) {
+      var p = cellCenter(c[0], c[1]);
+      if (!p) return;
+      var d = document.createElement('div');
+      d.className = 'rise ' + g.tile;
+      d.style.left = p.x + 'px';
+      d.style.top = p.y + 'px';
+      d.style.animationDelay = (g.wave[i] || 0) * 80 + 'ms';
+      el.fx.appendChild(d);
+      setTimeout(function () { d.remove(); }, 1100 + (g.wave[i] || 0) * 80);
+    });
+  }
+
   // 出来事をログに足し、演出を出す
   function showEvents(events, animate) {
     var hl = {}, flash = {}, finishers = [];
@@ -297,6 +312,7 @@
         if (e.name === '桜吹雪' && e.origin) fxPetals(e.origin, e.cells || [], e.pink);
       });
       events.forEach(function (e) { if (e.type === 'vortex' && e.center) fxVortex(e.center); });
+      if (B.fx.grow) events.forEach(function (e) { (e.grows || []).forEach(fxGrow); });
       events.forEach(function (e) {
         if (e.type === 'damage' && e.cells) {
           var c = e.cells[0];
@@ -859,7 +875,7 @@
     });
 
     // 予測
-    var shape = {}, range = {}, strong = {}, change = {}, dmg = {};
+    var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {};
     if (pv) {
       pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
       pv.finishers.forEach(function (f) {
@@ -868,6 +884,11 @@
       });
       pv.tileChanges.forEach(function (c) { change[key(c.x, c.y)] = c.to; });
       pv.damages.forEach(function (d) { dmg[d.id] = d; });
+      // 【育つ】育ったあとの形を薄く重ね、育てないマスに印
+      (pv.grows || []).forEach(function (g) {
+        g.cells.forEach(function (c) { growPv[key(c[0], c[1])] = g.tile; });
+        g.blocked.forEach(function (c) { growNo[key(c[0], c[1])] = true; });
+      });
     }
     // 予告
     var fcShot = {}, fcGhost = {}, fcSpread = {}, fcOut = {}, fcChange = {}, fcRange = {}, fcStrong = {}, warn = {};
@@ -953,6 +974,7 @@
         if (u && app.plan && app.plan.to[0] === x && app.plan.to[1] === y) cls.push('plan-to');
         if (guide[k] === 'finisher' && reach[k] !== undefined) cls.push('guide-finisher');
         if (shape[k]) cls.push('pv-shape');
+        if (growPv[k]) cls.push('pv-grow');
         if (range[k]) cls.push('pv-range');
         if (strong[k]) cls.push('pv-strong');
         if (fcShot[k]) cls.push('fc-shot');
@@ -990,6 +1012,8 @@
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
         }
+        if (growPv[k]) inner += '<span class="g-ghost" title="育ったあとの形"></span>';
+        if (growNo[k]) inner += '<span class="b-nogrow" title="育たない（ユニットがいる・ほかの自然がある）">×</span>';
         if (change[k]) inner += '<span class="b-change">→' + esc(SHORT[change[k]]) + '</span>';
         else if (fcChange[k]) inner += '<span class="b-change enemy">→' + esc(SHORT[fcChange[k]]) + '</span>';
         var badges = '';

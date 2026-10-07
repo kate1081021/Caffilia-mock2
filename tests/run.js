@@ -1665,10 +1665,11 @@ test('エディットで置きもの・印・宝を置ける（馬車は1台ま�
 // ---------------------------------------------------------------
 console.log('\n■ 育つ（IMPROVE_grow）: 土 — 丘と山');
 // grow.enabled を入れて試す（終わったら元に戻す）
-function withGrow(fn) {
-  var was = B.grow.enabled;
+function withGrow(fn, set) {
+  var was = JSON.parse(JSON.stringify(B.grow));
   B.grow.enabled = true;
-  try { fn(); } finally { B.grow.enabled = was; }
+  Object.keys(set || {}).forEach(function (k) { B.grow[k] = set[k]; });
+  try { fn(); } finally { Object.keys(was).forEach(function (k) { B.grow[k] = was[k]; }); }
 }
 CH.h = 'hill';
 
@@ -1771,8 +1772,66 @@ test('育つ: 敵の土も同じく、丘を山に育てる', function () { with
   R.addAlly(s, 'fire', 0, 5);
   intend(s, e, 'down');
   var r = R.endTurn(s);
-  eq([tile(r.state, 2, 2), tile(r.state, 3, 2), tile(r.state, 3, 3)], ['mountain', 'hill', 'hill']);
+  // 丘 (2,2) を元に十字が山。同じ1発でできた丘 (3,2) も十字に入るので山。(3,3) は丘のまま
+  eq([tile(r.state, 2, 2), tile(r.state, 2, 1), tile(r.state, 3, 2), tile(r.state, 3, 3)], ['mountain', 'mountain', 'mountain', 'hill']);
 }); });
+
+// 7×7 の (3,3) に丘。味方の土が (3,5) から上へ撃つと、形は (3,3) と (2,3)(2,2)。空きの2マスは先に丘になってから、(3,3) が育つ
+function growBoard(extra) {
+  var rows = ['.......', '.......', '.......', '...h...', '.......', '.......', '.......'];
+  (extra || []).forEach(function (e) { rows[e[1]] = rows[e[1]].slice(0, e[0]) + e[2] + rows[e[1]].slice(e[0] + 1); });
+  var s = board(rows);
+  var a = R.addAlly(s, 'earth', 3, 5);
+  return { s: s, a: a };
+}
+function mountains(s) {
+  var out = [];
+  for (var y = 0; y < s.size; y++) for (var x = 0; x < s.size; x++) if (tile(s, x, y) === 'mountain') out.push(x + ',' + y);
+  return out.sort();
+}
+test('育つ: 山の大きさ 1 は、その丘だけ', function () { withGrow(function () {
+  var g = growBoard(), r = fire(g.s, g.a, 'up');
+  eq(mountains(r.state), ['3,3']);
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2)], ['hill', 'hill']);
+}, { mountainSize: 1 }); });
+test('育つ: 山の大きさ 4 は 2×2（丘を角に、術者から見て奥・右へ）', function () { withGrow(function () {
+  var g = growBoard(), r = fire(g.s, g.a, 'up');
+  eq(mountains(r.state), ['3,2', '3,3', '4,2', '4,3']);
+  // 右を向いて撃つときは、術者の右 = 下 になる: 土は (5,4)(5,5)(6,4)。(5,4) に丘を置いて確かめる
+  var s3 = board(['.......', '.......', '.......', '.......', '.....h.', '.......', '.......']);
+  var a3 = R.addAlly(s3, 'earth', 3, 5);
+  var r3 = fire(s3, a3, 'right');
+  ok(mountains(r3.state).indexOf('5,4') >= 0 && mountains(r3.state).indexOf('6,4') >= 0 && mountains(r3.state).indexOf('5,5') >= 0, '奥（右）と術者の右（下）へ: ' + mountains(r3.state));
+}, { mountainSize: 4 }); });
+test('育つ: 山の大きさ 5 は十字（同じ1発でできた丘も十字に入れば山）', function () { withGrow(function () {
+  var g = growBoard(), r = fire(g.s, g.a, 'up');
+  eq(mountains(r.state), ['2,3', '3,2', '3,3', '3,4', '4,3']);
+  eq(tile(r.state, 2, 2), 'hill');
+}, { mountainSize: 5 }); });
+test('育つ: 山の大きさ 9 は 3×3', function () { withGrow(function () {
+  var g = growBoard(), r = fire(g.s, g.a, 'up');
+  eq(mountains(r.state).length, 9);
+  eq([tile(r.state, 2, 2), tile(r.state, 4, 4)], ['mountain', 'mountain']);
+}, { mountainSize: 9 }); });
+test('育つ: ユニットのいるマス・ほかの自然のマスは山にならない（育てなかったマスとして残る）', function () { withGrow(function () {
+  var g = growBoard([[4, 3, 'F']]);
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 3, 4));
+  var r = fire(g.s, g.a, 'up');
+  eq(tile(r.state, 4, 3), 'forest');
+  eq(tile(r.state, 3, 4), 'empty');
+  eq(pos(r.state, e.id), [3, 4], '押し出しはまだない');
+  var cast = r.events.filter(function (ev) { return ev.type === 'cast'; })[0];
+  eq(sorted(cast.grows[0].blocked), ['3,4', '4,3']);
+  var pv = R.previewAct(g.s, g.a.id, [3, 5], 'up');
+  eq(sorted(pv.grows[0].cells), ['2,3', '3,2', '3,3'], '予測にも育つマスが出る');
+}, { mountainSize: 5 }); });
+test('育つ: 波の順（元が0、となりが1、ななめが2）', function () { withGrow(function () {
+  var g = growBoard(), r = fire(g.s, g.a, 'up');
+  var gr = r.events.filter(function (ev) { return ev.type === 'cast'; })[0].grows[0];
+  eq(gr.origin, [3, 3]);
+  eq(gr.wave[0], 0);
+  ok(gr.wave.indexOf(2) > gr.wave.lastIndexOf(1), '近い順');
+}, { mountainSize: 9 }); });
 
 // ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');

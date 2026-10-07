@@ -290,7 +290,7 @@
   // ---------------------------------------------------------------
   // ダメージ（1発の中では1ユニットに1回だけ。一番大きいもの）
   // ---------------------------------------------------------------
-  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [] }; }
+  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [] }; }
 
   function addHit(ctx, u, amount, src) {
     var h = ctx.hits[u.id];
@@ -517,9 +517,43 @@
   // 魔法を撃つ（術者の今の位置と向きから）
   // ---------------------------------------------------------------
 
+  // 【育つ】育つ範囲（(x,y) が元）。size: 1 そのマスだけ／4 2×2（元を角に、術者から見て奥・右へ）／5 十字／9 3×3
+  //   ほかの数は、それ以下で一番近いもの。元に近い順（波の順）に並べ、d は元からの歩数
+  function growArea(s, x, y, facing, size) {
+    var offs;
+    if (size >= 9) offs = [[0, 0], [0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+    else if (size >= 5) offs = [[0, 0], [0, 1], [1, 0], [0, -1], [-1, 0]];
+    else if (size >= 4) offs = [[0, 0], [0, 1], [1, 0], [1, 1]];
+    else offs = [[0, 0]];
+    var out = [];
+    offs.forEach(function (o) {
+      var d = rotate(facing, o[0], o[1]);   // o は術者から見て [右, 奥]
+      var cx = x + d[0], cy = y + d[1];
+      if (inBounds(s, cx, cy)) out.push({ x: cx, y: cy, d: Math.abs(o[0]) + Math.abs(o[1]) });
+    });
+    return out;
+  }
+  // 【育つ】(x,y) を元に、範囲の from のマスを to に育てる。ユニットのいるマス・ほかの自然のマスは育たない（blocked）
+  //   見せ方のため ctx.grows に { origin, tile, cells, wave, blocked } を残す（cast の出来事に付く）
+  function growNature(s, x, y, facing, size, from, to, ctx, phrase) {
+    var g = { origin: [x, y], tile: to, cells: [], wave: [], blocked: [] };
+    growArea(s, x, y, facing, size).forEach(function (c) {
+      var t = getTile(s, c.x, c.y);
+      if (t === to) return;
+      if (!from[t] || unitAt(s, c.x, c.y)) { g.blocked.push([c.x, c.y]); return; }
+      setTile(s, c.x, c.y, to);
+      g.cells.push([c.x, c.y]);
+      g.wave.push(c.d);
+      if (!inCells(ctx.cells, c.x, c.y)) ctx.cells.push([c.x, c.y]);
+    });
+    ctx.grows.push(g);
+    if (g.cells.length) ctx.phrases.push(phrase + '（' + g.cells.length + 'マス）');
+    return g;
+  }
+
   // 置く（草・土）・点ける（火）・【新案】走る（雷）
   function placeOrIgnite(s, u, facing, ctx, ev) {
-    var shocked = {}, erupted = {}, planted = [];
+    var shocked = {}, erupted = {}, planted = [], growFrom = [];
     castCells(s, u, facing).forEach(function (c) {
       var x = c[0], y = c[1];
       ctx.cells.push([x, y]);
@@ -533,7 +567,7 @@
         // 【育つ】入のときは、空きに土で丘、丘に土で山に育つ。火を埋めても丘
         var low = B.grow.enabled ? 'hill' : 'mountain';
         if (!o && t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた'); }
-        else if (!o && t === 'hill' && B.grow.enabled) { setTile(s, x, y, 'mountain'); ctx.phrases.push('【育つ】丘が山に育った'); }
+        else if (!o && t === 'hill' && B.grow.enabled) growFrom.push([x, y]);   // 育つのは、形のほかのマスを済ませたあと（順番で結果が変わらないように）
         else if (!o && (t === 'river' || t === 'puddle')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); }
         else if (!o && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); }
       } else if (u.magic === 'senpu') {
@@ -553,6 +587,10 @@
           else doSentakuki(s, x, y, ctx, ev);
         }
       }
+    });
+    // 【育つ】丘に土: 丘を元に、まわりの空きと丘が山に盛り上がる
+    growFrom.forEach(function (c) {
+      growNature(s, c[0], c[1], facing, B.grow.mountainSize, { empty: true, hill: true }, 'mountain', ctx, '【育つ】丘が山に育った');
     });
     // 【新案】水辺の森はよく育つ: 水に接して植えた森は、水に接しているとなりの空きにも広がる
     if (B.ideas.wetlandForest && planted.length) {
@@ -1117,6 +1155,7 @@
     else if (u.magic === 'dark') darken(s, u, facing, ctx, ev);
     else placeOrIgnite(s, u, facing, ctx, ev);
     castEv.cells = ctx.cells;
+    if (ctx.grows.length) castEv.grows = ctx.grows;   // 【育つ】育ったマスと、育てなかったマス（見せ方用）
     var any = ctx.phrases.length || ctx.order.length;
     castEv.text = label + 'が' + DIRS[facing].name + 'へ' + magicName(u.magic) + 'の魔法（' + MAGIC_INFO[u.magic].verb + '）→ ' +
       (ctx.phrases.length ? summarize(ctx.phrases) : (any ? '' : '何も起きなかった'));
@@ -1688,7 +1727,7 @@
     });
     return {
       state: s, events: ev, cells: ctx.cells, tileChanges: tileChanges, damages: damages, moves: moves,
-      finishers: ctx.finishers, from: [u0.x, u0.y], to: to || [u0.x, u0.y], dir: dir
+      finishers: ctx.finishers, grows: ctx.grows, from: [u0.x, u0.y], to: to || [u0.x, u0.y], dir: dir
     };
   }
 
