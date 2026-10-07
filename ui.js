@@ -265,7 +265,7 @@
       var p = cellCenter(c[0], c[1]);
       if (!p) return;
       var d = document.createElement('div');
-      d.className = 'rise ' + g.tile;
+      d.className = 'rise ' + ((g.tiles && g.tiles[i]) || g.tile);
       d.style.left = p.x + 'px';
       d.style.top = p.y + 'px';
       d.style.animationDelay = (g.wave[i] || 0) * 80 + 'ms';
@@ -886,7 +886,7 @@
       pv.damages.forEach(function (d) { dmg[d.id] = d; });
       // 【育つ】育ったあとの形を薄く重ね、育てないマスに印
       (pv.grows || []).forEach(function (g) {
-        g.cells.forEach(function (c) { growPv[key(c[0], c[1])] = g.tile; });
+        g.cells.forEach(function (c, i) { growPv[key(c[0], c[1])] = (g.tiles && g.tiles[i]) || g.tile; });
         g.blocked.forEach(function (c) { growNo[key(c[0], c[1])] = true; });
       });
     }
@@ -1012,7 +1012,7 @@
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
         }
-        if (growPv[k]) inner += '<span class="g-ghost" title="育ったあとの形"></span>';
+        if (growPv[k]) inner += '<span class="g-ghost ' + growPv[k] + '" title="育ったあとの形（' + esc(SHORT[growPv[k]]) + '）"></span>';
         if (growNo[k]) inner += '<span class="b-nogrow" title="育たない（ユニットがいる・ほかの自然がある）">×</span>';
         if (change[k]) inner += '<span class="b-change">→' + esc(SHORT[change[k]]) + '</span>';
         else if (fcChange[k]) inner += '<span class="b-change enemy">→' + esc(SHORT[fcChange[k]]) + '</span>';

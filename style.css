@@ -773,3 +773,6 @@ button.primary.pending { box-shadow: 0 0 0 3px #fde68a; }
 .howto-card h2 { margin: 0 0 8px; font-size: 18px; }
 .howto-card ol { padding-left: 1.3em; margin: 0 0 14px; line-height: 1.75; }
 .howto-card button { display: block; margin-left: auto; padding: 8px 22px; }
+/* 【育つ・試し】グラデーション: まわりの丘は低く小さく盛り上がる */
+.g-ghost.hill { inset: 45% 10% 6% 10%; border-radius: 50% 50% 6px 6px; }
+.rise.hill { width: 52px; height: 26px; margin: -2px 0 0 -26px; clip-path: ellipse(50% 100% at 50% 100%); background: linear-gradient(180deg, #b7a487, #9c8a6f); }

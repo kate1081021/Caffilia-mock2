@@ -533,16 +533,44 @@
     });
     return out;
   }
-  // 【育つ】(x,y) を元に、範囲の from のマスを to に育てる。ユニットのいるマス・ほかの自然のマスは育たない（blocked）
-  //   見せ方のため ctx.grows に { origin, tile, cells, wave, blocked } を残す（cast の出来事に付く）
-  function growNature(s, x, y, facing, size, from, to, ctx, phrase) {
-    var g = { origin: [x, y], tile: to, cells: [], wave: [], blocked: [] };
-    growArea(s, x, y, facing, size).forEach(function (c) {
-      var t = getTile(s, c.x, c.y);
-      if (t === to) return;
+  // 【育つ】元 (x,y) から見た (dx,dy) の外向き（縦横で差の大きい方。同じなら術者の向きの軸で外へ）
+  function outwardDir(dx, dy, facing) {
+    var ax = Math.abs(dx), ay = Math.abs(dy);
+    if (ax === ay) { if (DIRS[facing].dx !== 0) ay = -1; else ax = -1; }
+    if (ax > ay) return dx > 0 ? 'right' : 'left';
+    return dy > 0 ? 'down' : 'up';
+  }
+
+  // 【育つ】(x,y) を元に、範囲の from のマスを to に育てる。術者 u の魔法として働く
+  //   opts.slope: 元以外のマスは slope にする（山のまわりは丘、のグラデーション）
+  //   opts.push:  to が通れないとき、範囲にいる者を元から見て外向きに1マス押し出す（風で押されたときと同じく、直撃＋押す）。
+  //               押せなければその者は残り、そのマスは育たない
+  //   ユニットのいるマス（押し出さないとき）・ほかの自然のマスは育たない（blocked）
+  //   見せ方のため ctx.grows に { origin, tile, cells, tiles, wave, blocked, pushed } を残す（cast の出来事に付く）
+  function growNature(s, x, y, u, facing, size, from, to, ctx, ev, phrase, opts) {
+    opts = opts || {};
+    var g = { origin: [x, y], tile: to, cells: [], tiles: [], wave: [], blocked: [], pushed: [] };
+    var area = growArea(s, x, y, facing, size);
+    function target(c) { return c.d > 0 && opts.slope ? opts.slope : to; }
+    if (opts.push) {
+      // 遠いマスから押す（並んでいても外側から空ける）
+      area.map(function (c, i) { return { c: c, i: i }; })
+        .sort(function (p, q) { return q.c.d - p.c.d || p.i - q.i; })
+        .forEach(function (e) {
+          var c = e.c, o = unitAt(s, c.x, c.y), t = getTile(s, c.x, c.y), tt = target(c);
+          if (!o || t === tt || t === to || !from[t] || isPassable(tt)) return;
+          addHit(ctx, o, u.power, 'direct');
+          var dir = outwardDir(c.x - x, c.y - y, facing);
+          if (pushOne(s, o, dir, ev, '【育つ】' + unitLabel(s, o) + 'は盛り上がる' + tileName(tt) + 'に押し出された（' + DIRS[dir].name + 'へ1マス）')) g.pushed.push(o.id);
+        });
+    }
+    area.forEach(function (c) {
+      var t = getTile(s, c.x, c.y), tt = target(c);
+      if (t === tt || t === to) return;   // もう同じか、より高い（山のまわりの丘にしようとしたら山だった）
       if (!from[t] || unitAt(s, c.x, c.y)) { g.blocked.push([c.x, c.y]); return; }
-      setTile(s, c.x, c.y, to);
+      setTile(s, c.x, c.y, tt);
       g.cells.push([c.x, c.y]);
+      g.tiles.push(tt);
       g.wave.push(c.d);
       if (!inCells(ctx.cells, c.x, c.y)) ctx.cells.push([c.x, c.y]);
     });
@@ -590,7 +618,8 @@
     });
     // 【育つ】丘に土: 丘を元に、まわりの空きと丘が山に盛り上がる
     growFrom.forEach(function (c) {
-      growNature(s, c[0], c[1], facing, B.grow.mountainSize, { empty: true, hill: true }, 'mountain', ctx, '【育つ】丘が山に育った');
+      growNature(s, c[0], c[1], u, facing, B.grow.mountainSize, { empty: true, hill: true }, 'mountain', ctx, ev, '【育つ】丘が山に育った',
+        { push: B.grow.pushOut, slope: B.grow.mountainSlope ? 'hill' : null });
     });
     // 【新案】水辺の森はよく育つ: 水に接して植えた森は、水に接しているとなりの空きにも広がる
     if (B.ideas.wetlandForest && planted.length) {
@@ -1042,6 +1071,36 @@
     else if (whirlHit) growTornado(s, whirlHit[0], whirlHit[1], facing, ctx, ev, '【新案】つむじ風が水を巻き上げて竜巻になった');
   }
 
+  // o を dir へ1マス押す（風で運ぶ・【育つ】盛り上がる山の押し出し）。押せたら true
+  //   動かない置きもの・盤の端・通れないマス・ユニットがいるときは押せない。氷の上は滑り、泥沼に入ればはまる
+  function pushOne(s, o, dir, ev, okText) {
+    var F = DIRS[dir];
+    var cx = o.x, cy = o.y, nx = cx + F.dx, ny = cy + F.dy;
+    var why = null;
+    if (isFixed(o)) why = '動かない';
+    else if (!inBounds(s, nx, ny)) why = '盤の端';
+    else if (!isPassable(getTile(s, nx, ny))) why = tileName(getTile(s, nx, ny)) + 'があって通れない';
+    else if (unitAt(s, nx, ny)) why = unitLabel(s, unitAt(s, nx, ny)) + 'がいる';
+    if (why) {
+      ev.push({ type: 'push', id: o.id, ok: false, text: unitLabel(s, o) + 'は押されなかった（' + why + '）' });
+      return false;
+    }
+    ev.push({ type: 'push', id: o.id, ok: true, from: [cx, cy], to: [nx, ny], text: okText });
+    o.x = nx; o.y = ny;
+    // 【新案】氷の上は滑る: 氷が途切れるか、次のマスに進めなくなるまで滑り続ける
+    if (B.ideas.iceSlide && getTile(s, nx, ny) === 'ice') {
+      var slid = 0, from0 = [nx, ny];
+      while (getTile(s, o.x, o.y) === 'ice') {
+        var sx = o.x + F.dx, sy = o.y + F.dy;
+        if (!inBounds(s, sx, sy) || !isPassable(getTile(s, sx, sy)) || unitAt(s, sx, sy)) break;
+        o.x = sx; o.y = sy; slid++;
+      }
+      if (slid) ev.push({ type: 'push', id: o.id, ok: true, from: from0, to: [o.x, o.y], text: '【新案】' + unitLabel(s, o) + 'は氷の上を' + slid + 'マス滑った' });
+    }
+    if (getTile(s, o.x, o.y) === 'mud') enterMud(s, o, ev);
+    return true;
+  }
+
   // 吹き抜ける（風）＝ 運ぶ
   function blow(s, u, facing, ctx, ev) {
     var F = DIRS[facing], from = castOrigin(s, u, facing);   // 【育つ】丘の上からは1マス先から吹く
@@ -1081,28 +1140,7 @@
       var o = unitAt(s, cx, cy);
       if (!o) continue;
       addHit(ctx, o, u.power, 'direct');
-      var why = null;
-      if (isFixed(o)) why = '動かない';
-      else if (!inBounds(s, nx, ny)) why = '盤の端';
-      else if (!isPassable(getTile(s, nx, ny))) why = tileName(getTile(s, nx, ny)) + 'があって通れない';
-      else if (unitAt(s, nx, ny)) why = unitLabel(s, unitAt(s, nx, ny)) + 'がいる';
-      if (why) {
-        ev.push({ type: 'push', id: o.id, ok: false, text: unitLabel(s, o) + 'は押されなかった（' + why + '）' });
-      } else {
-        ev.push({ type: 'push', id: o.id, ok: true, from: [cx, cy], to: [nx, ny], text: unitLabel(s, o) + 'を' + F.name + 'へ1マス運んだ' });
-        o.x = nx; o.y = ny;
-        // 【新案】氷の上は滑る: 氷が途切れるか、次のマスに進めなくなるまで滑り続ける
-        if (B.ideas.iceSlide && getTile(s, nx, ny) === 'ice') {
-          var slid = 0, from0 = [nx, ny];
-          while (getTile(s, o.x, o.y) === 'ice') {
-            var sx = o.x + F.dx, sy = o.y + F.dy;
-            if (!inBounds(s, sx, sy) || !isPassable(getTile(s, sx, sy)) || unitAt(s, sx, sy)) break;
-            o.x = sx; o.y = sy; slid++;
-          }
-          if (slid) ev.push({ type: 'push', id: o.id, ok: true, from: from0, to: [o.x, o.y], text: '【新案】' + unitLabel(s, o) + 'は氷の上を' + slid + 'マス滑った' });
-        }
-        if (getTile(s, o.x, o.y) === 'mud') enterMud(s, o, ev);
-      }
+      pushOne(s, o, facing, ev, unitLabel(s, o) + 'を' + F.name + 'へ1マス運んだ');
     }
     if (whirl) {
       growTornado(s, whirl[0], whirl[1], facing, ctx, ev);

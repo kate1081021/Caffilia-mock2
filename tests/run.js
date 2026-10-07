@@ -1819,12 +1819,12 @@ test('育つ: ユニットのいるマス・ほかの自然のマスは山にな
   var r = fire(g.s, g.a, 'up');
   eq(tile(r.state, 4, 3), 'forest');
   eq(tile(r.state, 3, 4), 'empty');
-  eq(pos(r.state, e.id), [3, 4], '押し出しはまだない');
+  eq(pos(r.state, e.id), [3, 4], '押し出しを切っているので、その場に残る');
   var cast = r.events.filter(function (ev) { return ev.type === 'cast'; })[0];
   eq(sorted(cast.grows[0].blocked), ['3,4', '4,3']);
   var pv = R.previewAct(g.s, g.a.id, [3, 5], 'up');
   eq(sorted(pv.grows[0].cells), ['2,3', '3,2', '3,3'], '予測にも育つマスが出る');
-}, { mountainSize: 5 }); });
+}, { mountainSize: 5, pushOut: false }); });
 test('育つ: 波の順（元が0、となりが1、ななめが2）', function () { withGrow(function () {
   var g = growBoard(), r = fire(g.s, g.a, 'up');
   var gr = r.events.filter(function (ev) { return ev.type === 'cast'; })[0].grows[0];
@@ -1832,6 +1832,70 @@ test('育つ: 波の順（元が0、となりが1、ななめが2）', function 
   eq(gr.wave[0], 0);
   ok(gr.wave.indexOf(2) > gr.wave.lastIndexOf(1), '近い順');
 }, { mountainSize: 9 }); });
+
+test('押し出し: 山になるマスにいた者は、丘から見て外向きに1マス押し出される（直撃も受ける）', function () { withGrow(function () {
+  var g = growBoard();
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 3));   // 丘 (3,3) の右
+  var r = fire(g.s, g.a, 'up');
+  eq(pos(r.state, e.id), [5, 3]);
+  eq(tile(r.state, 4, 3), 'mountain', '空いたマスは山になる');
+  eq(dealt(r, e.id), 1);
+  ok(r.events.some(function (ev) { return /盛り上がる山に押し出された（右へ1マス）/.test(ev.text || ''); }), 'ログ');
+}, { mountainSize: 5 }); });
+test('押し出し: 押せないとき（盤の端・通れない・ユニットがいる）は残り、そのマスは山にならない', function () { withGrow(function () {
+  var g = growBoard([[5, 3, 'M']]);
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 3));   // 右の先は山で通れない
+  var b = tough(g.s, R.addEnemy(g.s, 'fire', 3, 2));   // 上
+  tough(g.s, R.addEnemy(g.s, 'fire', 3, 1));           // 上の先にユニット
+  var r = fire(g.s, g.a, 'up');
+  eq([pos(r.state, e.id), pos(r.state, b.id)], [[4, 3], [3, 2]]);
+  eq([tile(r.state, 4, 3), tile(r.state, 3, 2)], ['empty', 'empty']);
+  eq(dealt(r, e.id), 1, '押せなくても直撃は受ける');
+}, { mountainSize: 5 }); });
+test('押し出し: ななめのマス（3×3）は、術者の向きの軸で外へ', function () { withGrow(function () {
+  var g = growBoard();
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 2));   // 丘 (3,3) の右上（術者は上向き）→ 上へ
+  var f = tough(g.s, R.addEnemy(g.s, 'fire', 4, 4));   // 右下 → 下へ
+  var r = fire(g.s, g.a, 'up');
+  eq([pos(r.state, e.id), pos(r.state, f.id)], [[4, 1], [4, 5]]);
+}, { mountainSize: 9 }); });
+test('押し出し: 押された先が泥沼ならはまる', function () { withGrow(function () {
+  var g = growBoard([[5, 3, 'D']]);
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 3));
+  var r = fire(g.s, g.a, 'up');
+  eq(pos(r.state, e.id), [5, 3]);
+  ok(R.findUnit(r.state, e.id).stuck, 'はまった');
+}, { mountainSize: 5 }); });
+test('押し出し: 味方も同じく押し出される', function () { withGrow(function () {
+  var g = growBoard();
+  var b = R.addAlly(g.s, 'fire', 2, 3);   // 丘 (3,3) の左。土の形のマスでもある（直撃）
+  var r = fire(g.s, g.a, 'up');
+  eq(pos(r.state, b.id), [1, 3]);
+  eq(tile(r.state, 2, 3), 'mountain');
+}, { mountainSize: 5 }); });
+test('押し出し: 敵の土でも同じく押し出される', function () { withGrow(function () {
+  var s = board(['......', '......', '..h...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'earth', 2, 0);
+  var a = tough(s, R.addAlly(s, 'fire', 1, 2));   // 丘 (2,2) の左（敵の直撃3で倒れないように）
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  eq(pos(r.state, a.id), [0, 2]);
+  eq(tile(r.state, 1, 2), 'mountain');
+}, { mountainSize: 5 }); });
+test('グラデーション: 入なら、山になるのは元の丘だけで、まわりは丘', function () { withGrow(function () {
+  var g = growBoard();
+  var r = fire(g.s, g.a, 'up');
+  eq(mountains(r.state), ['3,3']);
+  eq([tile(r.state, 3, 2), tile(r.state, 4, 3), tile(r.state, 3, 4), tile(r.state, 2, 3)], ['hill', 'hill', 'hill', 'hill']);
+}, { mountainSize: 5, mountainSlope: true }); });
+test('グラデーション: まわりが丘なら通れるので、押し出さない', function () { withGrow(function () {
+  var g = growBoard();
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 3));
+  var r = fire(g.s, g.a, 'up');
+  eq(pos(r.state, e.id), [4, 3]);
+  eq(tile(r.state, 4, 3), 'empty', 'ユニットのいるマスは丘にもならない');
+}, { mountainSize: 5, mountainSlope: true }); });
 
 // ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
