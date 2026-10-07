@@ -21,6 +21,7 @@
   var TILE_INFO = {
     empty:     { name: '空き',     label: '',   passable: true  },
     forest:    { name: '森',       label: '森', passable: true  },
+    thicket:   { name: '草むら',   label: '草', passable: true  },   // 【育つ】草の一段目。低い草。燃える。草をもう一度当てると森に育つ
     mountain:  { name: '山',       label: '山', passable: false },
     hill:      { name: '丘',       label: '丘', passable: true  },   // 【育つ】土の一段目。入ると止まる。上から撃つと形が1マス先へ（高台）
     river:     { name: '川',       label: '川', passable: false },
@@ -63,6 +64,10 @@
     left:  { dx: -1, dy: 0,  name: '左' }
   };
   var DIR_ORDER = ['up', 'right', 'down', 'left'];   // 同じ条件の候補が複数あるときの優先順
+
+  // 【育つ】燃える植物（森・草むら）と、燃えて強い炎になる植物（今は森だけ）
+  function isPlant(t) { return t === 'forest' || t === 'thicket'; }
+  function burnsStrong(t) { return t === 'forest'; }
 
   // 燃え広がりを止めるマス
   var SPREAD_BLOCKERS = { mountain: true, river: true, volcano: true, lava: true, tornado: true, sakura: true, haunted: true };
@@ -393,8 +398,9 @@
       while (stack.length) {
         var c = stack.pop();
         var k = key(c[0], c[1]);
-        if (burned[k] || getTile(s, c[0], c[1]) !== 'forest') continue;
-        burned[k] = true;
+        var bt = getTile(s, c[0], c[1]);
+        if (burned[k] || !isPlant(bt)) continue;
+        burned[k] = bt;
         burnedList.push(c);
         neighbors(s, c[0], c[1]).forEach(function (n) { stack.push([n.x, n.y]); });
       }
@@ -406,7 +412,7 @@
       var t = getTile(s, x, y);
       if (SPREAD_BLOCKERS[t]) break;
       path.push([x, y]);
-      if (t === 'forest') burnComponent(x, y);
+      if (isPlant(t)) burnComponent(x, y);
     }
 
     // 地形: 通り道の空きは小さな炎、燃えた森は炎。起点の炎はそのまま
@@ -421,20 +427,24 @@
     burnedList.forEach(function (c) {
       if (!cells.some(function (p) { return p[0] === c[0] && p[1] === c[1]; })) cells.push(c);
     });
+    // 強い炎になるのは、燃えた森のマス（【育つ】草むらは燃えるが、今は弱い炎）
+    var strongList = burnedList.filter(function (c) { return burnsStrong(burned[key(c[0], c[1])]); });
+    var grassN = burnedList.length - strongList.length;
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
-      if (burned[key(c[0], c[1])]) addHit(ctx, u, B.fire.strongDamage, 'finisher');
+      if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher');
       else addHit(ctx, u, B.fire.weakDamage, 'weakfire');
     });
-    var amount = burnedList.length ? B.fire.strongDamage : B.fire.weakDamage;
-    var fin = { name: '燃え広がり', cells: cells, strong: burnedList.slice(), damage: amount, forests: burnedList.length };
+    var amount = strongList.length ? B.fire.strongDamage : B.fire.weakDamage;
+    var fin = { name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length };
     ctx.finishers.push(fin);
     ev.push({
-      type: 'finisher', name: '燃え広がり', cells: cells, strong: burnedList.slice(), damage: amount, forests: burnedList.length,
+      type: 'finisher', name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length,
       text: '燃え広がり！ ' + DIRS[dir].name + 'へ' + path.length + 'マス走り、' +
-        (burnedList.length ? '森' + burnedList.length + 'つが燃えた（燃えた森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
-          : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）')
+        (strongList.length ? '森' + strongList.length + 'つが燃えた（燃えた森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
+          : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
+        (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '')
     });
     return fin;
   }
@@ -501,6 +511,7 @@
       if (pink) { if (t === 'empty') setTile(s, c[0], c[1], 'petals'); return; }   // 【新案・試し】桜なら花びらが積もる（燃えない）
       if (t === 'empty') setTile(s, c[0], c[1], 'smallfire');
       else if (t === 'forest') { setTile(s, c[0], c[1], 'fire'); burned++; }
+      else if (t === 'thicket') setTile(s, c[0], c[1], 'fire');
     });
     comp.forEach(function (c) { setTile(s, c[0], c[1], 'mountain'); });
     var fin = { name: '桜吹雪', cells: cells, damage: amount, volcanoes: comp.length, pink: pink };
@@ -589,7 +600,10 @@
       if (o) addHit(ctx, o, u.power, 'direct');
       var t = getTile(s, x, y);
       if (u.magic === 'grass') {
-        if (!o && t === 'empty') { setTile(s, x, y, 'forest'); ctx.phrases.push('森ができた'); planted.push([x, y]); }
+        // 【育つ】入のときは、空きに草で草むら、草むらに草で森に育つ
+        var lowG = B.grow.enabled ? 'thicket' : 'forest';
+        if (!o && t === 'empty') { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた'); planted.push([x, y, lowG]); }
+        else if (!o && t === 'thicket' && B.grow.enabled) growFrom.push([x, y]);
         else if (!o && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); }
       } else if (u.magic === 'earth') {
         // 【育つ】入のときは、空きに土で丘、丘に土で山に育つ。火を埋めても丘
@@ -604,7 +618,7 @@
         if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
         else if (t === 'breeze') { ctx.phrases.push('【新案】吹いている風に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
-        else if (t === 'forest') { setTile(s, x, y, 'fire'); ctx.phrases.push('森が燃えた'); }
+        else if (isPlant(t)) { setTile(s, x, y, 'fire'); ctx.phrases.push(tileName(t) + 'が燃えた'); }
         else if (t === 'mountain' && !erupted[key(x, y)]) { ctx.phrases.push('【新案】山に火が点いた'); doFunka(s, x, y, ctx, ev, erupted); }
         else if (t === 'puddle') { setTile(s, x, y, 'mirage'); ctx.phrases.push('【新案】水たまりが蜃気楼になった'); }
         else if (t === 'ice') { setTile(s, x, y, 'puddle'); ctx.phrases.push('【新案】氷が溶けて水たまりになった'); }
@@ -616,8 +630,13 @@
         }
       }
     });
+    // 【育つ】草むらに草: 草むらを元に、まわりの空きと草むらが森に茂る（森は通れるので押し出さない）
+    if (u.magic === 'grass') growFrom.forEach(function (c) {
+      var g = growNature(s, c[0], c[1], u, facing, B.grow.forestSize, { empty: true, thicket: true }, 'forest', ctx, ev, '【育つ】草むらが森に育った');
+      g.cells.forEach(function (gc) { planted.push([gc[0], gc[1], 'forest']); });
+    });
     // 【育つ】丘に土: 丘を元に、まわりの空きと丘が山に盛り上がる
-    growFrom.forEach(function (c) {
+    if (u.magic === 'earth') growFrom.forEach(function (c) {
       growNature(s, c[0], c[1], u, facing, B.grow.mountainSize, { empty: true, hill: true }, 'mountain', ctx, ev, '【育つ】丘が山に育った',
         { push: B.grow.pushOut, slope: B.grow.mountainSlope ? 'hill' : null });
     });
@@ -628,10 +647,10 @@
       planted.forEach(function (c) {
         if (!isWet(c[0], c[1])) return;
         neighbors(s, c[0], c[1]).forEach(function (n) {
-          if (getTile(s, n.x, n.y) === 'empty' && !unitAt(s, n.x, n.y) && isWet(n.x, n.y)) { setTile(s, n.x, n.y, 'forest'); grown++; ctx.cells.push([n.x, n.y]); }
+          if (getTile(s, n.x, n.y) === 'empty' && !unitAt(s, n.x, n.y) && isWet(n.x, n.y)) { setTile(s, n.x, n.y, c[2] || 'forest'); grown++; ctx.cells.push([n.x, n.y]); }
         });
       });
-      if (grown) ctx.phrases.push('【新案】水辺で森が広がった（＋' + grown + 'マス）');
+      if (grown) ctx.phrases.push('【新案】水辺で' + (planted.every(function (c) { return c[2] === 'thicket'; }) ? '草むら' : '森') + 'が広がった（＋' + grown + 'マス）');
     }
   }
 
@@ -734,6 +753,7 @@
           if (o) { hitCell(); addHit(ctx, o, amount, 'finisher'); if (t === 'empty') setTile(s, n.x, n.y, 'smallfire'); return; }
           if (t === 'empty' || t === 'smallfire' || t === 'mirage' || t === 'whirlwind') { hitCell(); setTile(s, n.x, n.y, 'lava'); lava++; next.push([n.x, n.y]); }
           else if (t === 'forest') { hitCell(); setTile(s, n.x, n.y, 'fire'); burned++; }
+          else if (t === 'thicket') { hitCell(); setTile(s, n.x, n.y, 'fire'); }
           else if (t === 'river' || t === 'puddle' || t === 'ice') { hitCell(); setTile(s, n.x, n.y, 'mountain'); cooled++; }
         });
       });
@@ -864,7 +884,7 @@
       var o = unitAt(s, c[0], c[1]);
       if (o) addHit(ctx, o, B.fireTornado.damage, 'finisher');
       var t = getTile(s, c[0], c[1]);
-      if (t === 'tornado' || t === 'forest') { setTile(s, c[0], c[1], 'fire'); if (t === 'forest') burned++; }
+      if (t === 'tornado' || isPlant(t)) { setTile(s, c[0], c[1], 'fire'); if (t === 'forest') burned++; }
       else if (t === 'empty' || t === 'whirlwind' || t === 'mirage') setTile(s, c[0], c[1], 'smallfire');
     });
     var fin = { name: '火炎竜巻', cells: cells, damage: B.fireTornado.damage };
@@ -1048,7 +1068,7 @@
         }
         continue;
       }
-      if (t === 'empty' || t === 'puddle' || t === 'mirage') { setTile(s, x, y, 'river'); made++; continue; }
+      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む
       if (t === 'river' || t === 'ice') continue;
       if (t === 'lava') { setTile(s, x, y, 'mountain'); stop = '【新案】溶岩が冷えて山になった'; break; }
       if (t === 'firewhirl') { stop = '【新案】火の渦に水が入った'; tornadoHit = [x, y]; break; }
@@ -1603,7 +1623,7 @@
     var out = [];
     for (var y = 0; y < s.size; y++) {
       for (var x = 0; x < s.size; x++) {
-        if (getTile(s, x, y) !== 'forest') continue;
+        if (!isPlant(getTile(s, x, y))) continue;   // 森と【育つ】草むらへ燃え移る
         if (neighbors(s, x, y).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'fire' || nt === 'firewhirl'; })) out.push([x, y]);
       }
     }
@@ -1628,8 +1648,10 @@
   function timePasses(s, ev, step) {
     // 1. 炎が隣の森へ燃え移る（処理開始時の盤面で同時に判定）
     var caught = fireSpreadCells(s);
+    var caughtGrass = caught.filter(function (c) { return getTile(s, c[0], c[1]) === 'thicket'; }).length;
     caught.forEach(function (c) { setTile(s, c[0], c[1], 'fire'); });
-    if (caught.length) ev.push({ type: 'fireSpread', cells: caught, text: '炎が隣の森へ燃え移った（' + caught.length + 'マス）' });
+    var caughtWhat = !caughtGrass ? '森' : caughtGrass === caught.length ? '草むら' : '森・草むら';
+    if (caught.length) ev.push({ type: 'fireSpread', cells: caught, text: '炎が隣の' + caughtWhat + 'へ燃え移った（' + caught.length + 'マス）' });
     step();
 
     // 2. 炎の上にいる者にダメージ
@@ -2134,7 +2156,7 @@
   // 初期シナリオ
   //   . 空き  F 森  M 山  R 川  X 炎  s 小さな炎  V 火山  D 泥沼  P 水たまり  H 蜃気楼  I 氷  L 溶岩  W つむじ風  T 竜巻
   // ---------------------------------------------------------------
-  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill' };
+  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill', g: 'thicket' };
   var PRESETS = [
     {
       id: 'mDefense', name: '【お題】防衛', mission: 'defense',

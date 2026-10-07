@@ -1898,6 +1898,103 @@ test('グラデーション: まわりが丘なら通れるので、押し出さ
 }, { mountainSize: 5, mountainSlope: true }); });
 
 // ---------------------------------------------------------------
+console.log('\n■ 育つ（IMPROVE_grow）: 草 — 草むらと森');
+CH.g = 'thicket';
+function forests(s) {
+  var out = [];
+  for (var y = 0; y < s.size; y++) for (var x = 0; x < s.size; x++) if (tile(s, x, y) === 'forest') out.push(x + ',' + y);
+  return out.sort();
+}
+// 7×7。草の味方が (3,6) から上へ撃つと、形は (3,4) と (2,3)(3,3)(4,3)
+function grassBoard(rows) {
+  var s = board(rows || ['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  return { s: s, a: R.addAlly(s, 'grass', 3, 6) };
+}
+test('草: 切っているときは今までどおり、空きに草で森', function () {
+  var g = grassBoard(), r = fire(g.s, g.a, 'up');
+  eq(forests(r.state), ['2,3', '3,3', '3,4', '4,3']);
+});
+test('草: 空きに草で草むら、草むらにもう一度草で森に育つ（十字に茂る）', function () { withGrow(function () {
+  var g = grassBoard(), r = fire(g.s, g.a, 'up');
+  eq([tile(r.state, 3, 4), tile(r.state, 2, 3), tile(r.state, 3, 3), tile(r.state, 4, 3)], ['thicket', 'thicket', 'thicket', 'thicket']);
+  var s2 = r.state; R.findUnit(s2, g.a.id).acted = false;
+  var r2 = fire(s2, g.a, 'up');
+  eq(forests(r2.state), ['1,3', '2,2', '2,3', '2,4', '3,2', '3,3', '3,4', '3,5', '4,2', '4,3', '4,4', '5,3']);
+  ok(r2.events.some(function (e) { return /草むらが森に育った/.test(e.text || ''); }), 'ログ');
+}, { forestSize: 5 }); });
+test('草: 森の大きさ 1 は、その草むらだけ', function () { withGrow(function () {
+  var g = grassBoard(['.......', '.......', '.......', '...g...', '.......', '.......', '.......']);
+  var r = fire(g.s, g.a, 'up');
+  eq(forests(r.state), ['3,3']);
+  eq([tile(r.state, 3, 4), tile(r.state, 2, 3)], ['thicket', 'thicket']);
+}, { forestSize: 1 }); });
+test('草: 森は通れるので押し出さない。ユニットのいるマスには育たない', function () { withGrow(function () {
+  var g = grassBoard(['.......', '.......', '.......', '...g...', '.......', '.......', '.......']);
+  var e = tough(g.s, R.addEnemy(g.s, 'fire', 3, 2));
+  var r = fire(g.s, g.a, 'up');
+  eq(pos(r.state, e.id), [3, 2]);
+  eq(tile(r.state, 3, 2), 'empty');
+  eq(dealt(r, e.id), 0, '形の外なので直撃もない');
+}, { forestSize: 5, pushOut: true }); });
+test('草むら: 火で燃える（今は弱い炎の扱い）', function () {
+  var s = board(['......', '......', '......', '..g...', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 3), 'fire');
+});
+test('草むら: 燃え広がりで、つながった森と草むらがまとめて燃える（強い炎は森の上だけ）', function () {
+  var s = board(['..gF..', '..g...', '..g...', '..X...', '......', '......']);
+  var a = R.addAlly(s, 'wind', 2, 4);
+  var e1 = R.addEnemy(s, 'fire', 2, 1);   // 草むらの上
+  var e2 = R.addEnemy(s, 'fire', 3, 0);   // 森の上
+  R.findUnit(s, e1.id).hp = 99; R.findUnit(s, e2.id).hp = 99;
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 0), tile(r.state, 2, 2), tile(r.state, 3, 0)], ['fire', 'fire', 'fire']);
+  eq([dealt(r, e1.id), dealt(r, e2.id)], [B.fire.weakDamage, B.fire.strongDamage]);
+  ok(r.events.some(function (e) { return /草むら3マスも燃えた/.test(e.text || ''); }), 'ログ');
+});
+test('草むら: ターン終了で、炎の隣の草むらへ燃え移る', function () {
+  var s = board(['......', '......', '..Xg..', '......', '......', '......']);
+  R.addAlly(s, 'fire', 0, 5);
+  var r = R.endTurn(s);
+  eq(tile(r.state, 3, 2), 'fire');
+});
+test('草むら: 闇を撃っても死の森にならない（森だけ）', function () {
+  var s = board(['......', '......', '......', '..g...', '......', '......']);
+  var a = R.addAlly(s, 'dark', 2, 4);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 3), 'thicket');
+});
+test('草むら: 低いので雷は落ちない（その先の森に落ちる）', function () {
+  var s = board(['......', '..F...', '...g..', '..g...', '......', '......']);
+  var a = R.addAlly(s, 'thunder', 2, 4);
+  var r = fire(s, a, 'up');
+  ok(r.events.some(function (e) { return /雷が森に落ちて燃えた/.test(e.text || ''); }), r.events.map(function (e) { return e.text; }).join(' / '));
+  eq([tile(r.state, 2, 3), tile(r.state, 3, 2), tile(r.state, 2, 1)], ['thicket', 'thicket', 'fire']);
+});
+test('草むら: 水が流れると沈んで川になる', function () {
+  var s = board(['......', '......', '......', '..g...', '......', '......']);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['river', 'river']);
+});
+test('草: 水辺の草むらは、水に沿って草むらのまま広がる', function () { withGrow(function () {
+  var s = board(['.......', '.......', '.......', '.....R.', '.....R.', '.......', '.......']);
+  var a = R.addAlly(s, 'grass', 3, 6);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 4, 4), 'thicket', '川に接する草むら (4,3) の隣で、川に接する (4,4) へ');
+  ok(r.events.some(function (e) { return /水辺で草むらが広がった/.test(e.text || ''); }), r.events.map(function (e) { return e.text; }).join(' / '));
+}); });
+test('草: 敵の草も同じく、こちらの草むらを森に育てる', function () { withGrow(function () {
+  var s = board(['......', '......', '..g...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'grass', 2, 0);   // 下向き: 形は (2,2) と (1,3)(2,3)(3,3)
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  eq([tile(r.state, 2, 2), tile(r.state, 2, 1), tile(r.state, 1, 2), tile(r.state, 3, 2)], ['forest', 'forest', 'forest', 'forest']);
+}, { forestSize: 5 }); });
+
+// ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) {
   console.log('失敗: ' + failed.join(' / '));

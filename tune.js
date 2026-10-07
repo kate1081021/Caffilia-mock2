@@ -14,7 +14,7 @@
 
   // よく触る項目（パネルの一番上にまとめる）【仮】
   var FAVORITES = [
-    'grow.enabled', 'grow.mountainSize', 'grow.mountainSlope', 'grow.pushOut',
+    'grow.enabled', 'grow.mountainSize', 'grow.mountainSlope', 'grow.pushOut', 'grow.forestSize',
     'ally.hp', 'ally.move', 'ally.power',
     'enemy.hp', 'enemy.move', 'enemy.power',
     'fire.strongDamage', 'fire.weakDamage', 'fire.burnDamage', 'fire.burnTurns', 'fire.burnOutTurns', 'fireTileDamage',
@@ -52,6 +52,7 @@
     'grow.mountainSize': '育つ: 山の大きさ（1・4・5・9マス）',
     'grow.mountainSlope': '育つ: 山のまわりは丘（グラデーション）',
     'grow.pushOut': '育つ: 盛り上がる山が押し出す',
+    'grow.forestSize': '育つ: 森の大きさ（1・4・5・9マス）',
     'fx.grow': '育つ瞬間を波で見せる',
     'eruption.depth': '桜吹雪の奥行き（段）', 'eruption.base': '桜吹雪のダメージ', 'eruption.perVolcano': '桜吹雪: 火山1つごとの追加',
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',

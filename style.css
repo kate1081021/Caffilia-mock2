@@ -776,3 +776,8 @@ button.primary.pending { box-shadow: 0 0 0 3px #fde68a; }
 /* 【育つ・試し】グラデーション: まわりの丘は低く小さく盛り上がる */
 .g-ghost.hill { inset: 45% 10% 6% 10%; border-radius: 50% 50% 6px 6px; }
 .rise.hill { width: 52px; height: 26px; margin: -2px 0 0 -26px; clip-path: ellipse(50% 100% at 50% 100%); background: linear-gradient(180deg, #b7a487, #9c8a6f); }
+/* 【育つ】草むらは低い草（森より背が低く、明るい緑の草の束） */
+.t-thicket { background: radial-gradient(ellipse 22% 30% at 25% 78%, #7cb85f 0 70%, transparent 72%), radial-gradient(ellipse 22% 34% at 52% 80%, #8fc96f 0 70%, transparent 72%), radial-gradient(ellipse 22% 28% at 78% 78%, #7cb85f 0 70%, transparent 72%), linear-gradient(180deg, var(--t-empty) 55%, #cfdcb4); }
+.t-thicket .tile-label { color: #2f5a22; text-shadow: none; }
+/* 【育つ】森が茂る瞬間は、緑の木がぽこっと伸びる */
+.rise.forest { width: 46px; height: 52px; margin: -26px 0 0 -23px; clip-path: none; border-radius: 50% 50% 45% 45%; background: radial-gradient(circle at 40% 35%, #8fd16f, #3f7d33 70%); }

@@ -11,11 +11,12 @@
   var DIR_ARROW = { up: '↑', right: '→', down: '↓', left: '←' };
   var DIR_ROT = { up: 0, right: 90, down: 180, left: 270 };
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
-  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘' };
+  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら' };
   var STORE_KEY = 'cafilia-mock-v2-layouts';
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
+    thicket: '【育つ】通れる。低い草。火で燃え、燃え広がり・燃え移りにも巻き込まれる（今は弱い炎）。草をもう一度当てると森に育つ。低いので雷は落ちず、闇でも死の森にならない。水が流れると沈んで川になる。',
     forest: '通れる。火で炎になる。燃え広がりに巻き込まれると、つながった森ごと燃える。',
     mountain: '通れない。風をさえぎる（山の陰）。火が点くと、つながった山ごと火山になる【新案】。水が当たると山を下って、盤の端まで川になる【新案: 源流】。',
     hill: '【育つ】通れるが、入るとそこで止まる。上から撃つと、形が正面へ1マス先にずれる（高台）。低いので風も燃え広がりも通す。雷は落ちる。土をもう一度当てると山に育つ。水が当たると川が流れる（源流）。火は何も起きない。',
