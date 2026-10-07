@@ -2058,6 +2058,60 @@ test('火: 敵の火も同じく、小さな炎を炎に育てる', function () 
 }); });
 
 // ---------------------------------------------------------------
+console.log('\n■ 育つ（IMPROVE_grow）: 水 — 水たまりと川');
+function col(s, x) { var out = []; for (var y = 0; y < s.size; y++) out.push(tile(s, x, y)); return out; }
+test('水: 空きに水で水たまり（池の形のまま、川ではない）', function () { withGrow(function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3), tile(r.state, 2, 2)], ['puddle', 'puddle', 'empty']);
+  ok(r.events.some(function (e) { return /水たまりができた（2マス）/.test(e.text || ''); }), 'ログ');
+}); });
+test('水: 通り道に水たまりがあると、そこから向きの奥へ川に育つ（4マス先まで）', function () { withGrow(function () {
+  var s = board(['........', '........', '........', '........', '........', '...P....', '........', '........']);
+  var a = R.addAlly(s, 'water', 3, 7);
+  var r = fire(s, a, 'up');
+  eq(col(r.state, 3), ['empty', 'river', 'river', 'river', 'river', 'river', 'puddle', 'empty']);
+  ok(r.events.some(function (e) { return /水たまりに水が流れこんで川に育った/.test(e.text || ''); }), 'ログ');
+}, { riverLength: 4 }); });
+test('水: 川の長さ 0 は盤の端まで', function () { withGrow(function () {
+  var s = board(['........', '........', '........', '........', '........', '...P....', '........', '........']);
+  var a = R.addAlly(s, 'water', 3, 7);
+  eq(col(fire(s, a, 'up').state, 3)[0], 'river');
+}, { riverLength: 0 }); });
+test('水: 育つ川は森・丘・ユニットで止まり、炎は消して止まる', function () { withGrow(function () {
+  var s = board(['......', '..F...', '......', '..P...', '......', '......']);
+  var a = R.addAlly(s, 'water', 2, 4);
+  eq(col(fire(s, a, 'up').state, 2), ['empty', 'forest', 'river', 'river', 'empty', 'empty']);
+  var s2 = board(['......', '..h...', '......', '..P...', '......', '......']);
+  var b = R.addAlly(s2, 'water', 2, 4);
+  eq(col(fire(s2, b, 'up').state, 2).slice(0, 4), ['empty', 'hill', 'river', 'river'], '丘で止まる（育つ川は源流にならない）');
+  var s3 = board(['......', '..X...', '......', '..P...', '......', '......']);
+  var c = R.addAlly(s3, 'water', 2, 4);
+  eq(col(fire(s3, c, 'up').state, 2).slice(0, 4), ['empty', 'empty', 'river', 'river']);
+}); });
+test('水: 水たまりの先（2マス以内）に丘か山があれば源流（盤の端まで川）', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..h...', '......', '......']);
+  var a = R.addAlly(s, 'water', 2, 5);
+  eq(col(fire(s, a, 'up').state, 2), ['river', 'river', 'river', 'hill', 'puddle', 'empty']);
+}); });
+test('水たまり: 火で蜃気楼、川に火は何も起きない（今どおり）', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..P.R.', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4), b = R.addAlly(s, 'fire', 4, 4);
+  var st = fire(s, a, 'up').state;
+  st = fire(st, b, 'up').state;
+  eq([tile(st, 2, 3), tile(st, 4, 3)], ['mirage', 'river']);
+}); });
+test('水: 敵の水も同じく、こちらの水たまりを川に育てる', function () { withGrow(function () {
+  var s = board(['......', '......', '..P...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'water', 2, 0);
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  eq(col(r.state, 2).slice(1), ['puddle', 'river', 'river', 'river', 'river'], '手前に水たまり、こちらの水たまりから端まで川');
+}, { riverLength: 4 }); });
+
+// ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) {
   console.log('失敗: ' + failed.join(' / '));

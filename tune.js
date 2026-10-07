@@ -14,7 +14,7 @@
 
   // よく触る項目（パネルの一番上にまとめる）【仮】
   var FAVORITES = [
-    'grow.enabled', 'grow.mountainSize', 'grow.mountainSlope', 'grow.pushOut', 'grow.forestSize', 'grow.grassBurnOut', 'grow.forestBurnOut', 'fire.plantStrong',
+    'grow.enabled', 'grow.mountainSize', 'grow.mountainSlope', 'grow.pushOut', 'grow.forestSize', 'grow.riverLength', 'grow.grassBurnOut', 'grow.forestBurnOut', 'fire.plantStrong',
     'ally.hp', 'ally.move', 'ally.power',
     'enemy.hp', 'enemy.move', 'enemy.power',
     'fire.strongDamage', 'fire.weakDamage', 'fire.burnDamage', 'fire.burnTurns', 'fire.burnOutTurns', 'fireTileDamage',
@@ -53,6 +53,7 @@
     'grow.mountainSlope': '育つ: 山のまわりは丘（グラデーション）',
     'grow.pushOut': '育つ: 盛り上がる山が押し出す',
     'grow.forestSize': '育つ: 森の大きさ（1・4・5・9マス）',
+    'grow.riverLength': '育つ: 水たまりから育つ川の長さ（0は端まで）',
     'grow.grassBurnOut': '育つ: 草むらの炎が燃え尽きるまで（ターン）',
     'grow.forestBurnOut': '育つ: 森の炎が燃え尽きるまで（ターン）',
     'fire.plantStrong': '草むらが燃えたマスも強い炎',

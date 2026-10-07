@@ -783,3 +783,5 @@ button.primary.pending { box-shadow: 0 0 0 3px #fde68a; }
 .rise.forest { width: 46px; height: 52px; margin: -26px 0 0 -23px; clip-path: none; border-radius: 50% 50% 45% 45%; background: radial-gradient(circle at 40% 35%, #8fd16f, #3f7d33 70%); }
 /* 【育つ】小さな炎が炎に育つ瞬間は、炎が大きく立ちのぼる */
 .rise.fire { width: 44px; height: 60px; margin: -34px 0 0 -22px; clip-path: none; border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%; background: radial-gradient(ellipse at 50% 75%, #fff3b0, #ffb347 35%, #e4572e 70%, transparent 72%); }
+/* 【育つ】川が育つ瞬間は、水しぶきが奥へ順に走る */
+.rise.river { width: 50px; height: 50px; margin: -25px 0 0 -25px; clip-path: none; border-radius: 50%; background: radial-gradient(circle, #e0f2fe 0 18%, #5aa0e0 45%, rgba(58, 127, 196, .5) 62%, transparent 70%); }

@@ -1055,27 +1055,52 @@
 
   // 流れる（水）
   //   【新案】水だけなら正面に小さな池（waterLength マス）。山に当たると山を下って、盤の端まで川になる（源流）
+  //   【育つ】入のときは、池ではなく水たまり。通り道に水たまりがあると、そこから向きの奥へ川に育つ（grow.riverLength マス先まで）
   function flow(s, u, facing, ctx, ev) {
     var F = DIRS[facing], from = castOrigin(s, u, facing);   // 【育つ】丘の上からは1マス先から流れる
     var made = 0, pond = 0, stop = null, sourced = false, tornadoHit = null, whirlHit = null;
+    var growOn = B.grow.enabled, pondName = growOn ? '水たまり' : '池';
+    var growing = false, left = 0, river = null;   // 【育つ】水たまりから川に育っている途中か、あと何マス進めるか、育った川のマス
     for (var i = 1; ; i++) {
-      if (!sourced && i > B.waterLength) break;
+      if (!sourced && !growing && i > B.waterLength) break;
+      if (growing && B.grow.riverLength > 0 && left <= 0) break;
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
-      if (!inBounds(s, x, y)) { if (sourced) stop = '盤の端まで流れた'; break; }
+      if (!inBounds(s, x, y)) { if (sourced || growing) stop = '盤の端まで流れた'; break; }
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
       if (o) { addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった'; break; }
+      if (growing) {
+        // 【育つ】育つ川は、空き・水たまり・草むらを川にして進む。ユニット・森・山・丘・火山・泥沼で止まり、炎は消して止まる
+        left--;
+        if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, 'river'); made++; river.cells.push([x, y]); river.tiles.push('river'); river.wave.push(river.cells.length - 1); continue; }
+        if (t === 'river' || t === 'ice') continue;
+        if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); stop = tileName(t) + 'を消して止まった'; break; }
+        stop = tileName(t) + 'で止まった';
+        break;
+      }
+      if (growOn && !sourced && (t === 'puddle' || t === 'mirage')) {
+        // 【育つ】水たまりに水が流れこむと、そこから川に育つ
+        growing = true;
+        left = B.grow.riverLength;
+        if (made) ctx.phrases.push(pondName + 'ができた（' + made + 'マス）');
+        ctx.phrases.push('【育つ】' + tileName(t) + 'に水が流れこんで川に育った');
+        pond = made; made = 1;
+        setTile(s, x, y, 'river');
+        river = { origin: [x, y], tile: 'river', cells: [[x, y]], tiles: ['river'], wave: [0], blocked: [], pushed: [] };
+        ctx.grows.push(river);
+        continue;
+      }
       if (t === 'mountain' || t === 'hill') {   // 【育つ】丘からも川は流れる（丘は丘のまま）
         if (!sourced) {
           sourced = true;
-          if (made) ctx.phrases.push('池ができた（' + made + 'マス）');
+          if (made) ctx.phrases.push(pondName + 'ができた（' + made + 'マス）');
           ctx.phrases.push('【新案】' + tileName(t) + 'に当たって川になった');
           pond = made; made = 0;
         }
         continue;
       }
-      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む
+      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, growOn && !sourced ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
       if (t === 'river' || t === 'ice') continue;
       if (t === 'lava') { setTile(s, x, y, 'mountain'); stop = '【新案】溶岩が冷えて山になった'; break; }
       if (t === 'firewhirl') { stop = '【新案】火の渦に水が入った'; tornadoHit = [x, y]; break; }
@@ -1090,7 +1115,7 @@
       stop = tileName(t) + 'で止まった';
       break;
     }
-    if (made) ctx.phrases.push(sourced ? '川が' + made + 'マス流れた' : '池ができた（' + made + 'マス）');
+    if (made) ctx.phrases.push(sourced || growing ? '川が' + made + 'マス流れた' : pondName + 'ができた（' + made + 'マス）');
     if (stop) ctx.phrases.push(stop);
     if (!made && !pond && !stop && !sourced) ctx.phrases.push('水の上を流れた');
     if (tornadoHit) doSentakuki(s, tornadoHit[0], tornadoHit[1], ctx, ev);
