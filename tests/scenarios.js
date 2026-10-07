@@ -358,7 +358,11 @@ CHECKS.forEach(function (c) {
   }, function (g) {
     try {
       c.turns.forEach(function (turn) {
-        turn.forEach(function (a) { if (a.id && !g.state.result) g.act(a.id, a.to, a.dir, a.shoot); });
+        turn.forEach(function (a) {
+          if (g.state.result) return;
+          if (a.endTurn) g.endTurn();
+          else if (a.id) g.act(a.id, a.to, a.dir, a.shoot);
+        });
       });
       var ex = c.expect || {};
       Object.keys(ex.tiles || {}).forEach(function (k) {
@@ -369,6 +373,7 @@ CHECKS.forEach(function (c) {
         var u = g.unit(id);
         check(u && u.x === ex.at[id][0] && u.y === ex.at[id][1], id + ' が (' + ex.at[id] + ') にいる');
       });
+      (ex.gone || []).forEach(function (id) { check(!g.unit(id), id + ' は倒れている'); });
       Object.keys(ex.hp || {}).forEach(function (id) {
         var u = g.unit(id);
         check(u && u.hp === ex.hp[id], id + ' の HP が ' + ex.hp[id] + '（今: ' + (u && u.hp) + '）');

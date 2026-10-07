@@ -781,3 +781,5 @@ button.primary.pending { box-shadow: 0 0 0 3px #fde68a; }
 .t-thicket .tile-label { color: #2f5a22; text-shadow: none; }
 /* 【育つ】森が茂る瞬間は、緑の木がぽこっと伸びる */
 .rise.forest { width: 46px; height: 52px; margin: -26px 0 0 -23px; clip-path: none; border-radius: 50% 50% 45% 45%; background: radial-gradient(circle at 40% 35%, #8fd16f, #3f7d33 70%); }
+/* 【育つ】小さな炎が炎に育つ瞬間は、炎が大きく立ちのぼる */
+.rise.fire { width: 44px; height: 60px; margin: -34px 0 0 -22px; clip-path: none; border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%; background: radial-gradient(ellipse at 50% 75%, #fff3b0, #ffb347 35%, #e4572e 70%, transparent 72%); }

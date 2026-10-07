@@ -1942,7 +1942,9 @@ test('草むら: 火で燃える（今は弱い炎の扱い）', function () {
   var r = fire(s, a, 'up');
   eq(tile(r.state, 2, 3), 'fire');
 });
-test('草むら: 燃え広がりで、つながった森と草むらがまとめて燃える（強い炎は森の上だけ）', function () {
+test('草むら: 燃え広がりで、つながった森と草むらがまとめて燃える（plantStrong を切ると、強い炎は森の上だけ）', function () {
+  var was = B.fire.plantStrong; B.fire.plantStrong = false;
+  try {
   var s = board(['..gF..', '..g...', '..g...', '..X...', '......', '......']);
   var a = R.addAlly(s, 'wind', 2, 4);
   var e1 = R.addEnemy(s, 'fire', 2, 1);   // 草むらの上
@@ -1952,6 +1954,7 @@ test('草むら: 燃え広がりで、つながった森と草むらがまとめ
   eq([tile(r.state, 2, 0), tile(r.state, 2, 2), tile(r.state, 3, 0)], ['fire', 'fire', 'fire']);
   eq([dealt(r, e1.id), dealt(r, e2.id)], [B.fire.weakDamage, B.fire.strongDamage]);
   ok(r.events.some(function (e) { return /草むら3マスも燃えた/.test(e.text || ''); }), 'ログ');
+  } finally { B.fire.plantStrong = was; }
 });
 test('草むら: ターン終了で、炎の隣の草むらへ燃え移る', function () {
   var s = board(['......', '......', '..Xg..', '......', '......', '......']);
@@ -1993,6 +1996,66 @@ test('草: 敵の草も同じく、こちらの草むらを森に育てる', fun
   var r = R.endTurn(s);
   eq([tile(r.state, 2, 2), tile(r.state, 2, 1), tile(r.state, 1, 2), tile(r.state, 3, 2)], ['forest', 'forest', 'forest', 'forest']);
 }, { forestSize: 5 }); });
+
+// ---------------------------------------------------------------
+console.log('\n■ 育つ（IMPROVE_grow）: 火 — 小さな炎と炎');
+test('火: 切っているときは、小さな炎に火を点けても何も起きない', function () {
+  var s = board(['......', '......', '......', '..s...', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  eq(tile(fire(s, a, 'up').state, 2, 3), 'smallfire');
+});
+test('火: 小さな炎にもう一度火で、炎に育つ（その場で燃え続ける）', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..s...', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 3), 'fire');
+  ok(r.events.some(function (e) { return /小さな炎が炎に育った/.test(e.text || ''); }), 'ログ');
+  eq(r.events.filter(function (e) { return e.type === 'cast'; })[0].grows[0].cells, [[2, 3]]);
+}); });
+test('火: 同じターンに2人で火を点けると、空きが炎になる（小さな炎 → 炎）', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '......', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4), b = R.addAlly(s, 'fire', 1, 3);
+  var r = fire(s, a, 'up');
+  var r2 = fire(r.state, b, 'right');
+  eq(tile(r2.state, 2, 3), 'fire');
+}); });
+test('炎: 草むらが燃えたマスも強い炎（plantStrong）', function () { withGrow(function () {
+  var s = board(['..g...', '..g...', '..g...', '..X...', '......', '......']);
+  var a = R.addAlly(s, 'wind', 2, 4);
+  var e = R.addEnemy(s, 'fire', 2, 1); R.findUnit(s, e.id).hp = 99;
+  var r = fire(s, a, 'up');
+  eq(dealt(r, e.id), B.fire.strongDamage);
+  eq(names(r.events, 'finisher'), ['燃え広がり']);
+}); });
+test('炎: 草むらの炎は1回目のターン終了で燃え尽き、森の炎は3回目で燃え尽きる（ほかの炎は2回目）', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..g.F.', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4), b = R.addAlly(s, 'fire', 4, 4), c = R.addAlly(s, 'fire', 0, 1);
+  var st = fire(s, a, 'up').state;
+  st = fire(st, b, 'up').state;
+  st = fire(st, c, 'up').state;   // (0,0) に小さな炎
+  var R1 = R.endTurn(st).state;
+  eq([tile(R1, 2, 3), tile(R1, 4, 3)], ['empty', 'fire'], '1回目: 草むらの炎は燃え尽きる');
+  var R2 = R.endTurn(R1).state;
+  eq(tile(R2, 4, 3), 'fire', '2回目: 森の炎はまだ燃える');
+  var R3 = R.endTurn(R2).state;
+  eq(tile(R3, 4, 3), 'empty', '3回目: 森の炎も燃え尽きる');
+}); });
+test('炎: 小さな炎から育った炎は、今までどおり2回目のターン終了で燃え尽きる', function () { withGrow(function () {
+  var s = board(['......', '......', '......', '..s...', '......', '......']);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var st = fire(s, a, 'up').state;
+  var R1 = R.endTurn(st).state;
+  eq(tile(R1, 2, 3), 'fire');
+  eq(tile(R.endTurn(R1).state, 2, 3), 'empty');
+}); });
+test('火: 敵の火も同じく、小さな炎を炎に育てる', function () { withGrow(function () {
+  var s = board(['......', '......', '..s...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'fire', 2, 1);
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  ok(r.events.some(function (ev) { return /小さな炎が炎に育った/.test(ev.text || ''); }), r.events.map(function (ev) { return ev.text; }).join(' / '));
+}); });
 
 // ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');

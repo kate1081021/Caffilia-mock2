@@ -67,7 +67,7 @@
 
   // 【育つ】燃える植物（森・草むら）と、燃えて強い炎になる植物（今は森だけ）
   function isPlant(t) { return t === 'forest' || t === 'thicket'; }
-  function burnsStrong(t) { return t === 'forest'; }
+  function burnsStrong(t) { return t === 'forest' || (t === 'thicket' && B.fire.plantStrong); }   // 【育つ】plantStrong で草むらも強い炎
 
   // 燃え広がりを止めるマス
   var SPREAD_BLOCKERS = { mountain: true, river: true, volcano: true, lava: true, tornado: true, sakura: true, haunted: true };
@@ -98,8 +98,14 @@
   function idx(s, x, y) { return y * s.size + x; }
   function getTile(s, x, y) { return s.tiles[idx(s, x, y)]; }
   function setTile(s, x, y, t) {
-    var i = idx(s, x, y);
-    if (s.tiles[i] !== t && s.fireAge && s.fireAge[i] !== undefined) delete s.fireAge[i];
+    var i = idx(s, x, y), old = s.tiles[i];
+    if (old !== t && s.fireAge && s.fireAge[i] !== undefined) delete s.fireAge[i];
+    if (old !== t && s.fireLife && s.fireLife[i] !== undefined) delete s.fireLife[i];
+    // 【育つ】植物が燃えた炎は、燃え尽きるまでの長さが植物で決まる（森は長く、草むらはすぐ）
+    if (t === 'fire' && B.grow.enabled && (old === 'forest' || old === 'thicket')) {
+      s.fireLife = s.fireLife || {};
+      s.fireLife[i] = old === 'forest' ? B.grow.forestBurnOut : B.grow.grassBurnOut;
+    }
     s.tiles[i] = t;
   }
   function isPassable(tile) { return TILE_INFO[tile].passable; }
@@ -616,6 +622,7 @@
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
         if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
+        else if (t === 'smallfire' && B.grow.enabled) { setTile(s, x, y, 'fire'); ctx.phrases.push('【育つ】小さな炎が炎に育った'); ctx.grows.push({ origin: [x, y], tile: 'fire', cells: [[x, y]], tiles: ['fire'], wave: [0], blocked: [], pushed: [] }); }
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
         else if (t === 'breeze') { ctx.phrases.push('【新案】吹いている風に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
         else if (isPlant(t)) { setTile(s, x, y, 'fire'); ctx.phrases.push(tileName(t) + 'が燃えた'); }
@@ -818,7 +825,7 @@
     var cells = best.sq, cx = 0, cy = 0, strong = [];
     cells.forEach(function (c) {
       cx += c[0]; cy += c[1];
-      var wasForest = getTile(s, c[0], c[1]) === 'forest';
+      var wasForest = burnsStrong(getTile(s, c[0], c[1]));
       if (wasForest) strong.push(c);
       var o = unitAt(s, c[0], c[1]);
       if (o) addHit(ctx, o, wasForest ? B.fire.strongDamage : B.fire.weakDamage, wasForest ? 'finisher' : 'weakfire');
@@ -1638,7 +1645,8 @@
     for (var i = 0; i < s.tiles.length; i++) {
       if (s.tiles[i] !== 'fire' || skip[i]) continue;
       var a = (old[i] || 0) + 1;
-      if (a >= B.fire.burnOutTurns) cells.push([i % s.size, Math.floor(i / s.size)]);
+      var life = (s.fireLife && s.fireLife[i]) || B.fire.burnOutTurns;   // 【育つ】植物が燃えた炎は植物ごとの長さ
+      if (a >= life) cells.push([i % s.size, Math.floor(i / s.size)]);
       else age[i] = a;
     }
     return { cells: cells, age: age };
@@ -2075,6 +2083,7 @@
     s.result = null;
     s.resultText = null;
     s.fireAge = {};
+    if (s.fireLife) s.fireLife = {};
     if (!s.mission) s.mission = newMission('annihilate');
     var m = s.mission;
     m.lost = 0;

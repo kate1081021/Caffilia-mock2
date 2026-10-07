@@ -619,6 +619,7 @@
     }
     var a = d.queue[d.i++];
     if (a.say && d.check) { d.lastSay = a.say; showCaption(a.say); addLog('💬 ' + a.say, 'system'); }
+    if (a.endTurn) { doEndTurn(); d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // ターン終了の項目
     if (!a.id) { d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // 説明だけの項目
     if (!R.findUnit(app.state, a.id)) { demoNext(); return; }
     var aimWait = d.check ? CHECK_WAIT.aim : DEMO_WAIT.aim;
