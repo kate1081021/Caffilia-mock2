@@ -11,8 +11,15 @@
   var DIR_ARROW = { up: '↑', right: '→', down: '↓', left: '←' };
   var DIR_ROT = { up: 0, right: 90, down: 180, left: 270 };
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
-  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風' };
+  var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
   var STORE_KEY = 'cafilia-mock-v2-layouts';
+  // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
+  var BIG = {
+    forest: { cls: 'woods', name: '大森林', mark: '🌲' },
+    puddle: { cls: 'lake', name: '湖', mark: '〜' },
+    ice: { cls: 'icefield', name: '氷原', mark: '❄' },
+    deadforest: { cls: 'deadwoods', name: '死の森', mark: '🥀' }
+  };
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
@@ -33,6 +40,7 @@
     gale: '【育つ】通れる。風が残るマスにもう一度風を当てると、そこから奥へ4マス吹き抜ける強い風。通り道の者を2マス運ぶ。強風で起こした燃え広がりは遠くまで走る。ターン終了でやむ。',
     breeze: '【新案・試し】通れる。風（2マス）が吹いたあとに残り、ターン終了で消える。火を入れると火の渦（火が風を強くして2×2の渦に）。',
     sakura: '【新案・試し】通れない（山と同じ）。山に草を植えると咲く。風が当たると桜吹雪（花びらが扇形に舞い、桜は散って山に戻る）。',
+    hillsakura: '【育つ】通れる（丘と同じ）。丘に草を植えると咲く。風が当たると桜吹雪（扇2列。山の桜は3列）。散ると丘に戻る。',
     petals: '【新案・試し】通れる。桜吹雪の跡。ターン終了で散る。',
     deadforest: '【新案・試し】通れる。森に闇を撃つと、つながった森がまとめて死の森になる。火を点けるとオバケヤシキ。',
     haunted: '【新案・試し】通れない。死の森に火で、その1マスがなる。できたとき、まわり2マス以内の者を引き寄せ、中と隣の全員に5（中身は仮）。',
@@ -965,6 +973,33 @@
       }
     }
 
+    // 【育つ】見た目: つながった森・水たまり・氷・死の森も、1枚の大きな絵で描く（fx.bigPicture）。かたまりが大きいほど真ん中の絵も大きい
+    var bigComp = {}, bigAt = {};
+    if (B.fx.bigPicture) {
+      for (var by = 0; by < n; by++) {
+        for (var bx = 0; bx < n; bx++) {
+          var bt = R.getTile(st, bx, by);
+          if (!BIG[bt] || bigComp[key(bx, by)]) continue;
+          var bcomp = [], bstack = [[bx, by]], bseen = {};
+          while (bstack.length) {
+            var bq = bstack.pop(), bk = key(bq[0], bq[1]);
+            if (bseen[bk] || !R.inBounds(st, bq[0], bq[1]) || R.getTile(st, bq[0], bq[1]) !== bt) continue;
+            bseen[bk] = true;
+            bcomp.push(bq);
+            bstack.push([bq[0] + 1, bq[1]], [bq[0] - 1, bq[1]], [bq[0], bq[1] + 1], [bq[0], bq[1] - 1]);
+          }
+          if (bcomp.length < 2) { bigComp[key(bx, by)] = 'solo'; continue; }
+          bcomp.forEach(function (q) { bigComp[key(q[0], q[1])] = bt; });
+          var cx2 = 0, cy2 = 0;
+          bcomp.forEach(function (q) { cx2 += q[0]; cy2 += q[1]; });
+          cx2 /= bcomp.length; cy2 /= bcomp.length;
+          var bbest = bcomp[0];
+          bcomp.forEach(function (q) { if (Math.abs(q[0] - cx2) + Math.abs(q[1] - cy2) < Math.abs(bbest[0] - cx2) + Math.abs(bbest[1] - cy2)) bbest = q; });
+          bigAt[key(bbest[0], bbest[1])] = { tile: bt, size: Math.min(3, 0.8 + 0.3 * (bcomp.length - 1)), dx: cx2 - bbest[0], dy: cy2 - bbest[1] };
+        }
+      }
+    }
+
     var unitByCell = {};
     st.units.forEach(function (x) { unitByCell[key(drawAt[x.id][0], drawAt[x.id][1])] = x; });
 
@@ -1005,6 +1040,15 @@
           if (tile === 'sakura') inner += '<span class="bloom"></span>';
           var pk = peakAt[k];
           if (pk) inner += '<span class="peak' + (pk.hot ? ' hot' : '') + '" style="--ps:' + pk.size.toFixed(2) + ';--pdx:' + pk.dx.toFixed(2) + ';--pdy:' + pk.dy.toFixed(2) + '"></span>';
+        }
+        if (bigComp[k] && bigComp[k] !== 'solo') {
+          var bj = [];
+          [['up', x, y - 1], ['right', x + 1, y], ['down', x, y + 1], ['left', x - 1, y]].forEach(function (a) { if (R.inBounds(st, a[1], a[2]) && R.getTile(st, a[1], a[2]) === tile) bj.push('j-' + a[0]); });
+          inner += '<span class="bigland ' + BIG[tile].cls + ' ' + bj.join(' ') + '"></span>';
+        }
+        if (bigAt[k]) {
+          var ba = bigAt[k];
+          inner += '<span class="bigmark ' + BIG[ba.tile].cls + '" style="--ps:' + ba.size.toFixed(2) + ';--pdx:' + ba.dx.toFixed(2) + ';--pdy:' + ba.dy.toFixed(2) + '" title="' + esc(BIG[ba.tile].name) + '">' + BIG[ba.tile].mark + '</span>';
         }
         // お題の印
         if (isGoal) inner += '<span class="m-mark goal">ゴール</span>';

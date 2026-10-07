@@ -29,6 +29,7 @@
     smallfire: { name: '小さな炎', label: '火', passable: true  },
     volcano:   { name: '火山',     label: '噴', passable: false },   // 【新案】マグマの代わり
     sakura:    { name: '桜',       label: '桜', passable: false },   // 【新案・試し】山に草で桜が咲いた山。風で桜吹雪
+    hillsakura: { name: '丘の桜',  label: '桜', passable: true  },   // 【育つ】丘に草で咲く桜。丘の性質のまま（通れる・低い）。風で桜吹雪（2列）、散ると丘に戻る
     petals:    { name: '花びら',   label: '花', passable: true  },   // 【新案・試し】桜吹雪の跡。ターン終了で散る
     deadforest: { name: '死の森',  label: '死', passable: true  },   // 【新案・試し】森に闇。火を点けるとオバケヤシキ
     haunted:   { name: 'オバケヤシキ', label: '館', passable: false }, // 【新案・試し】死の森に火
@@ -492,7 +493,9 @@
   // 【新案】桜吹雪: 風が火山に当たる（破壊3段目）
   //   火の粉が風下へ扇形に舞い散る。つながった火山が多いほど強い。噴き終えた火山は冷えて山に戻る
   function doEruption(s, vx, vy, dir, ctx, ev) {
-    var kind = getTile(s, vx, vy), pink = kind === 'sakura';   // 【新案・試し】桜（花びら）か火山（火の粉）か
+    var kind = getTile(s, vx, vy), pink = kind === 'sakura' || kind === 'hillsakura';   // 【新案・試し】桜（花びら）か火山（火の粉）か
+    // 【育つ】桜吹雪の奥行きは、桜が咲いた自然の大きさで決まる（丘は2列、山は3列）
+    var depth = kind === 'hillsakura' ? B.grow.sakuraDepthHill : (B.grow.enabled && kind === 'sakura') ? B.grow.sakuraDepthMountain : B.eruption.depth;
     var F = DIRS[dir];
     var Rx = -F.dy, Ry = F.dx;
     var comp = [], seen = {};
@@ -506,7 +509,7 @@
       neighbors(s, c[0], c[1]).forEach(function (n) { stack.push([n.x, n.y]); });
     }
     var cells = [];
-    for (var d = 1; d <= B.eruption.depth; d++) {
+    for (var d = 1; d <= depth; d++) {
       for (var w = -(d - 1); w <= d - 1; w++) {
         var x = vx + F.dx * d + Rx * w, y = vy + F.dy * d + Ry * w;
         if (inBounds(s, x, y)) cells.push([x, y]);
@@ -523,7 +526,7 @@
       else if (t === 'forest') { setTile(s, c[0], c[1], 'fire'); burned++; }
       else if (t === 'thicket') setTile(s, c[0], c[1], 'fire');
     });
-    comp.forEach(function (c) { setTile(s, c[0], c[1], 'mountain'); });
+    comp.forEach(function (c) { setTile(s, c[0], c[1], kind === 'hillsakura' ? 'hill' : 'mountain'); });   // 散ると元の丘・山に戻る
     var fin = { name: '桜吹雪', cells: cells, damage: amount, volcanoes: comp.length, pink: pink };
     ctx.finishers.push(fin);
     ev.push({
@@ -615,6 +618,7 @@
         if (!o && t === 'empty') { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた'); planted.push([x, y, lowG]); }
         else if (!o && t === 'thicket' && B.grow.enabled) growFrom.push([x, y]);
         else if (!o && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); }
+        else if (!o && t === 'hill' && B.grow.enabled && B.sakura.from === 'grass') { setTile(s, x, y, 'hillsakura'); ctx.phrases.push('【育つ】丘に桜が咲いた'); }
       } else if (u.magic === 'earth') {
         // 【育つ】入のときは、空きに土で丘、丘に土で山に育つ。火を埋めても丘
         var low = B.grow.enabled ? 'hill' : 'mountain';
@@ -674,7 +678,7 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
-      var tall = o || t === 'forest' || t === 'mountain' || t === 'hill' || t === 'volcano' || t === 'sakura' || t === 'deadforest' || t === 'haunted';
+      var tall = o || t === 'forest' || t === 'mountain' || t === 'hill' || t === 'volcano' || t === 'sakura' || t === 'hillsakura' || t === 'deadforest' || t === 'haunted';
       var water = t === 'river' || t === 'puddle';
       if (!tall && !water) continue;
       if (o) addHit(ctx, o, u.power, 'direct');
@@ -1178,7 +1182,7 @@
       if (t === 'mountain') { ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
       if (t === 'tornado') { ctx.phrases.push('【新案】風が竜巻に吸いこまれた'); blocked = true; break; }
       if (t === 'whirlwind' && B.tornadoRecipe === 'windWind') { whirl = [x, y]; ctx.cells.push([x, y]); break; }
-      if (t === 'sakura' || (t === 'volcano' && B.sakura.from === 'fire')) { volcano = [x, y]; ctx.cells.push([x, y]); break; }
+      if (t === 'sakura' || t === 'hillsakura' || (t === 'volcano' && B.sakura.from === 'fire')) { volcano = [x, y]; ctx.cells.push([x, y]); break; }
       if (t === 'volcano') { ctx.phrases.push('火山の陰で風が止まった'); blocked = true; break; }
       if (t === 'haunted') { ctx.phrases.push('オバケヤシキで風が止まった'); blocked = true; break; }
       if (t === 'fire' || t === 'smallfire' || t === 'firewhirl') { origin = [x, y]; ctx.cells.push([x, y]); break; }
@@ -2214,7 +2218,7 @@
   // 初期シナリオ
   //   . 空き  F 森  M 山  R 川  X 炎  s 小さな炎  V 火山  D 泥沼  P 水たまり  H 蜃気楼  I 氷  L 溶岩  W つむじ風  T 竜巻
   // ---------------------------------------------------------------
-  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill', g: 'thicket', b: 'gale' };
+  var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado', B: 'breeze', Q: 'firewhirl', K: 'sakura', p: 'petals', G: 'deadforest', O: 'haunted', h: 'hill', g: 'thicket', b: 'gale', k: 'hillsakura' };
   var PRESETS = [
     {
       id: 'mDefense', name: '【お題】防衛', mission: 'defense',

@@ -2176,6 +2176,33 @@ test('風: 敵の風も同じく、こちらの風を強風に育てる', functi
 }); });
 
 // ---------------------------------------------------------------
+console.log('\n■ 育つ（IMPROVE_grow）: 桜吹雪の奥行き');
+CH.k = 'hillsakura';
+function countTile(s, t) { return s.tiles.filter(function (x) { return x === t; }).length; }
+test('桜: 丘に草で丘の桜が咲く（丘の性質のまま、通れる）', function () { withGrow(function () {
+  var s = board(['......', '......', '..h...', '......', '......', '......']);
+  var a = R.addAlly(s, 'grass', 2, 4);   // 形の (0,2) が (2,2)
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 2), 'hillsakura');
+  ok(R.isPassable('hillsakura'), '通れる');
+}); });
+test('桜吹雪: 丘の桜は扇2列（4マス）、散ると丘に戻る', function () { withGrow(function () {
+  var s = board(['.......', '.......', '.......', '...k...', '.......', '.......', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 5);
+  var r = fire(s, a, 'up');
+  eq(names(r.events, 'finisher'), ['桜吹雪']);
+  eq(countTile(r.state, 'petals'), 4);
+  eq(tile(r.state, 3, 3), 'hill');
+}, { sakuraDepthHill: 2 }); });
+test('桜吹雪: 山の桜は扇3列（9マス）、散ると山に戻る', function () { withGrow(function () {
+  var s = board(['.......', '.......', '.......', '...K...', '.......', '.......', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 5);
+  var r = fire(s, a, 'up');
+  eq(countTile(r.state, 'petals'), 9);
+  eq(tile(r.state, 3, 3), 'mountain');
+}, { sakuraDepthMountain: 3 }); });
+
+// ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) {
   console.log('失敗: ' + failed.join(' / '));

@@ -250,6 +250,26 @@
       expect: { gone: ['E2'] }
     },
     {
+      id: 'sakuraDepth',
+      name: '【育つ】桜吹雪の奥行き: 丘の桜は2列、山の桜は3列',
+      set: { 'grow.enabled': true, 'grow.sakuraDepthHill': 2, 'grow.sakuraDepthMountain': 3 },
+      enemyActs: false,
+      desc: '桜は丘（土1回）にも山（土2回）にも咲く（草）。風で桜吹雪になるが、奥行きは咲いた自然の大きさで決まる。丘の桜は扇2列、山の桜は扇3列。散ると元の丘・山に戻る。',
+      layout: {
+        rows: ['.......', '.......', '.......', '.......', '.k...h.', '.......', '.......'],
+        allies: [['wind', 1, 6], ['grass', 5, 6], ['wind', 6, 6]],
+        enemies: [['fire', 3, 6]]
+      },
+      turns: [
+        [{ say: '見るところ: 左は丘に咲いた桜。右は丘。丘に草でも桜が咲く（一段でも起きる）。' },
+         { id: 'P1', to: [1, 6], dir: 'up', say: '左: 丘の桜に風 → 桜吹雪。扇は2列（4マス）まで。散ると丘に戻る。' },
+         { id: 'P2', to: [5, 6], dir: 'up', say: '右: 丘に草を植えると、丘の桜が咲く。' },
+         { id: 'P3', to: [6, 6], dir: 'left', shoot: false, say: '（待機）' }],
+        [{ say: 'ここまで: 丘の桜は2列。山まで育ててから桜を咲かせると、桜吹雪は3列（9マス）まで届く（「山の桜」の手順は土2回 → 草 → 風）。' }]
+      ],
+      expect: { tiles: { '1,4': 'hill', '1,3': 'empty', '5,4': 'hillsakura' } }
+    },
+    {
       id: 'forestOnly',
       name: '【育つ】森だけで起きること（雷・闇）',
       set: { 'grow.enabled': true },

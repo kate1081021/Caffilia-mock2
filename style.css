@@ -789,3 +789,20 @@ button.primary.pending { box-shadow: 0 0 0 3px #fde68a; }
 .t-gale { background: repeating-linear-gradient(115deg, rgba(14, 165, 233, 0) 0 8px, rgba(14, 165, 233, .75) 8px 16px), #dbeefa; background-size: 200% 200%; animation: breezebg .7s linear infinite; }
 .t-gale .tile-label { color: #075985; text-shadow: 0 0 3px #fff; }
 .rise.gale { width: 60px; height: 30px; margin: -15px 0 0 -30px; clip-path: none; border-radius: 40%; background: repeating-linear-gradient(115deg, rgba(14, 165, 233, 0) 0 6px, rgba(14, 165, 233, .9) 6px 12px); }
+/* 【育つ】丘の桜: 低い盛り上がりに桜 */
+.t-hillsakura { background: radial-gradient(circle at 30% 55%, #fbcfe8 0 9%, transparent 10%), radial-gradient(circle at 55% 48%, #f9a8d4 0 10%, transparent 11%), radial-gradient(circle at 72% 60%, #fbcfe8 0 8%, transparent 9%), radial-gradient(ellipse 70% 48% at 50% 100%, #b7a487 0 60%, #9c8a6f 61% 98%, transparent 100%), var(--t-empty); }
+.t-hillsakura .tile-label { color: #9d174d; text-shadow: none; }
+/* 【育つ】つながった自然を1枚の大きな絵で（大森林・湖・氷原・死の森）。マスのすき間を埋めて、真ん中に大きな印 */
+.bigland { position: absolute; inset: 0; border-radius: 8px; pointer-events: none; z-index: 0; }
+.bigland.j-up { top: -4px; border-top-left-radius: 0; border-top-right-radius: 0; }
+.bigland.j-down { bottom: -4px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.bigland.j-left { left: -4px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.bigland.j-right { right: -4px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.bigland.woods { background: linear-gradient(160deg, #5b9c4b, var(--t-forest)); }
+.bigland.lake { background: radial-gradient(ellipse at 50% 50%, #9fd0f2, #b9dcf3); }
+.bigland.icefield { background: linear-gradient(135deg, #f0f9ff, #dbeafe 50%, #bfdbfe); }
+.bigland.deadwoods { background: linear-gradient(160deg, #4b4453, #2e2a35); }
+.t-forest .tile-label, .t-puddle .tile-label, .t-ice .tile-label, .t-deadforest .tile-label { position: relative; z-index: 2; }
+.bigmark { position: absolute; left: calc(50% + var(--pdx) * 100%); top: calc(50% + var(--pdy) * 100%); transform: translate(-50%, -50%); font-size: calc(var(--ps) * 26px); line-height: 1; opacity: .85; pointer-events: none; z-index: 1; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .25)); }
+.bigmark.lake { color: #1e6fb8; font-weight: bold; }
+.bigmark.icefield { color: #fff; text-shadow: 0 0 6px #60a5fa; }

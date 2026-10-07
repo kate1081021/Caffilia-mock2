@@ -56,10 +56,13 @@
     'grow.riverLength': '育つ: 水たまりから育つ川の長さ（0は端まで）',
     'grow.galeLength': '育つ: 強風の長さ',
     'grow.galeSpreadBonus': '育つ: 強風の燃え広がりが長くなるマス数',
+    'grow.sakuraDepthHill': '育つ: 丘の桜吹雪の奥行き（列）',
+    'grow.sakuraDepthMountain': '育つ: 山の桜吹雪の奥行き（列）',
     'grow.grassBurnOut': '育つ: 草むらの炎が燃え尽きるまで（ターン）',
     'grow.forestBurnOut': '育つ: 森の炎が燃え尽きるまで（ターン）',
     'fire.plantStrong': '草むらが燃えたマスも強い炎',
     'fx.grow': '育つ瞬間を波で見せる',
+    'fx.bigPicture': 'つながった自然を1枚の大きな絵で描く',
     'eruption.depth': '桜吹雪の奥行き（段）', 'eruption.base': '桜吹雪のダメージ', 'eruption.perVolcano': '桜吹雪: 火山1つごとの追加',
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',
     'ideas.windClearsMirage': '風で蜃気楼が晴れる', 'ideas.spreadMeltsIce': '燃え広がりは氷を溶かす'
