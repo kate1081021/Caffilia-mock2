@@ -1,0 +1,129 @@
+/*
+ * balance.js — 数値をまとめた設定（v2）
+ * ブラウザでは グローバル変数 BALANCE、node では module.exports で読める。
+ */
+(function (root) {
+  var BALANCE = {
+    // 盤面
+    boardSize: 6,
+    minBoardSize: 5,
+    maxBoardSize: 9,
+
+    // 味方
+    ally: {
+      hp: 3,
+      move: 2,                                   // 1手番に動ける最大マス数
+      power: 1,                                  // 威力（直撃ダメージ）
+      count: 3,                                  // 人数の上限
+      defaultMagics: ['fire', 'water', 'wind']   // 初期の魔法
+    },
+
+    // 敵
+    enemy: {
+      hp: 20,
+      move: 2,
+      power: 3,
+      maxCount: 3,
+      defaultMagic: 'fire'
+    },
+
+    // ターン終了時、炎の上にいる者へのダメージ
+    fireTileDamage: 2,
+
+    // 魔法の形（術者の足元が (0,0)、正面が +y、術者から見て右が +x）
+    shapes: {
+      grass: [[0, 2], [-1, 3], [0, 3], [1, 3]],   // 置く
+      earth: [[-1, 2], [0, 2], [-1, 3]],          // 置く
+      fire:  [[0, 1]],                            // 点ける（正面1マスだけ）
+      thunder: [[0, 1], [1, 2], [0, 3], [1, 4]],  // 【新案】走る（ジグザグ）
+      ice:     [[0, 1], [0, 2]],                  // 【新案】凍らせる（正面へ2マス、最初に当たったものに作用）
+      senpu:   [[0, 2], [1, 2], [0, 3], [1, 3]],  // 【新案・試し】巻く（旋風。正面の2×2につむじ風）
+      dark:    [[0, 1]]                           // 【新案・試し】吸う（闇。正面1マス）
+    },
+    // 吹き抜ける（風）が (0,1) から正面へ進む最大マス数
+    lineLength: 4,
+    // 【新案・試し】風の形: 'line' = 元（正面へ最大 lineLength マス吹き抜ける）
+    //                      'breeze' = 正面 breezeLength マス。通り道の空きに「風」が残り、ターン終了で消える。風に火で火の渦
+    windMode: 'breeze',   // 標準は前2マス（オーナー判断 10/5）
+    breezeLength: 2,
+    // 【新案】流れる（水）: 水だけなら正面に池をこのマス数まで作る。山に当たると盤の端まで川になる
+    waterLength: 2,
+
+    // 決め手
+    spread: {           // 燃え広がり
+      maxLength: 4,     // 起点から風下へ最大何マス
+      baseDamage: 20,
+      perForest: 0      // 燃えた森1つあたりの追加ダメージ（決め手は一定。大きさで変わるのは範囲）
+    },
+    shock: {            // 【新案】感電（雷が水に触れる）
+      base: 20,
+      perWater: 0       // つながった水（川・水たまり）1マスあたり
+    },
+    funka: {            // 【新案】噴火（火が山に点くと、つながった山脈ごと火山になる）
+      lava: false,      // 【試し】false: 火山になるだけ（溶岩も決め手もなし）。true: 元の噴火（溶岩があふれる決め手）
+      base: 3,
+      perMountain: 1,   // 山脈の山1つあたり
+      reach: 1          // 溶岩が山脈から外へ流れ出すマス数（山のまわりだけ）
+    },
+    fireTornado: {      // 【新案】火炎竜巻（竜巻に火）
+      damage: 20
+    },
+    sentakuki: {        // 【新案】センタクキ（竜巻に水）
+      damage: 20
+    },
+    fireWhirl: {        // 【新案・試し】火の渦（吹いている風に火。2×2の渦になって燃え上がる。水でセンタクキ）
+      damage: 20
+    },
+    dark: {             // 【新案・試し】闇（吸う）: 撃ったマスのまわりの者を1マス引き寄せる（ダメージなし）
+      pullRange: 2      // 撃ったマスから縦横の歩数でこのマス数以内
+    },
+    haunt: {            // 【新案・試し】オバケヤシキ（死の森に火。中身は仮）
+      pullRange: 2,     // オバケヤシキから縦横の歩数でこのマス数以内の者を1マス引き寄せる
+      damage: 20        // 引き寄せたあと、オバケヤシキの中と隣にいる全員へ（一定）
+    },
+    sakura: {           // 【新案・試し】桜吹雪の起こし方
+      from: 'grass'     // 'grass': 山に草で桜、桜に風で桜吹雪（花びら）。'fire': 山に火で火山、火山に風で桜吹雪（火の粉）
+    },
+    eruption: {         // 【新案】桜吹雪（風が火山に当たる）
+      depth: 3,         // 火山から風下へ扇形に何段まで舞うか（1・3・5マス）
+      base: 20,
+      perVolcano: 0     // つながった火山1つあたり
+    },
+
+    // 【新案】試し中のシナジー。false にすると、その案だけ切れる（くらべて検証するため）
+    ideas: {
+      iceSlide: true,          // 氷の上は滑る: 風で押された者は、氷が途切れるか何かにぶつかるまで滑る
+      wetlandForest: true,     // 水辺の森はよく育つ: 水に接して植えた森は、水に沿ってとなりにも広がる
+      earthSmother: true,      // 土をかぶせて火を消す: 炎・小さな炎に土を盛ると、火は埋まって山になる
+      windClearsMirage: true,  // 風で蜃気楼が晴れる: 風の通り道の蜃気楼は消える
+      spreadMeltsIce: true     // 燃え広がりは氷を溶かす: 通り道の氷は水たまりになる
+    },
+
+    // 【新案】竜巻の作り方（くらべるため、画面の上のバーでも切り替えられる）
+    //   'off'      : 竜巻は起きない（今の標準。オーナー判断で一度外した。風はつむじ風を残さない）
+    //   'windWater': つむじ風に水で竜巻、竜巻に火でセンタクキ（火炎竜巻はない）
+    //   'windWind' : 元の作り方。つむじ風に風で竜巻、竜巻に火で火炎竜巻、竜巻に水でセンタクキ
+    //   'senpu'    : 旋風の魔法（巻く）が2×2のつむじ風を置く。風はつむじ風を残さない（まっすぐ運ぶだけ）。
+    //                つむじ風に水で、つながったつむじ風がまるごと竜巻。竜巻に火でセンタクキ
+    tornadoRecipe: 'off',
+
+    // 【新案・仮】あと一手のヒント: 盤面にこの自然があると「この魔法を当てれば、この決め手」と知らせる
+    //   新しいシナジーにも付けたいときは、ここに1行足す（name は決め手の名前。recipe は竜巻の作り方がそのときだけ）
+    nextHints: [
+      { tile: 'tornado', magic: 'fire', name: 'センタクキ', recipe: ['windWater', 'senpu'] },
+      { tile: 'tornado', magic: 'water', name: 'センタクキ', recipe: 'windWind' },
+      { tile: 'breeze', magic: 'fire', name: '火の渦' },
+      { tile: 'firewhirl', magic: 'water', name: 'センタクキ' },
+      { tile: 'deadforest', magic: 'fire', name: 'オバケヤシキ' }
+    ],
+
+    // 画面: ターン終了処理などを1つずつ見せる間隔（ミリ秒）
+    stepDelayMs: 400
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = BALANCE;
+  } else {
+    root.BALANCE = BALANCE;
+  }
+})(this);

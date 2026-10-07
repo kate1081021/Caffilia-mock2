@@ -4,8 +4,14 @@
  * 1. 1ターン目の全探索: 3人の行動の順番・立ち位置・向き（待機も含む）を全部試す
  * 2. 何もしない場合: 敵だけが動くと何ターンで全滅するか
  * 3. かんたんな自動プレイ: 1人ずつ「敵へのダメージが大きく、味方が傷つかず、敵の予告で狙われない」手を選ぶ
+ *    お題（防衛・護衛・奪取）のシナリオでは代わりに、mission_search.js の探索を幅を変えて回す（勝率は参考）
+ * ONLY=シナリオid で1つだけ見られる。
  */
 var R = require('../rules.js');
+var BAL = require('../balance.js');
+// IDEAS_OFF=1 で、試し中の小さなシナジー（balance.js の ideas）を全部切ってくらべられる
+if (process.env.IDEAS_OFF) Object.keys(BAL.ideas).forEach(function (k) { BAL.ideas[k] = false; });
+console.log('小さなシナジー（ideas）: ' + (process.env.IDEAS_OFF ? 'すべて切った' : 'すべて入れた'));
 
 var DIRS = R.DIR_ORDER;
 
@@ -69,7 +75,7 @@ function passive(s0, maxTurns) {
     s = R.endTurn(s).state;
     if (firstLoss === null && R.alliesOf(s).length < before) firstLoss = t;
   }
-  return { turns: s.turn - 1, result: s.result, firstLoss: firstLoss, allies: R.alliesOf(s).length };
+  return { turns: s.turn - 1, result: s.result, resultText: s.resultText, firstLoss: firstLoss, allies: R.alliesOf(s).length };
 }
 
 // ---------------------------------------------------------------
@@ -128,8 +134,25 @@ function greedyGame(s0, maxTurns) {
 }
 
 // ---------------------------------------------------------------
-var targets = [{ id: '', name: '標準（火・水・風）', state: R.createState() }].concat(
-  R.PRESETS.map(function (p) { return { id: p.id, name: p.name, state: R.loadPreset(p.id) }; }));
+var targets = [{ id: '', name: '標準（火・水・風）', state: R.startBattle(R.createState()).state }].concat(
+  R.PRESETS.map(function (p) { return { id: p.id, name: p.name, mission: p.mission, state: R.startBattle(R.loadPreset(p.id)).state }; }));
+if (process.env.ONLY !== undefined) targets = targets.filter(function (t) { return t.id === process.env.ONLY; });
+var MS = require('./mission_search.js');
+
+// お題: 探索を幅を変えて回し、勝ち・ターン数・「敵のいない所に撃った手」の割合を見る
+function missionRuns(t) {
+  var widths = [3, 6, 10], wins = 0, turns = [], shots = 0, empty = 0;
+  widths.forEach(function (w) {
+    var res = MS.search(t.state, { turns: 10, width: w });
+    if (res.state.result === 'win') { wins++; turns.push(res.state.turn); }
+    res.plan.forEach(function (pl) {
+      var st = pl.before;
+      pl.acts.forEach(function (a) { var d = MS.describe(st, a); if (a.shoot !== false) { shots++; if (d.noEnemy) empty++; } st = d.state; });
+    });
+  });
+  console.log('[お題の探索 ×' + widths.length + '（幅 ' + widths.join('・') + '）] 勝ち ' + wins + (turns.length ? '（ターン ' + turns.join('・') + '）' : '') +
+    '、撃った手 ' + shots + ' のうち敵のいない所 ' + empty + '（' + (shots ? (empty / shots * 100).toFixed(0) : 0) + '%）');
+}
 
 targets.forEach(function (t) {
   console.log('\n================ ' + t.name + ' ================');
@@ -142,8 +165,10 @@ targets.forEach(function (t) {
   console.log('    ' + sr.best.seq.join(' → '));
 
   var p = passive(t.state, 12);
-  console.log('[何もしない] ' + (p.result === 'lose' ? p.turns + 'ターンで全滅' : '12ターン後も味方 ' + p.allies + '人') + '（最初に倒れるのはターン' + p.firstLoss + '）');
+  console.log('[何もしない] ' + (p.result ? 'ターン' + (p.turns + 1) + 'で「' + p.resultText + '」' : '12ターン後も味方 ' + p.allies + '人') +
+    (p.firstLoss !== null ? '（最初に味方が倒れるのはターン' + p.firstLoss + '）' : '（味方は倒れない）'));
 
+  if (t.mission) { missionRuns(t); return; }
   var runs = 20, wins = 0, losses = 0, turnsSum = 0, lostSum = 0, fin = {}, enemyFire = 0, ff = 0;
   for (var i = 0; i < runs; i++) {
     var g = greedyGame(t.state, 15);
