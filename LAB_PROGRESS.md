@@ -89,3 +89,10 @@ LAB_00〜LAB_K の案ごとの状態。1つ終わるごとに更新する。
 | D8 敵だけの魔法「戻す」 | 作った | － | ラボ: 戻す敵 |
 | D9 大技を組む敵 | 作った（ターンの始めに舞台・終わりに決め手） | ○ | ラボ: 大技を組む敵 |
 | D10 歩いても避けられない予告 | シナリオだけ | ○ | ラボ: 伝う予告 |
+
+## 中断したところ（10/13・使用上限で止まった）
+
+- 終わった: LAB_00・C・A・D（コミット済み。`node tests/lab.js` 100件・run.js 273件・scenarios.js・snapshot 8561件 すべて通る）。
+- 次にやる: LAB_E（E2 偽の姿・E9 閉じこめ・E10 予告に一言 ＋ シナリオだけの案）→ G → H → F → B → I → K → J の順。
+- 続きのための仕込み（lab_rules.js にすでにある差し込み口）: `decoyList`（E2）、`cannotMore`・`enclose`（E9）、`castMore`・`afterShotMore`（G4・G7・I）、`placeMore`・`darkExtra`（B）、`originMore`・`cellsMore`・`confMore`（F1・F3・G2・G3・G6）、`touchFireExtra`・`pillarNet`（B・I8）。
+- 判定パネルの、まだ作っていない案のカードには「未実装」の印が出る。
