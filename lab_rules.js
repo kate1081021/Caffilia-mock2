@@ -16,6 +16,7 @@
     var DIRS = I.DIRS, DIR_ORDER = I.DIR_ORDER;
     var getTile = I.getTile, setTile = I.setTile, unitAt = I.unitAt, inBounds = I.inBounds, key = I.key, idx = I.idx;
     var addHit = I.addHit, tileName = I.tileName, unitLabel = I.unitLabel, neighbors = I.neighbors, connected = I.connected;
+    var SRC_ADD = I.SRC_NOTE;
 
     function on(id) { var l = B.lab && B.lab[id]; return !!(l && l.on); }
     function opt(id, k) { return B.lab && B.lab[id] ? B.lab[id][k] : undefined; }
@@ -124,7 +125,7 @@
         if (o && !o.stuck) { o.stuck = true; ev.push({ type: 'mud', id: o.id, cells: [c], text: '【新案】' + unitLabel(s, o) + 'はオバケヤシキに閉じこめられた（次の移動は1回休み）' }); }
         if (o && on('E9')) enclose(s, o, ev);
       });
-      I.darkPull(s, house, range, ev, 'はオバケヤシキに引き寄せられた');
+      pullToward(s, [x, y], range, [], ev, 'はオバケヤシキに引き寄せられた');
       var ring = [], ringSeen = {};
       house.forEach(function (c) {
         neighbors(s, c[0], c[1]).forEach(function (n) {
@@ -332,7 +333,7 @@
         var t = getTile(s, cx, cy);
         if (!I.canEnter(u, t) && !(n > 1 && on('D4') && CRUSH[t])) return false;
         var o = unitAt(s, cx, cy);
-        if (o && o !== u) return false;
+        if (o && o.id !== u.id) return false;
       }
       return true;
     }
@@ -535,6 +536,373 @@
     function touchFireExtra(s, x, y, t, dir, ctx, ev, tag) { return false; }
 
     // ---------------------------------------------------------------
+    // D 敵のつくり（欲・体・大きさ・強さ・敵だけの魔法）
+    // ---------------------------------------------------------------
+    // D1 欲: 敵の個性「狙い」に足す（今の 人数・近い人・自然・的 も欲として選べる）
+    I.PERSONA.aim.forest = '森（欲）';
+    I.PERSONA.aim.own = '自分の自然（欲）';
+    I.PERSONA.aim.flee = '逃げる（欲）';
+    I.PERSONA.aim.moved = '動いた者（欲）';
+    var DESIRE = { forest: true, own: true, flee: true, moved: true };
+    // D1 欲「自分の自然」: 魔法ごとの、その上・隣から撃ちたい自然
+    var OWN_D1 = { water: ['river', 'puddle'], earth: ['mountain', 'hill'], fire: ['fire', 'smallfire'], grass: ['forest', 'thicket'],
+      wind: ['breeze', 'gale'], ice: ['ice'], dark: ['deadforest'], thunder: ['river', 'puddle'], mount: ['mountain'] };
+    // D4 力ずくで崩す: 大きい敵が通ると、こう壊れる
+    function crushTo(t) {
+      if (t === 'forest') return B.grow.enabled ? 'thicket' : 'empty';
+      if (t === 'mountain') return B.grow.enabled ? 'hill' : 'empty';
+      if (t === 'hill') return 'empty';
+      if (t === 'ice') return 'puddle';
+      if (t === 'sakura') return 'mountain';
+      if (t === 'hillsakura') return 'hill';
+      if (t === 'deepforest') return 'forest';
+      return null;
+    }
+    ['forest', 'mountain', 'hill', 'ice', 'sakura', 'hillsakura', 'deepforest'].forEach(function (t) { CRUSH[t] = true; });
+    // D8: 敵だけの魔法「戻す」
+    I.MAGIC_INFO.revert = { name: '戻す', verb: '戻す' };
+    I.MAGICS.push('revert');
+    var REVERT = { fire: 'forest', volcano: 'mountain', ice: 'river', deadforest: 'forest', forest: 'thicket', mountain: 'hill', gale: 'breeze', sakura: 'mountain',
+      hillsakura: 'hill', firewhirl: 'breeze', haunted: 'deadforest', mirage: 'puddle', river: 'puddle', mud: 'puddle', snowmt: 'mountain', deepforest: 'forest', icewall: 'ice' };
+    SRC_ADD.part = '（体の一部だけ）';
+
+    function sees(s, e) { return I.alliesOf(s).filter(function (a) { return !I.hidden(s, a, e); }); }
+    function mdist(a, b) { return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]); }
+    function cmpArr(a, b) { for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }
+    // 道のり（e が自分の足で行ける。goals のどれかまで）
+    function fieldTo(s, e, goals) {
+      var f = {}, q = [];
+      goals.forEach(function (g) { var k = key(g[0], g[1]); if (f[k] === undefined) { f[k] = 0; q.push(g); } });
+      while (q.length) {
+        var c = q.shift(), d = f[key(c[0], c[1])];
+        neighbors(s, c[0], c[1]).forEach(function (n) {
+          var k = key(n.x, n.y);
+          if (f[k] !== undefined || !I.canEnter(e, getTile(s, n.x, n.y))) return;
+          var o = unitAt(s, n.x, n.y);
+          if (o && o.id !== e.id) return;
+          f[k] = d + 1; q.push([n.x, n.y]);
+        });
+      }
+      return f;
+    }
+    function allCells(s, pred) {
+      var out = [];
+      for (var y = 0; y < I.rowsOf(s); y++) for (var x = 0; x < s.size; x++) if (pred(getTile(s, x, y), x, y)) out.push([x, y]);
+      return out;
+    }
+    // 候補（動けるマス × 向き）と、その1発の結果
+    function candidates(s, e) {
+      var info = I.reachInfo(s, e), out = [];
+      info.order.forEach(function (pos) {
+        var d = info.dist[key(pos[0], pos[1])];
+        DIR_ORDER.forEach(function (dir) { out.push({ to: pos, dir: dir, dist: d, r: I.trialShot(s, e, pos[0], pos[1], dir) }); });
+      });
+      return { info: info, list: out, safe: out.filter(function (c) { return !c.r.harm; }) };
+    }
+    function pickBest(list, score) {
+      var best = null;
+      list.forEach(function (c) {
+        var sc = score(c);
+        if (!sc) return;
+        var d = best ? cmpArr(sc, best.sc) : 1;
+        if (!best || d > 0 || (d === 0 && c.dist < best.c.dist)) best = { c: c, sc: sc };
+      });
+      return best ? best.c : null;
+    }
+    // ゴールに一番近づけるマスへ行き、ゴールの方を向く（巻き込まない向き）
+    function approach(s, e, cs, goals, reason, extra) {
+      var f = fieldTo(s, e, goals);
+      var spots = cs.info.order.map(function (pos) {
+        var fd = f[key(pos[0], pos[1])];
+        if (fd === undefined) fd = 100 + Math.min.apply(null, goals.map(function (g) { return mdist(g, pos); }));
+        return { pos: pos, fd: fd, dist: cs.info.dist[key(pos[0], pos[1])] };
+      }).sort(function (a, b) { return a.fd - b.fd || a.dist - b.dist; });
+      var pick = spots[0];
+      var g = goals.slice().sort(function (a, b) { return mdist(a, pick.pos) - mdist(b, pick.pos); })[0];
+      var dir = I.faceToward(pick.pos[0], pick.pos[1], { x: g[0], y: g[1] });
+      var safeAt = function (d) { return cs.safe.some(function (c) { return c.to[0] === pick.pos[0] && c.to[1] === pick.pos[1] && c.dir === d; }); };
+      if (!safeAt(dir)) dir = DIR_ORDER.filter(safeAt)[0] || dir;
+      var p = { to: pick.pos, dir: dir, dist: pick.dist, kind: 'approach', reason: reason };
+      Object.keys(extra || {}).forEach(function (k) { p[k] = extra[k]; });
+      return p;
+    }
+
+    // D1・D9: 欲を持つ敵・大技を組む敵の手の選び方。ほかの敵は null（今の選び方）
+    function planEnemy(s, e) {
+      if (on('D9') && e.labStage) { var p9 = planCombo(s, e); if (p9) return p9; }
+      if (!on('D1') || !DESIRE[e.aim]) return null;
+      var allies = sees(s, e);
+      if (!allies.length && e.aim !== 'flee') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
+      var cs = candidates(s, e);
+      if (e.aim === 'forest') {
+        var plants = allCells(s, function (t) { return I.isPlant(t); });
+        var burn = function (c) { var n = 0; for (var i = 0; i < c.r.before.length; i++) if (I.isPlant(c.r.before[i]) && !I.isPlant(c.r.after[i])) n++; return n; };
+        var best = pickBest(cs.safe, function (c) { var b = burn(c); return b > 0 ? [b, c.r.allyHits, c.r.allyDmg] : null; });
+        if (best) return { to: best.to, dir: best.dir, dist: best.dist, kind: 'nature', reason: '森を燃やしに行く' };
+        if (!plants.length) return null;
+        return approach(s, e, cs, plants, '森へ向かう');
+      }
+      if (e.aim === 'own') {
+        var own = OWN_D1[e.magic] || [];
+        var ownCells = allCells(s, function (t) { return own.indexOf(t) >= 0; });
+        if (!ownCells.length) return null;
+        var nearOwn = function (p) { return ownCells.some(function (c) { return mdist(c, p) <= 1; }); };
+        var spotCs = cs.safe.filter(function (c) { return nearOwn(c.to); });
+        var name = I.tileName(own[0]);
+        var b2 = pickBest(spotCs, function (c) { return c.r.allyHits > 0 ? [c.r.allyHits, c.r.allyDmg] : null; });
+        if (b2) return { to: b2.to, dir: b2.dir, dist: b2.dist, kind: 'attack', reason: name + 'のそばから撃つ' };
+        if (spotCs.length) {
+          var sc = spotCs.slice().sort(function (a, b) { return a.dist - b.dist; })[0];
+          var near = allies.slice().sort(function (a, b) { return mdist([a.x, a.y], sc.to) - mdist([b.x, b.y], sc.to); })[0];
+          var dir = near ? I.faceToward(sc.to[0], sc.to[1], near) : sc.dir;
+          if (!spotCs.some(function (c) { return c.to === sc.to && c.dir === dir; })) dir = sc.dir;
+          return { to: sc.to, dir: dir, dist: sc.dist, kind: 'approach', reason: name + 'のそばで構える' };
+        }
+        return approach(s, e, cs, ownCells, name + 'へ向かう');
+      }
+      if (e.aim === 'flee') {
+        var chase = s.labChase && s.labChase.runner === e.id ? s.labChase : null;
+        var threats = allies.map(function (a) { return [a.x, a.y]; }).concat(decoySpots(s));
+        var spot;
+        if (chase) {
+          var fe = fieldTo(s, e, chase.exits);
+          spot = cs.info.order.slice().sort(function (a, b) {
+            var da = fe[key(a[0], a[1])], db = fe[key(b[0], b[1])];
+            if (da === undefined) da = 999; if (db === undefined) db = 999;
+            return da - db || cs.info.dist[key(a[0], a[1])] - cs.info.dist[key(b[0], b[1])];
+          })[0];
+        } else {
+          var away = function (p) { return threats.length ? Math.min.apply(null, threats.map(function (t) { return mdist(t, p); })) : 0; };
+          spot = cs.info.order.slice().sort(function (a, b) { return away(b) - away(a) || cs.info.dist[key(a[0], a[1])] - cs.info.dist[key(b[0], b[1])]; })[0];
+        }
+        var adj = allies.filter(function (a) { return mdist([a.x, a.y], spot) === 1; });
+        var hit = cs.safe.filter(function (c) { return c.to === spot && adj.some(function (a) { return c.r.allyIds.indexOf(a.id) >= 0; }); })[0];
+        var reason = chase ? '逃げ口へ向かう' : '逃げる';
+        if (hit) return { to: spot, dir: hit.dir, dist: cs.info.dist[key(spot[0], spot[1])], kind: 'attack', reason: reason + '（隣の者を撃つ）' };
+        var fdir = threats.length ? I.faceToward(spot[0], spot[1], { x: 2 * spot[0] - threats[0][0], y: 2 * spot[1] - threats[0][1] }) : e.facing;
+        return { to: spot, dir: fdir, dist: cs.info.dist[key(spot[0], spot[1])], kind: 'flee', noIntent: true, reason: reason };
+      }
+      if (e.aim === 'moved') {
+        var movedAllies = allies.filter(function (a) { return a.labMoved === s.turn - 1; });
+        if (!movedAllies.length) return null;
+        var tgt = movedAllies.slice().sort(function (a, b) { return mdist([a.x, a.y], [e.x, e.y]) - mdist([b.x, b.y], [e.x, e.y]); })[0];
+        var b3 = pickBest(cs.safe, function (c) { return c.r.allyIds.indexOf(tgt.id) >= 0 ? [1, c.r.allyDmg] : null; });
+        var label = unitLabel(s, tgt);
+        if (b3) return { to: b3.to, dir: b3.dir, dist: b3.dist, kind: 'attack', target: tgt.id, reason: '動いた' + label + 'を狙う' };
+        return approach(s, e, cs, [[tgt.x, tgt.y]], '動いた' + label + 'へ向かう', { target: tgt.id });
+      }
+      return null;
+    }
+    // E2 の偽の姿（逃げる敵は偽の姿からも逃げる）。E でうしろに足す
+    function decoySpots(s) { return decoyList ? decoyList(s).map(function (d) { return d.at; }) : []; }
+    var decoyList = null;
+
+    // D9: 舞台（風）→ 決め手（火）の組み合わせで、火の渦が味方に当たる手を探す
+    function planCombo(s, e) {
+      var info = I.reachInfo(s, e), best = null;
+      info.order.forEach(function (pos) {
+        DIR_ORDER.forEach(function (dir) {
+          var sim = I.clone(s), su = I.findUnit(sim, e.id);
+          su.x = pos[0]; su.y = pos[1]; su.facing = dir;
+          var main = su.magic;
+          su.magic = e.labStage;
+          var c1 = I.shoot(sim, su, dir, []);
+          su = I.findUnit(sim, e.id);
+          if (!su) return;
+          su.magic = main;
+          var harm = c1.order.some(function (id) { var t = I.findUnit(s, id); return t && t.side === 'enemy' && c1.hits[id].amount > 0; });
+          var stageHits = c1.order.filter(function (id) { var t = I.findUnit(s, id); return t && t.side === 'ally' && c1.hits[id].amount > 0; }).length;
+          var r = I.trialShot(sim, su, pos[0], pos[1], dir);
+          // 舞台の1手目は、予告なしで撃つので、人には当てない（予告の前に味方を倒さない。撃つ前に読めるように）
+          if (harm || r.harm || stageHits) return;
+          var fin = r.ctx.finishers.length;
+          var sc = [fin ? 1 : 0, r.allyHits, r.allyDmg, -info.dist[key(pos[0], pos[1])]];
+          if (!fin || !r.allyHits) return;
+          if (!best || cmpArr(sc, best.sc) > 0) best = { sc: sc, to: pos, dir: dir, dist: info.dist[key(pos[0], pos[1])], fin: r.ctx.finishers[0].name };
+        });
+      });
+      if (!best) return null;
+      return { to: best.to, dir: best.dir, dist: best.dist, kind: 'attack', labStage: true,
+        reason: I.magicName(e.labStage) + 'で舞台を作り、' + best.fin + 'を組む' };
+    }
+    // D9: 舞台の魔法を、移動のすぐあとに撃つ
+    function fireStage(s, e, ev, step) {
+      var main = e.magic;
+      e.magic = e.labStage;
+      ev.push({ type: 'phase', text: '【ラボ】' + unitLabel(s, e) + 'が舞台を作る（大技の1手目）' });
+      I.shoot(s, e, e.facing, ev);
+      var e2 = I.findUnit(s, e.id);
+      if (e2) e2.magic = main;
+      step();
+    }
+    // D1: 予告に理由を一言（ログと、盤面の吹き出し）
+    function intentReason(s, e, plan, ev) {
+      if (!plan || !plan.reason || !(on('D1') || on('D9'))) { if (e.labReason) delete e.labReason; return ''; }
+      e.labReason = plan.reason;
+      if (plan.noIntent) ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: '【ラボ】' + unitLabel(s, e) + 'は' + plan.reason + '（撃たない）' });
+      return '（' + plan.reason + '）';
+    }
+    var cannotMore = [];   // E9 でうしろに足す
+    function cannotIntent(s, e, ev) { return cannotMore.some(function (f) { return f(s, e, ev); }); }
+
+    // D3: 大きい敵の、魔法の起点（前の辺のまん中あたり。2×2 なら術者から見て左寄り）
+    var originMore = [];   // F3・G6 でうしろに足す
+    function castOrigin(s, u, facing) {
+      if ((u.size || 1) > 1) {
+        var F = DIRS[facing], R = [-F.dy, F.dx], n = u.size;
+        var cells = unitCells(u).filter(function (c) {
+          var f = (c[0] - u.x) * F.dx + (c[1] - u.y) * F.dy;   // 前ほど大きい
+          var mx = Math.max.apply(null, unitCells(u).map(function (q) { return (q[0] - u.x) * F.dx + (q[1] - u.y) * F.dy; }));
+          return f === mx;
+        }).sort(function (a, b) { return (a[0] * R[0] + a[1] * R[1]) - (b[0] * R[0] + b[1] * R[1]); });
+        var o = cells[Math.floor((n - 1) / 2)];
+        return { x: o[0], y: o[1] };
+      }
+      for (var i = 0; i < originMore.length; i++) { var r = originMore[i](s, u, facing); if (r) return r; }
+      return null;
+    }
+    // D5: めちゃ強い敵の広い形。D8: 戻すの形（正面2マス）。G2・G3 でうしろに足す
+    var BOSS = { fire: [[0, 1], [-1, 2], [0, 2], [1, 2], [-2, 3], [-1, 3], [0, 3], [1, 3], [2, 3]], earth: [[-2, 2], [-1, 2], [0, 2], [1, 2], [2, 2]] };
+    var cellsMore = [];
+    function shapeAt(s, shp, o, facing) {
+      var out = [];
+      shp.map(function (p, i) { return { rx: p[0], ry: p[1], i: i }; })
+        .sort(function (a, b) { return (Math.abs(a.rx) + Math.abs(a.ry)) - (Math.abs(b.rx) + Math.abs(b.ry)) || a.i - b.i; })
+        .forEach(function (p) { var d = I.rotate(facing, p.rx, p.ry); var x = o.x + d[0], y = o.y + d[1]; if (inBounds(s, x, y)) out.push([x, y]); });
+      return out;
+    }
+    function castCells(s, u, o, facing) {
+      if (u.labBoss && on('D5') && BOSS[u.magic]) return shapeAt(s, BOSS[u.magic], o, facing);
+      if (u.magic === 'revert') return shapeAt(s, [[0, 1], [0, 2]], o, facing);
+      for (var i = 0; i < cellsMore.length; i++) { var r = cellsMore[i](s, u, o, facing); if (r) return r; }
+      return null;
+    }
+    // D5: めちゃ強い敵のHP。F1 でうしろに足す
+    var confMore = [];
+    function unitConf(u, c) {
+      var out = c;
+      if (u.labBoss && on('D5')) out = { hp: B.lab.D5.hp, power: c.power, move: c.move };
+      for (var i = 0; i < confMore.length; i++) out = confMore[i](u, out) || out;
+      return out;
+    }
+    // D3: 大きい敵を押す（体の全部が動けるときだけ）
+    function pushBig(s, o, dir, ev, okText) {
+      var D = DIRS[dir];
+      if (!canStandAt(s, o, o.x + D.dx, o.y + D.dy)) { ev.push({ type: 'push', id: o.id, ok: false, text: unitLabel(s, o) + 'は押されなかった（大きい体が通れない）' }); return false; }
+      var from = [o.x, o.y];
+      o.x += D.dx; o.y += D.dy;
+      ev.push({ type: 'push', id: o.id, ok: true, from: from, to: [o.x, o.y], text: okText });
+      if (unitCells(o).some(function (c) { return getTile(s, c[0], c[1]) === 'mud'; })) I.enterMud(s, o, ev);
+      afterPush(s, o, ev);
+      return true;
+    }
+    // ラボ用シナリオのユニットの項目。size: 'D3' は、D3 がオンなら調整の大きさ（2 か 3）、オフなら1マス
+    function labValue(f, v) {
+      if (f === 'size' && v === 'D3') return on('D3') ? Math.max(1, Math.min(3, B.lab.D3.size || 2)) : 1;
+      return JSON.parse(JSON.stringify(v));
+    }
+    function onFire(s, u) { return unitCells(u).some(function (c) { var t = getTile(s, c[0], c[1]); return t === 'fire' || t === 'firewhirl'; }); }
+    // D3: 決め手の20の範囲が、大きい体の全部を覆ったか（覆っていなければ弱い5）
+    hitMore.push(function (ctx, u, amount, src, cell) {
+      if ((u.size || 1) > 1 && src === 'finisher' && cell && amount >= B.fire.strongDamage) {
+        ctx.labCover = ctx.labCover || {};
+        var c = ctx.labCover[u.id] = ctx.labCover[u.id] || {};
+        c[key(cell[0], cell[1])] = true;
+      }
+      // D7: 水の体は燃え広がりでは倒れない
+      if (on('D7') && u.body === 'water' && src === 'finisher' && ctx.curFin === '燃え広がり') return Math.min(amount, B.fire.weakDamage);
+      return amount;
+    });
+    function beforeApply(s, ctx, ev) {
+      ctx.order.forEach(function (id) {
+        var u = I.findUnit(s, id), h = ctx.hits[id];
+        if (!u || (u.size || 1) <= 1 || h.src !== 'finisher' || h.amount < B.fire.strongDamage) return;
+        var cover = Object.keys((ctx.labCover || {})[id] || {}).length;
+        if (cover < u.size * u.size) { h.amount = B.fire.weakDamage; h.src = 'part'; }
+      });
+    }
+
+    // 移動のあと（D1 動いた者・D4 力ずくで崩す・D6 足跡・D7 水の体は火を消す）
+    afterMoveMore.push(function (s, u, from, to, ev) {
+      if (on('D1') && u.side === 'ally') u.labMoved = s.turn;
+      var bigCrush = on('D4') && (u.size || 1) > 1;
+      var trail = on('D6') && (u.body === 'fire' || u.body === 'water');
+      var douse = on('D7') && u.body === 'water';
+      if (!bigCrush && !trail && !douse) return;
+      var ghost = I.clone(u); ghost.x = from[0]; ghost.y = from[1]; ghost.stuck = false;
+      var r = reach(s, ghost);
+      var path = [from].concat(pathOf(r, from, to));
+      var covered = [], seen = {};
+      path.forEach(function (p) { cellsAt(u, p[0], p[1]).forEach(function (c) { var k = key(c[0], c[1]); if (!seen[k]) { seen[k] = true; covered.push(c); } }); });
+      var finalK = {};
+      unitCells(u).forEach(function (c) { finalK[key(c[0], c[1])] = true; });
+      if (bigCrush) {
+        var broke = [];
+        covered.forEach(function (c) { var t = getTile(s, c[0], c[1]), to2 = crushTo(t); if (to2) { setTile(s, c[0], c[1], to2); broke.push(c); } });
+        if (broke.length) ev.push({ type: 'kindle', id: u.id, cells: broke, text: '【ラボ】' + unitLabel(s, u) + 'が力ずくで自然を崩して進んだ（' + broke.length + 'マス）' });
+      }
+      if (douse) {
+        var put = covered.filter(function (c) { var t = getTile(s, c[0], c[1]); return t === 'fire' || t === 'smallfire'; });
+        put.forEach(function (c) { setTile(s, c[0], c[1], 'empty'); });
+        if (put.length) ev.push({ type: 'kindle', id: u.id, cells: put, text: '【ラボ】水の体の' + unitLabel(s, u) + 'が通って、火が消えた（' + put.length + 'マス）' });
+      }
+      if (trail) {
+        var mark = u.body === 'fire' ? 'smallfire' : 'puddle', left = [];
+        covered.forEach(function (c) { if (!finalK[key(c[0], c[1])] && getTile(s, c[0], c[1]) === 'empty' && !unitAt(s, c[0], c[1])) { setTile(s, c[0], c[1], mark); left.push(c); } });
+        if (left.length) ev.push({ type: 'kindle', id: u.id, cells: left, text: '【ラボ】' + unitLabel(s, u) + 'の歩いた跡に' + I.tileName(mark) + '（' + left.length + 'マス）' });
+      }
+    });
+
+    // D2・D4: 敵が次のターンに向かう先（ターン終了処理のあとの盤面で、敵の順に考えて動かす）
+    function nextPaths(later) {
+      if (!(on('D2') || on('D4'))) return undefined;
+      var sim = I.clone(later), out = [];
+      I.enemiesOf(sim).map(function (e) { return e.id; }).forEach(function (id) {
+        var e = I.findUnit(sim, id);
+        if (!e || e.stand && e.stand !== 'move') return;
+        var plan = I.planEnemy(sim, e);
+        if (!plan || !plan.to) return;
+        var from = [e.x, e.y];
+        var path = (plan.to[0] === e.x && plan.to[1] === e.y) ? [] : pathOf(reach(sim, e), from, plan.to);
+        var crush = [];
+        if (on('D4') && (e.size || 1) > 1) {
+          var seen = {};
+          [from].concat(path).forEach(function (p) { cellsAt(e, p[0], p[1]).forEach(function (c) { var k = key(c[0], c[1]); if (!seen[k] && crushTo(getTile(sim, c[0], c[1]))) { seen[k] = true; crush.push(c); } }); });
+        }
+        out.push({ id: id, from: from, to: plan.to, path: path, crush: crush, dir: plan.dir, reason: plan.reason });
+        e.x = plan.to[0]; e.y = plan.to[1];   // 次の敵は、前の敵が動いたあとの盤面で考える
+      });
+      return out;
+    }
+
+    // ---------------------------------------------------------------
+    // 新しい魔法・魔法の撃ち方（D8 戻す・G 強化と融合・I 新しい魔法 …）
+    // ---------------------------------------------------------------
+    var castMore = [];   // G・I でうしろに足す
+    function castMagic(s, u, facing, ctx, ev) {
+      for (var i = 0; i < castMore.length; i++) if (castMore[i](s, u, facing, ctx, ev)) return true;
+      if (u.magic === 'revert') { revert(s, u, facing, ctx, ev); return true; }
+      return false;
+    }
+    // D8 戻す: 当たった自然を一つ前の姿に戻す。一段の自然・空きには何も起きない。ユニットには直撃1
+    function revert(s, u, facing, ctx, ev) {
+      I.castCells(s, u, facing).forEach(function (c) {
+        ctx.cells.push(c);
+        var o = unitAt(s, c[0], c[1]);
+        if (o) addHit(ctx, o, 1, 'direct');
+        var t = getTile(s, c[0], c[1]), to = REVERT[t];
+        if (t === 'forest' && !B.grow.enabled) to = 'empty';
+        if (t === 'mountain' && !B.grow.enabled) to = 'empty';
+        if (!to) return;
+        setTile(s, c[0], c[1], to);
+        ctx.phrases.push('【ラボ】' + I.tileName(t) + 'が' + I.tileName(to) + 'に戻った');
+      });
+      if (!ctx.phrases.length && !ctx.order.length) ctx.phrases.push('戻すものがなかった');
+    }
+    var afterShotMore = [];   // G7・I1 でうしろに足す
+    function afterShot(s, u, facing, ctx, ev) { afterShotMore.forEach(function (f) { f(s, u, facing, ctx, ev); }); }
+
+    // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
     // setTile のたびに: 燃えると別のものになる自然（I5 蔓の橋は燃えると川）、自然ごとの印の後始末
@@ -567,6 +935,10 @@
       useLabReach: useLabReach, reach: reach, pathOf: pathOf, mudGrip: mudGrip, afterMove: afterMove, afterPush: afterPush, hidden: hidden,
       highFirst: highFirst, barrier: barrier, useLabDark: useLabDark, darken: darken, placeCell: placeCell, heavy: heavy, canStandAt: canStandAt,
       catchesFire: catchesFire, spreadsFire: spreadsFire, waterTile: waterTile, unitCells: unitCells, waveFrom: waveFrom,
+      castOrigin: castOrigin, castCells: castCells, unitConf: unitConf, pushBig: pushBig, onFire: onFire, beforeApply: beforeApply,
+      planEnemy: planEnemy, fireStage: fireStage, intentReason: intentReason, cannotIntent: cannotIntent, castMagic: castMagic, afterShot: afterShot,
+      nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
+      crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
       on: on, opt: opt, edge: edge, CH: I.CH,
       shock: shock, haunt: haunt, sentakuki: sentakuki, ringAt: ringAt,
       eruptionDepth: eruptionDepth, eruptionWeak: eruptionWeak, sharpLength: sharpLength,

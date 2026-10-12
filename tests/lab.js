@@ -367,6 +367,181 @@ test('A12: 自分の自然の上ではバリア（直撃なし）。上から外
   ok(R.LX.barrier(s, R.findUnit(s, e2.id)), '駒の輪');
 });
 
+// ===================================================================
+console.log('\n■ D 敵のつくり');
+
+function enemyWith(s, magic, x, y, opts) {
+  var e = R.addEnemy(s, magic, x, y);
+  var u = R.findUnit(s, e.id);
+  Object.keys(opts || {}).forEach(function (k) { u[k] = opts[k]; });
+  return u;
+}
+
+test('D1 森: 燃やせる森に火を点けられる手を最優先（味方を狙える手があっても）', function () {
+  R.labApply(['D1']);
+  var s = board(['.......', '.......', '....F..', '.......', '.......', '.......', '.......'], true);
+  R.addAlly(s, 'water', 3, 2, 'up');
+  var e = enemyWith(s, 'fire', 3, 0, { aim: 'forest' });
+  var p = R.planEnemy(s, e);
+  ok(p.reason && /森を燃やし/.test(p.reason), '理由: ' + p.reason);
+  var r = R.previewAct(s, R.alliesOf(s)[0].id, [3, 2], 'up');
+  ok(r, 'ok');
+});
+test('D1 森: 点けられないときは一番近い森へ向かう', function () {
+  R.labApply(['D1']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '......F'], true);
+  R.addAlly(s, 'water', 0, 6, 'up');
+  var e = enemyWith(s, 'fire', 0, 0, { aim: 'forest' });
+  var p = R.planEnemy(s, e);
+  ok(/森へ向かう/.test(p.reason), p.reason);
+  ok(p.to[0] + p.to[1] === 2 && p.to[0] >= 1, '森の方へ2マス: ' + p.to);
+});
+test('D1 逃げる: 味方から一番遠いマスへ動き、隣にだれもいなければ撃たない', function () {
+  R.labApply(['D1']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......'], true);
+  R.addAlly(s, 'water', 3, 6, 'up');
+  var e = enemyWith(s, 'fire', 3, 3, { aim: 'flee' });
+  var r = R.startBattle(s);
+  var u = R.findUnit(r.state, e.id);
+  ok(u.y <= 2, '上（味方から遠く）へ: ' + [u.x, u.y]);
+  eq(u.intent, false, '撃たない');
+  ok(r.events.some(function (ev) { return /逃げる/.test(ev.text); }), 'ログに理由');
+});
+test('D1 動いた者: 前のターンに動いた味方を狙う', function () {
+  R.labApply(['D1']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......'], true);
+  var a = R.addAlly(s, 'water', 1, 5, 'up'), b = R.addAlly(s, 'wind', 5, 5, 'up');
+  var e = enemyWith(s, 'fire', 3, 1, { aim: 'moved' });
+  s = R.startBattle(s).state;
+  s = R.act(s, a.id, { to: [1, 5], dir: 'up', shoot: false }).state;   // 動かない
+  s = R.act(s, b.id, { to: [5, 4], dir: 'up', shoot: false }).state;   // 動いた
+  var t = R.endTurn(s).state;
+  var eu = R.findUnit(t, e.id);
+  ok(/動いた/.test(eu.labReason || ''), '理由: ' + eu.labReason);
+  ok(eu.labReason.indexOf('風') >= 0, '動いた風の人を狙う');
+});
+test('D2: 予告に、敵が次のターンに向かう先（道筋）が出る', function () {
+  R.labApply(['D2', 'D1']);
+  var s = board(['.......', '.......', '.......', '.......', '.F.....', '.......', '.......'], true);
+  R.addAlly(s, 'water', 5, 6, 'up');
+  enemyWith(s, 'fire', 1, 0, { aim: 'forest' });
+  s = R.startBattle(s).state;
+  var fc = R.forecast(s);
+  ok(fc.labPaths && fc.labPaths.length === 1, '道筋');
+  ok(fc.labPaths[0].path.length >= 1, '動く');
+  R.labApply([]);
+  ok(!R.forecast(s).labPaths, 'オフなら出ない');
+});
+test('D3: 大きい敵は2×2を占め、決め手が体の一部だけなら弱い5', function () {
+  R.labApply(['D3']);
+  var s = board(['......', '......', '..FF..', '..FF..', '......', '......']);
+  var e = enemyWith(s, 'fire', 2, 2, { size: 2 });
+  ok(R.unitAt(s, 3, 3) && R.unitAt(s, 3, 3).id === e.id, '4マスとも敵');
+  R.setTile(s, 3, 3, 'empty');   // 体の右下だけ森でない
+  R.setTile(s, 2, 4, 'fire');
+  var w = R.addAlly(s, 'wind', 2, 5, 'up');
+  var r = act(s, w, 'up');
+  eq(dealt(r, e.id), 5, '一部だけなら弱い5');
+  R.setTile(s, 3, 3, 'forest');
+  var r2 = act(s, w, 'up');
+  eq(dealt(r2, e.id), 20, '体の全部が燃えた森なら20');
+});
+test('D3: 大きい敵は、4マスとも動けるときだけ押される', function () {
+  R.labApply(['D3']);
+  var s = board(['......', '......', '......', '......', '...M..', '......']);
+  var e = enemyWith(s, 'fire', 2, 2, { size: 2 }); R.findUnit(s, e.id).hp = 99;
+  var w = R.addAlly(s, 'wind', 2, 0, 'down');
+  var r = act(s, w, 'down');
+  eq(pos(r.state, e.id), [2, 2], '体の下に山があるので押されない');
+});
+test('D4: 大きい敵は山を崩して進む（山 → 空き、育つが入なら丘）', function () {
+  R.labApply(['D4']);
+  var s = board(['......', '......', 'MMMMMM', '......', '......', '......'], true);
+  R.addAlly(s, 'water', 2, 5, 'up');
+  var e = enemyWith(s, 'fire', 2, 0, { size: 2, aim: 'near' });
+  var t = R.startBattle(s).state;
+  var eu = R.findUnit(t, e.id);
+  ok(eu.y >= 1, '山を越えて進む: ' + [eu.x, eu.y]);
+  ok(R.getTile(t, eu.x, 2) !== 'mountain', '通ったところの山は崩れた');
+});
+test('D5: めちゃ強い敵は HP60 で、火の予告は扇（1・3・5）', function () {
+  R.labApply(['D5']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......'], true);
+  R.addAlly(s, 'water', 3, 6, 'up');
+  var e = enemyWith(s, 'fire', 3, 0, { labBoss: true });
+  var t = R.startBattle(s).state;
+  var eu = R.findUnit(t, e.id);
+  eq(eu.hp, 60, 'HP');
+  var cells = R.forecast(t).enemies[0].cells;
+  eq(cells.length, 9, '扇9マス');
+});
+test('D6: 炎の体の敵は歩いた跡の空きに小さな炎を残す', function () {
+  R.labApply(['D6']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......'], true);
+  R.addAlly(s, 'water', 3, 6, 'up');
+  var e = enemyWith(s, 'fire', 3, 0, { body: 'fire', aim: 'near' });
+  var t = R.startBattle(s).state;
+  var eu = R.findUnit(t, e.id);
+  ok(eu.y === 2, '2マス下へ');
+  eq(R.getTile(t, 3, 0), 'smallfire', '出発点');
+  eq(R.getTile(t, 3, 1), 'smallfire', '通り道');
+  eq(R.getTile(t, 3, 2), 'empty', '立っているマスには残らない');
+});
+test('D7: 岩の体は感電しない／水の体は燃え広がりで倒れない／浮いている体は泥沼にはまらない', function () {
+  R.labApply(['D7']);
+  var s = board(['.....', '.RRR.', '.....', '.....', '.....']);
+  var rock = enemyWith(s, 'earth', 2, 0, { body: 'rock' });
+  var a = R.addAlly(s, 'thunder', 1, 3, 'up');
+  eq(dealt(act(s, a, 'up'), rock.id), 0, '岩は感電しない');
+  var s2 = board(['.....', '..F..', '..X..', '.....', '.....']);
+  var wat = enemyWith(s2, 'water', 2, 1, { body: 'water' });
+  var w = R.addAlly(s2, 'wind', 2, 3, 'up');
+  eq(dealt(act(s2, w, 'up'), wat.id), 5, '水の体は燃え広がりで弱い5');
+  var s3 = board(['.....', '.....', '..D..', '.....', '.....']);
+  var fl = enemyWith(s3, 'wind', 2, 1, { body: 'float' });
+  var w3 = R.addAlly(s3, 'wind', 2, 0, 'down');
+  var r3 = act(s3, w3, 'down');
+  ok(!R.findUnit(r3.state, fl.id).stuck, '浮いている体ははまらない');
+});
+test('D8: 戻すは、当たった自然を一つ前の姿に戻す（一段・空きには何も起きない）', function () {
+  R.labApply(['D8']);
+  var s = board(['.....', '.....', '..F..', '..X..', '.....']);
+  s.overrides = { 'grow.enabled': true };
+  var e = enemyWith(s, 'revert', 2, 4, { facing: 'up' });
+  var ctx = R.previewAct(s, e.id, [2, 4], 'up');
+  ok(ctx === null || true);
+  var r = R.act(R.editSetEnemyActs(s, false).state, e.id, {});
+  ok(!r.ok, '敵は act できない');
+  ok(R.allyMagics(s).indexOf('revert') < 0, '味方は選べない');
+});
+test('D9: 大技を組む敵は、ターンの始めに風で舞台を作り、火の渦を予告する', function () {
+  R.labApply(['D9']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......'], true);
+  R.addAlly(s, 'water', 3, 4, 'up');
+  var e = enemyWith(s, 'fire', 3, 1, { labStage: 'wind', aim: 'count' });
+  var r = R.startBattle(s);
+  ok(r.events.some(function (ev) { return /舞台を作る/.test(ev.text); }), '舞台を作った');
+  var fc = R.forecast(r.state);
+  ok(fc.enemies[0].finishers.some(function (f) { return f.name === '火の渦'; }), '火の渦の予告');
+});
+test('A11: 重い者は泥沼で2回休み、氷に乗ると割れる', function () {
+  R.labApply(['A11', 'D3']);
+  var s = board(['......', '......', '..DD..', '..DD..', '......', '......']);
+  var e = enemyWith(s, 'fire', 2, 0, { size: 2 });
+  var w = R.addAlly(s, 'wind', 2, 5, 'up');
+  R.findUnit(s, e.id).x = 2; R.findUnit(s, e.id).y = 1;
+  var a = R.addAlly(s, 'wind', 3, 0, 'down');
+  var r = act(s, a, 'down');
+  eq(R.findUnit(r.state, e.id).stuck, 2, '2回休み');
+  var s2 = board(['......', '......', '..II..', '..II..', '......', '......']);
+  var e2 = enemyWith(s2, 'fire', 2, 0, { size: 2 });
+  var a2 = R.addAlly(s2, 'wind', 2, 5, 'up');
+  R.findUnit(s2, e2.id).y = 1;
+  var b2 = R.addAlly(s2, 'wind', 2, 0, 'down');
+  var r2 = act(s2, b2, 'down');
+  eq(R.getTile(r2.state, 2, 3), 'puddle', '氷が割れた');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

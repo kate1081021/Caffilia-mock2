@@ -180,6 +180,7 @@
     for (var i = 0; i < s.units.length; i++) {
       var u = s.units[i];
       if (u.x === x && u.y === y) return u;
+      if (u.size > 1 && x >= u.x && y >= u.y && x < u.x + u.size && y < u.y + u.size) return u;   // ラボ D3: 大きい敵は size×size を占める
     }
     return null;
   }
@@ -229,6 +230,7 @@
 
   // 魔法の起点。【育つ】丘の上（高台）から撃つと、正面へ1マス先から撃ったことになる
   function castOrigin(s, u, facing) {
+    if (LX) { var lo = LX.castOrigin(s, u, facing); if (lo) return lo; }   // ラボ: 大きい敵の起点・足場・武器
     if (getTile(s, u.x, u.y) !== 'hill') return { x: u.x, y: u.y };
     var F = DIRS[facing];
     return { x: u.x + F.dx, y: u.y + F.dy };
@@ -236,6 +238,7 @@
   // 術者 u が facing へ撃つ魔法の形のマス
   function castCells(s, u, facing) {
     var o = castOrigin(s, u, facing);
+    if (LX) { var lc = LX.castCells(s, u, o, facing); if (lc) return lc; }   // ラボ: めちゃ強い敵の広い形・強化（伸びる・姿）・武器
     return shapeCells(s, u.magic, o.x, o.y, facing);
   }
 
@@ -270,7 +273,10 @@
   // ---------------------------------------------------------------
   // 状態を作る
   // ---------------------------------------------------------------
-  function unitConf(u) { return u.side === 'ally' ? B.ally : u.side === 'enemy' ? B.enemy : { hp: B.mission[u.kind].hp, power: 0, move: 0 }; }
+  function unitConf(u) {
+    var c = u.side === 'ally' ? B.ally : u.side === 'enemy' ? B.enemy : { hp: B.mission[u.kind].hp, power: 0, move: 0 };
+    return LX ? LX.unitConf(u, c) : c;   // ラボ: めちゃ強い敵のHP・移動1 など
+  }
   function makeUnit(s, side, magic, x, y, facing) {
     s.seq = (s.seq || 0) + 1;
     var conf = side === 'ally' ? B.ally : B.enemy;
@@ -315,6 +321,7 @@
 
   // u が自分の足で入れるマスか（個性で変わる。押されて動くときは使わない）
   function canEnter(u, tile) {
+    if (u && u.body === 'float' && lab('D7') && (tile === 'river' || tile === 'puddle')) return true;   // ラボ D7: 浮いている体は川を渡れる
     if (u && u.side === 'enemy') {
       if (u.cross === 'river' && (tile === 'river' || tile === 'puddle')) return true;
       if (u.avoid === 'danger' && DANGER[tile]) return false;
@@ -324,7 +331,10 @@
 
   // 敵だけの魔法（シナリオごとの一覧があればそれ、なければ balance.js）
   function enemyOnlyMagics(s) { return (s && s.enemyOnlyMagics) || B.enemyOnlyMagics || []; }
-  function allyMagics(s) { var only = enemyOnlyMagics(s); return MAGICS.filter(function (m) { return only.indexOf(m) < 0; }); }
+  function allyMagics(s) { var only = enemyOnlyMagics(s); return MAGICS.filter(function (m) { return only.indexOf(m) < 0 && !labMagicOff(m, 'ally'); }); }
+  // ラボで足した魔法は、その案がオンのときだけ選べる（戻すは敵だけ）
+  var LAB_MAGIC = { revert: 'D8', light: 'I1', forestm: 'I3', rock: 'I4', vine: 'I5', rain: 'I6', sound: 'I7', metal: 'I8' };
+  function labMagicOff(m, side) { if (!LAB_MAGIC[m]) return false; if (m === 'revert' && side === 'ally') return true; return !lab(LAB_MAGIC[m]); }
   function addAlly(s, magic, x, y, facing) { var u = makeUnit(s, 'ally', magic, x, y, facing); s.units.push(u); return u; }
   function addEnemy(s, magic, x, y, facing) { var u = makeUnit(s, 'enemy', magic || B.enemy.defaultMagic, x, y, facing); s.units.push(u); return u; }
   function addObject(s, kind, x, y) {
@@ -394,6 +404,7 @@
 
   var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）', ram: '（体当たり）', edge: '（決め手の外側）', weak: '（弱い）' };
   function applyHits(s, ctx, ev) {
+    if (LX) LX.beforeApply(s, ctx, ev);   // ラボ D3: 大きい敵は、決め手が体の全部を覆ったときだけ20
     ctx.order.forEach(function (id) {
       var u = findUnit(s, id);
       if (!u) return;
@@ -527,6 +538,7 @@
     // 強い炎になるのは、燃えた森のマス（【育つ】草むらは燃えるが、今は弱い炎）
     var strongList = burnedList.filter(function (c) { return burnsStrong(burned[key(c[0], c[1])]); });
     var grassN = burnedList.length - strongList.length;
+    if (LX) ctx.curFin = '燃え広がり';   // ラボ D7: 水の体は燃え広がりでは倒れない
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
@@ -1319,6 +1331,7 @@
   // o を dir へ1マス押す（風で運ぶ・【育つ】盛り上がる山の押し出し）。押せたら true
   //   動かない置きもの・盤の端・通れないマス・ユニットがいるときは押せない。氷の上は滑り、泥沼に入ればはまる
   function pushOne(s, o, dir, ev, okText) {
+    if (LX && o.size > 1) return LX.pushBig(s, o, dir, ev, okText);   // ラボ D3: 大きい敵は体の全部が動けるときだけ
     var F = DIRS[dir];
     var cx = o.x, cy = o.y, nx = cx + F.dx, ny = cy + F.dy;
     var why = null;
@@ -1454,7 +1467,8 @@
     var label = unitLabel(s, u);
     var castEv = { type: 'cast', id: u.id, side: u.side, magic: u.magic, dir: facing, from: [u.x, u.y], cells: [], text: '' };
     ev.push(castEv);
-    if (u.magic === 'water') flow(s, u, facing, ctx, ev);
+    if (LX && LX.castMagic(s, u, facing, ctx, ev)) { /* ラボ: 新しい魔法・融合・まとう など */ }
+    else if (u.magic === 'water') flow(s, u, facing, ctx, ev);
     else if (u.magic === 'wind') blow(s, u, facing, ctx, ev);
     else if (u.magic === 'thunder') strike(s, u, facing, ctx, ev);
     else if (u.magic === 'ice') chill(s, u, facing, ctx, ev);
@@ -1468,6 +1482,7 @@
     castEv.text = castEv.text.replace(/ → $/, '');
     applyHits(s, ctx, ev);
     ctx.after.forEach(function (fn) { fn(); });
+    if (LX) LX.afterShot(s, u, facing, ctx, ev);   // ラボ: まとう（G7）・照らす（I1）など
     return ctx;
   }
 
@@ -1605,7 +1620,7 @@
       neighbors(s, c[0], c[1]).forEach(function (n) {
         var k = key(n.x, n.y);
         if (field[k] !== undefined) return;
-        if (!canEnter(mover, getTile(s, n.x, n.y))) return;
+        if (!canEnter(mover, getTile(s, n.x, n.y)) && !(LX && LX.crushable(mover, getTile(s, n.x, n.y)))) return;   // ラボ D4: 大きい敵は崩して通れる
         var occ = unitAt(s, n.x, n.y);
         if (occ && occ !== mover) return;
         field[k] = cd + 1;
@@ -1675,7 +1690,7 @@
     var changed = 0;
     for (var i = 0; i < before.length; i++) if (before[i] !== 'empty' && sim.tiles[i] !== before[i]) changed++;
     return { allyHits: allyIds.length, allyIds: allyIds, allyDmg: allyDmg, targetHits: targetIds.length, targetIds: targetIds,
-      harm: harm, changed: changed, cells: ctx.cells, ctx: ctx };
+      harm: harm, changed: changed, cells: ctx.cells, ctx: ctx, before: before, after: sim.tiles };
   }
 
   // お題の的: 村・馬車・宝を持っている味方（蜃気楼の中は見えない）。宝がまだ拾われていない奪取では、的はない
@@ -1716,6 +1731,7 @@
     // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
     if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.path.length ? rr.path[Math.min(B.enemy.rushMove, rr.path.length) - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
     if (!alliesOf(s).length) return null;
+    if (LX) { var lp = LX.planEnemy(s, e); if (lp) return lp; }   // ラボ: 欲（D1）・大技を組む敵（D9）
     var allies = alliesOf(s).filter(function (a) { return !hidden(s, a, e); });
     if (!allies.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
     var info = reachInfo(s, e);
@@ -1804,9 +1820,12 @@
       if (plan.kind === 'noPath') ev.push({ type: 'info', id: e.id, text: unitLabel(s, e) + 'は' + plan.aimAt + 'への道がないので、' + (plan.dist > 0 ? '近くで' : 'その場で') + '構える' });
       if (plan.dist > 0) { moveUnit(s, e, plan.to[0], plan.to[1], plan.dist, ev); step(); }
       e.facing = plan.dir;
+      if (LX && plan.labStage) LX.fireStage(s, e, ev, step);   // ラボ D9: 舞台を作る魔法は、移動のすぐあとに撃つ
+      var why = LX ? LX.intentReason(s, e, plan, ev) : '';      // ラボ D1: 予告に理由を一言
+      if (plan.noIntent || (LX && LX.cannotIntent(s, e, ev))) { e.intent = false; step(); return; }   // ラボ: 逃げる敵は撃たない／閉じこめられていると予告できない
       e.intent = true;
       ev.push({ type: 'intent', id: e.id, side: 'enemy', magic: e.magic, dir: plan.dir, from: [e.x, e.y],
-        cells: trialShot(s, e, e.x, e.y, plan.dir).cells, text: intentText(s, e) });
+        cells: trialShot(s, e, e.x, e.y, plan.dir).cells, text: intentText(s, e) + why });
       step();
     });
   }
@@ -2089,7 +2108,7 @@
     // 2. 炎の上にいる者にダメージ
     var burnEv = [];
     s.units.forEach(function (u) {
-      if (getTile(s, u.x, u.y) === 'fire' || getTile(s, u.x, u.y) === 'firewhirl') {
+      if (getTile(s, u.x, u.y) === 'fire' || getTile(s, u.x, u.y) === 'firewhirl' || (LX && u.size > 1 && LX.onFire(s, u))) {
         u.hp -= B.fireTileDamage;
         burnEv.push({ type: 'damage', id: u.id, side: u.side, amount: B.fireTileDamage, src: 'burn', cells: [[u.x, u.y]], text: '炎の上の' + unitLabel(s, u) + 'に' + B.fireTileDamage + 'ダメージ（残りHP ' + Math.max(0, u.hp) + '）' });
       }
@@ -2364,6 +2383,7 @@
     // ターン終了処理で受けるダメージ（炎の上・火傷）。燃え移りも含めて、そのまま動かして数える
     var later = clone(sim), laterEv = [];
     timePasses(later, laterEv, function () {});
+    if (LX) { var lp = LX.nextPaths(later); if (lp) out.labPaths = lp; }   // ラボ D2: 敵が次のターンに向かう先（D4: 崩すマス）
     var sum = {};
     laterEv.forEach(function (e) {
       if (e.type !== 'damage') return;
@@ -2903,7 +2923,7 @@
     p.enemies.forEach(function (e) {
       var u = addEnemy(s, e[0], e[1], e[2], e[4] || 'down');
       if (e[3]) PERSONA_FIELDS.forEach(function (f) { if (e[3][f]) u[f] = e[3][f]; });
-      if (e[3] && e[3].lab) Object.keys(e[3].lab).forEach(function (f) { u[f] = clone(e[3].lab[f]); });   // ラボ: 大きさ・体・HP など
+      if (e[3] && e[3].lab) Object.keys(e[3].lab).forEach(function (f) { u[f] = LX ? LX.labValue(f, e[3].lab[f]) : clone(e[3].lab[f]); });   // ラボ: 大きさ・体・HP など
     });
     if (p.labState) Object.keys(p.labState).forEach(function (f) { s[f] = clone(p.labState[f]); });   // ラボ: 盤面に付ける印（お題の追加など）
     if (p.enemyOnly) s.enemyOnlyMagics = p.enemyOnly.slice();
@@ -3056,7 +3076,7 @@
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
     withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); },
     // 試作ラボ
-    LAB: LabData, LAB_PRESETS: LAB_PRESETS, LX: LX, lab: lab, labCard: labCard, labNeedsAll: labNeedsAll, labApply: labApply, labOnList: labOnList,
+    LAB: LabData, LAB_PRESETS: LAB_PRESETS, LX: LX, lab: lab, labCard: labCard, labNeedsAll: labNeedsAll, labApply: labApply, labOnList: labOnList, labMagicOff: labMagicOff,
     labDefaults: function () { return clone(LAB_DEFAULTS); }
   };
   if (LX && LX.api) Object.keys(LX.api).forEach(function (k) { api[k] = typeof LX.api[k] === 'function' && LX.api[k].stage ? withStage(LX.api[k]) : LX.api[k]; });

@@ -938,3 +938,34 @@ body.lab-open { padding-left: 400px; }
   pointer-events: none; z-index: 3;
 }
 .unit.barrier { box-shadow: 0 0 0 3px rgba(20, 184, 166, .55), 0 0 10px 3px rgba(45, 212, 191, .5); }
+/* ラボ D: 大きい敵・体・欲・理由・行き先 */
+.unit.big {
+  position: absolute; left: 6%; top: 6%;
+  width: calc(var(--sz) * 100% + (var(--sz) - 1) * 3px - 12%);
+  height: calc(var(--sz) * 100% + (var(--sz) - 1) * 3px - 12%);
+  border-radius: 24%; z-index: 4; font-size: 1.6em;
+}
+.unit.boss { border-width: 5px; box-shadow: 0 0 0 3px #fde047, 0 4px 10px rgba(0,0,0,.4); }
+.unit .u-boss { position: absolute; right: -10%; bottom: -10%; font-size: .55em; background: #fde047; color: #713f12; border-radius: 4px; padding: 0 3px; font-weight: bold; }
+.unit .u-boss.stage { right: auto; left: -10%; background: #c4b5fd; color: #3b0764; }
+.unit.body-fire { background: radial-gradient(circle at 50% 60%, #f97316, #b91c1c); }
+.unit.body-water { background: radial-gradient(circle at 50% 40%, #60a5fa, #1e3a8a); border-color: #1e3a8a; }
+.unit.body-rock { background: radial-gradient(circle at 40% 35%, #a8a29e, #44403c); border-color: #292524; border-radius: 30%; }
+.unit.body-float { background: radial-gradient(circle, #e9d5ff, #7c3aed); border-style: dashed; transform: translateY(-6%) rotate(var(--rot)); }
+.unit.desire-forest { border-color: #f97316; }
+.unit.desire-flee { width: 56%; height: 56%; }
+.unit.desire-own { border-color: #38bdf8; }
+.unit.desire-moved { border-color: #facc15; }
+.unit .u-why {
+  position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%) rotate(calc(-1 * var(--rot)));
+  white-space: nowrap; font-size: .5em; font-weight: bold; background: #fff; color: #7c2d12;
+  border: 1px solid #fdba74; border-radius: 8px; padding: 1px 5px; z-index: 6;
+}
+.wline.d0.up, .wline.d0.down { border-left-color: rgba(234, 88, 12, .75); } .wline.d0.left, .wline.d0.right { border-top-color: rgba(234, 88, 12, .75); } .wline.d0.dot { background: rgba(234, 88, 12, .75); }
+.wline.d1.up, .wline.d1.down { border-left-color: rgba(147, 51, 234, .7); } .wline.d1.left, .wline.d1.right { border-top-color: rgba(147, 51, 234, .7); } .wline.d1.dot { background: rgba(147, 51, 234, .7); }
+.wline.d2.up, .wline.d2.down { border-left-color: rgba(2, 132, 199, .7); } .wline.d2.left, .wline.d2.right { border-top-color: rgba(2, 132, 199, .7); } .wline.d2.dot { background: rgba(2, 132, 199, .7); }
+.wline.d3.up, .wline.d3.down { border-left-color: rgba(22, 163, 74, .7); } .wline.d3.left, .wline.d3.right { border-top-color: rgba(22, 163, 74, .7); } .wline.d3.dot { background: rgba(22, 163, 74, .7); }
+.ghost.dest { border-style: dashed; }
+.ghost.dest.d0 { border-color: #ea580c; color: #ea580c; } .ghost.dest.d1 { border-color: #9333ea; color: #9333ea; }
+.ghost.dest.d2 { border-color: #0284c7; color: #0284c7; } .ghost.dest.d3 { border-color: #16a34a; color: #16a34a; }
+.b-crush { position: absolute; right: 4%; top: 4%; font-size: .7em; font-weight: bold; color: #fff; background: #7c2d12; border-radius: 4px; padding: 0 3px; z-index: 2; pointer-events: none; }

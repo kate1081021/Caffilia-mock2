@@ -502,6 +502,12 @@
     if (app.busy) skipPlayback();
     var check = opts && opts.check;
     if (!check) endCheck();
+    // 試作ラボ: ラボ用シナリオは、盤面を作る前に案の切り替えを決める（大きい敵の大きさ などが切り替えで変わるため）
+    var labPre = !check && id ? R.findPreset(id) : null;
+    if (labPre && labPre.lab) {
+      R.labApply(labPre.lab, labPre.labOpts);
+      if (opts && opts.labOff && B.lab[opts.labOff]) B.lab[opts.labOff].on = false;
+    }
     var s = check ? R.buildPreset(check.layout) : id ? R.loadPreset(id) : R.createState();
     if (opts && opts.enemyActs === false) s = R.editSetEnemyActs(s, false).state;
     var preset = !check && id ? (id === 'plaza' ? R.plazaLayout(B.boardSize) : R.findPreset(id)) : null;   // 【縮尺】広場は今の盤面の大きさで作る
@@ -509,8 +515,6 @@
     // 試作ラボ: ラボ用シナリオは、その案と needs だけをオンにする（ほかのラボの案はオフに戻る）。
     //   opts.labOff: その案だけオフにして同じ盤面をやり直す（オフでくらべる）
     if (preset && preset.lab) {
-      R.labApply(preset.lab, preset.labOpts);
-      if (opts && opts.labOff && B.lab[opts.labOff]) B.lab[opts.labOff].on = false;
       app.cache = {};
       sideSig = '';
       var labOn = R.labOnList().map(function (k) { var c = R.labCard(k); return c ? c.name : k; });
@@ -856,7 +860,7 @@
   var cellEls = [];
 
   // 敵の個性: 駒の小さな印（狙い 人/近/自・危ない所も避ける 避・川を渡る 渡）と、一覧の説明
-  var AIM_MARK = { count: '人', near: '近', nature: '自', target: '的' };
+  var AIM_MARK = { count: '人', near: '近', nature: '自', target: '的', forest: '森', own: '己', flee: '逃', moved: '動' };   // 森・己・逃・動 はラボ D1 の欲
   function personaMark(u) {
     if (u.stand === 'still') return '止';
     if (u.stand === 'march') return '進';
@@ -892,13 +896,21 @@
     if (R.LX && R.LX.barrier(st, u)) cls.push('barrier');   // ラボ A12: 自分の自然の上でバリア
     var facing = view.facing || u.facing;
     var name = u.side === 'ally' ? esc(R.magicName(u.magic)) : '敵<small>' + esc(u.letter) + '</small>';
-    var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg">' +
+    // ラボ: 大きい敵（D3）・体（D6・D7）・欲（D1）・めちゃ強い敵（D5）の見た目
+    if (u.size > 1) cls.push('big');
+    if (u.body) cls.push('body-' + u.body);
+    if (u.side === 'enemy' && AIM_MARK[u.aim] && R.LX && R.LX.DESIRE[u.aim] && R.lab('D1')) cls.push('desire-' + u.aim);
+    if (u.labBoss) cls.push('boss');
+    var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg' + (u.size > 1 ? ';--sz:' + u.size : '') + '">' +
       '<span class="facing"></span><span class="u-name">' + name + '</span><span class="u-hp">HP' + u.hp + '</span>';
     if (u.side === 'enemy') {
       if (u.stand !== 'rush') h += '<span class="u-magic">' + esc(R.magicName(u.magic)) + '</span>';   // 突進の敵は魔法を撃たない
       h += '<span class="u-persona" title="' + esc(personaText(u)) + '">' + esc(personaMark(u)) + '</span>';
     }
     if (R.hidden(st, u)) h += '<span class="u-hide">隠</span>';
+    if (u.side === 'enemy' && u.labReason && u.intent !== undefined && (R.lab('D1') || R.lab('D9'))) h += '<span class="u-why">' + esc(u.labReason) + '</span>';   // ラボ D1: 予告に理由を一言
+    if (u.labBoss) h += '<span class="u-boss">強</span>';
+    if (u.labStage) h += '<span class="u-boss stage" title="大技を組む敵: ' + esc(R.magicName(u.labStage)) + 'で舞台 → ' + esc(R.magicName(u.magic)) + '">技</span>';
     if (st.mission && st.mission.carrier === u.id) h += '<span class="u-treasure" title="宝を持っている（撃てない）">宝</span>';
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
     if (view.warn) h += '<span class="u-warn">予告 -' + view.warn + '</span>';
@@ -1055,6 +1067,23 @@
       if (v) rushWarn[v.id] = v.hp;
     });
     Object.keys(rushWarn).forEach(function (id) { warn[id] = Math.max(warn[id] || 0, rushWarn[id]); });
+    // ラボ D2: 敵が次のターンに向かう先（敵ごとに色の違う点線と、着く先の丸）。D4: 崩すマスに「崩」
+    var dLine = {}, dStop = {}, dCrush = {};
+    var fcl = (app.editMode || app.busy) ? null : forecastNow(true);
+    if (fcl && fcl.labPaths && R.lab('D2')) fcl.labPaths.forEach(function (lp, li) {
+      var le = R.findUnit(st, lp.id);
+      if (!le) return;
+      var seq = [lp.from].concat(lp.path);
+      var stepDir = function (a, b) { return b[0] > a[0] ? 'right' : b[0] < a[0] ? 'left' : b[1] > a[1] ? 'down' : 'up'; };
+      var OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+      if (seq.length > 1) seq.forEach(function (c, i) {
+        var arms = dLine[key(c[0], c[1])] = dLine[key(c[0], c[1])] || { color: li % 4, arms: [] };
+        if (i > 0) arms.arms.push(OPP[stepDir(seq[i - 1], c)]);
+        if (i < seq.length - 1) arms.arms.push(stepDir(c, seq[i + 1]));
+      });
+      if (seq.length > 1) dStop[key(lp.to[0], lp.to[1])] = { letter: le.letter, color: li % 4, why: lp.reason };
+    });
+    if (fcl && fcl.labPaths && R.lab('D4')) fcl.labPaths.forEach(function (lp) { (lp.crush || []).forEach(function (c) { dCrush[key(c[0], c[1])] = true; }); });
     // チュートリアル②: 山の頂上と腕（どこが高いか）
     var slopes = st.slopes || {};
 
@@ -1185,6 +1214,9 @@
         if (wLine[k]) inner += wLine[k].map(function (d) { return '<span class="wline ' + d + '"></span>'; }).join('') + '<span class="wline dot"></span>';
         if (eLine[k]) inner += eLine[k].map(function (d) { return '<span class="wline e ' + d + '"></span>'; }).join('') + '<span class="wline e dot"></span>';
         if (eStop[k] && !unit) inner += '<div class="ghost rush">' + esc(eStop[k].letter) + DIR_ARROW[eStop[k].dir] + '</div>';
+        if (dLine[k]) inner += dLine[k].arms.map(function (d) { return '<span class="wline d d' + dLine[k].color + ' ' + d + '"></span>'; }).join('') + '<span class="wline d d' + dLine[k].color + ' dot"></span>';
+        if (dStop[k] && !unit) inner += '<div class="ghost dest d' + dStop[k].color + '" title="' + esc(dStop[k].why || '次のターンに向かう先') + '">' + esc(dStop[k].letter) + '</div>';
+        if (dCrush[k]) inner += '<span class="b-crush" title="大きい敵が次に崩すマス（ラボ D4）">崩</span>';
         if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了で馬車が進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
