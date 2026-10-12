@@ -11,9 +11,17 @@
  * ブラウザでは グローバル変数 Rules、node では module.exports で読める。
  */
 (function (root) {
-  var B = (typeof module !== 'undefined' && module.exports)
-    ? require('./balance.js')
-    : root.BALANCE;
+  var IS_NODE = typeof module !== 'undefined' && module.exports;
+  var B = IS_NODE ? require('./balance.js') : root.BALANCE;
+
+  // 試作ラボ（LAB_00〜）。案ごとの処理は lab_rules.js、カードは lab_cards.js、ラボ用シナリオは lab_scenarios.js。
+  //   ルールの側は lab('XX') で切り替えを見て、LX（lab_rules.js が返す関数）を呼ぶだけ。切り替えが全部オフなら今と同じ
+  var LabRules = IS_NODE ? require('./lab_rules.js') : root.LabRules;
+  var LabData = IS_NODE ? require('./lab_cards.js') : { CATS: root.LAB_CATS || [], CARDS: root.LAB_CARDS || [], COMMON_Q: root.LAB_COMMON_Q || [] };
+  var LAB_PRESETS = IS_NODE ? require('./lab_scenarios.js') : (root.LAB_PRESETS || []);
+  var LX = null;   // 下の方で bind する
+  function lab(id) { var l = B.lab && B.lab[id]; return !!(l && l.on); }
+  function labAny(ids) { for (var i = 0; i < ids.length; i++) if (lab(ids[i])) return true; return false; }
 
   // ---------------------------------------------------------------
   // 定義
@@ -150,6 +158,8 @@
     if (old !== t && s.fireAge && s.fireAge[i] !== undefined) delete s.fireAge[i];
     if (old !== t && s.fireLife && s.fireLife[i] !== undefined) delete s.fireLife[i];
     if (old !== t && s.slopes && s.slopes[i] !== undefined) delete s.slopes[i];   // 山でなくなったら高さも消える
+    if (old !== t && s.labBig && s.labBig[i]) delete s.labBig[i];               // ラボ C5: 大きな火の渦の印
+    if (LX && old !== t && LX.onSetTile) t = LX.onSetTile(s, i, old, t);        // ラボ: 自然ごとの印・燃えると別のものになる自然
     // 【育つ】植物が燃えた炎は、燃え尽きるまでの長さが植物で決まる（森は長く、草むらはすぐ）
     if (t === 'fire' && B.grow.enabled && (old === 'forest' || old === 'thicket')) {
       s.fireLife = s.fireLife || {};
@@ -368,9 +378,11 @@
   // ダメージ（1発の中では1ユニットに1回だけ。一番大きいもの）
   // ---------------------------------------------------------------
   // after: ダメージを入れたあとに動かす処理（倒れた者のマスに山を盛る など）
-  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [], after: [] }; }
+  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [], after: [], notes: [] }; }
 
-  function addHit(ctx, u, amount, src) {
+  // cell: 決め手がどのマスで当たったか（ラボ D3: 大きい敵は体の全部を覆ったときだけ倒れる）
+  function addHit(ctx, u, amount, src, cell) {
+    if (LX && LX.filterHit) { amount = LX.filterHit(ctx, u, amount, src, cell); if (amount === null) return; }
     var h = ctx.hits[u.id];
     if (!h) {
       ctx.hits[u.id] = { amount: amount, src: src };
@@ -380,7 +392,7 @@
     }
   }
 
-  var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）', ram: '（体当たり）' };
+  var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）', ram: '（体当たり）', edge: '（決め手の外側）', weak: '（弱い）' };
   function applyHits(s, ctx, ev) {
     ctx.order.forEach(function (id) {
       var u = findUnit(s, id);
@@ -483,12 +495,16 @@
       }
     }
 
-    for (var i = 1; i <= B.spread.maxLength + (bonus || 0); i++) {
+    var maxLen = B.spread.maxLength + (bonus || 0);
+    if (LX && lab('C4') && B.lab.C4.sharp) maxLen = LX.sharpLength(s, ox, oy, dir, bonus);   // ラボ C4 sharp: 4マス＋燃えた森の数の半分
+    var before = [];
+    for (var i = 1; i <= maxLen; i++) {
       var x = ox + F.dx * i, y = oy + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
-      if (SPREAD_BLOCKERS[t]) break;
+      if (SPREAD_BLOCKERS[t] || (LX && LX.spreadBlocks(t))) break;
       path.push([x, y]);
+      before.push(t);
       if (isPlant(t)) burnComponent(x, y);
     }
 
@@ -510,25 +526,28 @@
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
-      if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher');
-      else addHit(ctx, u, B.fire.weakDamage, 'weakfire');
+      if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher', c);
+      else addHit(ctx, u, B.fire.weakDamage, 'weakfire', c);
     });
     var amount = strongList.length ? B.fire.strongDamage : B.fire.weakDamage;
-    var fin = { name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length };
+    var fin = { name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length, dir: dir, origin: [ox, oy] };
     ctx.finishers.push(fin);
     ev.push({
-      type: 'finisher', name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length,
+      type: 'finisher', name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length, dir: dir, origin: [ox, oy],
       text: '燃え広がり！ ' + DIRS[dir].name + 'へ' + path.length + 'マス走り、' +
         (strongList.length ? '森' + strongList.length + 'つが燃えた（燃えた森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
           : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
         (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '')
     });
+    // ラボ C6: 通り道のマスにも「火が当たった」ことにする（死の森ならオバケヤシキ、水たまりなら蜃気楼 …）
+    if (LX && lab('C6')) LX.spreadTouch(s, path, before, dir, ctx, ev);
     return fin;
   }
 
   // 【新案】感電: 走る雷が水（川・水たまり）に触れる
   //   つながった水全体に一瞬で走り、その上と隣にいる全員にダメージ
   function doShock(s, sx, sy, ctx, ev, done) {
+    if (LX && LX.useLabShock()) return LX.shock(s, sx, sy, ctx, ev, done);   // ラボ: 水の上だけ20・岩の体・葦原・金の柱
     var net = [], seen = {};
     var stack = [[sx, sy]];
     while (stack.length) {
@@ -547,7 +566,7 @@
     net.forEach(function (c) {
       [[c[0], c[1]]].concat(neighbors(s, c[0], c[1]).map(function (n) { return [n.x, n.y]; })).forEach(function (p) {
         var u = unitAt(s, p[0], p[1]);
-        if (u && !touched[u.id]) { touched[u.id] = true; addHit(ctx, u, amount, 'finisher'); }
+        if (u && !touched[u.id]) { touched[u.id] = true; addHit(ctx, u, amount, 'finisher', p); }
       });
     });
     var fin = { name: '感電', cells: net, damage: amount, water: net.length };
@@ -562,6 +581,7 @@
     var kind = getTile(s, vx, vy), pink = kind === 'sakura' || kind === 'hillsakura';   // 【新案・試し】桜（花びら）か火山（火の粉）か
     // 【育つ】桜吹雪の奥行きは、桜が咲いた自然の大きさで決まる（丘は2列、山は3列）
     var depth = kind === 'hillsakura' ? B.grow.sakuraDepthHill : (B.grow.enabled && kind === 'sakura') ? B.grow.sakuraDepthMountain : B.eruption.depth;
+    var labWeak = false;
     var F = DIRS[dir];
     var Rx = -F.dy, Ry = F.dx;
     var comp = [], seen = {};
@@ -574,6 +594,8 @@
       comp.push(c);
       neighbors(s, c[0], c[1]).forEach(function (n) { stack.push([n.x, n.y]); });
     }
+    // ラボ C4: 扇の列の数＝つながった桜の数。C5: 丘の桜（一段）は1列・弱い5
+    if (LX && labAny(['C4', 'C5'])) { depth = LX.eruptionDepth(s, kind, comp, depth); labWeak = LX.eruptionWeak(kind); }
     var cells = [];
     for (var d = 1; d <= depth; d++) {
       for (var w = -(d - 1); w <= d - 1; w++) {
@@ -585,7 +607,7 @@
     var burned = 0;
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
-      if (u) addHit(ctx, u, amount, 'finisher');
+      if (u) { if (labWeak) addHit(ctx, u, B.fire.weakDamage, 'weak'); else addHit(ctx, u, amount, 'finisher', c); }
       var t = getTile(s, c[0], c[1]);
       if (pink) { if (t === 'empty') setTile(s, c[0], c[1], 'petals'); return; }   // 【新案・試し】桜なら花びらが積もる（燃えない）
       if (t === 'empty') setTile(s, c[0], c[1], 'smallfire');
@@ -593,11 +615,12 @@
       else if (t === 'thicket') setTile(s, c[0], c[1], 'fire');
     });
     comp.forEach(function (c) { setTile(s, c[0], c[1], kind === 'hillsakura' ? 'hill' : 'mountain'); });   // 散ると元の丘・山に戻る
-    var fin = { name: '桜吹雪', cells: cells, damage: amount, volcanoes: comp.length, pink: pink };
+    var fin = { name: '桜吹雪', cells: cells, damage: labWeak ? B.fire.weakDamage : amount, volcanoes: comp.length, pink: pink, dir: dir, origin: [vx, vy] };
     ctx.finishers.push(fin);
     ev.push({
-      type: 'finisher', name: '桜吹雪', isNew: true, origin: [vx, vy], cells: cells, damage: amount, pink: pink,
-      text: (pink ? '【新案】桜吹雪！ 桜' + comp.length + 'つの花びらが' : '【新案】桜吹雪！ 火山' + comp.length + 'つの火の粉が') + DIRS[dir].name + 'へ舞い散った（威力' + amount + '）' +
+      type: 'finisher', name: '桜吹雪', isNew: true, origin: [vx, vy], cells: cells, damage: fin.damage, pink: pink, dir: dir,
+      text: (pink ? '【新案】桜吹雪！ 桜' + comp.length + 'つの花びらが' : '【新案】桜吹雪！ 火山' + comp.length + 'つの火の粉が') + DIRS[dir].name + 'へ舞い散った（威力' + fin.damage + '）' +
+        (LX && lab('C4') ? '【ラボ: 桜' + comp.length + 'つで扇' + depth + '列】' : '') + (labWeak ? '【ラボ: 丘の桜は少し舞うだけ】' : '') +
         (burned ? '。森' + burned + 'つに火がついた' : '')
     });
     return fin;
@@ -730,7 +753,8 @@
       } else if (u.magic === 'senpu') {
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
-        if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
+        if (t === 'empty' && o && lab('C1')) ctx.phrases.push('【ラボ】足元には炎が生まれない');   // ラボ C1: 足元には生まれない
+        else if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
         else if (t === 'smallfire' && B.grow.enabled) { setTile(s, x, y, 'fire'); ctx.phrases.push('【育つ】小さな炎が炎に育った'); ctx.grows.push({ origin: [x, y], tile: 'fire', cells: [[x, y]], tiles: ['fire'], wave: [0], blocked: [], pushed: [] }); }
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
         else if (isWind(t)) { ctx.phrases.push('【新案】吹いている' + tileName(t) + 'に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
@@ -932,21 +956,26 @@
     });
     if (!best) { ctx.phrases.push('火の渦になる場所がなく、風に火が乗っただけ'); setTile(s, x, y, 'fire'); return null; }
     var cells = best.sq, cx = 0, cy = 0, strong = [];
+    // ラボ C5: 強風（二段）に火が入ったら「大きな火の渦」（水でセンタクキ）。ふつうの風の火の渦は、水をかけると消えるだけ
+    var big = LX && lab('C5') && cells.some(function (c) { return getTile(s, c[0], c[1]) === 'gale'; });
     cells.forEach(function (c) {
       cx += c[0]; cy += c[1];
       var wasForest = burnsStrong(getTile(s, c[0], c[1]));
       if (wasForest) strong.push(c);
       var o = unitAt(s, c[0], c[1]);
-      if (o) addHit(ctx, o, wasForest ? B.fire.strongDamage : B.fire.weakDamage, wasForest ? 'finisher' : 'weakfire');
+      if (o) addHit(ctx, o, wasForest ? B.fire.strongDamage : B.fire.weakDamage, wasForest ? 'finisher' : 'weakfire', c);
       setTile(s, c[0], c[1], 'firewhirl');
     });
+    if (big) LX.markBigWhirl(s, cells);
+    if (LX) LX.afterWhirl(s, cells, ev);   // ラボ E9: 中の者は閉じこめられて撃てない
     var amount = strong.length ? B.fire.strongDamage : B.fire.weakDamage;
-    var fin = { name: '火の渦', cells: cells, strong: strong, damage: amount };
+    var fin = { name: '火の渦', cells: cells, strong: strong, damage: amount, origin: [x, y] };
     ctx.finishers.push(fin);
     ev.push({ type: 'finisher', name: '火の渦', isNew: true, origin: [x, y], center: [cx / 4, cy / 4], cells: cells, strong: strong, damage: amount,
       text: '【新案】火の渦！ 火が風を強くして、2×2の渦になって燃え上がった' +
         (strong.length ? '（森' + strong.length + 'マスを巻きこんだ。森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
-          : '（森がないので弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') });
+          : '（森がないので弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
+        (LX && lab('C5') ? (big ? '【ラボ: 強風に火で大きな火の渦。水でセンタクキ】' : '【ラボ: ふつうの火の渦。水をかけると消えるだけ】') : '') });
     return fin;
   }
 
@@ -1013,7 +1042,9 @@
   // 【新案】センタクキ（竜巻に水）: 竜巻のまわりの輪がぐるっと回り（輪の長さの4分の1）、竜巻とまわりの者はもみくちゃにされる。
   //   最後に竜巻は消えて、竜巻のマスは空きに戻る（何も残らない）。輪のうち山・火山・溶岩・森・泥沼・川は動かず、飛ばして回る
   var SPIN_OK = { empty: true, puddle: true, smallfire: true, fire: true, mirage: true, whirlwind: true, ice: true };
-  function doSentakuki(s, x, y, ctx, ev) {
+  // dir: 水で起こしたときの水の向き（ラボ C3: 奥の半分だけ回る）
+  function doSentakuki(s, x, y, ctx, ev, dir) {
+    if (LX && labAny(['C2', 'C3', 'C4'])) return LX.sentakuki(s, x, y, ctx, ev, dir);
     var kindName = tileName(getTile(s, x, y));   // 竜巻か火の渦
     var area = tornadoArea(s, x, y);
     var slots = area.ring.filter(function (c) { var o = unitAt(s, c[0], c[1]); return SPIN_OK[getTile(s, c[0], c[1])] && !(o && isFixed(o)); });
@@ -1085,6 +1116,7 @@
     var moved = darkPull(s, [[x, y]], B.dark.pullRange, ev, 'は闇に引き寄せられた');
     if (moved.length) ctx.phrases.push('【新案】まわりの' + moved.length + '人を引き寄せた');
     var t = getTile(s, x, y);
+    if (LX) LX.noteOneStage(ctx, t, 'dark');
     if (t === 'forest') {
       var dead = connected(s, x, y, 'forest');
       dead.forEach(function (d) { setTile(s, d[0], d[1], 'deadforest'); });
@@ -1135,6 +1167,7 @@
   //   火が当たった死の森の1マスがオバケヤシキ（通れない）になる（森全部ではない）。まわり2マス以内の者を引き寄せ、
   //   引き寄せたあとでオバケヤシキの中と隣にいる全員に一定のダメージ。中にいた者はとらわれる
   function doHaunt(s, x, y, ctx, ev) {
+    if (LX && labAny(['C2', 'C4', 'E9'])) return LX.haunt(s, x, y, ctx, ev);
     var house = [[x, y]];
     house.forEach(function (c) {
       setTile(s, c[0], c[1], 'haunted');
@@ -1252,7 +1285,11 @@
       if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn && !sourced ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
       if (t === 'river' || t === 'ice') continue;
       if (t === 'lava') { setTile(s, x, y, 'mountain'); stop = '【新案】溶岩が冷えて山になった'; break; }
-      if (t === 'firewhirl') { stop = '【新案】火の渦に水が入った'; tornadoHit = [x, y]; break; }
+      if (t === 'firewhirl') {
+        // ラボ C5: ふつうの風の火の渦は、炎に水と同じく消えるだけ（強風の「大きな火の渦」ならセンタクキ）
+        if (LX && lab('C5') && !LX.isBigWhirl(s, x, y)) { LX.quenchWhirl(s, x, y, ctx); stop = null; break; }
+        stop = '【新案】火の渦に水が入った'; tornadoHit = [x, y]; break;
+      }
       if (t === 'tornado') {
         if (B.tornadoRecipe === 'windWind') { stop = '【新案】竜巻に水が入った'; tornadoHit = [x, y]; }
         else stop = '【新案】竜巻に水が吸いこまれた';
@@ -1267,7 +1304,7 @@
     if (made) ctx.phrases.push(sourced || growing ? '川が' + made + 'マス流れた' : pondName + 'ができた（' + made + 'マス）');
     if (stop) ctx.phrases.push(stop);
     if (!made && !pond && !stop && !sourced) ctx.phrases.push('水の上を流れた');
-    if (tornadoHit) doSentakuki(s, tornadoHit[0], tornadoHit[1], ctx, ev);
+    if (tornadoHit) doSentakuki(s, tornadoHit[0], tornadoHit[1], ctx, ev, facing);
     if (whirlHit && B.tornadoRecipe === 'senpu') whirlToTornado(s, whirlHit[0], whirlHit[1], ctx, ev);
     else if (whirlHit) growTornado(s, whirlHit[0], whirlHit[1], facing, ctx, ev, '【新案】つむじ風が水を巻き上げて竜巻になった');
   }
@@ -1323,7 +1360,7 @@
       if (t === 'mountain') { ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
       if (t === 'tornado') { ctx.phrases.push('【新案】風が竜巻に吸いこまれた'); blocked = true; break; }
       if (t === 'whirlwind' && B.tornadoRecipe === 'windWind') { whirl = [x, y]; ctx.cells.push([x, y]); break; }
-      if (t === 'sakura' || t === 'hillsakura' || (t === 'volcano' && B.sakura.from === 'fire')) { volcano = [x, y]; ctx.cells.push([x, y]); break; }
+      if (t === 'sakura' || t === 'hillsakura' || (t === 'volcano' && B.sakura.from === 'fire')) { volcano = [x, y]; ctx.cells.push([x, y]); if (LX) LX.noteOneStage(ctx, t, 'wind'); break; }
       if (t === 'volcano') { ctx.phrases.push('火山の陰で風が止まった'); blocked = true; break; }
       if (t === 'haunted') { ctx.phrases.push('オバケヤシキで風が止まった'); blocked = true; break; }
       if (t === 'fire' || t === 'smallfire' || t === 'firewhirl') { origin = [x, y]; ctx.cells.push([x, y]); break; }
@@ -1342,6 +1379,9 @@
       }
       ctx.phrases.push('【新案】川の水を' + F.name + 'へ運んだ（水たまり' + wet + 'マス）');
     }
+    // ラボ C1: 風が通ったときにユニットがいたマスには、風が残らない（押されて空いても）
+    var c1Occ = {};
+    if (lab('C1')) path.forEach(function (c) { if (unitAt(s, c[0], c[1])) c1Occ[key(c[0], c[1])] = true; });
     // 遠いマスから順にユニットを運ぶ
     for (var k = path.length - 1; k >= 0; k--) {
       var cx = path[k][0], cy = path[k][1];
@@ -1364,8 +1404,8 @@
           if (galeAt >= 0 && j >= galeAt) {
             // 【育つ】強風の通り道は、空きと風のマスに強風が残る
             if (!gale) { gale = { origin: c.slice(), tile: 'gale', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }; ctx.grows.push(gale); }
-            if (tt === 'empty' || tt === 'breeze') { setTile(s, c[0], c[1], 'gale'); galeLeft++; gale.cells.push(c.slice()); gale.tiles.push('gale'); gale.wave.push(j - galeAt); }
-          } else if (tt === 'empty') { setTile(s, c[0], c[1], 'breeze'); left++; }
+            if ((tt === 'empty' || tt === 'breeze') && !c1Occ[key(c[0], c[1])]) { setTile(s, c[0], c[1], 'gale'); galeLeft++; gale.cells.push(c.slice()); gale.tiles.push('gale'); gale.wave.push(j - galeAt); }
+          } else if (tt === 'empty' && !c1Occ[key(c[0], c[1])]) { setTile(s, c[0], c[1], 'breeze'); left++; }   // ラボ C1: 足元には生まれない
         });
         if (left) ctx.phrases.push('【新案】風が' + left + 'マス吹いている（ターン終了まで）');
         if (galeLeft) ctx.phrases.push('【育つ】強風が' + galeLeft + 'マス吹いている（ターン終了まで）');
@@ -1993,8 +2033,9 @@
     var out = [];
     for (var y = 0; y < rowsOf(s); y++) {
       for (var x = 0; x < s.size; x++) {
-        if (!isPlant(getTile(s, x, y))) continue;   // 森と【育つ】草むらへ燃え移る
-        if (neighbors(s, x, y).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'fire' || nt === 'firewhirl'; })) out.push([x, y]);
+        var ft = getTile(s, x, y);
+        if (!isPlant(ft) && !(LX && LX.catchesFire(s, ft))) continue;   // 森と【育つ】草むらへ燃え移る（ラボ: 死の森・蔓の橋 …）
+        if (neighbors(s, x, y).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'fire' || nt === 'firewhirl' || (LX && LX.spreadsFire(s, nt)); })) out.push([x, y]);
       }
     }
     return out;
@@ -2019,10 +2060,14 @@
   function timePasses(s, ev, step) {
     // 1. 炎が隣の森へ燃え移る（処理開始時の盤面で同時に判定）
     var caught = fireSpreadCells(s);
+    // ラボ C6: 燃え移りの炎が死の森に届いたら、火が当たったことにする（オバケヤシキ）
+    var hauntAt = caught.filter(function (c) { return getTile(s, c[0], c[1]) === 'deadforest'; });
+    if (hauntAt.length) caught = caught.filter(function (c) { return getTile(s, c[0], c[1]) !== 'deadforest'; });
     var caughtGrass = caught.filter(function (c) { return getTile(s, c[0], c[1]) === 'thicket'; }).length;
     caught.forEach(function (c) { setTile(s, c[0], c[1], 'fire'); });
     var caughtWhat = !caughtGrass ? '森' : caughtGrass === caught.length ? '草むら' : '森・草むら';
     if (caught.length) ev.push({ type: 'fireSpread', cells: caught, text: '炎が隣の' + caughtWhat + 'へ燃え移った（' + caught.length + 'マス）' });
+    if (hauntAt.length) LX.timeHaunt(s, hauntAt, ev);
     step();
 
     // 2. 炎の上にいる者にダメージ
@@ -2180,7 +2225,8 @@
     });
     return {
       state: s, events: ev, cells: ctx.cells, tileChanges: tileChanges, damages: damages, moves: moves,
-      finishers: ctx.finishers, grows: ctx.grows, from: [u0.x, u0.y], to: to || [u0.x, u0.y], dir: dir
+      finishers: ctx.finishers, grows: ctx.grows, from: [u0.x, u0.y], to: to || [u0.x, u0.y], dir: dir,
+      notes: ctx.notes   // ラボ C5: 「育っていれば: 〇〇」
     };
   }
 
@@ -2813,9 +2859,9 @@
     return p && p.retryHint && (s.tries || 0) > 0 ? p.retryHint : null;
   }
 
-  // シナリオ（チュートリアルも）の定義を id で探す
+  // シナリオ（チュートリアル・ラボ用シナリオも）の定義を id で探す
   function findPreset(id) {
-    return PRESETS.concat(TUTORIALS).filter(function (x) { return x.id === id; })[0] || null;
+    return PRESETS.concat(TUTORIALS).concat(LAB_PRESETS).filter(function (x) { return x.id === id; })[0] || null;
   }
   function loadPreset(id) {
     if (id === 'plaza') return buildPreset(plazaLayout(B.boardSize));
@@ -2827,7 +2873,7 @@
     return withOverrides(p.overrides, function () { return buildPresetIn(p); });
   }
   function buildPresetIn(p) {
-    var s = blankState(p.rows[0].length, true, p.rows.length);   // 横は1行の文字数、縦は行の数
+    var s = blankState(p.rows[0].length, p.enemyActs !== false, p.rows.length);   // 横は1行の文字数、縦は行の数（ラボ: enemyActs: false で敵は何もしない）
     if (p.overrides) s.overrides = clone(p.overrides);
     p.rows.forEach(function (row, y) {
       for (var x = 0; x < row.length; x++) setTile(s, x, y, CH[row[x]]);
@@ -2836,11 +2882,14 @@
       var o = a[3] || {};
       var u = addAlly(s, a[0], a[1], a[2], o.facing || 'up');
       if (o.npc) u.npc = true;
+      if (o.lab) Object.keys(o.lab).forEach(function (f) { u[f] = clone(o.lab[f]); });   // ラボ: 強化・2つ目の魔法 など
     });
     p.enemies.forEach(function (e) {
       var u = addEnemy(s, e[0], e[1], e[2], e[4] || 'down');
       if (e[3]) PERSONA_FIELDS.forEach(function (f) { if (e[3][f]) u[f] = e[3][f]; });
+      if (e[3] && e[3].lab) Object.keys(e[3].lab).forEach(function (f) { u[f] = clone(e[3].lab[f]); });   // ラボ: 大きさ・体・HP など
     });
+    if (p.labState) Object.keys(p.labState).forEach(function (f) { s[f] = clone(p.labState[f]); });   // ラボ: 盤面に付ける印（お題の追加など）
     if (p.enemyOnly) s.enemyOnlyMagics = p.enemyOnly.slice();
     if (p.spawn) s.spawn = clone(p.spawn);
     if (p.tutorial) s.stage = p.id;   // やり直し（retryStage）とヒント（stageHint）に使う
@@ -2904,6 +2953,64 @@
   }
 
   // ---------------------------------------------------------------
+  // 試作ラボ: lab_rules.js に、ここの道具を渡して案ごとの処理を受け取る
+  // ---------------------------------------------------------------
+  var LAB_DEFAULTS = clone(B.lab || {});
+  var LABI = {
+    B: B, TILE_INFO: TILE_INFO, TILES: TILES, MAGIC_INFO: MAGIC_INFO, MAGICS: MAGICS, DIRS: DIRS, DIR_ORDER: DIR_ORDER, CH: CH,
+    PERSONA: PERSONA, PERSONA_FIELDS: PERSONA_FIELDS, DANGER: DANGER, SPREAD_BLOCKERS: SPREAD_BLOCKERS, SPIN_OK: SPIN_OK, WHIRL_OK: WHIRL_OK,
+    MISSION_INFO: MISSION_INFO, OBJECT_INFO: OBJECT_INFO, SRC_NOTE: SRC_NOTE,
+    clone: clone, key: key, idx: idx, rowsOf: rowsOf, inBounds: inBounds, getTile: getTile, setTile: setTile, isPassable: isPassable,
+    tileName: tileName, magicName: magicName, unitAt: unitAt, findUnit: findUnit, alliesOf: alliesOf, enemiesOf: enemiesOf,
+    objectsOf: objectsOf, controllableOf: controllableOf, isNpc: isNpc, isFixed: isFixed, unitLabel: unitLabel, neighbors: neighbors,
+    rotate: rotate, castOrigin: castOrigin, castCells: castCells, shapeCells: shapeCells, connected: connected,
+    isPlant: isPlant, isWind: isWind, burnsStrong: burnsStrong, canEnter: canEnter, hidden: hidden,
+    newShot: newShot, addHit: addHit, applyHits: applyHits, removeDead: removeDead, checkResult: checkResult, setResult: setResult,
+    missionType: missionType, cureBurn: cureBurn, enterMud: enterMud, pushOne: pushOne, darkPull: darkPull, growNature: growNature,
+    doSpread: doSpread, doShock: doShock, doEruption: doEruption, doFunka: doFunka, doFireWhirl: doFireWhirl, doSentakuki: doSentakuki,
+    doFreeze: doFreeze, doHaunt: doHaunt, tornadoArea: tornadoArea,
+    shoot: shoot, flow: flow, blow: blow, strike: strike, chill: chill, darken: darken, placeOrIgnite: placeOrIgnite, summarize: summarize,
+    reachInfo: reachInfo, moveUnit: moveUnit, distanceField: distanceField, faceToward: faceToward, nearestAlly: nearestAlly,
+    missionTargets: missionTargets, trialShot: trialShot, planEnemy: planEnemy, timePasses: timePasses, fireSpreadCells: fireSpreadCells,
+    makeUnit: makeUnit, addAlly: addAlly, addEnemy: addEnemy, addObject: addObject, unitConf: unitConf,
+    lab: lab, labAny: labAny
+  };
+  LX = LabRules ? LabRules.bind(LABI) : null;
+  LABI.LX = LX;
+
+  // 案 id とその needs を全部（needs の needs も）
+  function labCard(id) { return (LabData.CARDS || []).filter(function (c) { return c.id === id; })[0] || null; }
+  function labNeedsAll(ids) {
+    var out = [];
+    (function add(list) {
+      (list || []).forEach(function (id) {
+        if (out.indexOf(id) >= 0) return;
+        out.push(id);
+        var c = labCard(id);
+        if (c) add(c.needs);
+      });
+    })(ids);
+    return out;
+  }
+  // ラボの切り替えを決める: 全部オフ（数値は初期値）にしてから、ids と needs をオンにし、opts（{ C2: { edge: 'move' } }）を重ねる
+  function labApply(ids, opts) {
+    Object.keys(B.lab || {}).forEach(function (k) {
+      var d = LAB_DEFAULTS[k] || {};
+      Object.keys(d).forEach(function (f) { B.lab[k][f] = d[f]; });
+      B.lab[k].on = false;
+    });
+    var all = labNeedsAll(ids || []).filter(function (id) { return B.lab && B.lab[id]; });
+    all.forEach(function (id) { B.lab[id].on = true; });
+    Object.keys(opts || {}).forEach(function (id) {
+      if (!B.lab[id]) return;
+      Object.keys(opts[id]).forEach(function (f) { B.lab[id][f] = opts[id][f]; });
+    });
+    return all;
+  }
+  // 今オンになっているラボの案
+  function labOnList() { return Object.keys(B.lab || {}).filter(lab); }
+
+  // ---------------------------------------------------------------
   var api = {
     BALANCE: B,
     TILE_INFO: TILE_INFO, TILES: TILES, MAGIC_INFO: MAGIC_INFO, MAGICS: MAGICS,
@@ -2931,8 +3038,12 @@
     npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, validOverrides: validOverrides,
     // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
-    withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); }
+    withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); },
+    // 試作ラボ
+    LAB: LabData, LAB_PRESETS: LAB_PRESETS, LX: LX, lab: lab, labCard: labCard, labNeedsAll: labNeedsAll, labApply: labApply, labOnList: labOnList,
+    labDefaults: function () { return clone(LAB_DEFAULTS); }
   };
+  if (LX && LX.api) Object.keys(LX.api).forEach(function (k) { api[k] = typeof LX.api[k] === 'function' && LX.api[k].stage ? withStage(LX.api[k]) : LX.api[k]; });
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

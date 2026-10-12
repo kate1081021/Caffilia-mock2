@@ -233,6 +233,9 @@
     if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); setHowto(false); }
   });
 
+  // 試作ラボ（lab_ui.js）がラボの切り替えを変えたあと: 今の BALANCE を反映済みとして、パネルに映す（保存はしない）
+  app.tuneSync = function () { applied = T.diff(DEF, B); draft = T.clone(applied); refresh(); };
+
   buildList();
   refresh();
   if (T.source === 'link') note('リンクで送られた設定が入っています。この端末に残すときは「この設定を保存」を押してください。');

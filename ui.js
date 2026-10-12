@@ -506,11 +506,23 @@
     if (opts && opts.enemyActs === false) s = R.editSetEnemyActs(s, false).state;
     var preset = !check && id ? (id === 'plaza' ? R.plazaLayout(B.boardSize) : R.findPreset(id)) : null;   // 【縮尺】広場は今の盤面の大きさで作る
     var name = check ? check.name : preset ? preset.name : '標準';
+    // 試作ラボ: ラボ用シナリオは、その案と needs だけをオンにする（ほかのラボの案はオフに戻る）。
+    //   opts.labOff: その案だけオフにして同じ盤面をやり直す（オフでくらべる）
+    if (preset && preset.lab) {
+      R.labApply(preset.lab, preset.labOpts);
+      if (opts && opts.labOff && B.lab[opts.labOff]) B.lab[opts.labOff].on = false;
+      app.cache = {};
+      sideSig = '';
+      var labOn = R.labOnList().map(function (k) { var c = R.labCard(k); return c ? c.name : k; });
+      if (app.onLabChange) app.onLabChange();
+    }
+    app.labCompare = preset && preset.lab && opts && opts.labOff ? opts.labOff : null;
     if (preset && preset.recipe) setRecipe(preset.recipe);
     if (preset && preset.windMode) setWindMode(preset.windMode);
     if (preset && preset.sakuraFrom) setSakuraFrom(preset.sakuraFrom);
     app.scenario = check ? 'check:' + check.id : id;
     addLog((check ? '新案プレイの盤面' : 'シナリオ') + '「' + name + '」を読み込んだ', 'system');
+    if (labOn) addLog('ラボの案: ' + (labOn.length ? labOn.join('・') + ' をオン' : 'すべてオフ') + (app.labCompare ? '（「' + (R.labCard(app.labCompare) || {}).name + '」だけオフでくらべる）' : ''), 'system');
     if (check) addLog(check.desc, 'system');
     else if (id && !preset.tutorial) addLog(preset.desc, 'system');   // チュートリアルは説明を出さない（盤面と表示だけで伝わるかを見る）
     if (opts && opts.enemyActs === false) addLog('（このデモでは敵は何もしない設定）', 'system');
@@ -610,9 +622,10 @@
     var c = app.check;
     if (!c) return;
     var sets = Object.keys(c.set || {}).map(function (p) { return setLabel(p, c.set[p]); }).join('・');
-    el.checkCaption.innerHTML = '<div class="cc-head"><b>新案プレイ</b> ' + esc(c.name) + (sets ? '<span class="cc-set">' + esc(sets) + '</span>' : '') + '</div>' +
+    var kind = c.labDemo ? 'ラボのデモ' : '新案プレイ';
+    el.checkCaption.innerHTML = '<div class="cc-head"><b>' + kind + '</b> ' + esc(c.name) + (sets ? '<span class="cc-set">' + esc(sets) + '</span>' : '') + '</div>' +
       (text ? '<div class="cc-say">' + esc(text) + '</div>' : '') +
-      (done ? '<div class="cc-done">■ 新案プレイ終了（「1手戻す」でさかのぼれます。続けて手で遊ぶこともできます。この設定はほかのシナリオを読むと元に戻ります）</div>' : '');
+      (done ? '<div class="cc-done">■ ' + kind + '終了（「1手戻す」でさかのぼれます。続けて手で遊ぶこともできます。' + (c.labDemo ? '' : 'この設定はほかのシナリオを読むと元に戻ります') + '）</div>' : '');
     el.checkCaption.hidden = false;
   }
   function playCheck(c) {
@@ -632,12 +645,29 @@
     app.demo.timer = setTimeout(demoNext, 1000);
   }
 
+  // 試作ラボ: ラボ用シナリオのデモ（スーパープレイ）。シナリオを読み（案をオンにして）、say を盤面の上に出しながら再生する
+  function playLabDemo(p, labOff) {
+    stopDemo();
+    if (app.editMode) setEditMode(false);
+    loadScenario(p.id, { labOff: labOff });
+    var c = { id: 'lab:' + p.id, name: p.name, set: {}, labDemo: true };
+    app.check = c;
+    var queue = [];
+    p.demo.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); });
+    app.demo = { queue: queue, i: 0, timer: null, name: p.name, check: c };
+    addLog('▶ ラボのデモ: ' + p.name, 'system');
+    if (p.demo.desc) addLog(p.demo.desc, 'system');
+    showCaption(p.demo.desc || '');
+    render();
+    app.demo.timer = setTimeout(demoNext, 1000);
+  }
+
   function demoNext() {
     var d = app.demo;
     if (!d) return;
     if (app.busy) { d.timer = setTimeout(demoNext, 150); return; }
     if (d.i >= d.queue.length || app.state.result) {
-      addLog('■ ' + (d.check ? '新案プレイ' : 'デモ') + '終了（「1手戻す」で1手ずつさかのぼれます）', 'system');
+      addLog('■ ' + (d.check ? (d.check.labDemo ? 'ラボのデモ' : '新案プレイ') : 'デモ') + '終了（「1手戻す」で1手ずつさかのぼれます）', 'system');
       if (d.check) showCaption(d.lastSay, true);
       app.demo = null;
       render();
@@ -753,6 +783,7 @@
     renderPreview();
     renderHint();
     renderLog();
+    if (app.onRender) app.onRender();   // 試作ラボの上のバー（lab_ui.js）
   }
 
   // お題: 名前・勝ち方・負け方・残りの数を常に出す
@@ -919,12 +950,14 @@
     });
 
     // 予測
-    var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {};
+    var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {}, finArrow = {};
+    var arrowsOn = R.lab('C3');   // ラボ C3: 決め手が広がる向きの矢印
     if (pv) {
       pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
       pv.finishers.forEach(function (f) {
         f.cells.forEach(function (c) { range[key(c[0], c[1])] = true; });
         (f.strong || []).forEach(function (c) { strong[key(c[0], c[1])] = true; });
+        if (arrowsOn && f.dir && f.origin) finArrow[key(f.origin[0], f.origin[1])] = f.dir;
       });
       pv.tileChanges.forEach(function (c) { change[key(c.x, c.y)] = c.to; });
       pv.damages.forEach(function (d) { dmg[d.id] = d; });
@@ -968,6 +1001,7 @@
         (p.finishers || []).forEach(function (f) {
           f.cells.forEach(function (c) { fcRange[key(c[0], c[1])] = true; });
           (f.strong || []).forEach(function (c) { fcStrong[key(c[0], c[1])] = true; });
+          if (arrowsOn && f.dir && f.origin && !finArrow[key(f.origin[0], f.origin[1])]) finArrow[key(f.origin[0], f.origin[1])] = f.dir;
         });
       });
       // 「進む」敵: 次のターン終了で進むマスに、点線の丸と向き
@@ -1154,6 +1188,7 @@
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
         }
+        if (finArrow[k]) inner += '<span class="fin-arrow" title="決め手が広がる向き（ラボ C3）">' + DIR_ARROW[finArrow[k]] + '</span>';
         if (growPv[k]) inner += '<span class="g-ghost ' + growPv[k] + '" title="育ったあとの形（' + esc(SHORT[growPv[k]]) + '）"></span>';
         if (growNo[k]) inner += '<span class="b-nogrow" title="育たない（ユニットがいる・ほかの自然がある）">×</span>';
         if (change[k]) inner += '<span class="b-change">→' + esc(SHORT[change[k]]) + '</span>';
@@ -1439,7 +1474,9 @@
       });
       var head = p.waitOnly ? '予測: (' + p.to[0] + ',' + p.to[1] + ') へ移動して待機（宝を持っているので撃てない）'
         : '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'の魔法（' + R.MAGIC_INFO[u.magic].verb + '）';
-      box.innerHTML = '<div class="pv-head">' + head + '</div>' + lines.join('');
+      // ラボ C5: 「育っていれば: 〇〇」
+      var notes = (p.notes || []).map(function (n) { return '<div class="pv-line note">' + esc(n) + '</div>'; });
+      box.innerHTML = '<div class="pv-head">' + head + '</div>' + lines.join('') + notes.join('');
       return;
     }
     var t = app.hover;
@@ -1590,7 +1627,12 @@
     '<optgroup label="お題（防衛・護衛・奪取）">' + shown.filter(function (p) { return p.mission; }).map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="戦闘（敵の全滅）"><option value="">標準（火・水・風 / 敵1体）</option>' +
     shown.filter(function (p) { return !p.mission; }).map(presetOpt).join('') + '</optgroup>' +
-    '<optgroup label="縮尺くらべ"><option value="plaza">広場（見本・調整パネルの盤面の大きさ）</option></optgroup>';
+    '<optgroup label="縮尺くらべ"><option value="plaza">広場（見本・調整パネルの盤面の大きさ）</option></optgroup>' +
+    // 試作ラボ: カテゴリごとに分けて並べる
+    (R.LAB.CATS || []).map(function (cat) {
+      var list = R.LAB_PRESETS.filter(function (p) { return p.labCat === cat.id && !p.hidden; });
+      return list.length ? '<optgroup label="ラボ ' + esc(cat.name) + '">' + list.map(presetOpt).join('') + '</optgroup>' : '';
+    }).join('');
   el.scenarioSelect.addEventListener('change', function () { loadScenario(el.scenarioSelect.value); el.scenarioSelect.blur(); });
   el.recipeSelect.value = B.tornadoRecipe;
   el.windModeSelect.value = B.windMode;
@@ -1744,6 +1786,13 @@
   // 確認用（コンソールから状態を見られる）
   window.CafiliaApp = app;
   app.render = render;
+  // 試作ラボ（lab_ui.js）から使う
+  app.loadScenario = function (id, opts) { stopDemo(); if (app.editMode) setEditMode(false); endCheck(); loadScenario(id, opts); };
+  app.playLabDemo = playLabDemo;
+  app.playCheckById = function (id) { var c = CHECKS.filter(function (x) { return x.id === id; })[0]; if (c) playCheck(c); };
+  app.say = say;
+  app.addLog = function (t) { addLog(t, 'system'); renderLog(); };
+  app.clearCache = function () { app.cache = {}; sideSig = ''; };
   // 調整パネル（tune_ui.js）から: 数値を変えたあと、今のシナリオを最初からやり直す
   app.restart = function () {
     stopDemo();

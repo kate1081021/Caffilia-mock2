@@ -40,6 +40,7 @@
       </select>
     </label>
     <div class="buttons">
+      <button id="btnLab" type="button" class="lab" aria-expanded="false" aria-controls="labPanel">ラボ</button>
       <span class="tut-pick">
         <button id="btnTutorial" type="button" class="tutorial" aria-haspopup="true" aria-expanded="false" aria-controls="tutorialMenu">チュートリアル ▾</button>
         <span id="tutorialMenu" class="tut-menu" role="menu" hidden></span>
@@ -55,6 +56,7 @@
     </div>
   </header>
   <div id="tuneBar" class="tune-bar" hidden></div>
+  <div id="labBar" class="lab-bar" hidden></div>
 
   <main class="layout">
     <section class="board-area">
@@ -228,6 +230,8 @@
     </div>
   </aside>
 
+  <aside id="labPanel" class="lab-panel" hidden aria-label="試作ラボ"></aside>
+
   <div id="howto" class="howto-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="howtoTitle">
     <div class="howto-card">
       <h2 id="howtoTitle">遊び方</h2>
@@ -245,11 +249,15 @@
   <div id="versionTag" class="version-tag">版 手元</div>
 
   <script src="balance.js"></script>
+  <script src="lab_cards.js"></script>
   <script src="tune.js"></script>
+  <script src="lab_rules.js"></script>
+  <script src="lab_scenarios.js"></script>
   <script src="rules.js"></script>
   <script src="demos.js"></script>
   <script src="checks.js"></script>
   <script src="ui.js"></script>
   <script src="tune_ui.js"></script>
+  <script src="lab_ui.js"></script>
 </body>
 </html>
