@@ -309,10 +309,222 @@
     }
 
     // ---------------------------------------------------------------
+    // A 地形（足場・壁・隠れ場所）
+    // ---------------------------------------------------------------
+    var HIGH = { hill: true, mountain: true, volcano: true, sakura: true, hillsakura: true, snowmt: true, pillar: true };
+    function opposite(d) { return { up: 'down', down: 'up', left: 'right', right: 'left' }[d]; }
+    function heavy(u) { return !!u && ((u.size || 1) > 1 || (on('D7') && u.body === 'rock')); }
+
+    // 移動の探し方をラボのものにするか（今の BFS と同じ結果になる場面でも、案がオンなら使う）
+    function useLabReach(s, u) {
+      return on('A2') || on('A5') || on('A6') || on('F2') || on('B20') || on('B21') || on('D4') || on('D7') || (u.size || 1) > 1;
+    }
+    // 入ると止まる自然（泥沼・丘。A5: 森、B21: 深い森）
+    function moveStops(t) { return t === 'mud' || t === 'hill' || (on('A5') && t === 'forest') || (on('B21') && t === 'deepforest'); }
+    // 歩いて入ると滑る自然（A2: 氷、B20: 霜）
+    function slides(t) { return (on('A2') && t === 'ice') || (on('B20') && t === 'frost'); }
+    // u が (x,y) に立てるか（大きい敵は体の全部のマス。D4: 大きい敵は崩せる自然も通れる）
+    function canStandAt(s, u, x, y) {
+      var n = u.size || 1;
+      for (var dy = 0; dy < n; dy++) for (var dx = 0; dx < n; dx++) {
+        var cx = x + dx, cy = y + dy;
+        if (!inBounds(s, cx, cy)) return false;
+        var t = getTile(s, cx, cy);
+        if (!I.canEnter(u, t) && !(n > 1 && on('D4') && CRUSH[t])) return false;
+        var o = unitAt(s, cx, cy);
+        if (o && o !== u) return false;
+      }
+      return true;
+    }
+    function cellsAt(u, x, y) { var n = u.size || 1, out = []; for (var dy = 0; dy < n; dy++) for (var dx = 0; dx < n; dx++) out.push([x + dx, y + dy]); return out; }
+    function anyTile(s, u, x, y, f) { return cellsAt(u, x, y).some(function (c) { return f(getTile(s, c[0], c[1])); }); }
+    // F2: 風のマスの向き（風を置いたときに覚える）
+    function windDir(s, x, y) { return s.labWind ? s.labWind[idx(s, x, y)] : undefined; }
+
+    // 動けるマス（ラボ版）。dist { "x,y": 歩数 }、order（見つけた順）、prev（ひとつ前）、pass（滑って通り過ぎたマス）
+    //   コストの小さい順・同じなら見つけた順に広げる（全部1歩なら今の BFS と同じ順になる）
+    function reach(s, u) {
+      var dist = {}, order = [], prev = {}, pass = {}, seqOf = {};
+      var k0 = key(u.x, u.y);
+      dist[k0] = 0; order.push([u.x, u.y]); seqOf[k0] = 0;
+      if (u.stuck) return { dist: dist, order: order, prev: prev, pass: pass };
+      var open = [{ x: u.x, y: u.y, c: 0, seq: 0 }], seq = 1, done = {};
+      while (open.length) {
+        var bi = 0;
+        for (var i = 1; i < open.length; i++) if (open[i].c < open[bi].c || (open[i].c === open[bi].c && open[i].seq < open[bi].seq)) bi = i;
+        var cur = open.splice(bi, 1)[0], ck = key(cur.x, cur.y);
+        if (done[ck] || dist[ck] !== cur.c) continue;
+        done[ck] = true;
+        if (cur.c >= u.move) continue;
+        if (cur.c > 0 && anyTile(s, u, cur.x, cur.y, moveStops)) continue;
+        DIR_ORDER.forEach(function (d) {
+          var D = DIRS[d], nx = cur.x + D.dx, ny = cur.y + D.dy;
+          if (!canStandAt(s, u, nx, ny)) return;
+          var cost = 1, passed = [];
+          if (on('A6') && anyTile(s, u, nx, ny, function (t) { return t === 'puddle'; })) cost = 2;   // A6: 浅瀬は2歩
+          var w = on('F2') ? windDir(s, nx, ny) : undefined;
+          if (w && d === opposite(w)) cost = 2;                                                          // F2: 向かい風は2歩で1マス
+          var lx = nx, ly = ny;
+          if (w && d === w && canStandAt(s, u, nx + D.dx, ny + D.dy)) { passed.push([lx, ly]); lx += D.dx; ly += D.dy; }   // F2: 追い風は1歩で2マス
+          var guard = 0;
+          while (slides(getTile(s, lx, ly)) && canStandAt(s, u, lx + D.dx, ly + D.dy) && guard++ < 30) { passed.push([lx, ly]); lx += D.dx; ly += D.dy; }   // A2: 滑る
+          var nc = cur.c + cost, nk = key(lx, ly);
+          if (nc > u.move) return;
+          if (dist[nk] === undefined || nc < dist[nk]) {
+            if (dist[nk] === undefined) { order.push([lx, ly]); seqOf[nk] = seq; }
+            dist[nk] = nc; prev[nk] = ck; pass[nk] = passed;
+            open.push({ x: lx, y: ly, c: nc, seq: seq++ });
+          }
+        });
+      }
+      // 見つけた順は「歩数 → 見つけた順」（今の BFS の順と同じ並び）
+      order.sort(function (a, b) { var ka = key(a[0], a[1]), kb = key(b[0], b[1]); return dist[ka] - dist[kb] || seqOf[ka] - seqOf[kb]; });
+      return { dist: dist, order: order, prev: prev, pass: pass };
+    }
+    // reach の結果から、from → to の通ったマス（滑って通ったマスも）
+    function pathOf(r, from, to) {
+      var out = [], k = key(to[0], to[1]), guard = 0;
+      while (k && k !== key(from[0], from[1]) && guard++ < 100) {
+        var c = k.split(',').map(Number);
+        out.unshift(c);
+        (r.pass[k] || []).slice().reverse().forEach(function (p) { out.unshift(p); });
+        k = r.prev[k];
+      }
+      return out;
+    }
+
+    // 泥沼に入ったとき（A11: 重い者は2回休む。D7: 浮いている体ははまらない）。true なら今の処理をしない
+    function mudGrip(s, u, ev) {
+      if (on('D7') && u.body === 'float') { ev.push({ type: 'info', id: u.id, cells: [[u.x, u.y]], text: '【ラボ】' + unitLabel(s, u) + 'は浮いているので泥沼にはまらない' }); return true; }
+      if (on('A11') && heavy(u)) { u.stuck = 2; ev.push({ type: 'mud', id: u.id, cells: [[u.x, u.y]], text: '【ラボ】' + unitLabel(s, u) + 'は重いので泥沼に深くはまった（次の移動は2回休み）' }); return true; }
+      return false;
+    }
+    // A11: 重い者が氷に乗ると、氷が割れて水たまりに戻り、足を取られる
+    function heavyOnIce(s, u, ev) {
+      if (!on('A11') || !heavy(u)) return;
+      var cells = unitCells(u).filter(function (c) { return inBounds(s, c[0], c[1]) && getTile(s, c[0], c[1]) === 'ice'; });
+      if (!cells.length) return;
+      cells.forEach(function (c) { setTile(s, c[0], c[1], 'puddle'); });
+      u.stuck = true;
+      ev.push({ type: 'mud', id: u.id, cells: cells, text: '【ラボ】' + unitLabel(s, u) + 'の重みで氷が割れた（水たまり' + cells.length + 'マス。次の移動は1回休み）' });
+    }
+    var afterMoveMore = [];   // D でうしろに足す（足跡・崩す・動いた者）
+    function afterMove(s, u, from, to, ev) {
+      heavyOnIce(s, u, ev);
+      afterMoveMore.forEach(function (f) { f(s, u, from, to, ev); });
+    }
+    function afterPush(s, o, ev) { heavyOnIce(s, o, ev); }
+
+    // 隠れているか（A3 森・A8 高台から見える・B17 砂嵐・B20 暗がり・B21 深い森・I1 照らされた）。ラボで変わらないときは undefined
+    function hidden(s, u, viewer, forTarget) {
+      if (!(on('A3') || on('A8') || on('B17') || on('B20') || on('B21') || on('I1'))) return undefined;
+      var t = getTile(s, u.x, u.y);
+      if (on('I1') && u.labLit) return false;
+      var see = !!viewer && on('A8') && HIGH[getTile(s, viewer.x, viewer.y)];
+      if (t === 'mirage') return !see;
+      if (forTarget) return false;   // お題の的は森の中でも的のまま
+      if ((on('A3') && t === 'forest') || (on('B21') && t === 'deepforest') || (on('B17') && t === 'sandstorm') || (on('B20') && t === 'gloom')) return !see;
+      return false;
+    }
+
+    // A7: 雷の形の中に高い所があれば、その最初のマスへ先に落ちる
+    function highFirst(s, cells) {
+      var i = -1;
+      cells.some(function (c, j) { if (HIGH[getTile(s, c[0], c[1])]) { i = j; return true; } return false; });
+      if (i <= 0) return cells;
+      return [cells[i]].concat(cells.slice(0, i)).concat(cells.slice(i + 1));
+    }
+
+    // A12: 自分の魔法の自然
+    var OWN = { grass: ['thicket', 'forest'], earth: ['hill', 'mountain'], water: ['puddle'], fire: ['fire'], wind: ['breeze', 'gale'], ice: ['ice'],
+      forestm: ['thicket', 'forest'], rock: [], vine: ['vinebridge'], rain: ['puddle'], metal: [] };
+    function onOwnNature(s, u) {
+      var list = OWN[u.magic] || [];
+      return list.indexOf(getTile(s, u.x, u.y)) >= 0;
+    }
+    // 盤面の印（バリア中の駒の輪）
+    function barrier(s, u) { return on('A12') && u.side !== 'object' && onOwnNature(s, u); }
+
+    // 闇（吸う）のラボ版（A10 死の森は網・B13 底なし沼・B19 かまいたち・B20 暗がり・G3 闇の姿）
+    function useLabDark() { return on('A10') || on('B13') || on('B19') || on('B20') || on('G3'); }
+    var darkTargets = null;   // G3 でうしろに足す
+    var darkExtra = [];       // B でうしろに足す
+    function darken(s, u, facing, ctx, ev) {
+      var cells = I.castCells(s, u, facing);
+      var list = darkTargets ? darkTargets(s, u, facing, cells) : cells.slice(0, 1);
+      list.forEach(function (c) { darkOne(s, u, c, facing, ctx, ev); });
+    }
+    function darkOne(s, u, c, facing, ctx, ev) {
+      var x = c[0], y = c[1];
+      ctx.cells.push([x, y]);
+      var o = unitAt(s, x, y);
+      if (o) addHit(ctx, o, u.power, 'direct');
+      var t = getTile(s, x, y);
+      for (var i = 0; i < darkExtra.length; i++) if (darkExtra[i](s, u, x, y, t, o, facing, ctx, ev)) return;   // B13・B19・B20
+      noteOneStage(ctx, t, 'dark');
+      if (on('A10') && t === 'forest') { toDeadForest(s, x, y, ctx, ev); t = 'deadforest'; }
+      var net = on('A10') && t === 'deadforest' ? connected(s, x, y, 'deadforest') : [];
+      var moved = pullToward(s, [x, y], B.dark.pullRange, net, ev, 'は闇に引き寄せられた');
+      if (moved.length) ctx.phrases.push('【新案】まわりの' + moved.length + '人を引き寄せた' + (net.length > 1 ? '【ラボ: 死の森の網】' : ''));
+      if (!on('A10') && t === 'forest') toDeadForest(s, x, y, ctx, ev);
+    }
+    function toDeadForest(s, x, y, ctx, ev) {
+      var dead = connected(s, x, y, 'forest');
+      dead.forEach(function (d) { setTile(s, d[0], d[1], 'deadforest'); });
+      ctx.phrases.push('【新案】森の命を吸って、つながった森' + dead.length + 'マスが死の森になった');
+      ev.push({ type: 'kindle', isNew: true, cells: dead, text: '【新案】死の森' + dead.length + 'マス（火を点けるとオバケヤシキ）' });
+    }
+    // 引き寄せ（今の darkPull と同じ動き）。net: そのマスの上にいる者は、距離に関係なく引き寄せる（A10）
+    function pullToward(s, center, range, net, ev, why) {
+      var inNet = {};
+      (net || []).forEach(function (c) { inNet[key(c[0], c[1])] = true; });
+      var dist = function (x, y) { return Math.abs(x - center[0]) + Math.abs(y - center[1]); };
+      var near = s.units.filter(function (u) {
+        if (I.isFixed(u)) return false;
+        var d = dist(u.x, u.y);
+        return d >= 2 && (d <= range || inNet[key(u.x, u.y)]);
+      });
+      near.sort(function (a, b) { return dist(a.x, a.y) - dist(b.x, b.y); });
+      var moved = [];
+      near.forEach(function (u) {
+        var d0 = dist(u.x, u.y);
+        var steps = DIR_ORDER.map(function (d) { return DIRS[d]; }).filter(function (D) {
+          var nx = u.x + D.dx, ny = u.y + D.dy;
+          if (nx === center[0] && ny === center[1]) return false;
+          if ((u.size || 1) > 1) return dist(nx, ny) < d0 && canStandAt(s, u, nx, ny);   // D3: 大きい敵は体の全部が動けるときだけ
+          return inBounds(s, nx, ny) && dist(nx, ny) < d0 && I.isPassable(getTile(s, nx, ny)) && !unitAt(s, nx, ny);
+        });
+        if (!steps.length) return;
+        var from = [u.x, u.y];
+        u.x += steps[0].dx; u.y += steps[0].dy;
+        moved.push(u);
+        ev.push({ type: 'push', id: u.id, ok: true, from: from, to: [u.x, u.y], text: '【新案】' + unitLabel(s, u) + why + (d0 > range ? '（死の森の網）' : '') });
+        if (getTile(s, u.x, u.y) === 'mud') I.enterMud(s, u, ev);
+      });
+      return moved;
+    }
+
+    // 置く・点ける魔法の1マスの作用（ラボ）。true なら今の作用はしない
+    var placeMore = [];   // B・I でうしろに足す
+    function placeCell(s, u, x, y, t, o, facing, ctx, ev) {
+      if (on('A11') && u.magic === 'earth' && t === 'ice' && !o) { setTile(s, x, y, 'puddle'); ctx.phrases.push('【ラボ】土の重みで氷が割れて水たまりになった'); return true; }
+      for (var i = 0; i < placeMore.length; i++) if (placeMore[i](s, u, x, y, t, o, facing, ctx, ev)) return true;
+      return false;
+    }
+
+    // ---------------------------------------------------------------
     // ダメージの決まり（A4 森は盾・A12 バリア・D3 大きい敵・D7 体の違い …）
     // ---------------------------------------------------------------
     var LAB_SPREAD_BLOCK = {};
+    var CRUSH = {};    // D4 で埋める
+    var hitMore = [];  // D でうしろに足す
     function hitRules(ctx, u, amount, src, cell) {
+      var s = ctx.s;
+      if (s && src === 'direct') {
+        if (on('A4') && getTile(s, u.x, u.y) === 'forest') { ctx.phrases.push('【ラボ】' + unitLabel(s, u) + 'は森の枝葉に守られた（直撃なし）'); return null; }
+        if (on('A12') && onOwnNature(s, u)) { ctx.phrases.push('【ラボ】' + unitLabel(s, u) + 'は自分の自然の上でバリア（直撃なし）'); return null; }
+      }
+      for (var i = 0; i < hitMore.length; i++) { amount = hitMore[i](ctx, u, amount, src, cell); if (amount === null) return null; }
       return amount;
     }
     // E9: 閉じこめられた者は予告も撃つこともできない
@@ -352,6 +564,8 @@
 
     return {
       onSetTile: onSetTile, filterHit: filterHit, spreadBlocks: spreadBlocks, useLabShock: useLabShock, afterWhirl: afterWhirl,
+      useLabReach: useLabReach, reach: reach, pathOf: pathOf, mudGrip: mudGrip, afterMove: afterMove, afterPush: afterPush, hidden: hidden,
+      highFirst: highFirst, barrier: barrier, useLabDark: useLabDark, darken: darken, placeCell: placeCell, heavy: heavy, canStandAt: canStandAt,
       catchesFire: catchesFire, spreadsFire: spreadsFire, waterTile: waterTile, unitCells: unitCells, waveFrom: waveFrom,
       on: on, opt: opt, edge: edge, CH: I.CH,
       shock: shock, haunt: haunt, sentakuki: sentakuki, ringAt: ringAt,

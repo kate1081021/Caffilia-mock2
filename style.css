@@ -937,3 +937,4 @@ body.lab-open { padding-left: 400px; }
   font-size: 30px; font-weight: bold; color: #f97316; opacity: .85; text-shadow: 0 0 4px #fff, 0 0 8px #fff;
   pointer-events: none; z-index: 3;
 }
+.unit.barrier { box-shadow: 0 0 0 3px rgba(20, 184, 166, .55), 0 0 10px 3px rgba(45, 212, 191, .5); }

@@ -889,6 +889,7 @@
     if (u.stuck) cls.push('stuck');
     if (R.hidden(st, u)) cls.push('hidden');
     if (view.next) cls.push('next-ready');
+    if (R.LX && R.LX.barrier(st, u)) cls.push('barrier');   // ラボ A12: 自分の自然の上でバリア
     var facing = view.facing || u.facing;
     var name = u.side === 'ally' ? esc(R.magicName(u.magic)) : '敵<small>' + esc(u.letter) + '</small>';
     var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg">' +

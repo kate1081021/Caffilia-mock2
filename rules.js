@@ -465,8 +465,12 @@
     if (u && u.burn > 0) { u.burn = 0; ctx.phrases.push(unitLabel(s, u) + 'の火傷が治った'); }
   }
 
+  // 足止めを1回使う（ラボ A11: 重い者は泥沼で2回休むので、数で持つことがある）
+  function unstick(u) { if (typeof u.stuck === 'number' && u.stuck > 1) u.stuck--; else u.stuck = false; }
+
   // 泥沼に入った: 次の移動が1回できない
   function enterMud(s, u, ev) {
+    if (LX && LX.mudGrip && LX.mudGrip(s, u, ev)) return;   // ラボ A11: 重い者は2回休む／D7: 浮いている体ははまらない
     u.stuck = true;
     ev.push({ type: 'mud', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'は泥沼にはまった（次の移動は1回休み）' });
   }
@@ -732,6 +736,7 @@
       var o = unitAt(s, x, y);
       if (o) addHit(ctx, o, u.power, 'direct');
       var t = getTile(s, x, y);
+      if (LX && LX.placeCell(s, u, x, y, t, o, facing, ctx, ev)) return;   // ラボ: 置く・点ける魔法の、案ごとの作用（ほかの作用より先に見る）
       if (u.magic === 'grass') {
         // 【育つ】入のときは、空きに草で草むら、草むらに草で森に育つ
         var lowG = B.grow.enabled ? 'thicket' : 'forest';
@@ -798,6 +803,7 @@
   //   森 → 燃える。水（川・水たまり）→ つながった水全体に走って感電。ユニット → 直撃。山・火山 → 落ちるだけ
   function strike(s, u, facing, ctx, ev) {
     var cells = castCells(s, u, facing);
+    if (LX && lab('A7')) cells = LX.highFirst(s, cells);   // ラボ A7: 形の中に高い所があれば、先にそこへ落ちる
     for (var i = 0; i < cells.length; i++) {
       var x = cells[i][0], y = cells[i][1];
       ctx.cells.push([x, y]);
@@ -1107,6 +1113,7 @@
   //   （ダメージなし。自然は動かさない。もともと隣にいる者は動かない）
   //   そのマスのユニット → 直撃。森 → 命を吸って、つながった森がまとめて死の森（水を凍らせるのは、いったん外した）
   function darken(s, u, facing, ctx, ev) {
+    if (LX && LX.useLabDark()) return LX.darken(s, u, facing, ctx, ev);   // ラボ: 死の森は網・底なし沼・かまいたち・暗がり …
     var c = castCells(s, u, facing)[0];
     if (!c) return;
     var x = c[0], y = c[1];
@@ -1336,6 +1343,7 @@
       if (slid) ev.push({ type: 'push', id: o.id, ok: true, from: from0, to: [o.x, o.y], text: '【新案】' + unitLabel(s, o) + 'は氷の上を' + slid + 'マス滑った' });
     }
     if (getTile(s, o.x, o.y) === 'mud') enterMud(s, o, ev);
+    if (LX) LX.afterPush(s, o, ev);   // ラボ A11: 重い者が氷に乗ると割れる
     return true;
   }
 
@@ -1442,6 +1450,7 @@
   // u が今の位置から facing 向きに撃つ（state を書き換える）
   function shoot(s, u, facing, ev) {
     var ctx = newShot();
+    if (LX) { ctx.s = s; ctx.magic = u.magic; ctx.caster = u.id; }   // ラボ: ダメージの決まり（盾・バリア）とまとう（G7）が見る
     var label = unitLabel(s, u);
     var castEv = { type: 'cast', id: u.id, side: u.side, magic: u.magic, dir: facing, from: [u.x, u.y], cells: [], text: '' };
     ev.push(castEv);
@@ -1469,6 +1478,7 @@
   // 動けるマス: dist { "x,y": 距離 }（今の位置 0 を含む）と、見つけた順 order
   // 通れるマス・ユニットがいないマスだけ（敵は個性で変わる）。泥沼に入ったらそこで止まる。泥沼にはまっていたら今の位置だけ
   function reachInfo(s, u) {
+    if (LX && LX.useLabReach(s, u)) return LX.reach(s, u);   // ラボ: 氷で滑る・森で止まる・浅瀬・追い風・大きい敵 …
     var dist = {}, order = [];
     dist[key(u.x, u.y)] = 0;
     order.push([u.x, u.y]);
@@ -1504,6 +1514,7 @@
     u.x = x; u.y = y;
     ev.push({ type: 'move', id: u.id, side: u.side, from: from, to: [x, y], text: unitLabel(s, u) + 'が' + dist + 'マス移動した' });
     if (getTile(s, x, y) === 'mud') enterMud(s, u, ev);
+    if (LX) LX.afterMove(s, u, from, [x, y], ev);   // ラボ: 重い者が氷を割る・足跡・力ずくで崩す・動いた者 …
   }
 
   // ---------------------------------------------------------------
@@ -1543,7 +1554,7 @@
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
     if (u.stuck) {
-      u.stuck = false;
+      unstick(u);
       ev.push({ type: 'mudSkip', id: u.id, text: unitLabel(s, u) + 'は泥沼にはまっていて動けない（1回休み）' });
     }
     u.acted = true;
@@ -1612,7 +1623,12 @@
   }
 
   // 【新案】蜃気楼の中にいる者は、敵から見つからない
-  function hidden(s, u) { return !!u && getTile(s, u.x, u.y) === 'mirage'; }
+  //   viewer: 見ている者（ラボ A8: 高台からは見える）。forTarget: お題の的として見るとき（ラボ A3: 森の中でも的は的）
+  function hidden(s, u, viewer, forTarget) {
+    if (!u) return false;
+    if (LX) { var h = LX.hidden(s, u, viewer, forTarget); if (h !== undefined) return h; }
+    return getTile(s, u.x, u.y) === 'mirage';
+  }
 
   // u を (x,y) に置いて dir に撃ったら何が起きるか（state は変えない）
   //   allyIds: ダメージを受ける味方（敵から見えている者だけ）、changed: 別のものに変わる自然のマスの数
@@ -1650,7 +1666,7 @@
       var t = findUnit(s, id), h = ctx.hits[id];
       if (!t || h.amount <= 0) return;
       if (t.side === 'enemy') { harm = true; return; }
-      if (hidden(s, t)) return;
+      if (hidden(s, t, su)) return;
       if (isTarget[id]) targetIds.push(id);
       if (t.side !== 'ally') return;     // 置きもの（村・馬車）は「人数」「近い人」には数えない
       allyIds.push(id);
@@ -1668,7 +1684,7 @@
     if (type === 'defense') out = objectsOf(s, 'village');
     else if (type === 'escort') out = objectsOf(s, 'wagon');
     else if (type === 'retrieve') { var c = carrierOf(s); if (c) out = [c]; }
-    return out.filter(function (t) { return !hidden(s, t); });
+    return out.filter(function (t) { return !hidden(s, t, null, true); });
   }
 
   // 一番近い味方（e が自分の足で行ける道のり）。道がなければ縦横の歩数で一番近い味方（field なし）
@@ -1700,7 +1716,7 @@
     // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
     if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.path.length ? rr.path[Math.min(B.enemy.rushMove, rr.path.length) - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
     if (!alliesOf(s).length) return null;
-    var allies = alliesOf(s).filter(function (a) { return !hidden(s, a); });
+    var allies = alliesOf(s).filter(function (a) { return !hidden(s, a, e); });
     if (!allies.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
     var info = reachInfo(s, e);
     // 「的」: 的があれば一番近い的へ向かう。的がない（宝がまだ拾われていない・戦闘）なら「近い人」と同じ
@@ -1777,7 +1793,7 @@
       var plan = planEnemy(s, e);
       if (!plan || plan.kind === 'still' || plan.kind === 'march') { e.intent = false; return; }
       if (e.stuck) {
-        e.stuck = false;
+        unstick(e);
         ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
       }
       if (plan.kind === 'lost') {
@@ -1856,7 +1872,7 @@
     enemiesOf(s).filter(function (e) { return e.stand === 'march'; }).map(function (e) { return e.id; }).forEach(function (id) {
       var e = findUnit(s, id);
       if (!e || s.result) return;
-      if (e.stuck) { e.stuck = false; ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' }); step(); }
+      if (e.stuck) { unstick(e); ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' }); step(); }
       else {
         var to = marchStep(s, e);
         if (to) {
@@ -1927,7 +1943,7 @@
   function rushMove(s, e, ev, step) {
     var r = rushRoute(s, e);
     if (e.stuck) {
-      e.stuck = false;
+      unstick(e);
       ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
     } else if (r && r.stop > 0) {
       var from = [e.x, e.y], to = r.path[r.stop - 1], last = r.stop > 1 ? r.path[r.stop - 2] : from;
@@ -2007,7 +2023,7 @@
     var w = objectsOf(s, 'wagon')[0];
     if (!w || s.result || missionType(s) !== 'escort') return;
     if (w.stuck) {
-      w.stuck = false;
+      unstick(w);
       ev.push({ type: 'mudSkip', id: w.id, text: unitLabel(s, w) + 'は泥沼にはまっていて動けない（1回休み）' });
       step();
       return;
@@ -2128,7 +2144,7 @@
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
-    alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck) a.stuck = false; });
+    alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck) unstick(a); });
 
     // 3a. 構える味方の魔法の発動（敵より先）
     if (alliesOf(s).some(function (a) { return a.npc && a.intent; })) {

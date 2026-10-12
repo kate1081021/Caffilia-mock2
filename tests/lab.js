@@ -246,6 +246,127 @@ test('C6: 燃え移りの炎が死の森に届くとオバケヤシキ（導火�
 });
 
 // ===================================================================
+// ===================================================================
+console.log('\n■ A 地形');
+
+test('A2: 歩いて凍った川に入ると、向きのまま氷の端まで滑る（滑り終わる先だけが移動先）', function () {
+  R.labApply(['A2']);
+  var s = board(['.....', '.....', 'IIIII', 'IIIII', '.....']);
+  var a = R.addAlly(s, 'water', 2, 4, 'up');
+  var reach = R.reachableCells(s, a.id);
+  ok(reach['2,1'] === 1, '1歩で氷の向こうへ: ' + JSON.stringify(reach));
+  ok(reach['2,3'] === undefined && reach['2,2'] === undefined, '氷の途中には止まれない');
+  ok(reach['2,0'] === 2, '滑った先からもう1歩');
+  R.labApply([]);
+  var r2 = R.reachableCells(s, a.id);
+  ok(r2['2,3'] === 1 && r2['2,1'] === undefined, 'オフなら1歩ずつ');
+});
+test('A3: 森の中の味方は敵の狙いに選ばれない（巻き込まれれば当たる）', function () {
+  R.labApply(['A3']);
+  var s = board(['.....', '.....', '..F..', '.....', '.....'], true);
+  var hid = R.addAlly(s, 'water', 2, 2, 'up');
+  var out = R.addAlly(s, 'wind', 4, 4, 'up');
+  var e = R.addEnemy(s, 'fire', 2, 0); R.findUnit(s, e.id).aim = 'near';
+  var plan = R.planEnemy(s, R.findUnit(s, e.id));
+  ok(plan.target !== hid.id, '森の中の味方は狙わない');
+  R.labApply([]);
+  var plan2 = R.planEnemy(s, R.findUnit(s, e.id));
+  eq(plan2.target, hid.id, 'オフなら近い方（森の中）を狙う');
+});
+test('A4: 森の中の者は直撃を受けない（森は燃える）', function () {
+  R.labApply(['A4']);
+  var s = board(['.....', '.....', '..F..', '.....', '.....']);
+  var a = R.addAlly(s, 'fire', 2, 3, 'up'); var e = R.addEnemy(s, 'earth', 2, 2);
+  var r = act(s, a, 'up');
+  eq(dealt(r, e.id), 0, '直撃なし');
+  eq(tile(r.state, 2, 2), 'fire', '森は燃える');
+  R.labApply([]);
+  eq(dealt(act(s, a, 'up'), e.id), 1, 'オフなら直撃1');
+});
+test('A5: 森に入るとそこで止まる', function () {
+  R.labApply(['A5']);
+  var s = board(['.....', '.....', '..F..', '.....', '.....']);
+  var a = R.addAlly(s, 'water', 2, 3, 'up');
+  var reach = R.reachableCells(s, a.id);
+  ok(reach['2,2'] === 1 && reach['2,1'] === undefined, '森の先へは行けない');
+  R.labApply([]);
+  ok(R.reachableCells(s, a.id)['2,1'] === 2, 'オフなら通り抜ける');
+});
+test('A6: 水たまりに入ると2歩分', function () {
+  R.labApply(['A6']);
+  var s = board(['.....', '.....', '..P..', '.....', '.....']);
+  var a = R.addAlly(s, 'water', 2, 3, 'up');
+  var reach = R.reachableCells(s, a.id);
+  eq(reach['2,2'], 2, '水たまりは2歩');
+  ok(reach['2,1'] === undefined, 'その先へは届かない');
+});
+test('A7: 雷は形の中の丘へ先に落ち、上の者も打たれる', function () {
+  R.labApply(['A7']);
+  var s = board(['.....', '.....', '.....', '.....', '.....', '.....', '.....']);
+  s.overrides = { 'grow.enabled': true };
+  R.setTile(s, 3, 4, 'hill');   // ジグザグ (2,5)→(3,4)→(2,3)→(3,2)。手前 (2,5) は森
+  R.setTile(s, 2, 5, 'forest');
+  var a = R.addAlly(s, 'thunder', 2, 6, 'up');
+  var e = R.addEnemy(s, 'fire', 3, 4); tough(s, e);
+  var r = act(s, a, 'up');
+  eq(dealt(r, e.id), 1, '丘の上の敵が打たれる');
+  eq(tile(r.state, 2, 5), 'forest', '手前の森には落ちない');
+  R.labApply([]);
+  var r2 = act(s, a, 'up');
+  eq(tile(r2.state, 2, 5), 'fire', 'オフなら手前の森に落ちて燃える');
+});
+test('A8: 丘の上の敵からは、森に隠れた味方も見える', function () {
+  R.labApply(['A3', 'A8']);
+  var s = board(['.....', '.....', '..F..', '.....', '.....'], true);
+  s.overrides = { 'grow.enabled': true };
+  R.setTile(s, 2, 0, 'hill');
+  var hid = R.addAlly(s, 'water', 2, 2, 'up');
+  R.addAlly(s, 'wind', 4, 4, 'up');
+  var e = R.addEnemy(s, 'fire', 2, 0); R.findUnit(s, e.id).aim = 'near'; R.findUnit(s, e.id).move = 0;
+  ok(!R.hidden(s, R.findUnit(s, hid.id), R.findUnit(s, e.id)), '丘から見える');
+  R.setTile(s, 2, 0, 'empty');
+  ok(R.hidden(s, R.findUnit(s, hid.id), R.findUnit(s, e.id)), '平地からは見えない');
+});
+test('A9: 火山はターン終了で隣の森へ燃え移る', function () {
+  R.labApply(['A9']);
+  var s = board(['.....', '.....', '.VF..', '.....', '.....']);
+  var r = R.endTurn(s);
+  eq(tile(r.state, 2, 2), 'fire');
+  eq(tile(r.state, 1, 2), 'volcano', '火山は燃え尽きない');
+  R.labApply([]);
+  eq(tile(R.endTurn(s).state, 2, 2), 'forest', 'オフなら燃え移らない');
+});
+test('A10: 死の森の上の者は、距離に関係なく1マス引き寄せる', function () {
+  R.labApply(['A10']);
+  var s = board(['.......', '.GGGGGG', '.......', '.......', '.......', '.......', '.......']);
+  var a = R.addAlly(s, 'dark', 1, 3, 'up');   // (1,2) に撃つ … 空き。死の森は (1,1) から
+  var a2 = R.addAlly(s, 'dark', 1, 2, 'up');  // (1,1) の死の森に撃つ
+  var e = R.addEnemy(s, 'fire', 6, 1); tough(s, e);
+  var r = act(s, a2, 'up');
+  eq(pos(r.state, e.id), [5, 1], '5マス先の網の上の敵が1マス引き寄せられる');
+  R.labApply([]);
+  eq(pos(act(s, a2, 'up').state, e.id), [6, 1], 'オフなら範囲の外');
+});
+test('A10: 森に闇を撃つと、死の森になったあとの網でまとめて引き寄せる', function () {
+  R.labApply(['A10']);
+  var s = board(['.......', '.FFFFF.', '.......', '.......', '.......', '.......', '.......']);
+  var a = R.addAlly(s, 'dark', 1, 2, 'up');
+  var e = R.addEnemy(s, 'fire', 5, 1); tough(s, e);
+  var r = act(s, a, 'up');
+  eq(tile(r.state, 3, 1), 'deadforest');
+  eq(pos(r.state, e.id), [4, 1]);
+});
+test('A12: 自分の自然の上ではバリア（直撃なし）。上から外れると当たる', function () {
+  R.labApply(['A12']);
+  var s = board(['.....', '.....', '..P..', '.....', '.....']);
+  var a = R.addAlly(s, 'earth', 2, 4, 'up'); var e = R.addEnemy(s, 'water', 1, 2);
+  var a2 = R.addAlly(s, 'wind', 0, 2, 'right'); var e2 = R.addEnemy(s, 'water', 2, 2);
+  var r = R.act(s, a2.id, { dir: 'right' });
+  eq(dealt(r, e2.id), 0, '水たまりの上の水の敵にはバリア');
+  eq(dealt(r, e.id), 1, '空きの上の水の敵には直撃');
+  ok(R.LX.barrier(s, R.findUnit(s, e2.id)), '駒の輪');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {
