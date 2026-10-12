@@ -315,6 +315,63 @@ scenario('10. 【敵】敵だけの雷: 土で山 → 水で源流の川を敵B�
   });
 
 // ---------------------------------------------------------------
+scenario('11. 【チュートリアル】① 重ねる: 1回外してヒントが光る → 構える味方の風の前に火を置く → 燃え広がりで森ごと敵が燃える',
+  function () { return R.startBattle(R.loadPreset('tut1')).state; },
+  function (g) {
+    var me = R.controllableOf(g.state)[0].id;
+    var npc = R.alliesOf(g.state).filter(function (a) { return a.npc; })[0];
+    check(npc && npc.intent && npc.facing === 'right', '構える味方は最初から右向きに風を構えている');
+    g.act(me, [2, 2], 'up');              // 外す: (2,1) に火。風は (1,1) の何もない所に吹く
+    g.expectLog('構える味方「風」が右へ風の魔法（吹き抜ける）→ 何も起きなかった');
+    check(!g.state.result && g.state.turn === 2, '勝負はつかず、ターン2へ');
+    g.expectLog('敵Aが左へ1マス進んだ');
+    check(g.unit(R.enemiesOf(g.state)[0].id).x === 3 && g.tile(3, 1) === 'forest', '敵はまだ森の中 (3,1)');
+    check(JSON.stringify(R.npcHintCells(g.state)) === '[[1,1]]', '構える味方が狙っている (1,1) が光る');
+    g.act(me, [1, 2], 'up');              // 正解: (1,2) から上へ火 → (1,1) に小さな炎
+    g.expectLog('小さな炎に風が当たった');
+    g.expectLog('燃え広がり！ 右へ3マス走り、森4つが燃えた');
+    g.expectLog('敵を全員倒した！（勝利）');
+    check(g.state.result === 'win', '勝ち');
+    check(B.spread.maxLength === 4 && B.windMode === 'breeze', 'このステージの数値はほかに漏れていない');
+  });
+
+scenario('12. 【チュートリアル】① 重ねる: 2回外すと、ターン2の終わりに敵が森から出て（移動と魔法のセット）構える味方を山の魔法で撃ち、失敗',
+  function () { return R.startBattle(R.loadPreset('tut1')).state; },
+  function (g) {
+    var me = R.controllableOf(g.state)[0].id;
+    g.act(me, [2, 2], 'up');              // ターン1: 外す → 敵は (3,1) へ（まだ森）。撃たない
+    check(!g.log.some(function (l) { return /山の魔法/.test(l); }), 'ターン1は進むだけで撃たない');
+    g.act(me, [2, 2], 'up');              // ターン2: また外す → 敵は (2,1) へ進み、そのまま撃つ
+    g.expectLog('── 敵の移動と魔法 ──');
+    g.expectLog('敵Aが左へ山の魔法（盛る）');
+    g.expectLog('構える味方「風」は倒れた');
+    g.expectLog('構える味方が倒れた…（失敗）');
+    check(g.state.result === 'lose' && g.state.turn === 2, 'ターン2で失敗');
+  });
+
+scenario('13. ステージ② 2人で守る: 1ターン目は何もしない → 2ターン目に山使いがその場で上に山 → 水使いが右の腕に水 → 9行目が山と川でふさがり、増援が溜まっても5ターン守り切る',
+  function () { return R.startBattle(R.loadPreset('tut2')).state; },
+  function (g) {
+    var mount = R.controllableOf(g.state).filter(function (a) { return a.magic === 'mount'; })[0].id;
+    var water = R.controllableOf(g.state).filter(function (a) { return a.magic === 'water'; })[0].id;
+    check(R.forecast(g.state).rushes.every(function (r) { return r.reach; }), '最初は2体とも村へ届く道（村に -1）');
+    g.endTurn();                          // 1ターン目は様子見（まだ間に合う）
+    check(!g.state.result && g.state.turn === 2, '1ターン目では負けない');
+    g.act(mount, null, 'up');             // 頂上 (0,8)、腕 (0,7)(0,9)(1,8) の T 字の山
+    g.expectLog('山ができた×4');
+    g.act(water, [1, 9], 'up');           // 右の腕 (1,8) に水 → 頂上と反対の右へ川
+    g.expectLog('山の腕に当たって、頂上と反対の右へ川が流れ出した、右へ川が3マス流れた、盤の端まで流れた');
+    check([0, 1, 2, 3, 4].map(function (x) { return g.tile(x, 8); }).join(',') === 'mountain,mountain,river,river,river', '9行目が端から端までふさがった');
+    g.expectLog('敵Bは村への道がないので、その場で待った');
+    g.endTurn(); g.endTurn(); g.endTurn();
+    check(!g.log.some(function (l) { return /体当たり/.test(l); }), '一度も体当たりされない');
+    g.expectLog('ターン5を守り切った。村は無事！（勝利）');
+    check(g.state.result === 'win' && R.objectsOf(g.state, 'village').length === 3, '村は3つとも残って勝ち');
+    check(R.enemiesOf(g.state).length === 6 && R.enemiesOf(g.state).every(function (e) { return e.y <= 7; }), '増援で6体に増え、全員が川の手前に溜まっている');
+    check(B.waterLength === 2 && B.tutorial.slope === false && B.mission.defense.turns === 5, 'このステージの数値はほかに漏れていない');
+  });
+
+// ---------------------------------------------------------------
 // デモ（demos.js）の手順が、今のルールでも最後まで通って勝てるか
 var DEMOS = require('../demos.js');
 DEMOS.forEach(function (d) {

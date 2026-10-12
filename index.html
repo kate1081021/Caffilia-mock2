@@ -40,6 +40,10 @@
       </select>
     </label>
     <div class="buttons">
+      <span class="tut-pick">
+        <button id="btnTutorial" type="button" class="tutorial" aria-haspopup="true" aria-expanded="false" aria-controls="tutorialMenu">チュートリアル ▾</button>
+        <span id="tutorialMenu" class="tut-menu" role="menu" hidden></span>
+      </span>
       <span class="demo-pick"><select id="demoSelect" aria-label="見るスーパープレイ"></select><button id="btnDemo" type="button" class="demo">スーパープレイを見る ▶</button></span>
       <span class="demo-pick" id="checkPick" hidden><select id="checkSelect" aria-label="見る新案プレイ"></select><button id="btnCheck" type="button" class="check">新案プレイ ▶</button></span>
       <button id="btnEndTurn" type="button">ターン終了 <kbd>T</kbd></button>
@@ -56,7 +60,9 @@
     <section class="board-area">
       <div id="missionBar" class="mission-bar" aria-live="polite"></div>
       <div id="checkCaption" class="check-caption" aria-live="polite" hidden></div>
+      <div id="stageHint" class="stage-hint" aria-live="polite" hidden></div>
       <div id="hint" class="hint" aria-live="polite"></div>
+      <button id="btnRetry" type="button" class="primary retry" hidden>やり直す</button>
       <div id="boardWrap" class="board-wrap">
         <div id="board" class="board" role="grid" aria-label="盤面"></div>
         <div id="fx" class="fx-layer"></div>

@@ -55,7 +55,8 @@
     thunder: { name: '雷', verb: '走る' },         // 【新案】
     ice:     { name: '氷', verb: '凍らせる' },     // 【新案】
     senpu:   { name: '旋風', verb: '巻く' },       // 【新案・試し】風の強化系。正面の2×2につむじ風を巻く
-    dark:    { name: '闇', verb: '吸う' }          // 【新案・試し】正面1マス。撃つとまわりの者を引き寄せる
+    dark:    { name: '闇', verb: '吸う' },         // 【新案・試し】正面1マス。撃つとまわりの者を引き寄せる
+    mount:   { name: '山', verb: '盛る' }          // チュートリアル①の敵: 2マス先を真ん中に十字5マスへ、一度で山を盛る
   };
   var MAGICS = Object.keys(MAGIC_INFO);
 
@@ -98,13 +99,57 @@
   // 小さな道具
   // ---------------------------------------------------------------
   function clone(s) { return JSON.parse(JSON.stringify(s)); }
-  function inBounds(s, x, y) { return x >= 0 && y >= 0 && x < s.size && y < s.size; }
+
+  // ステージごとの数値の上書き（チュートリアル①〜）
+  //   s.overrides = { 'spread.maxLength': 3, ... }（balance.js の項目の道筋 → 値）。
+  //   外から呼ばれる関数の間だけ BALANCE に重ね、終わったら必ず元に戻す（ほかのシナリオには漏れない）
+  var ovDepth = 0;
+  function ovSlot(path) {
+    var parts = String(path).split('.'), last = parts.pop(), obj = B;
+    for (var i = 0; i < parts.length; i++) {
+      obj = obj[parts[i]];
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(obj, last) || (obj[last] && typeof obj[last] === 'object')) return null;
+    return { obj: obj, key: last };
+  }
+  // 上書きできる形か（知っている項目だけ・値の型が同じ）
+  function validOverrides(ov) {
+    if (!ov || typeof ov !== 'object' || Array.isArray(ov)) return false;
+    return Object.keys(ov).every(function (p) { var sl = ovSlot(p); return !!sl && typeof ov[p] === typeof sl.obj[sl.key]; });
+  }
+  function withOverrides(ov, fn) {
+    var saved = [];
+    if (!ovDepth && ov) {
+      Object.keys(ov).forEach(function (p) {
+        var sl = ovSlot(p);
+        if (sl) { saved.push({ sl: sl, v: sl.obj[sl.key] }); sl.obj[sl.key] = ov[p]; }
+      });
+    }
+    ovDepth++;
+    try { return fn(); } finally {
+      ovDepth--;
+      for (var i = saved.length - 1; i >= 0; i--) saved[i].sl.obj[saved[i].sl.key] = saved[i].v;
+    }
+  }
+  // 状態を受け取る関数を、その状態の上書きの中で動かす
+  function withStage(fn) {
+    return function (s) {
+      var args = arguments;
+      return withOverrides(s && s.overrides, function () { return fn.apply(null, args); });
+    };
+  }
+
+  // 盤面の縦のマス数（チュートリアル②〜: 横長・縦長の盤面。s.h がなければ正方形で、横も縦も s.size）
+  function rowsOf(s) { return s.h || s.size; }
+  function inBounds(s, x, y) { return x >= 0 && y >= 0 && x < s.size && y < rowsOf(s); }
   function idx(s, x, y) { return y * s.size + x; }
   function getTile(s, x, y) { return s.tiles[idx(s, x, y)]; }
   function setTile(s, x, y, t) {
     var i = idx(s, x, y), old = s.tiles[i];
     if (old !== t && s.fireAge && s.fireAge[i] !== undefined) delete s.fireAge[i];
     if (old !== t && s.fireLife && s.fireLife[i] !== undefined) delete s.fireLife[i];
+    if (old !== t && s.slopes && s.slopes[i] !== undefined) delete s.slopes[i];   // 山でなくなったら高さも消える
     // 【育つ】植物が燃えた炎は、燃え尽きるまでの長さが植物で決まる（森は長く、草むらはすぐ）
     if (t === 'fire' && B.grow.enabled && (old === 'forest' || old === 'thicket')) {
       s.fireLife = s.fireLife || {};
@@ -133,6 +178,10 @@
     return null;
   }
   function alliesOf(s) { return s.units.filter(function (u) { return u.side === 'ally'; }); }
+  // 構える味方（チュートリアル）: プレイヤーが選べない・動かせない・撃たせられない味方。毎ターン同じ魔法を構え、発動フェーズで撃つ
+  function isNpc(u) { return !!u && u.side === 'ally' && !!u.npc; }
+  // プレイヤーが指示できる味方
+  function controllableOf(s) { return alliesOf(s).filter(function (u) { return !u.npc; }); }
   function enemiesOf(s) { return s.units.filter(function (u) { return u.side === 'enemy'; }); }
   // お題の置きもの（村・馬車）。自然ではなく、ユニットと同じ法則に従う（直撃・決め手・炎の上・風）
   function objectsOf(s, kind) { return s.units.filter(function (u) { return u.side === 'object' && (!kind || u.kind === kind); }); }
@@ -152,8 +201,8 @@
       var kin = objectsOf(s, u.kind);
       return OBJECT_INFO[u.kind].name + (kin.length > 1 ? (kin.indexOf(u) + 1) : '');
     }
-    var same = alliesOf(s).filter(function (a) { return a.magic === u.magic; });
-    var base = '味方「' + magicName(u.magic) + '」';
+    var same = alliesOf(s).filter(function (a) { return a.magic === u.magic && !!a.npc === !!u.npc; });
+    var base = (u.npc ? '構える味方「' : '味方「') + magicName(u.magic) + '」';
     if (same.length > 1) base += (same.indexOf(u) + 1);
     return base;
   }
@@ -233,6 +282,7 @@
       u.aim = B.enemy.aim;
       u.avoid = B.enemy.avoid;
       u.cross = B.enemy.cross;
+      u.stand = B.enemy.stand;
       u.intent = false;     // 予告中か（予告は今の位置と向きに固定）
     }
     return u;
@@ -242,8 +292,14 @@
   var PERSONA = {
     aim:   { count: '人数', near: '近い人', nature: '自然', target: '的' },
     avoid: { wall: '通れない所だけ', danger: '危ない所も' },
-    cross: { none: 'なし', river: '川を渡る' }
+    cross: { none: 'なし', river: '川を渡る' },
+    // 動き（チュートリアル）: 動かない ＝ 移動しない・撃たない・予告を出さない
+    //   進む ＝ 向いている方へ毎ターン1マスずつ進む（敵の発動のあと）。今の位置から向きの方へ撃って構える味方に当たるときだけ予告して撃つ
+    //          （構える味方がいないシナリオでは、味方の誰かに当たるとき）
+    //   突進 ＝ 人は無視して一番近い村へ走る（1ターンに enemy.rushMove マス）。魔法は撃たない。走り終えて村の隣なら体当たりで村を壊す（チュートリアル②）
+    stand: { move: '動いて撃つ', still: '動かない', march: '1マスずつ進む', rush: '突進（村へ走る）' }
   };
+  var PERSONA_FIELDS = Object.keys(PERSONA);
   // 「危ない所も避ける」敵が避けるマス
   var DANGER = { fire: true, smallfire: true, mud: true, lava: true, firewhirl: true };
 
@@ -278,10 +334,13 @@
   function missionType(s) { return (s.mission && s.mission.type) || 'annihilate'; }
   function inCells(list, x, y) { return (list || []).some(function (c) { return c[0] === x && c[1] === y; }); }
 
-  function blankState(size, enemyActs) {
+  // h: 縦のマス数（省略で正方形）。横と違うときだけ s.h に持つ
+  function blankState(size, enemyActs, h) {
     size = clampSize(size);
+    h = h ? clampSize(h) : size;
     var s = { version: 2, size: size, tiles: [], units: [], enemyActs: enemyActs !== false, turn: 1, result: null, seq: 0, fireAge: {}, mission: newMission('annihilate') };
-    for (var i = 0; i < size * size; i++) s.tiles.push('empty');
+    if (h !== size) s.h = h;
+    for (var i = 0; i < size * h; i++) s.tiles.push('empty');
     return s;
   }
 
@@ -308,7 +367,8 @@
   // ---------------------------------------------------------------
   // ダメージ（1発の中では1ユニットに1回だけ。一番大きいもの）
   // ---------------------------------------------------------------
-  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [] }; }
+  // after: ダメージを入れたあとに動かす処理（倒れた者のマスに山を盛る など）
+  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [], after: [] }; }
 
   function addHit(ctx, u, amount, src) {
     var h = ctx.hits[u.id];
@@ -320,7 +380,7 @@
     }
   }
 
-  var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）' };
+  var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）', ram: '（体当たり）' };
   function applyHits(s, ctx, ev) {
     ctx.order.forEach(function (id) {
       var u = findUnit(s, id);
@@ -345,7 +405,7 @@
     var dead = s.units.filter(function (u) { return u.hp <= 0; });
     dead.forEach(function (u) {
       var verb = u.side === 'object' ? 'は壊れた' : 'は倒れた';
-      ev.push({ type: 'death', side: u.side, kind: u.kind, id: u.id, text: unitLabel(s, u) + verb, cells: [[u.x, u.y]] });
+      ev.push({ type: 'death', side: u.side, kind: u.kind, id: u.id, npc: !!u.npc, text: unitLabel(s, u) + verb, cells: [[u.x, u.y]] });
       var m = s.mission;
       if (u.kind === 'village' && m) m.lost = (m.lost || 0) + 1;
       // 宝を持つ味方が倒れたら、宝はそのマスに落ちる（ほかの味方が拾える）
@@ -371,7 +431,10 @@
     var type = missionType(s), m = s.mission || {};
     var enemyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'enemy'; });
     var allyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'ally'; });
-    if (allyDied && alliesOf(s).length === 0) { setResult(s, ev, 'lose', '味方が全員倒れた…（敗北）'); return; }
+    // 構える味方（チュートリアルの相方）が倒れたら失敗（同じ1発で自分も倒れたときも、こちらを出す）
+    if (ev.some(function (e) { return e.type === 'death' && e.npc; })) { setResult(s, ev, 'lose', '構える味方が倒れた…（失敗）'); return; }
+    // 動かせる味方が全員倒れたら負け（構える味方しか残っていなくても負け）
+    if (allyDied && controllableOf(s).length === 0) { setResult(s, ev, 'lose', '味方が全員倒れた…（敗北）'); return; }
     if (type === 'defense' && (m.lost || 0) >= B.mission.defense.loseAt) { setResult(s, ev, 'lose', '村が壊された…（敗北）'); return; }
     if (type === 'escort' && ev.some(function (e) { return e.type === 'death' && e.kind === 'wagon'; }) && !objectsOf(s, 'wagon').length) {
       setResult(s, ev, 'lose', '馬車が壊された…（敗北）'); return;
@@ -607,8 +670,39 @@
   }
 
   // 置く（草・土）・点ける（火）・【新案】走る（雷）
+  // 山を盛る1マス（土と同じ。ただし育つの入切にかかわらず一度で山）
+  function mountCell(s, x, y, ctx) {
+    var t = getTile(s, x, y);
+    if (t === 'empty') { setTile(s, x, y, 'mountain'); ctx.phrases.push('山ができた'); return true; }
+    if (t === 'river' || t === 'puddle') { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); return true; }
+    if (B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, 'mountain'); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（山になった）'); return true; }
+    return false;
+  }
+
+  // チュートリアル②（tutorial.slope）: 山の魔法の十字で、真ん中が頂上（'peak'）、上下左右が腕（頂上から見た向き ＝ 下り坂の向き）。
+  //   s.slopes = { マスの番号: 'peak' | 向き }。山でなくなったマスからは消える（setTile）
+  function slopeCenter(s, u, facing) {
+    var ctr = B.shapeCenter && B.shapeCenter[u.magic];
+    if (!ctr) return null;
+    var o = castOrigin(s, u, facing), d = rotate(facing, ctr[0], ctr[1]);
+    return [o.x + d[0], o.y + d[1]];
+  }
+  function markSlope(s, ctr, x, y) {
+    if (!ctr || getTile(s, x, y) !== 'mountain') return;
+    var dx = x - ctr[0], dy = y - ctr[1], i = idx(s, x, y);
+    s.slopes = s.slopes || {};
+    if (!dx && !dy) { s.slopes[i] = 'peak'; return; }
+    DIR_ORDER.forEach(function (d) { if (DIRS[d].dx === dx && DIRS[d].dy === dy) s.slopes[i] = d; });
+  }
+
   function placeOrIgnite(s, u, facing, ctx, ev) {
-    var shocked = {}, erupted = {}, planted = [], growFrom = [];
+    var shocked = {}, erupted = {}, planted = [], growFrom = [], mountAfter = [];
+    var peak = u.magic === 'mount' && B.tutorial.slope ? slopeCenter(s, u, facing) : null;
+    if (u.magic === 'mount') ctx.after.push(function () {
+      var cells = mountAfter.filter(function (c) { return !unitAt(s, c[0], c[1]) && mountCell(s, c[0], c[1], newShot()); });
+      cells.forEach(function (c) { markSlope(s, peak, c[0], c[1]); });
+      if (cells.length) ev.push({ type: 'kindle', cells: cells, text: '倒れた者のいたマスにも山が盛り上がった（' + cells.length + 'マス）' });
+    });
     castCells(s, u, facing).forEach(function (c) {
       var x = c[0], y = c[1];
       ctx.cells.push([x, y]);
@@ -629,6 +723,10 @@
         else if (!o && t === 'hill' && B.grow.enabled) growFrom.push([x, y]);   // 育つのは、形のほかのマスを済ませたあと（順番で結果が変わらないように）
         else if (!o && (t === 'river' || t === 'puddle')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); }
         else if (!o && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); }
+      } else if (u.magic === 'mount') {
+        // 盛る（山）: 一度で山。ユニットのいるマスは直撃し、倒れたらそのマスにも山を盛る（倒れなければ盛らない。押し出すかは持ち帰り）
+        if (!o) { if (mountCell(s, x, y, ctx)) markSlope(s, peak, x, y); }
+        else mountAfter.push([x, y]);
       } else if (u.magic === 'senpu') {
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
@@ -1064,13 +1162,46 @@
     return fin;
   }
 
+  // チュートリアル②: 山の腕か頂上に水が当たった。腕なら、その腕の次のマスから頂上と反対の向きへ盤の端まで川。
+  //   頂上なら、頂上から下る腕（その向きの印を持つ隣の山）すべてから、同じように川（十字なら4本）
+  //   川は空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。ユニット・置きもの（村など）の手前、ほかの自然で止まり、炎は消して止まる
+  function slopeRivers(s, x, y, ctx) {
+    var sl = s.slopes[idx(s, x, y)];
+    var arms = sl !== 'peak' ? [[x, y, sl]] : DIR_ORDER.map(function (d) {
+      var ax = x + DIRS[d].dx, ay = y + DIRS[d].dy;
+      return inBounds(s, ax, ay) && s.slopes[idx(s, ax, ay)] === d ? [ax, ay, d] : null;
+    }).filter(Boolean);
+    ctx.phrases.push(sl === 'peak' ? '山の頂上に当たって、' + arms.length + 'つの腕から川が流れ出した' : '山の腕に当たって、頂上と反対の' + DIRS[sl].name + 'へ川が流れ出した');
+    arms.forEach(function (a) {
+      var F = DIRS[a[2]], g = { origin: [a[0], a[1]], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null;
+      for (var i = 1; ; i++) {
+        var cx = a[0] + F.dx * i, cy = a[1] + F.dy * i;
+        if (!inBounds(s, cx, cy)) { stop = '盤の端まで流れた'; break; }
+        var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
+        if (o) { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
+        if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
+          setTile(s, cx, cy, 'river');
+          ctx.cells.push([cx, cy]);
+          g.cells.push([cx, cy]); g.tiles.push('river'); g.wave.push(i - 1);
+          continue;
+        }
+        if (t === 'river' || t === 'ice') continue;
+        if (t === 'fire' || t === 'smallfire') { setTile(s, cx, cy, 'empty'); stop = tileName(t) + 'を消して止まった'; break; }
+        stop = tileName(t) + 'で止まった';
+        break;
+      }
+      if (g.cells.length) { ctx.grows.push(g); ctx.phrases.push(F.name + 'へ川が' + g.cells.length + 'マス流れた'); }
+      if (stop) ctx.phrases.push(stop);
+    });
+  }
+
   // 流れる（水）
   //   【新案】水だけなら正面に小さな池（waterLength マス）。山に当たると山を下って、盤の端まで川になる（源流）
   //   【育つ】入のときは、池ではなく水たまり。通り道に水たまりがあると、そこから向きの奥へ川に育つ（grow.riverLength マス先まで）
   function flow(s, u, facing, ctx, ev) {
     var F = DIRS[facing], from = castOrigin(s, u, facing);   // 【育つ】丘の上からは1マス先から流れる
     var made = 0, pond = 0, stop = null, sourced = false, tornadoHit = null, whirlHit = null;
-    var growOn = B.grow.enabled, pondName = growOn ? '水たまり' : '池';
+    var growOn = B.grow.enabled, puddleOn = growOn || B.tutorial.slope, pondName = puddleOn ? '水たまり' : '池';   // チュートリアル②: 水だけなら水たまり
     var growing = false, left = 0, river = null;   // 【育つ】水たまりから川に育っている途中か、あと何マス進めるか、育った川のマス
     for (var i = 1; ; i++) {
       if (!sourced && !growing && i > (B.shape.frontOne ? 1 : B.waterLength)) break;   // 【縮尺】正面1マスなら池（水たまり）も1マス
@@ -1102,6 +1233,13 @@
         ctx.grows.push(river);
         continue;
       }
+      // チュートリアル②: 頂上か腕のある山に当たると、高い所から低い所へ流れる（腕から、頂上と反対の向きへ盤の端まで）
+      if (t === 'mountain' && !sourced && B.tutorial.slope && s.slopes && s.slopes[idx(s, x, y)] !== undefined) {
+        if (made) ctx.phrases.push(pondName + 'ができた（' + made + 'マス）');
+        pond = made; made = 0; sourced = true;
+        slopeRivers(s, x, y, ctx);
+        break;
+      }
       if (t === 'mountain' || t === 'hill') {   // 【育つ】丘からも川は流れる（丘は丘のまま）
         if (!sourced) {
           sourced = true;
@@ -1111,7 +1249,7 @@
         }
         continue;
       }
-      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, growOn && !sourced ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
+      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn && !sourced ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
       if (t === 'river' || t === 'ice') continue;
       if (t === 'lava') { setTile(s, x, y, 'mountain'); stop = '【新案】溶岩が冷えて山になった'; break; }
       if (t === 'firewhirl') { stop = '【新案】火の渦に水が入った'; tornadoHit = [x, y]; break; }
@@ -1280,6 +1418,7 @@
       (ctx.phrases.length ? summarize(ctx.phrases) : (any ? '' : '何も起きなかった'));
     castEv.text = castEv.text.replace(/ → $/, '');
     applyHits(s, ctx, ev);
+    ctx.after.forEach(function (fn) { fn(); });
     return ctx;
   }
 
@@ -1348,6 +1487,7 @@
     if (s0.result) return fail(s0, '勝負はもうついている');
     var u0 = findUnit(s0, unitId);
     if (!u0 || u0.side !== 'ally') return fail(s0, '味方を選んでいない');
+    if (u0.npc) return fail(s0, '構える味方には指示できない');
     if (u0.acted) return fail(s0, 'この味方はもう行動した');
     var to = opts.to || [u0.x, u0.y];
     var dir = opts.dir || u0.facing;
@@ -1393,7 +1533,7 @@
   }
 
   function allAlliesActed(s) {
-    var al = alliesOf(s);
+    var al = controllableOf(s);   // 構える味方は数えない
     return al.length > 0 && al.every(function (a) { return a.acted; });
   }
 
@@ -1444,6 +1584,12 @@
     // 先に予告した仲間の魔法は、こちらより先に発動する（その結果の盤面で撃つ。仲間の予告の中へ自分から入る手も「巻き込む」）
     var harm = false;
     if (u.side === 'enemy') {
+      // 構える味方の魔法は、敵より先に発動する
+      alliesOf(sim).forEach(function (o) {
+        if (!o.npc || !o.intent || sim.result || !findUnit(sim, o.id)) return;
+        var oc = shoot(sim, o, o.facing, []);
+        oc.order.forEach(function (id) { var t = findUnit(s, id); if (t && t.side === 'enemy' && oc.hits[id].amount > 0) harm = true; });
+      });
       enemiesOf(sim).forEach(function (o) {
         if (o.id === u.id || !o.intent || sim.result || !findUnit(sim, o.id)) return;
         var oc = shoot(sim, o, o.facing, []);
@@ -1508,6 +1654,11 @@
   //   3. 残りから狙い（人数・近い人・自然）で選ぶ。同点なら 移動が短い → 見つけた順（上右下左の幅優先）→ 向き（上右下左）
   //   4. 狙いで点が付く組み合わせがなければ、一番近い味方へ最大2マス進んで、その方を向く
   function planEnemy(s, e) {
+    if (e.stand === 'still') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'still' };   // 動かない: 移動も予告もしない
+    // 進む: ターンの始めには何もしない（移動と魔法はセットで、敵の発動のときに行う。marchPhase）
+    if (e.stand === 'march') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'march' };
+    // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
+    if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.path.length ? rr.path[Math.min(B.enemy.rushMove, rr.path.length) - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
     if (!alliesOf(s).length) return null;
     var allies = alliesOf(s).filter(function (a) { return !hidden(s, a); });
     if (!allies.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
@@ -1582,8 +1733,9 @@
       var e = findUnit(s, id);
       if (!e) return;
       e.intent = false;
+      if (e.stand === 'rush') { rushMove(s, e, ev, step); return; }   // 突進: 村へ走って、隣なら体当たり
       var plan = planEnemy(s, e);
-      if (!plan) return;
+      if (!plan || plan.kind === 'still' || plan.kind === 'march') { e.intent = false; return; }
       if (e.stuck) {
         e.stuck = false;
         ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
@@ -1603,6 +1755,29 @@
     });
   }
 
+  // 構える味方が魔法を構え直す（ターンの始め。敵の移動と予告より前）。動かず、今の位置と向きのまま同じ魔法を構える
+  function allyReadyPhase(s, ev, step) {
+    alliesOf(s).forEach(function (a) {
+      if (!a.npc || s.result) return;
+      a.intent = true;
+      ev.push({ type: 'intent', id: a.id, side: 'ally', magic: a.magic, dir: a.facing, from: [a.x, a.y], cells: castCells(s, a, a.facing),
+        text: unitLabel(s, a) + 'は' + DIRS[a.facing].name + 'を向いて' + magicName(a.magic) + 'の魔法を構えた' });
+    });
+    step();
+  }
+
+  // 発動（構える味方 → 敵）。構える味方は、プレイヤーの手番のあと・敵より先に撃つ（発動の瞬間の位置と向きから）
+  function allyFirePhase(s, ev, step) {
+    var ids = alliesOf(s).filter(function (a) { return a.npc && a.intent; }).map(function (a) { return a.id; });
+    for (var i = 0; i < ids.length && !s.result; i++) {
+      var a = findUnit(s, ids[i]);
+      if (!a || !a.intent) continue;
+      a.intent = false;
+      shoot(s, a, a.facing, ev);
+      step();
+    }
+  }
+
   // 3. 敵の魔法の発動（敵の順に1つずつ。発動の瞬間の位置と向きから撃つ）
   function enemyFirePhase(s, ev, step) {
     var ids = enemiesOf(s).filter(function (e) { return e.intent; }).map(function (e) { return e.id; });
@@ -1613,6 +1788,140 @@
       shoot(s, e, e.facing, ev);
       step();
     }
+  }
+
+  // 「進む」敵の次の1マス（向いている方。盤の外・自分の足で入れないマス・ユニットのいるマスなら進まない＝ null）
+  function marchStep(s, e) {
+    var F = DIRS[e.facing], nx = e.x + F.dx, ny = e.y + F.dy;
+    if (!inBounds(s, nx, ny) || !canEnter(e, getTile(s, nx, ny)) || unitAt(s, nx, ny)) return null;
+    return [nx, ny];
+  }
+  // 「進む」敵が今の位置から撃つか: 狙う相手（構える味方。いなければ味方の誰でも）に当たり、自分や仲間を巻き込まないとき。
+  //   形に真ん中（shapeCenter）がある魔法は、狙う相手が真ん中のマスにいるときだけ
+  function marchAims(s, e) {
+    var tr = trialShot(s, e, e.x, e.y, e.facing);
+    var npcs = alliesOf(s).filter(isNpc);
+    var isAim = function (t) { return !!t && (npcs.length ? isNpc(t) : t.side === 'ally'); };
+    var hit = tr.allyIds.some(function (id) { return isAim(findUnit(s, id)); });
+    var ctr = B.shapeCenter && B.shapeCenter[e.magic];
+    if (ctr) {
+      var o = castOrigin(s, e, e.facing), d = rotate(e.facing, ctr[0], ctr[1]);
+      hit = hit && isAim(unitAt(s, o.x + d[0], o.y + d[1]));
+    }
+    return hit && !tr.harm;
+  }
+  // 「進む」敵の行動（移動と魔法のセット）。敵の発動のときに: 向いている方へ1マス進み（泥沼にはまっていたら1回休み）、
+  //   そこから狙う相手に届けば魔法を撃つ。onMove・onShoot は予告の計算用（盤面の変化を記録する）
+  function marchPhase(s, ev, step, onMove, onShoot) {
+    enemiesOf(s).filter(function (e) { return e.stand === 'march'; }).map(function (e) { return e.id; }).forEach(function (id) {
+      var e = findUnit(s, id);
+      if (!e || s.result) return;
+      if (e.stuck) { e.stuck = false; ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' }); step(); }
+      else {
+        var to = marchStep(s, e);
+        if (to) {
+          var from = [e.x, e.y];
+          e.x = to[0]; e.y = to[1];
+          if (onMove) onMove(e, from, to);
+          ev.push({ type: 'move', id: e.id, side: 'enemy', from: from, to: to, text: unitLabel(s, e) + 'が' + DIRS[e.facing].name + 'へ1マス進んだ' });
+          if (getTile(s, e.x, e.y) === 'mud') enterMud(s, e, ev);
+          step();
+        }
+      }
+      if (s.result || !marchAims(s, e)) return;
+      if (onShoot) onShoot(e); else { shoot(s, e, e.facing, ev); step(); }
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // 突進の敵（チュートリアル②）
+  //   人は無視して、一番近い村へ、通れるマスだけを通る一番短い道を走る（1ターンに enemy.rushMove マス。ターンの始めの敵の移動のとき）。
+  //   山・川・水たまり・泥沼・ユニットのいるマス・盤の外は通らない。魔法は撃たない。走り終えて村の隣にいたら、体当たりで村を壊す（予告なし）。
+  //   村へ届く道がなければ、enemy.rushNoPath が 'approach' なら届くマスのうち村に一番近い（縦横の歩数）マスへ走って待つ（今いるマスが一番近ければ、その場で待つ）、
+  //   'wait' ならその場で待つ
+  // ---------------------------------------------------------------
+  var RUSH_BLOCK = { puddle: true, mud: true };
+  function rushOpen(s, e, x, y) {
+    var t = getTile(s, x, y), o = unitAt(s, x, y);
+    return isPassable(t) && !RUSH_BLOCK[t] && (!o || o === e);
+  }
+  function villageNextTo(s, x, y) {
+    var vs = objectsOf(s, 'village');
+    for (var i = 0; i < DIR_ORDER.length; i++) {
+      var d = DIRS[DIR_ORDER[i]];
+      for (var j = 0; j < vs.length; j++) if (vs[j].x === x + d.dx && vs[j].y === y + d.dy) return vs[j];
+    }
+    return null;
+  }
+  // 突進の道: { id, from, path（次のマスから終わりまで）, reach（村の隣まで届く）, village（届く村の id）, stop（次の移動で進むマス数） }。村がなければ null
+  function rushRoute(s, e) {
+    var vs = objectsOf(s, 'village');
+    if (!vs.length) return null;
+    var dist = {}, prev = {}, order = [[e.x, e.y]], queue = [[e.x, e.y]];
+    dist[key(e.x, e.y)] = 0;
+    while (queue.length) {
+      var c = queue.shift();
+      neighbors(s, c[0], c[1]).forEach(function (n) {
+        var k = key(n.x, n.y);
+        if (dist[k] !== undefined || !rushOpen(s, e, n.x, n.y)) return;
+        dist[k] = dist[key(c[0], c[1])] + 1; prev[k] = c;
+        order.push([n.x, n.y]); queue.push([n.x, n.y]);
+      });
+    }
+    var near = function (c) { return Math.min.apply(null, vs.map(function (v) { return Math.abs(v.x - c[0]) + Math.abs(v.y - c[1]); })); };
+    var goal = order.filter(function (c) { return !!villageNextTo(s, c[0], c[1]); })[0] || null;   // 見つけた順 ＝ 近い順
+    var reach = !!goal;
+    if (!goal) {
+      goal = order[0];
+      if (B.enemy.rushNoPath !== 'wait') order.forEach(function (c) {
+        var a = near(c), b = near(goal);
+        if (a < b || (a === b && dist[key(c[0], c[1])] < dist[key(goal[0], goal[1])])) goal = c;
+      });
+    }
+    var path = [], cur = goal;
+    while (cur[0] !== e.x || cur[1] !== e.y) { path.unshift(cur); cur = prev[key(cur[0], cur[1])]; }
+    var v = reach ? villageNextTo(s, goal[0], goal[1]) : null;
+    return { id: e.id, from: [e.x, e.y], path: path, reach: reach, village: v ? v.id : null, stop: Math.min(B.enemy.rushMove, path.length) };
+  }
+  // 突進の敵が走る（＋体当たり）。使った道を返す
+  function rushMove(s, e, ev, step) {
+    var r = rushRoute(s, e);
+    if (e.stuck) {
+      e.stuck = false;
+      ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
+    } else if (r && r.stop > 0) {
+      var from = [e.x, e.y], to = r.path[r.stop - 1], last = r.stop > 1 ? r.path[r.stop - 2] : from;
+      e.x = to[0]; e.y = to[1];
+      e.facing = to[0] > last[0] ? 'right' : to[0] < last[0] ? 'left' : to[1] > last[1] ? 'down' : 'up';
+      ev.push({ type: 'move', id: e.id, side: 'enemy', from: from, to: to, text: unitLabel(s, e) + 'が村へ向かって' + r.stop + 'マス走った' });
+      if (getTile(s, e.x, e.y) === 'mud') enterMud(s, e, ev);
+    } else if (r && !r.reach) {
+      ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: unitLabel(s, e) + 'は村への道がないので、その場で待った' });
+    }
+    step();
+    // 走り終えて村の隣にいたら、体当たりで村を壊す
+    var v = !s.result && villageNextTo(s, e.x, e.y);
+    if (v) {
+      var ctx = newShot();
+      addHit(ctx, v, v.hp, 'ram');
+      ev.push({ type: 'ram', id: e.id, cells: [[v.x, v.y]], text: unitLabel(s, e) + 'が' + unitLabel(s, v) + 'に体当たりした' });
+      applyHits(s, ctx, ev);
+      step();
+    }
+    return r;
+  }
+
+  // 増援（チュートリアル②）: シナリオの spawn の所に、毎ターンの終わりに1体ずつ現れる（tutorial.spawn で切れる）。ふさがっていたら出られない
+  function spawnPhase(s, ev, step) {
+    var sp = s.spawn;
+    if (!sp || !B.tutorial.spawn || s.result) return;
+    if (!inBounds(s, sp.x, sp.y)) return;
+    var o = unitAt(s, sp.x, sp.y), t = getTile(s, sp.x, sp.y);
+    if (o || !isPassable(t)) { ev.push({ type: 'info', cells: [[sp.x, sp.y]], text: '増援は出られなかった（' + (o ? unitLabel(s, o) + 'がいる' : tileName(t) + 'がある') + '）' }); step(); return; }
+    var e = addEnemy(s, sp.magic, sp.x, sp.y, sp.facing);
+    PERSONA_FIELDS.forEach(function (f) { if (sp[f]) e[f] = sp[f]; });
+    ev.push({ type: 'spawn', id: e.id, side: 'enemy', cells: [[e.x, e.y]], text: '増援: ' + unitLabel(s, e) + 'が現れた' });
+    step();
   }
 
   // ---------------------------------------------------------------
@@ -1682,7 +1991,7 @@
   // ---------------------------------------------------------------
   function fireSpreadCells(s) {
     var out = [];
-    for (var y = 0; y < s.size; y++) {
+    for (var y = 0; y < rowsOf(s); y++) {
       for (var x = 0; x < s.size; x++) {
         if (!isPlant(getTile(s, x, y))) continue;   // 森と【育つ】草むらへ燃え移る
         if (neighbors(s, x, y).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'fire' || nt === 'firewhirl'; })) out.push([x, y]);
@@ -1747,7 +2056,7 @@
     // 3. 小さな炎が消える・花びらが散る・風がやむ・火の渦が解ける
     function sweep(from, to) {
       var cells = [];
-      for (var y = 0; y < s.size; y++) {
+      for (var y = 0; y < rowsOf(s); y++) {
         for (var x = 0; x < s.size; x++) if (getTile(s, x, y) === from) { setTile(s, x, y, to); cells.push([x, y]); }
       }
       return cells;
@@ -1776,13 +2085,25 @@
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
     alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck) a.stuck = false; });
 
+    // 3a. 構える味方の魔法の発動（敵より先）
+    if (alliesOf(s).some(function (a) { return a.npc && a.intent; })) {
+      ev.push({ type: 'phase', text: '── 構える味方の発動 ──' });
+      allyFirePhase(s, ev, step);
+    }
+
     // 3. 敵の魔法の発動
-    if (s.enemyActs && enemiesOf(s).some(function (e) { return e.intent; })) {
+    if (!s.result && s.enemyActs && enemiesOf(s).some(function (e) { return e.intent; })) {
       ev.push({ type: 'phase', text: '── 敵の魔法の発動 ──' });
       enemyFirePhase(s, ev, step);
     }
 
-    // 3b. 護衛: 馬車がゴールへ1マス進む
+    // 3b. 「進む」敵: 1マス進んで、届けば撃つ（移動と魔法のセット）
+    if (!s.result && s.enemyActs && enemiesOf(s).some(function (e) { return e.stand === 'march'; })) {
+      ev.push({ type: 'phase', text: '── 敵の移動と魔法 ──' });
+      marchPhase(s, ev, step);
+    }
+
+    // 3c. 護衛: 馬車がゴールへ1マス進む
     if (!s.result) wagonPhase(s, ev, step);
 
     // 4. ターン終了処理
@@ -1798,12 +2119,19 @@
       step();
     }
 
-    // 5. 次のターン: 敵の移動と予告
+    // 4c. 構える味方がいるシナリオ: 敵が残ったままターン終了を迎えた回数（外したときのヒントに使う）
+    if (!s.result && alliesOf(s).some(isNpc) && enemiesOf(s).length) s.misses = (s.misses || 0) + 1;
+
+    // 4d. 増援（ターン終了処理のあと）
+    if (!s.result && s.enemyActs) spawnPhase(s, ev, step);
+
+    // 5. 次のターン: 構える味方が構え直す → 敵の移動と予告
     if (!s.result) {
       s.turn += 1;
       alliesOf(s).forEach(function (a) { a.acted = false; });
       ev.push({ type: 'turnStart', text: '── ターン' + s.turn + ' 開始 ──' });
       step();
+      allyReadyPhase(s, ev, step);
       if (s.enemyActs) enemyPlanPhase(s, ev, step);
     }
     step();
@@ -1817,6 +2145,7 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
+    allyReadyPhase(s, ev, step);
     if (s.enemyActs) enemyPlanPhase(s, ev, step);
     step();
     return { ok: true, state: s, events: ev, steps: steps };
@@ -1884,7 +2213,7 @@
     (B.nextHints || []).forEach(function (h) {
       if (h.recipe && [].concat(h.recipe).indexOf(B.tornadoRecipe) < 0) return;
       var seen = {};
-      for (var y = 0; y < s.size; y++) {
+      for (var y = 0; y < rowsOf(s); y++) {
         for (var x = 0; x < s.size; x++) {
           if (seen[key(x, y)] || getTile(s, x, y) !== h.tile) continue;
           var cells = [], stack = [[x, y]], inComp = {};
@@ -1898,7 +2227,7 @@
           }
           var shooters = [];
           alliesOf(s).forEach(function (a) {
-            if (a.acted || a.magic !== h.magic) return;
+            if (a.acted || a.npc || a.magic !== h.magic) return;
             var found = null;
             reachInfo(s, a).order.some(function (pos) {
               if (!canShoot(s, a, pos)) return false;
@@ -1924,35 +2253,43 @@
   //   予告は敵の順に発動したものとして続けて計算する（前の敵の結果が、次の敵の盤面になる）
   //   enemies: [{ id, from, to, shootFrom, dir, magic, cells, tileChanges, damages, finishers, cancelled }]
   //   enemyDamage: 発動でダメージを受ける者（味方も敵も）。fireSpread・burn: 発動のあとのターン終了処理
+  //   allies: 構える味方の予告（敵より先に発動する。形は enemies と同じ。damages は enemyDamage にも入る）
   function forecast(s) {
-    var out = { enemies: [], fireSpread: [], burnOut: [], burn: [], enemyDamage: [], wagon: null };
+    //   rushes: 突進の敵が次のターンの始めに走る道（ターン終了処理のあとの盤面で、敵の順に走らせて計算する）
+    var out = { allies: [], enemies: [], marches: [], rushes: [], fireSpread: [], burnOut: [], burn: [], enemyDamage: [], wagon: null };
     if (s.result) return out;
     var sim = clone(s);
-    if (s.enemyActs) {
-      enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) {
-        var e = findUnit(sim, e0.id);
-        if (!e || sim.result) {
-          out.enemies.push({ id: e0.id, cancelled: true, from: [e0.x, e0.y], to: [e0.x, e0.y], dir: e0.facing, magic: e0.magic, cells: [], tileChanges: [], damages: [], finishers: [] });
-          return;
-        }
-        var before = sim.tiles.slice(), units = clone(sim.units);
-        var ctx = shoot(sim, e, e.facing, []);
-        e.intent = false;
-        var tileChanges = [];
-        for (var i = 0; i < before.length; i++) {
-          if (sim.tiles[i] !== before[i]) tileChanges.push({ x: i % sim.size, y: Math.floor(i / sim.size), from: before[i], to: sim.tiles[i] });
-        }
-        var damages = ctx.order.map(function (id) {
-          var b = units.filter(function (u) { return u.id === id; })[0];
-          var h = ctx.hits[id];
-          return { id: id, side: b.side, amount: h.amount, src: h.src, dies: !findUnit(sim, id) };
-        });
-        damages.forEach(function (d) { out.enemyDamage.push({ id: d.id, amount: d.amount, side: d.side, by: e.id }); });
-        out.enemies.push({ id: e.id, from: [e.x, e.y], to: [e.x, e.y], shootFrom: [e.x, e.y], dir: e.facing, magic: e.magic,
-          cells: ctx.cells, tileChanges: tileChanges, damages: damages, finishers: ctx.finishers });
+    function fire(list, u0) {
+      var e = findUnit(sim, u0.id);
+      if (!e || sim.result) {
+        list.push({ id: u0.id, side: u0.side, cancelled: true, from: [u0.x, u0.y], to: [u0.x, u0.y], dir: u0.facing, magic: u0.magic, cells: [], tileChanges: [], damages: [], finishers: [] });
+        return;
+      }
+      var before = sim.tiles.slice(), units = clone(sim.units);
+      var ctx = shoot(sim, e, e.facing, []);
+      e.intent = false;
+      var tileChanges = [];
+      for (var i = 0; i < before.length; i++) {
+        if (sim.tiles[i] !== before[i]) tileChanges.push({ x: i % sim.size, y: Math.floor(i / sim.size), from: before[i], to: sim.tiles[i] });
+      }
+      var damages = ctx.order.map(function (id) {
+        var b = units.filter(function (u) { return u.id === id; })[0];
+        var h = ctx.hits[id];
+        return { id: id, side: b.side, amount: h.amount, src: h.src, dies: !findUnit(sim, id) };
       });
+      damages.forEach(function (d) { out.enemyDamage.push({ id: d.id, amount: d.amount, side: d.side, by: e.id }); });
+      list.push({ id: e.id, side: e.side, from: [e.x, e.y], to: [e.x, e.y], shootFrom: [e.x, e.y], dir: e.facing, magic: e.magic,
+        cells: ctx.cells, tileChanges: tileChanges, damages: damages, finishers: ctx.finishers });
     }
+    alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
+    if (s.enemyActs) enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) { fire(out.enemies, e0); });
     if (sim.result) return out;
+    // 「進む」敵: 発動のあとの盤面で、次に進むマスと、そこから撃つ魔法（enemies に入る。from は進んだ先）
+    if (s.enemyActs) {
+      marchPhase(sim, [], function () {},
+        function (e, from, to) { out.marches.push({ id: e.id, from: from, to: to, dir: e.facing }); },
+        function (e) { fire(out.enemies, e); });
+    }
     // 護衛: 敵の魔法の発動のあとの盤面で、馬車の次の1マスとゴールまでの道筋
     if (missionType(sim) === 'escort') {
       out.wagon = wagonRoute(sim);
@@ -1970,6 +2307,27 @@
       if (e.type !== 'damage') return;
       if (!sum[e.id]) { sum[e.id] = { id: e.id, amount: 0, side: e.side }; out.burn.push(sum[e.id]); }
       sum[e.id].amount += e.amount;
+    });
+    var held = missionType(later) === 'defense' && later.turn >= B.mission.defense.turns && objectsOf(later, 'village').length;   // 守り切って終わる
+    if (s.enemyActs && !later.result && !held) {
+      spawnPhase(later, [], function () {});
+      enemiesOf(later).filter(function (e) { return e.stand === 'rush'; }).map(function (e) { return e.id; }).forEach(function (id) {
+        var e = findUnit(later, id);
+        if (!e || later.result) return;
+        var stuck = !!e.stuck, r = rushMove(later, e, [], function () {});
+        if (r) { if (stuck) r.stop = 0; out.rushes.push(r); }
+      });
+    }
+    return out;
+  }
+
+  // 外したときのヒント: 敵が残ったままターン終了を tutorial.hintAfterMisses 回迎えたら、構える味方が狙っているマス（形のマス）
+  function npcHintCells(s) {
+    if (s.result || (s.misses || 0) < B.tutorial.hintAfterMisses) return [];
+    var out = [];
+    alliesOf(s).forEach(function (a) {
+      if (!a.npc || !a.intent) return;
+      castCells(s, a, a.facing).forEach(function (c) { if (!inCells(out, c[0], c[1])) out.push(c); });
     });
     return out;
   }
@@ -2088,6 +2446,16 @@
     return ok(s);
   }
 
+  // 味方を「構える味方」にする／戻す
+  function editSetNpc(s0, unitId, on) {
+    var u0 = findUnit(s0, unitId);
+    if (!u0 || u0.side !== 'ally') return fail(s0, '味方がいない');
+    var s = clone(s0);
+    var u = findUnit(s, unitId);
+    if (on) u.npc = true; else { delete u.npc; delete u.intent; }
+    return ok(s);
+  }
+
   function editSetFacing(s0, unitId, dir) {
     if (!DIRS[dir]) return fail(s0, '向きがない');
     if (!findUnit(s0, unitId)) return fail(s0, 'ユニットがいない');
@@ -2109,9 +2477,11 @@
     var s = clone(s0);
     var tiles = [];
     for (var y = 0; y < size; y++) {
-      for (var x = 0; x < size; x++) tiles.push(x < s0.size && y < s0.size ? getTile(s0, x, y) : 'empty');
+      for (var x = 0; x < size; x++) tiles.push(x < s0.size && y < rowsOf(s0) ? getTile(s0, x, y) : 'empty');
     }
     s.size = size;
+    delete s.h;   // 大きさを変えると正方形に戻る
+    if (s.spawn && !inBounds(s, s.spawn.x, s.spawn.y)) delete s.spawn;
     s.tiles = tiles;
     var al = alliesOf(s), en = enemiesOf(s);
     var ax = rowSlots(size, al.length), ex = rowSlots(size, en.length);
@@ -2140,6 +2510,7 @@
     s.resultText = null;
     s.fireAge = {};
     if (s.fireLife) s.fireLife = {};
+    delete s.misses;
     if (!s.mission) s.mission = newMission('annihilate');
     var m = s.mission;
     m.lost = 0;
@@ -2153,7 +2524,7 @@
       var conf = unitConf(u);
       u.maxHp = conf.hp; u.hp = conf.hp; u.power = conf.power; u.move = conf.move;
       u.stuck = false; u.acted = false;
-      if (u.side === 'enemy') u.intent = false;
+      if (u.side === 'enemy' || u.npc) u.intent = false;
     });
     return s;
   }
@@ -2165,12 +2536,14 @@
     var m = s.mission || newMission('annihilate');
     var carrier = m.carrier ? findUnit(s, m.carrier) : null;
     return JSON.stringify({
-      version: 2, size: s.size, tiles: s.tiles, enemyActs: s.enemyActs, enemyOnlyMagics: s.enemyOnlyMagics || undefined,
+      version: 2, size: s.size, h: s.h || undefined, tiles: s.tiles, enemyActs: s.enemyActs, enemyOnlyMagics: s.enemyOnlyMagics || undefined,
+      overrides: s.overrides || undefined, spawn: s.spawn || undefined,
       mission: { type: m.type, goal: m.goal || [], exit: m.exit || [], treasure: carrier ? [carrier.x, carrier.y] : (m.treasure || null) },
       units: s.units.map(function (u) {
         if (u.side === 'object') return { side: 'object', kind: u.kind, x: u.x, y: u.y };
         var o = { side: u.side, magic: u.magic, x: u.x, y: u.y, facing: u.facing };
-        if (u.side === 'enemy') { o.aim = u.aim; o.avoid = u.avoid; o.cross = u.cross; }
+        if (u.npc) o.npc = true;
+        if (u.side === 'enemy') PERSONA_FIELDS.forEach(function (f) { if (u[f] !== undefined) o[f] = u[f]; });
         return o;
       })
     });
@@ -2181,14 +2554,25 @@
     try { d = typeof json === 'string' ? JSON.parse(json) : json; } catch (e) { return { ok: false, error: 'JSON として読めない' }; }
     if (!d || typeof d !== 'object') return { ok: false, error: '中身が空' };
     var size = Number(d.size);
-    if (!(size >= B.minBoardSize && size <= B.maxBoardSize)) return { ok: false, error: '盤面サイズは ' + B.minBoardSize + '〜' + B.maxBoardSize };
-    if (!Array.isArray(d.tiles) || d.tiles.length !== size * size) return { ok: false, error: '地形の数が合わない' };
+    var h = d.h === undefined || d.h === null ? size : Number(d.h);
+    if (!(size >= B.minBoardSize && size <= B.maxBoardSize) || !(h >= B.minBoardSize && h <= B.maxBoardSize)) return { ok: false, error: '盤面サイズは ' + B.minBoardSize + '〜' + B.maxBoardSize };
+    if (!Array.isArray(d.tiles) || d.tiles.length !== size * h) return { ok: false, error: '地形の数が合わない' };
     if (d.tiles.some(function (t) { return !TILE_INFO[t]; })) return { ok: false, error: '知らない地形がある' };
-    var s = blankState(size, d.enemyActs !== false);
+    var s = blankState(size, d.enemyActs !== false, h);
     s.tiles = d.tiles.slice();
     if (Array.isArray(d.enemyOnlyMagics)) {
       if (d.enemyOnlyMagics.some(function (m) { return !MAGIC_INFO[m]; })) return { ok: false, error: '敵だけの魔法に知らない魔法がある' };
       s.enemyOnlyMagics = d.enemyOnlyMagics.slice();
+    }
+    if (d.overrides !== undefined && d.overrides !== null) {
+      if (!validOverrides(d.overrides)) return { ok: false, error: 'このシナリオだけの数値（overrides）に知らない項目か、型の違う値がある' };
+      s.overrides = clone(d.overrides);
+    }
+    if (d.spawn !== undefined && d.spawn !== null) {
+      var sp = d.spawn;
+      if (!sp || !inBounds(s, sp.x, sp.y) || !MAGIC_INFO[sp.magic] || (sp.facing && !DIRS[sp.facing]) ||
+        PERSONA_FIELDS.some(function (f) { return sp[f] !== undefined && !PERSONA[f][sp[f]]; })) return { ok: false, error: '増援（spawn）が正しくない' };
+      s.spawn = clone(sp);
     }
     if (d.mission) {
       var dm = d.mission;
@@ -2207,10 +2591,10 @@
       if (u.side === 'object' ? !OBJECT_INFO[u.kind] : !MAGIC_INFO[u.magic]) return { ok: false, error: u.side === 'object' ? '知らない置きものがある' : '知らない魔法がある' };
       if (!inBounds(s, u.x, u.y) || unitAt(s, u.x, u.y) || !isPassable(getTile(s, u.x, u.y))) return { ok: false, error: 'ユニットの位置が正しくない' };
       if (u.side === 'object') addObject(s, u.kind, u.x, u.y);
-      else if (u.side === 'ally') addAlly(s, u.magic, u.x, u.y, DIRS[u.facing] ? u.facing : 'up');
+      else if (u.side === 'ally') { var a = addAlly(s, u.magic, u.x, u.y, DIRS[u.facing] ? u.facing : 'up'); if (u.npc) a.npc = true; }
       else {
         var e = addEnemy(s, u.magic, u.x, u.y, DIRS[u.facing] ? u.facing : 'down');
-        ['aim', 'avoid', 'cross'].forEach(function (f) { if (u[f] !== undefined) { if (!PERSONA[f][u[f]]) bad = true; else e[f] = u[f]; } });
+        PERSONA_FIELDS.forEach(function (f) { if (u[f] !== undefined) { if (!PERSONA[f][u[f]]) bad = true; else e[f] = u[f]; } });
       }
       if (bad) return { ok: false, error: '敵の個性が正しくない' };
     }
@@ -2356,6 +2740,44 @@
     }
   ];
 
+  // ---------------------------------------------------------------
+  // チュートリアル（展示用。IMPROVE_tutorial1〜）
+  //   シナリオと同じ形。ほかに overrides（このシナリオの中だけの数値）・tutorial（番号）・short（ボタンに出す短い名前）を持つ。
+  //   味方の4つ目に { npc: true, facing } で「構える味方」、敵の4つ目に { stand: 'still' } で「動かない」敵、{ stand: 'march' } で「1マスずつ進む」敵。
+  //   desc は設計者向けのメモ（チュートリアルでは画面に出さない。盤面と表示だけで伝わるかを確かめるため）
+  // ---------------------------------------------------------------
+  var TUTORIALS = [
+    {
+      id: 'tut1', tutorial: 1, name: '【チュートリアル】① 重ねる', short: '① 重ねる',
+      desc: '教えること: 味方が構えている魔法に、自分の魔法を重ねるとシナジーが起きる。敵ではなく、関係なさそうなマスに撃った一手で勝てる。' +
+        '正解: 自分が (1,2) へ動き、上を向いて (1,1) に火 → 発動で構える味方の風が火に当たり、右へ3マス燃え広がって森ごと敵が燃える。' +
+        '敵（山を盛る魔法: 2マス先を真ん中に十字5マス、一度で山）は毎ターンの終わりに左へ1マス進む。ターン2までは森の中。' +
+        'ターン3に森から出ると、真ん中の2マス先に構える味方が来るので予告して撃ち、構える味方は倒れてそのマスも山になり、失敗。',
+      rows: ['...FF', '...FF', '.....', '.....', '.....'],
+      allies: [['wind', 0, 1, { npc: true, facing: 'right' }], ['fire', 0, 2, { facing: 'right' }]],
+      enemies: [['mount', 4, 1, { stand: 'march' }, 'left']],
+      enemyOnly: ['mount'],   // 山を盛る魔法は敵だけ
+      // 風は正面1マス（元の形・長さ1。風は残らない）、燃え広がりは3マス、移動2
+      overrides: { windMode: 'line', lineLength: 1, tornadoRecipe: 'off', 'spread.maxLength': 3, 'ally.move': 2 }
+    },
+    {
+      id: 'tut2', tutorial: 2, name: '【チュートリアル】② 2人で守る', short: '② 2人で守る', mission: 'defense',
+      desc: '2人を動かす防衛戦。教えること: 倒しきれない敵は、倒すのではなく自然で道をふさぐ。2人の魔法を、自分で順番を決めて重ねる。' +
+        '勝てる一例: 山使いがその場で上に撃つ → 頂上 (0,8)、腕 (0,7)(0,9)(1,8) の T 字の山。水使いが (1,9) へ上がり、上を向いて右の腕 (1,8) に水 → ' +
+        '頂上と反対の右へ (2,8)〜(4,8) に川が流れ、9行目が端から端までふさがる。1ターン目に何もしなくても、2ターン目に同じ手で間に合う。2ターン目までにふさげないと、3ターン目の敵の移動で村に届いて負け。' +
+        '敵は突進（人は無視して一番近い村へ1ターンに3マス、村の隣で体当たり）。毎ターンの終わりに上の端 (3,0) から1体ずつ増える。5ターン守れば勝ち。',
+      // 横5・縦11（仕様の目安は縦8。「2ターン目に間に合う・3ターン目に負ける」を満たす一番短い長さに伸ばした）
+      rows: ['.....', '.....', '.....', '.....', '.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+      allies: [['mount', 0, 10, { facing: 'up' }], ['water', 1, 10, { facing: 'up' }]],
+      enemies: [['earth', 3, 0, { stand: 'rush' }, 'down'], ['earth', 3, 1, { stand: 'rush' }, 'down']],
+      villages: [[2, 10], [3, 10], [4, 10]],
+      spawn: { x: 3, y: 0, facing: 'down', magic: 'earth', stand: 'rush' },   // 増援の出てくる所【仮】
+      retryHint: '山に向かって水を撃つと…？',   // やり直したときに盤面の上に1行だけ出す【仮の文】
+      // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、5ターン目の終わりまで守れば勝ち、移動2
+      overrides: { waterLength: 1, 'tutorial.slope': true, 'mission.defense.turns': 5, 'ally.move': 2 }
+    }
+  ];
+
   // 【縮尺】広場: 見本ごとの大きさ n で作る遊び場【仮】。味方は下の段に3人（草・土・風）、敵は上の段に火の敵2体（狙いは「近い人」と「自然」）。
   //   真ん中に、魔法で作れる自然を少し（森2つ・水たまり・丘。育つを切っているときは丘の代わりに山）
   function plazaLayout(n) {
@@ -2377,23 +2799,51 @@
     };
   }
 
+  // チュートリアル: 負けたあとのやり直し。ステージを最初から始め直し、やり直した回数（tries）を1つ増やす
+  function retryStage(s0) {
+    var p = s0 && s0.stage && findPreset(s0.stage);
+    if (!p) return null;
+    var s = buildPreset(p);
+    s.tries = (s0.tries || 0) + 1;
+    return withOverrides(s.overrides, function () { return startBattle(s); });
+  }
+  // やり直したとき（2回目以降の開始時）に盤面の上に出すヒント（1文）。なければ null
+  function stageHint(s) {
+    var p = s && s.stage && findPreset(s.stage);
+    return p && p.retryHint && (s.tries || 0) > 0 ? p.retryHint : null;
+  }
+
+  // シナリオ（チュートリアルも）の定義を id で探す
+  function findPreset(id) {
+    return PRESETS.concat(TUTORIALS).filter(function (x) { return x.id === id; })[0] || null;
+  }
   function loadPreset(id) {
     if (id === 'plaza') return buildPreset(plazaLayout(B.boardSize));
-    var p = PRESETS.filter(function (x) { return x.id === id; })[0];
+    var p = findPreset(id);
     return p ? buildPreset(p) : null;
   }
   // シナリオの形（rows・allies・enemies…）から盤面を作る。新案プレイ（checks.js）の盤面もこれで作る
   function buildPreset(p) {
-    var s = blankState(p.rows.length, true);
+    return withOverrides(p.overrides, function () { return buildPresetIn(p); });
+  }
+  function buildPresetIn(p) {
+    var s = blankState(p.rows[0].length, true, p.rows.length);   // 横は1行の文字数、縦は行の数
+    if (p.overrides) s.overrides = clone(p.overrides);
     p.rows.forEach(function (row, y) {
       for (var x = 0; x < row.length; x++) setTile(s, x, y, CH[row[x]]);
     });
-    p.allies.forEach(function (a) { addAlly(s, a[0], a[1], a[2], 'up'); });
+    p.allies.forEach(function (a) {
+      var o = a[3] || {};
+      var u = addAlly(s, a[0], a[1], a[2], o.facing || 'up');
+      if (o.npc) u.npc = true;
+    });
     p.enemies.forEach(function (e) {
       var u = addEnemy(s, e[0], e[1], e[2], e[4] || 'down');
-      if (e[3]) ['aim', 'avoid', 'cross'].forEach(function (f) { if (e[3][f]) u[f] = e[3][f]; });
+      if (e[3]) PERSONA_FIELDS.forEach(function (f) { if (e[3][f]) u[f] = e[3][f]; });
     });
     if (p.enemyOnly) s.enemyOnlyMagics = p.enemyOnly.slice();
+    if (p.spawn) s.spawn = clone(p.spawn);
+    if (p.tutorial) s.stage = p.id;   // やり直し（retryStage）とヒント（stageHint）に使う
     s.mission = newMission(p.mission || 'annihilate');
     (p.villages || []).forEach(function (c) { addObject(s, 'village', c[0], c[1]); });
     if (p.wagon) addObject(s, 'wagon', p.wagon[0], p.wagon[1]);
@@ -2462,19 +2912,26 @@
     clone: clone, inBounds: inBounds, getTile: getTile, setTile: setTile, isPassable: isPassable,
     unitAt: unitAt, findUnit: findUnit, alliesOf: alliesOf, enemiesOf: enemiesOf,
     unitLabel: unitLabel, tileName: tileName, magicName: magicName,
-    rotate: rotate, shapeCells: shapeCells,
+    // 状態を受け取る関数は、その状態の overrides（このシナリオだけの数値）の中で動く
+    rotate: rotate, shapeCells: withStage(shapeCells),
     createState: createState, addAlly: addAlly, addEnemy: addEnemy,
-    reachableCells: reachableCells, act: act, allAlliesActed: allAlliesActed, endTurn: endTurn, startBattle: startBattle,
-    planEnemy: planEnemy, previewAct: previewAct, guideMap: guideMap, nextHints: nextHints, forecast: forecast,
+    reachableCells: withStage(reachableCells), act: withStage(act), allAlliesActed: allAlliesActed, endTurn: withStage(endTurn), startBattle: withStage(startBattle),
+    planEnemy: withStage(planEnemy), previewAct: withStage(previewAct), guideMap: withStage(guideMap), nextHints: withStage(nextHints), forecast: withStage(forecast),
     editPaint: editPaint, editPlaceUnit: editPlaceUnit, editRemoveUnit: editRemoveUnit,
     editMoveUnit: editMoveUnit, editSetMagic: editSetMagic, editSetFacing: editSetFacing, editSetPersona: editSetPersona,
-    editSetEnemyActs: editSetEnemyActs, editResize: editResize, normalizeForPlay: normalizeForPlay,
+    editSetEnemyActs: editSetEnemyActs, editResize: editResize, normalizeForPlay: withStage(normalizeForPlay),
     exportLayout: exportLayout, importLayout: importLayout, loadPreset: loadPreset, buildPreset: buildPreset, plazaLayout: plazaLayout,
     // お題
     MISSION_INFO: MISSION_INFO, MISSIONS: MISSIONS, OBJECT_INFO: OBJECT_INFO,
-    objectsOf: objectsOf, addObject: addObject, missionTargets: missionTargets, missionInfo: missionInfo,
-    wagonRoute: wagonRoute, canShoot: canShoot, carrierOf: carrierOf, inCells: inCells,
-    editPlaceObject: editPlaceObject, editSetMission: editSetMission, editToggleCell: editToggleCell, editPlaceTreasure: editPlaceTreasure
+    objectsOf: objectsOf, addObject: addObject, missionTargets: missionTargets, missionInfo: withStage(missionInfo),
+    wagonRoute: withStage(wagonRoute), canShoot: canShoot, carrierOf: carrierOf, inCells: inCells,
+    editPlaceObject: editPlaceObject, editSetMission: editSetMission, editToggleCell: editToggleCell, editPlaceTreasure: editPlaceTreasure,
+    // チュートリアル（構える味方・動かない敵・このシナリオだけの数値）
+    TUTORIALS: TUTORIALS, findPreset: findPreset, isNpc: isNpc, controllableOf: controllableOf,
+    npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, validOverrides: validOverrides,
+    // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
+    rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
+    withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); }
   };
 
   if (typeof module !== 'undefined' && module.exports) {

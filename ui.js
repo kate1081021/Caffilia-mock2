@@ -88,7 +88,8 @@
     'enemyActs', 'boardSize', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
-    'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption'].forEach(function (id) { el[id] = $(id); });
+    'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption',
+    'btnTutorial', 'tutorialMenu', 'btnRetry', 'stageHint'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
     return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -379,7 +380,7 @@
 
   function select(id) {
     var u = R.findUnit(app.state, id);
-    if (!u || u.side !== 'ally') return;
+    if (!u || u.side !== 'ally' || u.npc) return;   // 構える味方は選べない
     if (u.acted) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }
     app.sel = id;
     app.plan = { to: [u.x, u.y], dir: u.facing };
@@ -389,7 +390,7 @@
 
   function selectNext(afterId) {
     if (app.state.result) { app.sel = null; app.plan = null; render(); return; }
-    var al = R.alliesOf(app.state);
+    var al = R.controllableOf(app.state);
     var start = 0;
     al.forEach(function (a, i) { if (a.id === afterId) start = i + 1; });
     for (var k = 0; k < al.length; k++) {
@@ -422,7 +423,7 @@
     app.sel = null; app.plan = null;
     play(res.steps, res.state, function () {
       if (!app.state.result && R.allAlliesActed(app.state)) {
-        addLog('3人とも行動したので、ターン終了', 'system');
+        addLog(R.controllableOf(app.state).length === 3 ? '3人とも行動したので、ターン終了' : '全員行動したので、ターン終了', 'system');
         var t = R.endTurn(app.state);
         play(t.steps, t.state, function () { selectNext(null); });
       } else {
@@ -464,6 +465,20 @@
     stopDemo();
     if (app.busy) skipPlayback();
     setState(R.clone(app.resetPoint), 'リセット（最初の配置に戻した）');
+    if (isTutorial()) selectNext(null);
+  }
+
+  // チュートリアル: 負けたあと、ステージを最初から始め直す（やり直した回数が増え、ヒントが出る）
+  function retry() {
+    stopDemo();
+    if (app.busy) skipPlayback();
+    var r = R.retryStage(app.state);
+    if (!r) return;
+    addLog('やり直す（' + (r.state.tries + 1) + '回目）', 'system');
+    r.events.forEach(function (e) { if (e.text) addLog(e.text, logType(e)); });
+    setState(r.state);
+    app.resetPoint = R.clone(app.state);
+    selectNext(null);
   }
 
   function setEditMode(on) {
@@ -489,7 +504,7 @@
     if (!check) endCheck();
     var s = check ? R.buildPreset(check.layout) : id ? R.loadPreset(id) : R.createState();
     if (opts && opts.enemyActs === false) s = R.editSetEnemyActs(s, false).state;
-    var preset = !check && id ? (id === 'plaza' ? R.plazaLayout(B.boardSize) : R.PRESETS.filter(function (p) { return p.id === id; })[0]) : null;   // 【縮尺】広場は今の盤面の大きさで作る
+    var preset = !check && id ? (id === 'plaza' ? R.plazaLayout(B.boardSize) : R.findPreset(id)) : null;   // 【縮尺】広場は今の盤面の大きさで作る
     var name = check ? check.name : preset ? preset.name : '標準';
     if (preset && preset.recipe) setRecipe(preset.recipe);
     if (preset && preset.windMode) setWindMode(preset.windMode);
@@ -497,12 +512,14 @@
     app.scenario = check ? 'check:' + check.id : id;
     addLog((check ? '新案プレイの盤面' : 'シナリオ') + '「' + name + '」を読み込んだ', 'system');
     if (check) addLog(check.desc, 'system');
-    else if (id) addLog(preset.desc, 'system');
+    else if (id && !preset.tutorial) addLog(preset.desc, 'system');   // チュートリアルは説明を出さない（盤面と表示だけで伝わるかを見る）
     if (opts && opts.enemyActs === false) addLog('（このデモでは敵は何もしない設定）', 'system');
     setState(begin(s));
     app.resetPoint = R.clone(app.state);
+    if (preset && preset.tutorial) selectNext(null);   // チュートリアル: 動かせる味方を最初から選んでおく
     render();
   }
+  function isTutorial() { var p = app.scenario && R.findPreset(app.scenario); return !!(p && p.tutorial); }
 
   // ---------------------------------------------------------------
   // デモ（スーパープレイの再生）
@@ -766,6 +783,11 @@
     el.btnUndo.disabled = app.history.length === 0;
     el.btnEdit.classList.toggle('active', app.editMode);
     el.btnEdit.innerHTML = (app.editMode ? 'エディット終了' : 'エディット') + ' <kbd>E</kbd>';
+    // チュートリアル: 負けたら「やり直す」。やり直したあと（2回目以降の開始時）は、盤面の上にヒントを1行
+    el.btnRetry.hidden = !(st.result === 'lose' && st.stage && !app.editMode && !app.busy);
+    var sh = app.editMode ? null : R.stageHint(st);
+    el.stageHint.hidden = !sh;
+    if (sh && el.stageHint.textContent !== sh) el.stageHint.textContent = sh;
     el.playPanel.hidden = app.editMode;
     el.editPanel.hidden = !app.editMode;
     if (el.scenarioSelect.value !== app.scenario) el.scenarioSelect.value = app.scenario;
@@ -804,8 +826,16 @@
 
   // 敵の個性: 駒の小さな印（狙い 人/近/自・危ない所も避ける 避・川を渡る 渡）と、一覧の説明
   var AIM_MARK = { count: '人', near: '近', nature: '自', target: '的' };
-  function personaMark(u) { return AIM_MARK[u.aim] + (u.avoid === 'danger' ? '避' : '') + (u.cross === 'river' ? '渡' : ''); }
+  function personaMark(u) {
+    if (u.stand === 'still') return '止';
+    if (u.stand === 'march') return '進';
+    if (u.stand === 'rush') return '突';
+    return AIM_MARK[u.aim] + (u.avoid === 'danger' ? '避' : '') + (u.cross === 'river' ? '渡' : '');
+  }
   function personaText(u) {
+    if (u.stand === 'still') return '動き: ' + R.PERSONA.stand.still + '（移動しない・撃たない・予告を出さない）';
+    if (u.stand === 'rush') return '動き: ' + R.PERSONA.stand.rush + '（人は無視して一番近い村へ、1ターンに' + B.enemy.rushMove + 'マス。山・川・水たまり・泥沼・ユニットは通らない。魔法は撃たない。走り終えて村の隣なら体当たりで村を壊す）';
+    if (u.stand === 'march') return '動き: ' + R.PERSONA.stand.march + '（敵の番に、向いている方へ1マス進み、構える味方が魔法の真ん中に来たらそのまま撃つ。移動と魔法はセット）';
     return '狙い: ' + R.PERSONA.aim[u.aim] + '／避ける: ' + R.PERSONA.avoid[u.avoid] + '／越える: ' + R.PERSONA.cross[u.cross];
   }
 
@@ -822,8 +852,9 @@
       return oh + '</div>';
     }
     var cls = ['unit', u.side];
+    if (u.npc) cls.push('npc');
     if (view.selected) cls.push('selected');
-    if (u.side === 'ally' && u.acted && !app.editMode) cls.push('acted');
+    if (u.side === 'ally' && u.acted && !u.npc && !app.editMode) cls.push('acted');
     if (u.stuck) cls.push('stuck');
     if (R.hidden(st, u)) cls.push('hidden');
     if (view.next) cls.push('next-ready');
@@ -832,7 +863,7 @@
     var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg">' +
       '<span class="facing"></span><span class="u-name">' + name + '</span><span class="u-hp">HP' + u.hp + '</span>';
     if (u.side === 'enemy') {
-      h += '<span class="u-magic">' + esc(R.magicName(u.magic)) + '</span>';
+      if (u.stand !== 'rush') h += '<span class="u-magic">' + esc(R.magicName(u.magic)) + '</span>';   // 突進の敵は魔法を撃たない
       h += '<span class="u-persona" title="' + esc(personaText(u)) + '">' + esc(personaMark(u)) + '</span>';
     }
     if (R.hidden(st, u)) h += '<span class="u-hide">隠</span>';
@@ -845,8 +876,9 @@
 
   function renderBoard(animate) {
     var st = app.state;
-    var n = st.size;
+    var n = st.size, rows = R.rowsOf(st);   // 横 n・縦 rows（チュートリアル②は 5×8）
     el.board.style.setProperty('--n', n);
+    el.board.style.setProperty('--rows', rows);
 
     // 動きのアニメーション用: 描き直す前の位置
     var before = {};
@@ -856,10 +888,11 @@
       });
     }
 
-    if (cellEls.length !== n * n) {
+    if (cellEls.length !== n * rows || el.board.getAttribute('data-n') !== String(n)) {
       el.board.innerHTML = '';
+      el.board.setAttribute('data-n', n);
       cellEls = [];
-      for (var i = 0; i < n * n; i++) {
+      for (var i = 0; i < n * rows; i++) {
         var d = document.createElement('div');
         d.setAttribute('data-x', i % n);
         d.setAttribute('data-y', Math.floor(i / n));
@@ -903,6 +936,26 @@
     }
     // 予告
     var fcShot = {}, fcGhost = {}, fcSpread = {}, fcOut = {}, fcChange = {}, fcRange = {}, fcStrong = {}, warn = {};
+    // 構える味方の予告（青）: 「予告を表示」を切っていても常に出す。狙うマスの枠と向きの矢印、結果（変わるマス・決め手の範囲・ダメージ）
+    var faShot = {}, faChange = {}, faRange = {}, faStrong = {}, npcIds = {};
+    var fcAll = (app.editMode || app.busy) ? null : forecastNow(true);
+    if (fcAll) {
+      fcAll.allies.forEach(function (p) {
+        var a = R.findUnit(st, p.id);
+        if (!a || p.cancelled) return;
+        npcIds[p.id] = true;
+        (p.cells || []).forEach(function (c) { faShot[key(c[0], c[1])] = p.dir; });
+        (p.tileChanges || []).forEach(function (c) { faChange[key(c.x, c.y)] = c.to; });
+        (p.finishers || []).forEach(function (f) {
+          f.cells.forEach(function (c) { faRange[key(c[0], c[1])] = true; });
+          (f.strong || []).forEach(function (c) { faStrong[key(c[0], c[1])] = true; });
+        });
+        (p.damages || []).forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; });
+      });
+    }
+    // 外したときのヒント: 構える味方が狙っているマスを光らせる（文字は出さない）
+    var tutHint = {};
+    if (!app.editMode && !app.busy) R.npcHintCells(st).forEach(function (c) { tutHint[key(c[0], c[1])] = true; });
     if (fc) {
       fc.enemies.forEach(function (p) {
         var e = R.findUnit(st, p.id);
@@ -917,10 +970,15 @@
           (f.strong || []).forEach(function (c) { fcStrong[key(c[0], c[1])] = true; });
         });
       });
+      // 「進む」敵: 次のターン終了で進むマスに、点線の丸と向き
+      (fc.marches || []).forEach(function (m) {
+        var me = R.findUnit(st, m.id);
+        if (me) fcGhost[key(m.to[0], m.to[1])] = { letter: me.letter, dir: m.dir };
+      });
       fc.fireSpread.forEach(function (c) { fcSpread[key(c[0], c[1])] = true; });
       (fc.burnOut || []).forEach(function (c) { fcOut[key(c[0], c[1])] = true; });
       fc.burn.forEach(function (b) { warn[b.id] = (warn[b.id] || 0) + b.amount; });
-      fc.enemyDamage.forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; });
+      fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });   // 構える味方の分は上で足した
     }
 
     // 護衛: 馬車の道筋（薄い線）と次の1マス（矢印）。敵の予告と同じく、予測中は撃ったあとの盤面で計算し直す
@@ -938,6 +996,33 @@
       });
       wNext = { k: key(wg.next[0], wg.next[1]), dir: stepDir(wg.from, wg.next), stuck: wg.stuck };
     }
+    // 突進の敵（チュートリアル②）: 村へ走る道（赤い点線）と、次に走って止まるマス（点線の丸と向き）。「予告を表示」を切っていても常に出す。
+    //   予測中は撃ったあとの盤面で計算し直す。村に届く道なら、その村に「予告 -1」
+    var eLine = {}, eStop = {}, rushWarn = {};
+    var fcr = (app.editMode || app.busy) ? null : forecastNow(true);
+    (fcr && fcr.rushes || []).forEach(function (r) {
+      var re = R.findUnit(st, r.id);
+      if (!re) return;   // まだ現れていない増援
+      var v = r.reach && r.village ? R.findUnit(st, r.village) : null;
+      var seq = [r.from].concat(r.path).concat(v ? [[v.x, v.y]] : []);
+      var stepDir = function (a, b) { return b[0] > a[0] ? 'right' : b[0] < a[0] ? 'left' : b[1] > a[1] ? 'down' : 'up'; };
+      var OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+      if (seq.length > 1) seq.forEach(function (c, i) {
+        var arms = eLine[key(c[0], c[1])] = eLine[key(c[0], c[1])] || [];
+        var add = function (d) { if (arms.indexOf(d) < 0) arms.push(d); };
+        if (i > 0) add(OPP[stepDir(seq[i - 1], c)]);
+        if (i < seq.length - 1) add(stepDir(c, seq[i + 1]));
+      });
+      if (r.stop > 0) {
+        var sc = r.path[r.stop - 1], sp = r.stop > 1 ? r.path[r.stop - 2] : r.from;
+        eStop[key(sc[0], sc[1])] = { letter: re.letter, dir: stepDir(sp, sc) };
+      }
+      if (v) rushWarn[v.id] = v.hp;
+    });
+    Object.keys(rushWarn).forEach(function (id) { warn[id] = Math.max(warn[id] || 0, rushWarn[id]); });
+    // チュートリアル②: 山の頂上と腕（どこが高いか）
+    var slopes = st.slopes || {};
+
     var mi = st.mission || {};
 
     // 選んでいる味方は、移動先の候補に描く
@@ -952,7 +1037,7 @@
     var isMount = function (x, y) { if (!R.inBounds(st, x, y)) return false; var tt = R.getTile(st, x, y); return tt === 'mountain' || tt === 'volcano' || tt === 'sakura'; };
     var isRiver = function (x, y) { return R.inBounds(st, x, y) && R.getTile(st, x, y) === 'river'; };
     var peakAt = {}, seenM = {};
-    for (var my = 0; my < n; my++) {
+    for (var my = 0; my < rows; my++) {
       for (var mx = 0; mx < n; mx++) {
         if (!isMount(mx, my) || seenM[key(mx, my)]) continue;
         var comp = [], stack = [[mx, my]], hot = false;
@@ -976,7 +1061,7 @@
     // 【育つ】見た目: つながった森・水たまり・氷・死の森も、1枚の大きな絵で描く（fx.bigPicture）。かたまりが大きいほど真ん中の絵も大きい
     var bigComp = {}, bigAt = {};
     if (B.fx.bigPicture) {
-      for (var by = 0; by < n; by++) {
+      for (var by = 0; by < rows; by++) {
         for (var bx = 0; bx < n; bx++) {
           var bt = R.getTile(st, bx, by);
           if (!BIG[bt] || bigComp[key(bx, by)]) continue;
@@ -1003,7 +1088,7 @@
     var unitByCell = {};
     st.units.forEach(function (x) { unitByCell[key(drawAt[x.id][0], drawAt[x.id][1])] = x; });
 
-    for (var y = 0; y < n; y++) {
+    for (var y = 0; y < rows; y++) {
       for (var x = 0; x < n; x++) {
         var k = key(x, y);
         var tile = R.getTile(st, x, y);
@@ -1018,6 +1103,10 @@
         if (fcShot[k]) cls.push('fc-shot');
         if (fcRange[k]) cls.push('fc-range');
         if (fcStrong[k]) cls.push('fc-strong');
+        if (faShot[k]) cls.push('fa-shot');
+        if (faRange[k]) cls.push('fa-range');
+        if (faStrong[k]) cls.push('fa-strong');
+        if (tutHint[k]) cls.push('tut-hint');
         if (app.hl[k]) cls.push('hl');
         if (app.flash[k]) cls.push('flash');
         if (nextAt[k]) cls.push('has-next');
@@ -1033,13 +1122,17 @@
           [['up', x, y - 1], ['right', x + 1, y], ['down', x, y + 1], ['left', x - 1, y]].forEach(function (a) { if (isRiver(a[1], a[2])) arms += '<span class="stream ' + a[0] + '"></span>'; });
           inner += '<span class="stream c' + (arms ? '' : ' solo') + '"></span>' + arms;
         }
+        var sl = tile === 'mountain' ? slopes[y * n + x] : undefined;
+        if (sl === 'peak') cls.push('slope-peak');
+        else if (sl) cls.push('slope-arm');
         if (tile === 'mountain' || tile === 'volcano' || tile === 'sakura') {
           var ms = [];
           if (isMount(x, y - 1)) ms.push('up'); if (isMount(x + 1, y)) ms.push('right'); if (isMount(x, y + 1)) ms.push('down'); if (isMount(x - 1, y)) ms.push('left');
           inner += '<span class="massif ' + ms.map(function (m) { return 'j-' + m; }).join(' ') + (tile === 'volcano' ? ' hot' : '') + '"></span>';
           if (tile === 'sakura') inner += '<span class="bloom"></span>';
           var pk = peakAt[k];
-          if (pk) inner += '<span class="peak' + (pk.hot ? ' hot' : '') + '" style="--ps:' + pk.size.toFixed(2) + ';--pdx:' + pk.dx.toFixed(2) + ';--pdy:' + pk.dy.toFixed(2) + '"></span>';
+          if (pk && !sl) inner += '<span class="peak' + (pk.hot ? ' hot' : '') + '" style="--ps:' + pk.size.toFixed(2) + ';--pdx:' + pk.dx.toFixed(2) + ';--pdy:' + pk.dy.toFixed(2) + '"></span>';
+          if (sl === 'peak') inner += '<span class="summit" title="山の頂上（一番高い）">▲</span>';
         }
         if (bigComp[k] && bigComp[k] !== 'solo') {
           var bj = [];
@@ -1055,6 +1148,8 @@
         if (isExit) inner += '<span class="m-mark exit">帰り口</span>';
         if (mi.treasure && mi.treasure[0] === x && mi.treasure[1] === y) inner += '<span class="m-treasure' + (unit ? ' under' : '') + '" title="宝（このマスで移動を終えると持つ）">宝</span>';
         if (wLine[k]) inner += wLine[k].map(function (d) { return '<span class="wline ' + d + '"></span>'; }).join('') + '<span class="wline dot"></span>';
+        if (eLine[k]) inner += eLine[k].map(function (d) { return '<span class="wline e ' + d + '"></span>'; }).join('') + '<span class="wline e dot"></span>';
+        if (eStop[k] && !unit) inner += '<div class="ghost rush">' + esc(eStop[k].letter) + DIR_ARROW[eStop[k].dir] + '</div>';
         if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了で馬車が進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
@@ -1062,10 +1157,12 @@
         if (growPv[k]) inner += '<span class="g-ghost ' + growPv[k] + '" title="育ったあとの形（' + esc(SHORT[growPv[k]]) + '）"></span>';
         if (growNo[k]) inner += '<span class="b-nogrow" title="育たない（ユニットがいる・ほかの自然がある）">×</span>';
         if (change[k]) inner += '<span class="b-change">→' + esc(SHORT[change[k]]) + '</span>';
+        else if (faChange[k]) inner += '<span class="b-change ally">→' + esc(SHORT[faChange[k]]) + '</span>';
         else if (fcChange[k]) inner += '<span class="b-change enemy">→' + esc(SHORT[fcChange[k]]) + '</span>';
         var badges = '';
         if (fcSpread[k]) badges += '<span class="spread">燃</span>';
         if (fcOut[k]) badges += '<span class="burnout" title="次のターン終了で燃え尽きる">尽</span>';
+        if (faShot[k]) badges += '<span class="ally" title="構える味方が狙っているマス">' + DIR_ARROW[faShot[k]] + '</span>';
         if (fcShot[k]) badges += '<span class="enemy">' + esc(fcShot[k].join('')) + '</span>';
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
@@ -1114,7 +1211,8 @@
   function renderSide() {
     var st = app.state;
     var fc = forecastNow();
-    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, fc ? fc.enemies : null, hintsNow(), storeVersion]);
+    var fcAll = forecastNow(true);
+    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion]);
     if (sig === sideSig) return;
     sideSig = sig;
     if (app.editMode) renderEditPanel(); else renderPlayPanel(fc);
@@ -1138,15 +1236,26 @@
 
   function renderPlayPanel(fc) {
     var st = app.state;
-    var warn = {};
+    var warn = {}, fa = forecastNow(true), npcIds = {};
+    if (fa) fa.allies.forEach(function (p) { npcIds[p.id] = true; (p.damages || []).forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; }); });
     if (fc) {
       fc.burn.forEach(function (b) { warn[b.id] = (warn[b.id] || 0) + b.amount; });
-      fc.enemyDamage.forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; });
+      fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });
     }
     var nextFor = {};
     hintsNow().forEach(function (h) { h.shooters.forEach(function (sh) { nextFor[sh.id] = h; }); });
-    var al = R.alliesOf(st);
-    el.roster.innerHTML = al.length ? al.map(function (a, i) {
+    // 構える味方は選べない札（予告の中身を出す）
+    var npcPlan = {};
+    if (fa) fa.allies.forEach(function (p) { npcPlan[p.id] = p; });
+    var npcHtml = R.alliesOf(st).filter(function (a) { return a.npc; }).map(function (a) {
+      return '<div class="ally-card npc"><span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
+        '<span class="info"><b>' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
+        '<span class="sub">' + (npcPlan[a.id] ? esc(planText(npcPlan[a.id], st)) : '構えていない') +
+        (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
+        '</span></span></div>';
+    }).join('');
+    var al = R.controllableOf(st);
+    el.roster.innerHTML = (al.length ? al.map(function (a, i) {
       var status = [a.acted ? '行動済み' : '行動前'];
       if (a.stuck) status.push('泥沼: 次は移動できない');
       if (a.burn > 0) status.push('火傷: あと' + a.burn + '回（水か氷で治る）');
@@ -1159,17 +1268,31 @@
         (nextFor[a.id] ? '<br><span class="next">あと一手: ' + esc(R.magicName(nextFor[a.id].magic)) + 'を当てれば' + esc(nextFor[a.id].name) + '</span>' : '') +
         (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
         '</span></span></button>';
-    }).join('') : '<p class="muted">味方がいません（エディットで置けます）</p>';
+    }).join('') : '<p class="muted">味方がいません（エディットで置けます）</p>') + npcHtml;
 
     var en = R.enemiesOf(st);
     var plans = {};
     if (fc) fc.enemies.forEach(function (p) { plans[p.id] = p; });
+    var marchTo = {};
+    if (fc) (fc.marches || []).forEach(function (m) { marchTo[m.id] = m; });
+    var rushTo = {};
+    if (fa) (fa.rushes || []).forEach(function (r) { rushTo[r.id] = r; });
+    var rushText = function (r) {
+      if (r.reach) {
+        var v = R.findUnit(st, r.village);
+        var left = r.path.length - r.stop;
+        return (v ? R.unitLabel(st, v) : '村') + 'へ走る' + (r.stop ? '（次に' + r.stop + 'マス）' : '') + (left ? '。あと' + left + 'マスで' : '。次の移動で') + '体当たり';
+      }
+      return '村への道がない' + (r.stop ? '（近くまで' + r.stop + 'マス走って待つ）' : '（その場で待つ）');
+    };
     var html = en.map(function (e) {
       var note = (e.stuck ? '（泥沼: 次は移動できない）' : '') + (e.burn > 0 ? '（火傷: あと' + e.burn + '回）' : '');
-      return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + '（' + esc(R.magicName(e.magic)) + '）HP ' + e.hp + '/' + e.maxHp +
+      return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + (e.stand === 'rush' ? ' ' : '（' + esc(R.magicName(e.magic)) + '）') + 'HP ' + e.hp + '/' + e.maxHp +
         (warn[e.id] ? ' <span class="danger">予告で -' + warn[e.id] + (warn[e.id] >= e.hp ? '（倒れる）' : '') + '</span>' : '') +
         '<span class="hpbar"><span style="width:' + Math.max(0, e.hp / e.maxHp * 100) + '%"></span></span> ' + DIR_ARROW[e.facing] + esc(note) + '</span>' +
         '<span class="persona">' + esc(personaText(e)) + '</span>' +
+        (rushTo[e.id] ? '<span class="plan">次のターンの始めに: ' + esc(rushText(rushTo[e.id])) + '</span>' : '') +
+        (marchTo[e.id] ? '<span class="plan">ターンの終わりに ' + DIR_ARROW[marchTo[e.id].dir] + ' へ1マス進む' + (plans[e.id] ? '。そのまま撃つ' : '') + '</span>' : '') +
         (plans[e.id] ? '<span class="plan">' + esc(planText(plans[e.id], st)) + '</span>' : '') + '</div>';
     }).join('');
     html += '<p class="note">敵は' + (st.enemyActs ? '行動する' : '何もしない') + '設定（エディットで切り替え）</p>';
@@ -1243,13 +1366,20 @@
           return '<option value="' + d + '"' + (u.facing === d ? ' selected' : '') + '>' + DIR_ARROW[d] + ' ' + R.DIRS[d].name + '</option>';
         }).join('') + '</select>' +
         '<span class="muted">(' + u.x + ',' + u.y + ')</span>' +
-        (u.side === 'enemy' ? '<span class="persona-edit">' + ['aim', 'avoid', 'cross'].map(function (f) {
-          var label = { aim: '狙い', avoid: '避ける', cross: '越える' }[f];
+        (u.side === 'ally' ? '<span class="persona-edit"><label>指示 <select data-id="' + u.id + '" data-field="npc">' +
+          '<option value=""' + (u.npc ? '' : ' selected') + '>プレイヤーが動かす</option>' +
+          '<option value="1"' + (u.npc ? ' selected' : '') + '>構える味方（毎ターン今の向きで構えて撃つ）</option></select></label></span>' : '') +
+        (u.side === 'enemy' ? '<span class="persona-edit">' + Object.keys(R.PERSONA).map(function (f) {
+          var label = { aim: '狙い', avoid: '避ける', cross: '越える', stand: '動き' }[f] || f;
           return '<label>' + label + ' <select data-id="' + u.id + '" data-field="' + f + '">' + Object.keys(R.PERSONA[f]).map(function (v) {
             return '<option value="' + v + '"' + (u[f] === v ? ' selected' : '') + '>' + esc(R.PERSONA[f][v]) + '</option>';
           }).join('') + '</select></label>';
         }).join('') + '</span>' : '') + '</div>';
     }).join('') : '<p class="muted">ユニットがいません</p>';
+    if (st.overrides) {
+      el.unitList.innerHTML += '<p class="note">このシナリオだけの数値（JSON の overrides）: ' +
+        esc(Object.keys(st.overrides).map(function (p) { return setLabel(p, st.overrides[p]); }).join('・')) + '</p>';
+    }
     el.enemyActs.checked = st.enemyActs;
     el.boardSize.value = st.size;
 
@@ -1397,6 +1527,7 @@
   });
   el.btnStay.addEventListener('click', stay);
   el.btnShoot.addEventListener('click', function () { doAct(true); });
+  el.btnRetry.addEventListener('click', retry);
   el.btnWait.addEventListener('click', function () { doAct(false); });
   el.btnEndTurn.addEventListener('click', doEndTurn);
   el.btnDemo.addEventListener('click', function () {
@@ -1420,10 +1551,42 @@
   el.btnEditDone.addEventListener('click', function () { setEditMode(false); });
   el.showForecast.addEventListener('change', function () { app.showForecast = el.showForecast.checked; render(); });
 
+  // チュートリアル: ボタンを押すと一覧が開く。まだない番号は「準備中」で並べておく（R.TUTORIALS に足せば出る）
+  var TUTORIAL_SLOTS = 3;
+  var CIRCLED = ['', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+  function renderTutorialMenu() {
+    var html = '';
+    for (var n = 1; n <= Math.max(TUTORIAL_SLOTS, R.TUTORIALS.length); n++) {
+      var t = R.TUTORIALS.filter(function (x) { return x.tutorial === n; })[0];
+      html += t
+        ? '<button type="button" role="menuitem" data-id="' + t.id + '"' + (app.scenario === t.id ? ' class="current"' : '') + '>' + esc(t.short || t.name) + '</button>'
+        : '<button type="button" role="menuitem" disabled>' + CIRCLED[n] + ' 準備中</button>';
+    }
+    el.tutorialMenu.innerHTML = html;
+  }
+  function openTutorialMenu(open) {
+    if (open) renderTutorialMenu();
+    el.tutorialMenu.hidden = !open;
+    el.btnTutorial.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  el.btnTutorial.addEventListener('click', function (e) { e.stopPropagation(); openTutorialMenu(el.tutorialMenu.hidden); });
+  el.tutorialMenu.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-id]');
+    if (!b) return;
+    openTutorialMenu(false);
+    stopDemo();
+    if (app.editMode) setEditMode(false);
+    loadScenario(b.getAttribute('data-id'));
+  });
+  document.addEventListener('click', function (e) {
+    if (!el.tutorialMenu.hidden && !e.target.closest('.tut-pick')) openTutorialMenu(false);
+  });
+
   // シナリオはお題ごとに分けて並べる（元の戦闘は「戦闘」）
   var presetOpt = function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; };
   var shown = R.PRESETS.filter(function (p) { return !p.hidden; });
   el.scenarioSelect.innerHTML =
+    '<optgroup label="チュートリアル">' + R.TUTORIALS.map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="お題（防衛・護衛・奪取）">' + shown.filter(function (p) { return p.mission; }).map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="戦闘（敵の全滅）"><option value="">標準（火・水・風 / 敵1体）</option>' +
     shown.filter(function (p) { return !p.mission; }).map(presetOpt).join('') + '</optgroup>' +
@@ -1457,6 +1620,7 @@
     var field = s.getAttribute('data-field');
     var res = field === 'magic' ? R.editSetMagic(app.state, id, s.value)
       : field === 'facing' ? R.editSetFacing(app.state, id, s.value)
+      : field === 'npc' ? R.editSetNpc(app.state, id, !!s.value)
       : R.editSetPersona(app.state, id, field, s.value);
     if (res.ok) { pushHistory(); app.state = res.state; render(); } else say(res.error);
   });
@@ -1562,7 +1726,7 @@
     }
     if (k === 't' || k === 'T') { doEndTurn(); return; }
     if (k >= '1' && k <= '9') {
-      var a = R.alliesOf(app.state)[Number(k) - 1];
+      var a = R.controllableOf(app.state)[Number(k) - 1];
       if (a && canControl()) select(a.id);
       return;
     }
@@ -1601,7 +1765,7 @@
   app.scenarioName = function () {
     if (app.check) return app.check.name;
     if (app.scenario === 'plaza') return R.plazaLayout(B.boardSize).name;
-    var p = R.PRESETS.filter(function (x) { return x.id === app.scenario; })[0];
+    var p = R.findPreset(app.scenario);
     return p ? p.name : '標準';
   };
 
