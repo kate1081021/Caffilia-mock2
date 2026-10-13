@@ -1023,3 +1023,10 @@ body.lab-open { padding-left: 400px; }
 .t-icewall .tile-label { color: #075985; }
 .t-snowmt { background: linear-gradient(180deg, #fff 0 45%, #94a3b8 46%, #64748b); }
 .t-snowmt .tile-label { color: #334155; }
+/* ラボ I: 足した自然 */
+.t-rock { background: radial-gradient(circle at 45% 45%, #a8a29e 0 38%, #57534e 40% 46%, transparent 47%), #e7e5e4; }
+.t-rock .tile-label { color: #292524; }
+.t-stepstone { background: radial-gradient(circle at 35% 40%, #a8a29e 0 18%, transparent 19%), radial-gradient(circle at 65% 62%, #a8a29e 0 18%, transparent 19%), linear-gradient(180deg, #7dd3fc, #38bdf8); }
+.t-vinebridge { background: repeating-linear-gradient(90deg, #4d7c0f 0 4px, #84cc16 4px 7px), #38bdf8; }
+.t-pillar { background: linear-gradient(90deg, #e7e5e4, #facc15 40%, #a16207 60%, #e7e5e4); }
+.t-pillar .tile-label { color: #422006; }

@@ -1030,6 +1030,76 @@ test('B14: 葦原は歩いて渡れて、水のまま（感電する）', functi
   eq(dealt(r, e.id), 20);
 });
 
+// ===================================================================
+console.log('\n■ I 新しい魔法');
+
+test('I: 新しい魔法は、その案がオンのときだけ味方の選択肢に出る', function () {
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  ok(R.allyMagics(s).indexOf('light') < 0, 'オフ');
+  R.labApply(['I1']);
+  ok(R.allyMagics(s).indexOf('light') >= 0, 'オン');
+});
+test('I1: 光は右斜め前へ。水で右へ90°曲がり、死の森を森に戻す。照らされた者は隠れていても見える', function () {
+  R.labApply(['I1', 'A3']);
+  var s = R.startBattle(R.loadPreset('labI1')).state;
+  var r = R.act(s, 'P1', { dir: 'left' });
+  eq(tile(r.state, 5, 2), 'forest');
+  var s2 = board(['.....', '.....', '..F..', '.....', '.....']);
+  var e = R.addAlly(s2, 'fire', 2, 2, 'up');
+  var l = R.addAlly(s2, 'light', 0, 4, 'up');   // (1,3) → (2,2)
+  ok(R.hidden(s2, R.findUnit(s2, e.id), null), '森に隠れている');
+  var r2 = act(s2, l, 'up');
+  ok(!R.hidden(r2.state, R.findUnit(r2.state, e.id), null), '照らされて見える');
+});
+test('I4: 岩に風で転がり、通り道の者に20。川に落ちると飛び石', function () {
+  R.labApply(['I4']);
+  var s = board(['.....', '.....', '.r..R', '.....', '.....']);
+  var e = R.addEnemy(s, 'fire', 3, 2); tough(s, e);
+  var w = R.addAlly(s, 'wind', 0, 2, 'right');
+  var r = act(s, w, 'right');
+  eq(dealt(r, e.id), 20);
+  eq(tile(r.state, 4, 2), 'stepstone', '川に落ちて飛び石');
+  ok(R.isPassable('stepstone'));
+});
+test('I5: 森の隣の者の足に蔓がからむ。森から続く川に蔓の橋（燃えると川に戻る）', function () {
+  R.labApply(['I5']);
+  var s = board(['.....', '..F..', '..R..', '.....', '.....']);
+  var v = R.addAlly(s, 'vine', 2, 4, 'up');
+  var r = act(s, v, 'up');
+  eq(tile(r.state, 2, 2), 'vinebridge');
+  R.setTile(r.state, 2, 2, 'fire');
+  eq(tile(r.state, 2, 2), 'river', '燃えると川に戻る');
+  var s2 = board(['.....', '.F...', '..x..'.replace('x', '.'), '.....', '.....']);
+  var e = R.addEnemy(s2, 'fire', 2, 1); tough(s2, e);
+  var v2 = R.addAlly(s2, 'vine', 2, 3, 'up');
+  var r2 = act(s2, v2, 'up');
+  ok(R.findUnit(r2.state, e.id).stuck, '森の隣で足を取られた');
+});
+test('I6: 雨は人には当たらず、炎を消し、空きを水たまりに', function () {
+  R.labApply(['I6']);
+  var s = board(['.....', '.....', '..X..', '.....', '.....']);
+  var e = R.addEnemy(s, 'fire', 3, 2); tough(s, e);
+  var a = R.addAlly(s, 'rain', 2, 4, 'up');   // (2,3)(3,3)(2,2)(3,2)
+  var r = act(s, a, 'up');
+  eq([tile(r.state, 2, 2), tile(r.state, 2, 3)], ['empty', 'puddle']);
+  eq(dealt(r, e.id), 0, '直撃なし');
+});
+test('I7: 音で振り向かせると、敵の予告の向きが変わる', function () {
+  R.labApply(['I7']);
+  var s = R.startBattle(R.loadPreset('labI7')).state;
+  var r = R.act(s, 'P1', { to: [0, 2], dir: 'right' });
+  eq(R.findUnit(r.state, 'E4').facing, 'left');
+  eq(R.forecast(r.state).enemies[0].dir, 'left', '予告も左');
+});
+test('I8: 雷は金の柱に落ち、柱から感電する', function () {
+  R.labApply(['I8']);
+  var s = board(['.....', '.....', '..l..', '.....', '.....']);
+  var e = R.addEnemy(s, 'fire', 3, 2); tough(s, e);
+  var t = R.addAlly(s, 'thunder', 2, 4, 'up');   // (2,3) → (3,2)? 先に (2,3) 空き、(3,2)…
+  var r = act(s, t, 'up');
+  ok(names(r.events).indexOf('感電') >= 0 || dealt(r, e.id) > 0, '雷が届いた');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

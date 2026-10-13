@@ -75,7 +75,7 @@
       while (stack.length) {
         var c = stack.pop(), k = key(c[0], c[1]);
         if (seen[k] || !inBounds(s, c[0], c[1])) continue;
-        if (!waterTile(getTile(s, c[0], c[1]))) continue;
+        if (!waterTile(getTile(s, c[0], c[1])) && !(on('I8') && getTile(s, c[0], c[1]) === 'pillar')) continue;   // I8: 金の柱も雷を通す
         seen[k] = true; if (done) done[k] = true;
         net.push(c);
         neighbors(s, c[0], c[1]).forEach(function (n) { stack.push([n.x, n.y]); });
@@ -1389,6 +1389,7 @@
         if (s.labHeld >= 2 && !s.result) I.setResult(s, ev, 'win', '拠点を2つとも守りきった！（勝利）');
       }
       if (on('H13')) s.units.forEach(function (x) { delete x.labMoveOnly; });
+      if (on('I1')) s.units.forEach(function (x) { delete x.labLit; });   // I1: 照らされたのはターンの終わりまで
     }
 
     // H6: 宝を持って逃げる敵が逃げ口に着いたら負け
@@ -1891,6 +1892,7 @@
     function flowCell(s, u, x, y, t, facing, ctx, ev, o) {
       if (on('B12') && t === 'mud' && onceIn(ctx, 'B12')) { debrisFlow(s, x, y, facing, ctx, ev); return '泥沼に水が流れこんだ'; }
       if (o) return null;   // 人がいるマスは今どおり（直撃して止まる）
+      if (on('I4') && t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return '岩に水が当たった'; }   // I4: 水で岩が転がる
       if (on('B2') && t === 'thicket' && B.grow.enabled) { setTile(s, x, y, 'forest'); ctx.cells.push([x, y]); return '【ラボ】草むらが水を吸って森に育った'; }
       if (on('B9') && t === 'volcano') { coolVolcano(s, x, y, ctx, '水で'); return '火山に水がかかった'; }
       if (on('B7') && (t === 'sakura' || t === 'hillsakura') && onceIn(ctx, 'B7')) { hanaikada(s, x, y, x, y, facing, ctx, ev); return '桜に水が当たった'; }
@@ -1934,6 +1936,7 @@
 
     // 吹き抜ける（風）の1マス。止まるなら true
     function blowCell(s, u, x, y, t, facing, ctx, ev) {
+      if (t === 'rock' && on('I4')) { ctx.cells.push([x, y]); rollRock(s, x, y, facing, ctx, ev); return true; }   // I4: 風で岩が転がる
       if (t === 'snowmt' && on('B8')) { ctx.cells.push([x, y]); if (onceIn(ctx, 'B8')) avalanche(s, x, y, facing, ctx, ev); return true; }
       if (t === 'icewall' || t === 'snowmt' || t === 'bog') { ctx.phrases.push(tileName(t) + 'で風が止まった'); return true; }
       if (on('B6') && t === 'volcano' && B.sakura.from !== 'fire' && onceIn(ctx, 'B6')) { ctx.cells.push([x, y]); sparks(s, x, y, facing, ctx, ev); return true; }
@@ -2005,8 +2008,9 @@
     }
 
     // 走る（雷）: 高いものとして落ちる自然と、その作用
-    function tallTile(t) { return (t === 'deepforest' && on('B21')) || (t === 'snowmt') || (t === 'icewall'); }
+    function tallTile(t) { return (t === 'deepforest' && on('B21')) || (t === 'snowmt') || (t === 'icewall') || (t === 'pillar' && on('I8')); }
     function strikeTall(s, u, x, y, t, facing, ctx, ev) {
+      if (on('I8') && t === 'pillar') { ctx.phrases.push('【ラボ】雷が金の柱に落ちた'); I.doShock(s, x, y, ctx, ev, {}); return true; }
       if (on('B3') && t === 'deadforest') { ctx.phrases.push('【ラボ】雷が死の森に落ちて木が燃えた'); I.doHaunt(s, x, y, ctx, ev); return true; }
       if (on('B8') && t === 'snowmt') { ctx.phrases.push('【ラボ】雷が雪山に落ちた'); avalanche(s, x, y, facing, ctx, ev); return true; }
       if (t === 'deepforest') { setTile(s, x, y, 'fire'); ctx.phrases.push('【ラボ】雷が深い森に落ちて燃えた'); return true; }
@@ -2062,6 +2066,197 @@
       }
       if (gone) ev.push({ type: 'smallfireOut', text: '【ラボ】砂嵐・霜・暗がりが消えた（' + gone + 'マス）' });
       if (back) ev.push({ type: 'info', text: '【ラボ】底なし沼が泥沼に戻った（' + back + 'マス）' });
+    }
+
+
+    // ---------------------------------------------------------------
+    // I 新しい魔法（光・森・岩・蔓・雨・音・金）。その案がオンのときだけ選べる（rules.js の LAB_MAGIC）
+    // ---------------------------------------------------------------
+    var NEW_MAGIC = {
+      light: { name: '光', verb: '照らす' }, forestm: { name: '森', verb: '茂らせる' }, rock: { name: '岩', verb: '転がす' },
+      vine: { name: '蔓', verb: 'からめる' }, rain: { name: '雨', verb: '降らす' }, sound: { name: '音', verb: '響く' }, metal: { name: '金', verb: '導く' }
+    };
+    Object.keys(NEW_MAGIC).forEach(function (m) { if (!I.MAGIC_INFO[m]) { I.MAGIC_INFO[m] = NEW_MAGIC[m]; I.MAGICS.push(m); } });
+    var I_TILES = {
+      rock:       { name: '岩',     label: '岩', passable: false, ch: 'r' },   // I4
+      stepstone:  { name: '飛び石', label: '石', passable: true,  ch: 't' },   // I4 川に落ちた岩
+      vinebridge: { name: '蔓の橋', label: '蔓', passable: true,  ch: 'v' },   // I5
+      pillar:     { name: '金の柱', label: '柱', passable: false, ch: 'l' }    // I8
+    };
+    Object.keys(I_TILES).forEach(function (t) {
+      var d = I_TILES[t];
+      if (!I.TILE_INFO[t]) I.TILE_INFO[t] = { name: d.name, label: d.label, passable: d.passable };
+      if (!I.CH[d.ch]) I.CH[d.ch] = t;
+      LAB_TILES[t] = d;
+    });
+    LAB_SPREAD_BLOCK.rock = true; LAB_SPREAD_BLOCK.pillar = true;
+    var NEW_SHAPES = { forestm: B.shapes.grass, rock: [[0, 1]], vine: [[0, 1], [0, 2]], rain: [[0, 1], [1, 1], [0, 2], [1, 2]], sound: [[0, 1], [0, 2], [0, 3]], metal: [[0, 1]] };
+    cellsMore.push(function (s, u, o, facing) {
+      if (u.magic === 'light') return lightPath(s, u, o, facing).cells;
+      var shp = NEW_SHAPES[u.magic];
+      return shp ? shapeAt(s, shp, o, facing) : null;
+    });
+    castMore.push(function (s, u, facing, ctx, ev) {
+      var m = u.magic;
+      if (!NEW_MAGIC[m]) return false;
+      if (m === 'light') light(s, u, facing, ctx, ev);
+      else if (m === 'forestm') forestMagic(s, u, facing, ctx, ev);
+      else if (m === 'rock') rockMagic(s, u, facing, ctx, ev);
+      else if (m === 'vine') vine(s, u, facing, ctx, ev);
+      else if (m === 'rain') rainMagic(s, u, facing, ctx, ev);
+      else if (m === 'sound') sound(s, u, facing, ctx, ev);
+      else if (m === 'metal') metal(s, u, facing, ctx, ev);
+      return true;
+    });
+
+    // I1: 光の通り道（右斜め前へ3マス。水に当たると右へ90°曲がって、そこから3マス。I2: 氷は通り抜けて、その先に火）
+    var LIGHT_STOP = { forest: true, deepforest: true, mountain: true, hill: true, volcano: true, sakura: true, hillsakura: true, snowmt: true, icewall: true, pillar: true, rock: true, tornado: true, firewhirl: true, haunted: true };
+    function lightPath(s, u, o, facing) {
+      var F = DIRS[facing], R = [-F.dy, F.dx];
+      var v = [F.dx + R[0], F.dy + R[1]], x = o.x, y = o.y, left = 3, cells = [], hit = null, bends = 0, focus = null;
+      for (var guard = 0; guard < 20 && left > 0; guard++) {
+        x += v[0]; y += v[1]; left--;
+        if (!inBounds(s, x, y)) break;
+        cells.push([x, y]);
+        var t = getTile(s, x, y), q = unitAt(s, x, y);
+        if (q) { hit = { kind: 'unit', at: [x, y] }; break; }
+        if (waterTile(t) && t !== 'stepstone') { if (bends < 4) { v = [-v[1], v[0]]; left = 3; bends++; } continue; }
+        if (t === 'ice' && on('I2')) { var fx = x + v[0], fy = y + v[1]; if (inBounds(s, fx, fy)) { cells.push([fx, fy]); focus = [fx, fy]; } hit = { kind: 'focus', at: focus }; break; }
+        if (t === 'thicket' || t === 'deadforest' || t === 'haunted' || t === 'gloom') { hit = { kind: 'tile', at: [x, y], t: t }; break; }
+        if (LIGHT_STOP[t] || t === 'ice') { hit = { kind: 'stop', at: [x, y], t: t }; break; }
+      }
+      return { cells: cells, hit: hit, bends: bends };
+    }
+    function light(s, u, facing, ctx, ev) {
+      var o = I.castOrigin(s, u, facing), p = lightPath(s, u, o, facing);
+      p.cells.forEach(function (c) { ctx.cells.push(c); });
+      if (p.bends) ctx.phrases.push('【ラボ】光が水に反射して曲がった（' + p.bends + '回）');
+      var h = p.hit;
+      if (!h) { ctx.phrases.push('光は何にも当たらなかった'); return; }
+      if (h.kind === 'unit') {
+        var q = unitAt(s, h.at[0], h.at[1]);
+        addHit(ctx, q, u.power, 'direct');
+        q.labLit = true;
+        ctx.phrases.push('【ラボ】光が' + unitLabel(s, q) + 'を照らした（ターンの終わりまで、隠れていても見える）');
+      } else if (h.kind === 'focus') {
+        if (!h.at) { ctx.phrases.push('【ラボ】氷を通った光が盤の外へ抜けた'); return; }
+        var t = getTile(s, h.at[0], h.at[1]);
+        if (I.isPlant(t) || t === 'deepforest') { setTile(s, h.at[0], h.at[1], 'fire'); ctx.phrases.push('【ラボ】氷で集まった光が' + tileName(t) + 'に火を点けた（虫眼鏡）'); }
+        else if (t === 'empty') { setTile(s, h.at[0], h.at[1], 'smallfire'); ctx.phrases.push('【ラボ】氷で集まった光で小さな炎がついた（虫眼鏡）'); }
+        else touchFire(s, h.at[0], h.at[1], facing, ctx, ev, '虫眼鏡');
+        var fq = unitAt(s, h.at[0], h.at[1]);
+        if (fq) addHit(ctx, fq, u.power, 'direct');
+      } else if (h.kind === 'tile') {
+        if (h.t === 'thicket') { setTile(s, h.at[0], h.at[1], 'forest'); ctx.phrases.push('【ラボ】光で草むらが森に育った'); }
+        else if (h.t === 'deadforest') { var d = connected(s, h.at[0], h.at[1], 'deadforest'); d.forEach(function (c) { setTile(s, c[0], c[1], 'forest'); }); ctx.phrases.push('【ラボ】光で死の森が森に戻った（' + d.length + 'マス）'); }
+        else if (h.t === 'haunted') { setTile(s, h.at[0], h.at[1], 'empty'); ctx.phrases.push('【ラボ】光でオバケヤシキが消えた'); }
+        else if (h.t === 'gloom') { setTile(s, h.at[0], h.at[1], 'empty'); ctx.phrases.push('【ラボ】光で暗がりが消えた'); }
+      } else ctx.phrases.push('光は' + tileName(h.t) + 'で止まった');
+    }
+    // I3: 茂らせる（空きは一発で森。草むら・森に当たると、そのかたまりの外側へ形のマス数まで森が広がる）
+    function forestMagic(s, u, facing, ctx, ev) {
+      var cells = I.castCells(s, u, facing), made = 0, grow = [];
+      cells.forEach(function (c) {
+        ctx.cells.push(c);
+        var q = unitAt(s, c[0], c[1]), t = getTile(s, c[0], c[1]);
+        if (q) addHit(ctx, q, u.power, 'direct');
+        if (t === 'empty' && (!q || B.ideas.natureUnderUnits)) { setTile(s, c[0], c[1], 'forest'); made++; }
+        else if (t === 'thicket' || t === 'forest') { if (t === 'thicket') setTile(s, c[0], c[1], 'forest'); grow.push(c); }
+      });
+      var spread = 0;
+      grow.forEach(function (c) {
+        var comp = connectedPlants(s, c[0], c[1]), ring = [];
+        comp.forEach(function (p) { neighbors(s, p[0], p[1]).forEach(function (n) { if (getTile(s, n.x, n.y) === 'empty' && !unitAt(s, n.x, n.y) && !has(ring, n.x, n.y)) ring.push([n.x, n.y]); }); });
+        ring.slice(0, cells.length).forEach(function (r) { setTile(s, r[0], r[1], 'forest'); ctx.cells.push(r); spread++; });
+      });
+      ctx.phrases.push('【ラボ】森が茂った（' + made + 'マス' + (spread ? '、まわりへ＋' + spread : '') + '）');
+    }
+    // I4: 転がす（空きに岩。岩に岩・風・土・水が当たると、当たった向きの奥へ転がる）
+    function rockMagic(s, u, facing, ctx, ev) {
+      var c = I.castCells(s, u, facing)[0];
+      if (!c) { ctx.phrases.push('岩を置く場所がない'); return; }
+      ctx.cells.push(c);
+      var t = getTile(s, c[0], c[1]), q = unitAt(s, c[0], c[1]);
+      if (t === 'rock') { rollRock(s, c[0], c[1], facing, ctx, ev); return; }
+      if (q) { addHit(ctx, q, u.power, 'direct'); return; }
+      if (t === 'empty') { setTile(s, c[0], c[1], 'rock'); ctx.phrases.push('【ラボ】岩を置いた'); }
+      else ctx.phrases.push('岩を置けなかった（' + tileName(t) + '）');
+    }
+    function rollRock(s, x, y, dir, ctx, ev) {
+      if (!onceIn(ctx, 'rock:' + key(x, y))) return;
+      var F = DIRS[dir], cx = x, cy = y, path = [], end = null;
+      setTile(s, x, y, 'empty');
+      for (var i = 0; i < 20; i++) {
+        var nx = cx + F.dx, ny = cy + F.dy;
+        if (!inBounds(s, nx, ny)) break;
+        var t = getTile(s, nx, ny);
+        if (t === 'river' || t === 'puddle' || t === 'reeds') { path.push([nx, ny]); end = 'water'; cx = nx; cy = ny; break; }
+        if (!I.isPassable(t) && t !== 'empty') break;
+        path.push([nx, ny]); cx = nx; cy = ny;
+      }
+      hitAll(s, ctx, path, B.fire.strongDamage);
+      if (end === 'water') setTile(s, cx, cy, 'stepstone');
+      else if (cx !== x || cy !== y) { if (!unitAt(s, cx, cy)) setTile(s, cx, cy, 'rock'); else { var back = path.length > 1 ? path[path.length - 2] : [x, y]; setTile(s, back[0], back[1], 'rock'); } }
+      else setTile(s, x, y, 'rock');
+      finish(ctx, ev, '岩落とし', path, B.fire.strongDamage, [x, y], '【ラボ】岩落とし！ 岩が' + DIRS[dir].name + 'へ転がった（' + path.length + 'マス。通り道の者に威力' + B.fire.strongDamage + '）' + (end === 'water' ? '。川に落ちて飛び石になった' : ''), { dir: dir });
+    }
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) { if (on('I4') && u.magic === 'earth' && t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return true; } return false; });
+    // I5: からめる（森の隣の者は足を取られる。川には、森からつながる蔓の橋）
+    function vine(s, u, facing, ctx, ev) {
+      var cells = I.castCells(s, u, facing), bridge = 0;
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i]; ctx.cells.push(c);
+        var q = unitAt(s, c[0], c[1]), t = getTile(s, c[0], c[1]);
+        var nearForest = function (p) { return neighbors(s, p[0], p[1]).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'forest' || nt === 'thicket' || nt === 'deepforest' || nt === 'vinebridge'; }); };
+        if (q) {
+          addHit(ctx, q, u.power, 'direct');
+          if (nearForest(c) || I.isPlant(t)) { q.stuck = true; ev.push({ type: 'mud', id: q.id, cells: [c], text: '【ラボ】' + unitLabel(s, q) + 'の足に蔓がからんだ（次の移動は1回休み）' }); }
+          else ctx.phrases.push('森のそばでないので、蔓はからまなかった');
+          break;
+        }
+        if (t === 'river' && nearForest(c)) { setTile(s, c[0], c[1], 'vinebridge'); bridge++; continue; }
+        if (t === 'river') { ctx.phrases.push('森につながっていない川には、蔓が届かない'); break; }
+      }
+      if (bridge) ctx.phrases.push('【ラボ】川に蔓の橋がかかった（' + bridge + 'マス。燃えると川に戻る）');
+    }
+    // I6: 降らす（正面の2×2。炎は消え、空きは水たまり、山に降れば源流。人には直撃なし、火傷は治る）
+    function rainMagic(s, u, facing, ctx, ev) {
+      var cells = I.castCells(s, u, facing), pud = 0, src = null;
+      cells.forEach(function (c) {
+        ctx.cells.push(c);
+        var q = unitAt(s, c[0], c[1]), t = getTile(s, c[0], c[1]);
+        if (q) I.cureBurn(s, q, ctx);
+        if (t === 'fire' || t === 'smallfire') { setTile(s, c[0], c[1], 'empty'); ctx.phrases.push('【ラボ】雨で' + tileName(t) + 'が消えた'); }
+        else if (t === 'empty' && !q) { setTile(s, c[0], c[1], 'puddle'); pud++; }
+        else if (t === 'mountain' && !src) src = c;
+      });
+      if (pud) ctx.phrases.push('【ラボ】雨が降って水たまりができた（' + pud + 'マス）');
+      if (src) {
+        var line = lineFrom(s, src[0], src[1], facing, HARD), n = 0;
+        for (var i = 0; i < line.length; i++) { var l = line[i]; if (unitAt(s, l[0], l[1])) break; var lt = getTile(s, l[0], l[1]); if (lt === 'empty' || lt === 'puddle' || lt === 'thicket') { setTile(s, l[0], l[1], 'river'); n++; ctx.cells.push(l); } else break; }
+        ctx.phrases.push('【ラボ】山に降った雨が源流になって流れ出した（川' + n + 'マス）');
+      }
+    }
+    // I7: 響く（正面3マスの者は、術者の方を振り向く。氷はひびが入って割れる）
+    function sound(s, u, facing, ctx, ev) {
+      var turned = 0;
+      I.castCells(s, u, facing).forEach(function (c) {
+        ctx.cells.push(c);
+        var q = unitAt(s, c[0], c[1]), t = getTile(s, c[0], c[1]);
+        if (q && q.id !== u.id) { var d = I.faceToward(q.x, q.y, u); if (q.facing !== d) { q.facing = d; turned++; ev.push({ type: 'info', id: q.id, cells: [c], text: '【ラボ】' + unitLabel(s, q) + 'は音のした方（' + DIRS[d].name + '）を振り向いた' }); } }
+        if (t === 'ice') { setTile(s, c[0], c[1], 'puddle'); ctx.phrases.push('【ラボ】音で氷にひびが入って割れた'); }
+      });
+      if (!turned) ctx.phrases.push('音が響いた');
+    }
+    // I8: 導く（目の前に金の柱。雷は柱に落ち、つながった柱と水へ流れる）
+    function metal(s, u, facing, ctx, ev) {
+      var c = I.castCells(s, u, facing)[0];
+      if (!c) return;
+      ctx.cells.push(c);
+      var q = unitAt(s, c[0], c[1]), t = getTile(s, c[0], c[1]);
+      if (q) { addHit(ctx, q, u.power, 'direct'); return; }
+      if (t === 'empty') { setTile(s, c[0], c[1], 'pillar'); ctx.phrases.push('【ラボ】金の柱を立てた（雷を導く）'); }
+      else ctx.phrases.push('柱を立てられなかった（' + tileName(t) + '）');
     }
 
     // ---------------------------------------------------------------
