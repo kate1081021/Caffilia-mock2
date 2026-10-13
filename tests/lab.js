@@ -769,6 +769,13 @@ test('H1: 周回の道・戦闘の盤面・強化の候補（乱数は戦闘の�
     R.labApply(pr.lab, pr.labOpts);
     var s = R.startBattle(R.loadPreset(pr.id)).state;
     eq(R.alliesOf(s).map(function (a) { return a.magic; }), ['grass', 'fire', 'wind'], 'パーティのまま');
+    var run2 = R.LX.newRun(['grass', 'fire', 'wind']); run2.opts.carryHp = true; run2.hp = { grass: 1, fire: 3, wind: 2 };
+    R.LX.runPick(run2, { m: 'fire', k: 'M1', v: true, label: 'x' });
+    var pr3 = R.LX.runPreset(run2, paths[0]); pr3.id = 'labRunBattle3'; R.LAB_PRESETS.push(pr3);
+    var s3 = R.startBattle(R.loadPreset('labRunBattle3')).state;
+    R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(pr3), 1);
+    eq(R.alliesOf(s3).map(function (a) { return a.hp; }), [1, 3, 2], 'HP を持ち越す');
+    eq(R.alliesOf(s3).filter(function (a) { return a.magic === 'fire'; })[0].move, 3, '移動+1');
     var offers = R.LX.runOffers(run, paths[0], seq([0.1, 0.7, 0.4]), s);
     eq(offers.length, 3);
     R.LX.runPick(run, offers[0]);
@@ -876,6 +883,95 @@ test('H13: 小さな目標を達成すると、その味方はもう1回移動�
   ok(R.act(r.state, 'P1', { to: [1, 6], dir: 'up', shoot: false }).ok, '移動はできる');
 });
 
+// ===================================================================
+console.log('\n■ F 移動と手番');
+
+test('F1: 味方の移動は1（敵は2のまま。enemyToo で敵も1）', function () {
+  R.labApply(['F1']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var a = R.addAlly(s, 'fire', 2, 4, 'up'); var e = R.addEnemy(s, 'fire', 2, 0);
+  var t = R.startBattle(s).state;   // 移動は戦闘の始めに決まる
+  eq(Object.keys(R.reachableCells(t, a.id)).length, 4, '自分と3方向');
+  eq(R.findUnit(t, e.id).move, 2);
+  R.labApply(['F1'], { F1: { enemyToo: true } });
+  var t2 = R.startBattle(s).state;
+  eq(R.findUnit(t2, e.id).move, 1);
+});
+test('F2: 残った風の上を風下へ歩くと1歩で2マス。オフなら1マス', function () {
+  R.labApply(['F2']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var w = R.addAlly(s, 'wind', 2, 4, 'up');
+  var f = R.addAlly(s, 'fire', 1, 3, 'up');
+  var r = act(s, w, 'up');
+  ok(R.reachableCells(r.state, f.id)['2,1'] !== undefined, '追い風で (2,1) まで');
+  R.labApply([]);
+  var r2 = act(s, w, 'up');
+  ok(R.reachableCells(r2.state, f.id)['2,1'] === undefined, 'オフなら届かない');
+});
+test('F3: 森の中で草は形の先にもう1マス、水辺で水は1マス長い', function () {
+  R.labApply(['F3']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '...F...']);
+  var g = R.addAlly(s, 'grass', 3, 6, 'up');
+  eq(R.previewAct(s, g.id, null, 'up').cells.length, 5);
+  var s2 = board(['.......', '.......', '.......', '.......', '.......', '.......', '..R....']);
+  var w = R.addAlly(s2, 'water', 3, 6, 'up');
+  var r = act(s2, w, 'up');
+  eq([tile(r.state, 3, 5), tile(r.state, 3, 4), tile(r.state, 3, 3)], ['river', 'river', 'river'], '池が3マス');
+  R.labApply([]);
+  eq(R.previewAct(s, g.id, null, 'up').cells.length, 4, 'オフ');
+});
+test('F4: 味方が1人動くごとに、敵の予告が1つ発動する', function () {
+  R.labApply(['F4']);
+  var s = board(['.....', '.....', '.....', '.....', '.....'], true);
+  var e1 = R.addEnemy(s, 'fire', 0, 0); var e2 = R.addEnemy(s, 'fire', 4, 0);
+  var a = R.addAlly(s, 'grass', 2, 4, 'up'); var b = R.addAlly(s, 'grass', 1, 4, 'up');
+  var t = R.startBattle(s).state;
+  eq(R.enemiesOf(t).filter(function (e) { return e.intent; }).length, 2);
+  var r = R.act(t, a.id, { shoot: false });
+  eq(R.enemiesOf(r.state).filter(function (e) { return e.intent; }).length, 1, '1つ発動した');
+  ok(/味方が1人動いたので/.test(texts(r.events)));
+});
+test('F5: 構えはすぐには起きず、ターンの終わりに構えた順に発動する。違う味方の魔法が続いた決め手は「合体！」', function () {
+  R.labApply(['F5']);
+  var s = R.startBattle(R.loadPreset('labF5')).state;
+  var r1 = R.act(s, 'P1', { to: [1, 1], dir: 'right' });
+  eq(tile(r1.state, 3, 1), 'empty', 'まだ森にならない');
+  ok(R.findUnit(r1.state, 'P1').labStance, '構えている');
+  ok(R.act(r1.state, 'P1', { dir: 'up' }).ok, '構え直せる');
+  ok(!R.act(r1.state, 'P1', { to: [1, 2], dir: 'up' }).ok, '構え直しでは動けない');
+  var fc = R.forecast(r1.state);
+  ok(fc.allies.length === 1 && fc.allies[0].tileChanges.length > 0, '予告に構えの結果');
+  var r2 = R.act(r1.state, 'P2', { to: [2, 3], dir: 'right' });
+  var r3 = R.act(r2.state, 'P3', { to: [3, 5], dir: 'up' });
+  var t = R.endTurn(r3.state);
+  ok(t.events.some(function (e) { return e.type === 'finisher' && /合体/.test(e.text); }), '合体！');
+  ok(!R.findUnit(t.state, 'E4'), '敵Aが倒れた');
+});
+test('F6: 壊す（正面1マスの自然を一段戻す。魔法は撃たない）', function () {
+  R.labApply(['F6']);
+  var s = board(['.....', '.....', '..M..', '.....', '.....']);
+  var a = R.addAlly(s, 'fire', 2, 3, 'up');
+  var r = R.act(s, a.id, { dir: 'up', labBreak: true });
+  ok(r.ok);
+  eq(tile(r.state, 2, 2), 'empty', '育つが切なら山は空きに');
+  R.labApply([]);
+  var r2 = R.act(s, a.id, { dir: 'up', labBreak: true });
+  eq(tile(r2.state, 2, 2), 'volcano', 'オフなら壊せない（ふつうに火を撃つ → 火山）');
+});
+test('F7: 作業台の枠に当たった魔法は材料になり、ターンの終わりに枠の全マスへ順に当たる', function () {
+  R.labApply(['F7']);
+  var s = R.startBattle(R.loadPreset('labF7')).state;
+  var r = R.act(s, 'P1', { to: [3, 5], dir: 'up', labBench: true });
+  ok(r.state.labBench && r.state.labBench.cells.length === 9);
+  var r2 = R.act(r.state, 'P2', { to: [2, 6], dir: 'up' });
+  eq(tile(r2.state, 3, 3), 'empty', 'すぐには変わらない');
+  eq(r2.state.labBench.mats.length, 1);
+  var r3 = R.act(r2.state, 'P3', { to: [4, 5], dir: 'up' });
+  var t = R.endTurn(r3.state).state;
+  eq(tile(t, 2, 2), 'fire', '枠の全マスが燃える森');
+  ok(!t.labBench, '作業台はそのターンだけ');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {
@@ -893,7 +989,7 @@ R.LAB_PRESETS.forEach(function (p) {
         if (a.endTurn) { s = R.endTurn(s).state; return; }
         if (!a.id) return;
         if (a.swap) { var sw = R.labSwapMagic(s, a.id); if (!sw.ok) throw new Error(a.id + ' が持ち替えられない: ' + sw.error); s = sw.state; }
-        var r = R.act(s, a.id, { to: a.to, dir: a.dir, shoot: a.shoot !== false });
+        var r = R.act(s, a.id, { to: a.to, dir: a.dir, shoot: a.shoot !== false, labBreak: a.labBreak, labBench: a.labBench });
         if (!r.ok) throw new Error(a.id + ' が行動できない: ' + r.error);
         s = r.state;
         if (!s.result && R.allAlliesActed(s)) s = R.endTurn(s).state;

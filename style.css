@@ -1003,3 +1003,8 @@ body.lab-open { padding-left: 400px; }
 .b-flag { position: absolute; left: 4%; bottom: 4%; font-size: .6em; font-weight: bold; color: #fff; background: #b91c1c; border-radius: 4px; padding: 0 3px; z-index: 2; pointer-events: none; }
 .b-flag.taken { background: #2563eb; }
 .b-exit { position: absolute; left: 4%; top: 4%; font-size: .6em; font-weight: bold; color: #fff; background: #92400e; border-radius: 4px; padding: 0 3px; z-index: 2; pointer-events: none; }
+/* ラボ F: 発動の順・構え・風の向き・作業台 */
+.unit .u-order { position: absolute; right: -10%; top: -10%; font-size: .55em; font-weight: bold; color: #fff; background: var(--enemy-fc); border-radius: 50%; min-width: 1.4em; text-align: center; z-index: 6; transform: rotate(calc(-1 * var(--rot))); }
+.unit .u-order.ally { background: var(--ally); border-radius: 6px; padding: 0 3px; }
+.b-wind { position: absolute; right: 6%; top: 30%; font-size: .9em; font-weight: bold; color: rgba(14, 116, 144, .85); z-index: 2; pointer-events: none; }
+.b-bench { position: absolute; inset: 3%; border: 3px dashed #a16207; border-radius: 6px; background: rgba(250, 204, 21, .12); z-index: 1; pointer-events: none; }

@@ -1570,12 +1570,14 @@
     var u0 = findUnit(s0, unitId);
     if (!u0 || u0.side !== 'ally') return fail(s0, '味方を選んでいない');
     if (u0.npc) return fail(s0, '構える味方には指示できない');
-    if (u0.acted) return fail(s0, 'この味方はもう行動した');
+    var restance = LX && lab('F5') && u0.acted && u0.labStance;   // ラボ F5: そのターンのうちなら構え直せる（移動は戻らない）
+    if (u0.acted && !restance) return fail(s0, 'この味方はもう行動した');
     var to = opts.to || [u0.x, u0.y];
     var dir = opts.dir || u0.facing;
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
     var dist = reachInfo(s0, u0).dist[key(to[0], to[1])];
     if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
+    if (restance && dist > 0) return fail(s0, '構え直しでは動けない（向きと魔法だけ）');
     if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, (LX && LX.cannotShoot(s0, u0, to)) || '宝を持っている間は撃てない（待機だけ）');
 
     var s = clone(s0);
@@ -1606,10 +1608,20 @@
       }
     }
     if (opts.shoot === false) {
+      if (u.labStance) delete u.labStance;   // ラボ F5: 待機にすると構えも消える
       ev.push({ type: 'wait', id: u.id, text: unitLabel(s, u) + 'は' + DIRS[dir].name + 'を向いて待機した' });
+    } else if (LX && lab('F6') && opts.labBreak) {
+      LX.breakFront(s, u, dir, ev);   // ラボ F6: 壊す（魔法は撃たない）
+    } else if (LX && lab('F7') && opts.labBench) {
+      LX.placeBench(s, u, dir, ev);   // ラボ F7: 作業台を置く
+    } else if (LX && lab('F5')) {
+      LX.setStance(s, u);             // ラボ F5: 構える（ターンの終わりに、構えた順に発動）
+      ev.push({ type: 'intent', id: u.id, side: 'ally', magic: u.magic, dir: dir, from: [u.x, u.y], cells: castCells(s, u, dir),
+        text: unitLabel(s, u) + 'は' + DIRS[dir].name + 'を向いて' + magicName(u.magic) + 'の魔法を構えた（ターンの終わりに、構えた順に発動）' });
     } else {
       shoot(s, u, dir, ev);
     }
+    if (LX && lab('F4') && !s.result) LX.interleave(s, ev, step);   // ラボ F4: 味方が1人動くごとに、敵の予告が1つ発動
     step();
     return { ok: true, state: s, events: ev, steps: steps };
   }
@@ -2183,6 +2195,7 @@
     }
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
     alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck) unstick(a); });
+    if (LX && !s.result) LX.beforeEnemyFire(s, ev, step);   // ラボ F5: 味方の構えの発動／F7: 作業台
 
     // 3a. 構える味方の魔法の発動（敵より先）
     if (alliesOf(s).some(function (a) { return a.npc && a.intent; })) {
@@ -2265,6 +2278,7 @@
     var ev = [];
     if (to && (to[0] !== u.x || to[1] !== u.y)) { u.x = to[0]; u.y = to[1]; }
     u.facing = dir;
+    if (LX && lab('F5')) LX.fireStances(s, [], null, unitId);   // ラボ F5: 先に構えたほかの味方の魔法が起きたあとの盤面で予測する
     var startUnits = clone(s.units);
     var startTiles = s.tiles.slice();
     var ctx = shoot(s, u, dir, ev);
@@ -2383,6 +2397,7 @@
       list.push({ id: e.id, side: e.side, from: [e.x, e.y], to: [e.x, e.y], shootFrom: [e.x, e.y], dir: e.facing, magic: e.magic,
         cells: ctx.cells, tileChanges: tileChanges, damages: damages, finishers: ctx.finishers });
     }
+    if (LX && lab('F5')) LX.stancesOf(s).forEach(function (a0) { fire(out.allies, a0); });   // ラボ F5: 味方の構え（構えた順）
     alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
     if (s.enemyActs) enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) { fire(out.enemies, e0); });
     if (sim.result) return out;

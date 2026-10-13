@@ -381,7 +381,7 @@
   function select(id) {
     var u = R.findUnit(app.state, id);
     if (!u || u.side !== 'ally' || u.npc) return;   // 構える味方は選べない
-    if (u.acted) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }
+    if (u.acted && !(R.lab('F5') && u.labStance)) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }   // ラボ F5: 構えた味方は構え直せる
     app.sel = id;
     app.plan = { to: [u.x, u.y], dir: u.facing };
     render();
@@ -413,10 +413,12 @@
     render();
   }
 
-  function doAct(shoot) {
+  function doAct(shoot, extra) {
     var u = selUnit();
     if (!u || !canControl()) return;
-    var res = R.act(app.state, u.id, { to: app.plan.to, dir: app.plan.dir, shoot: shoot });
+    var opts = { to: app.plan.to, dir: app.plan.dir, shoot: shoot };
+    Object.keys(extra || {}).forEach(function (k) { opts[k] = extra[k]; });   // ラボ F6 壊す・F7 作業台
+    var res = R.act(app.state, u.id, opts);
     if (!res.ok) { say(res.error); return; }
     pushHistory();
     var id = u.id;
@@ -695,7 +697,7 @@
         render();
         d.timer = setTimeout(function () {
           if (app.demo !== d) return;
-          doAct(a.shoot !== false);
+          doAct(a.shoot !== false, { labBreak: a.labBreak, labBench: a.labBench });   // ラボ F6・F7 の項目
           d.timer = setTimeout(demoNext, DEMO_WAIT.after);
         }, aimWait);
       }, DEMO_WAIT.move);
@@ -957,6 +959,9 @@
     if (u.labBoss) h += '<span class="u-boss">強</span>';
     var bt = R.LX && R.LX.boostText(u);   // ラボ G: 強化の印（★と種類の1文字）
     if (bt) h += '<span class="u-boost" title="強化: ' + esc(bt) + '">★' + esc(u.boosts.filter(function (b) { return R.lab(b.k) || !B.lab[b.k]; }).map(function (b) { var bi = R.LX.BOOST_INFO[b.k]; return bi ? bi.mark : ''; }).join('')) + '</span>';
+    var ord = u.side === 'enemy' && u.intent && R.LX ? R.LX.intentOrder(st, u.id) : 0;   // ラボ F4: 発動の順番
+    if (ord) h += '<span class="u-order" title="味方が1人動くごとに、この順で発動する">' + '①②③④⑤'.charAt(ord - 1) + '</span>';
+    if (u.labStance && R.lab('F5')) h += '<span class="u-order ally" title="構えている（ターンの終わりに、この順で発動）">構' + u.labStance.n + '</span>';
     if (u.labWear && R.lab('G7')) h += '<span class="u-wear" title="まとっている（次の1発に乗る。ターンの終わりまで）">纏' + esc(R.magicName(u.labWear)) + '</span>';
     if (u.labStage) h += '<span class="u-boss stage" title="大技を組む敵: ' + esc(R.magicName(u.labStage)) + 'で舞台 → ' + esc(R.magicName(u.magic)) + '">技</span>';
     if (st.mission && st.mission.carrier === u.id) h += '<span class="u-treasure" title="宝を持っている（撃てない）">宝</span>';
@@ -1144,7 +1149,9 @@
       if (R.lab('E10') && fc) R.LX.intentHints(stE, pv ? st : null, fc).forEach(function (h) { eHint[key(h.cell[0], h.cell[1])] = h; });
     }
     // ラボ H13: 小さな目標の印。H9: 拠点の旗。H6: 逃げ口
-    var hGoal = {}, hFlag = {}, hExit = {};
+    var hGoal = {}, hFlag = {}, hExit = {}, fWind = {}, fBench = {};
+    if (!app.editMode && R.LX && (R.lab('F2') || R.lab('F3')) && st.labWind) Object.keys(st.labWind).forEach(function (i) { var t = R.getTile(st, i % n, Math.floor(i / n)); if (t === 'breeze' || t === 'gale') fWind[key(i % n, Math.floor(i / n))] = st.labWind[i]; });
+    if (!app.editMode && R.lab('F7') && st.labBench) st.labBench.cells.forEach(function (c) { fBench[key(c[0], c[1])] = st.labBench; });
     if (!app.editMode && R.LX) {
       if (R.lab('H13') && st.labGoals) st.labGoals.forEach(function (g) { g.cells.forEach(function (c) { hGoal[key(c[0], c[1])] = g; }); });
       if (R.lab('H9') && st.labFlags) st.labFlags.forEach(function (f) { var tk = R.LX.flagTaken(st, f); f.cells.forEach(function (c) { hFlag[key(c[0], c[1])] = { f: f, taken: tk }; }); });
@@ -1285,6 +1292,8 @@
         if (dCrush[k]) inner += '<span class="b-crush" title="大きい敵が次に崩すマス（ラボ D4）">崩</span>';
         if (eMirror[k]) inner += '<span class="b-mirror" title="映る場所（ラボ E2）: 蜃気楼の中に味方がいると、ここに偽の姿が立つ">映</span>';
         if (eDecoy[k] && !unit) inner += '<div class="ghost decoy" title="偽の姿（ラボ E2）: 敵には本物に見える。当たっても何も起きない">' + esc(R.magicName(eDecoy[k].magic)) + '</div>';
+        if (fWind[k]) inner += '<span class="b-wind" title="風の向き（追い風・向かい風）">' + DIR_ARROW[fWind[k]] + '</span>';
+        if (fBench[k]) inner += '<span class="b-bench" title="作業台（積まれた材料: ' + esc(fBench[k].mats.map(function (m) { return R.magicName(m.magic); }).join('→') || 'なし') + '）"></span>';
         if (hGoal[k]) inner += '<span class="b-goal' + (hGoal[k].done ? ' done' : '') + '" title="目標: ' + esc(hGoal[k].name) + (hGoal[k].done ? '（達成）' : '') + '">目</span>';
         if (hFlag[k]) inner += '<span class="b-flag' + (hFlag[k].taken ? ' taken' : '') + '" title="' + esc(hFlag[k].f.name) + (hFlag[k].taken ? '（取った拠点: 上に立つと形が1マス先から）' : '（全部のマスを別の自然にすると取れる）') + '">' + (hFlag[k].taken ? '拠' : '旗') + '</span>';
         if (hExit[k]) inner += '<span class="b-exit" title="逃げ口（宝を持った敵が着いたら負け）">逃</span>';
@@ -1891,6 +1900,8 @@
     if (k === ' ') { e.preventDefault(); stay(); return; }
     if (k === 'w' || k === 'W') { doAct(false); return; }
     if (k === 'q' || k === 'Q') { swapMagic(); return; }   // ラボ G9: 2つ目の魔法と持ち替える
+    if ((k === 'b' || k === 'B') && R.lab('F6')) { doAct(true, { labBreak: true }); return; }   // ラボ F6: 壊す
+    if ((k === 'k' || k === 'K') && R.lab('F7')) { doAct(true, { labBench: true }); return; }   // ラボ F7: 作業台を置く
     if (k === 'Escape') {
       var u = selUnit();
       if (u && app.plan && (app.plan.to[0] !== u.x || app.plan.to[1] !== u.y)) stay();

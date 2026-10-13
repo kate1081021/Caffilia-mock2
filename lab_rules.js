@@ -1155,13 +1155,13 @@
     });
     // 流れる・吹く魔法の届く長さ（G2 伸びる・G3 滝／追い風の槍・G6 杖と錫杖）
     function lengthFor(s, u, magic, base) {
-      if (!(on('G2') || on('G3') || on('G6'))) return base;
+      if (!(on('G2') || on('G3') || on('G6') || on('F3'))) return base;
       var len = base, b = shapeBoost(u);
       if (b && b.k === 'G2') len = 1 + Math.max(0, Math.min(3, b.v || 0));
       if (b && b.k === 'G3') { var f = FORMS[magic] && FORMS[magic][b.v]; if (f && f.len) len = base + f.len; }
       var w = weaponOn(s, u);
       if (w === 'staff' || w === 'scepter') len += 1;
-      return len;
+      return footLength(s, u, magic, len);   // F3: 水辺で水は1マス長い
     }
     // G3: 闇の姿は、形のマスを全部吸う（G2 で伸びた闇も）
     darkTargets = function (s, u, facing, cells) { return boostShape(u) ? cells : cells.slice(0, 1); };
@@ -1351,6 +1351,7 @@
         I.alliesOf(s).filter(function (a) { return !a.npc; }).forEach(function (a, i) { if (i >= n) { a.npc = true; a.labNpc = true; } });
       }
       if (on('H10') && opt('H10', 'mode') === 'score') s.labVillages = I.objectsOf(s, 'village').length;
+      s.units.forEach(function (u) { if (u.labHpStart) { u.hp = Math.min(u.maxHp, u.labHpStart); delete u.labHpStart; } });   // H1 carryHp: 持ち越した HP
     }
     // H10 faint: 倒れた味方は2ターン後に、味方の段の端に戻る
     var deathMore = [];
@@ -1528,8 +1529,7 @@
       var allies = bd.allies.map(function (c, i) {
         var m = run.party[i], extra = {};
         if (run.boosts[m] && run.boosts[m].length) extra.boosts = I.clone(run.boosts[m]);
-        if (run.opts.carryHp && run.hp && run.hp[m] !== undefined) extra.hp = Math.max(1, run.hp[m]);
-        if ((run.boosts[m] || []).some(function (b) { return b.k === 'M1'; })) extra.move = B.ally.move + 1;
+        if (run.opts.carryHp && run.hp && run.hp[m] !== undefined) extra.labHpStart = Math.max(1, run.hp[m]);   // 戦闘の始めの HP（onStart で入れる）
         return [m, c[0], c[1], { lab: extra }];
       });
       var enemies = bd.enemies.map(function (c) {
@@ -1585,8 +1585,166 @@
       if (!on('H1') || !ctx.finishers.length) return;
       s.labRunFin = (s.labRunFin || []).concat(ctx.finishers.map(function (f) { return f.name; }));
     });
-    // 周回の移動+1（M1）。周回の戦闘を作るときに、ユニットの移動に足す
+    // 周回の移動+1（M1）
     BOOST_INFO.M1 = { name: '移動+1', mark: '足' };
+    confMore.push(function (u, c) { return boostOf(u, 'M1') ? { hp: c.hp, power: c.power, move: c.move + 1 } : null; });
+
+
+    // ---------------------------------------------------------------
+    // F 移動と手番
+    // ---------------------------------------------------------------
+    // F1: 味方の移動を1（enemyToo なら敵も）
+    confMore.push(function (u, c) {
+      if (!on('F1') || !(u.side === 'ally' || (u.side === 'enemy' && opt('F1', 'enemyToo')))) return null;
+      return { hp: c.hp, power: c.power, move: Math.max(0, Number(opt('F1', 'move'))) };
+    });
+    // F2・F3: 風のマスの向きを覚える（風を置いたとき）
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!(on('F2') || on('F3')) || u.magic !== 'wind') return;
+      ctx.cells.forEach(function (c) {
+        if (!inBounds(s, c[0], c[1]) || !I.isWind(getTile(s, c[0], c[1]))) return;
+        s.labWind = s.labWind || {};
+        s.labWind[idx(s, c[0], c[1])] = facing;
+      });
+    });
+    function windAt(s, x, y) { return s.labWind ? s.labWind[idx(s, x, y)] : undefined; }
+    // F3: 足場（G6 がオンなら武器の自然だけなので、F3 は効かない）
+    function footing() { return on('F3') && !on('G6'); }
+    originMore.push(function (s, u, facing) {
+      if (!footing() || !I.isWind(getTile(s, u.x, u.y))) return null;
+      var w = windAt(s, u.x, u.y);
+      if (!w) return null;
+      var F = DIRS[facing], W = DIRS[w], k = 0;   // 風の中から撃つと、起点が風下へ1マス（丘ならそのうえ1マス先）
+      return { x: u.x + W.dx + F.dx * k, y: u.y + W.dy + F.dy * k };
+    });
+    cellsMore.push(function (s, u, o, facing) {
+      if (!footing() || u.magic !== 'grass') return null;
+      var t = getTile(s, u.x, u.y);
+      if (t !== 'forest' && t !== 'thicket' && t !== 'deepforest') return null;
+      var cells = boostShape(u) ? shapeAt(s, boostShape(u), o, facing) : I.shapeCells(s, u.magic, o.x, o.y, facing);
+      var F = DIRS[facing], last = cells[cells.length - 1];
+      if (last && inBounds(s, last[0] + F.dx, last[1] + F.dy)) cells = cells.concat([[last[0] + F.dx, last[1] + F.dy]]);
+      return cells;
+    });
+    function footLength(s, u, magic, len) {
+      if (!footing() || magic !== 'water' || u.magic !== 'water') return len;
+      var wet = [[u.x, u.y]].concat(neighbors(s, u.x, u.y).map(function (n) { return [n.x, n.y]; })).some(function (c) { return waterTile(getTile(s, c[0], c[1])); });
+      return wet ? len + 1 : len;
+    }
+
+    // F4: 敵の予告は、味方が1人動くごとに1つずつ発動する（予告を出した順）
+    function interleave(s, ev, step) {
+      if (!on('F4') || s.result || !s.enemyActs) return;
+      var e = I.enemiesOf(s).filter(function (x) { return x.intent; })[0];
+      if (!e) return;
+      e.intent = false;
+      ev.push({ type: 'phase', text: '── 【ラボ】' + unitLabel(s, e) + 'の発動（味方が1人動いたので） ──' });
+      I.shoot(s, e, e.facing, ev);
+      step();
+    }
+    // 予告の発動の順番（①②③）
+    function intentOrder(s, id) {
+      if (!on('F4')) return 0;
+      var list = I.enemiesOf(s).filter(function (x) { return x.intent; });
+      for (var i = 0; i < list.length; i++) if (list[i].id === id) return i + 1;
+      return 0;
+    }
+
+    // F5: 構えて、ターンの終わりに一斉に発動。構えは u.labStance = { n }（向きは u.facing）
+    function stancesOf(s) {
+      return I.alliesOf(s).filter(function (a) { return a.labStance; }).sort(function (a, b) { return a.labStance.n - b.labStance.n; });
+    }
+    function setStance(s, u) {
+      s.labStanceSeq = (s.labStanceSeq || 0) + 1;
+      u.labStance = { n: s.labStanceSeq };
+    }
+    // 構えた順に撃つ（ev があれば出来事を残す）。違う味方の魔法が続けて当たったマスから決め手が起きたら「合体！」
+    function fireStances(s, ev, step, exceptId) {
+      if (!on('F5')) return;
+      var touched = {}, rank = {};
+      stancesOf(s).forEach(function (a0, i) { rank[a0.id] = i; });
+      stancesOf(s).forEach(function (a0) {
+        if (a0.id === exceptId || s.result) return;
+        var a = I.findUnit(s, a0.id);
+        if (!a) return;
+        var mark = ev.length;
+        var ctx = I.shoot(s, a, a.facing, ev);
+        ctx.finishers.forEach(function (f) {
+          var by = {};
+          (f.cells || []).concat(f.origin ? [f.origin] : []).forEach(function (c) { var t = touched[key(c[0], c[1])]; if (t && t !== a.id) by[t] = true; });
+          var others = Object.keys(by).sort(function (x, y) { return (rank[x] || 0) - (rank[y] || 0); });   // 構えた順
+          if (!others.length) return;
+          var names = others.map(function (id) { var o = I.findUnit(s, id); return o ? unitLabel(s, o) : id; }).concat([unitLabel(s, a)]);
+          for (var i = mark; i < ev.length; i++) if (ev[i].type === 'finisher' && ev[i].name === f.name) { ev[i].text = '【合体！ ' + names.join('・') + '】' + ev[i].text; ev[i].combo = names; }
+        });
+        ctx.cells.forEach(function (c) { touched[key(c[0], c[1])] = a.id; });
+        if (step) step();
+      });
+      I.alliesOf(s).forEach(function (a) { delete a.labStance; });
+    }
+
+    // F6: 壊す（正面1マスの自然を一段戻す）
+    var BREAK_TO = { forest: 'thicket', mountain: 'hill', river: 'puddle', gale: 'breeze', fire: 'smallfire', thicket: 'empty', hill: 'empty', puddle: 'empty', breeze: 'empty', smallfire: 'empty',
+      volcano: 'mountain', deadforest: 'empty', ice: 'puddle', sakura: 'mountain', hillsakura: 'hill', mirage: 'puddle', mud: 'puddle', firewhirl: 'fire', haunted: 'deadforest' };
+    function breakFront(s, u, facing, ev) {
+      var o = I.castOrigin(s, u, facing), F = DIRS[facing], x = o.x + F.dx, y = o.y + F.dy;
+      var ctx = I.newShot();
+      ctx.s = s;
+      ev.push({ type: 'cast', id: u.id, side: u.side, magic: u.magic, dir: facing, from: [u.x, u.y], cells: [[x, y]], text: '' });
+      var castEv = ev[ev.length - 1];
+      if (!inBounds(s, x, y)) { castEv.text = unitLabel(s, u) + 'は壊そうとしたが、何もなかった'; return; }
+      var t = getTile(s, x, y), to = BREAK_TO[t];
+      if ((t === 'forest' || t === 'mountain' || t === 'river' || t === 'gale') && !B.grow.enabled) to = t === 'river' ? 'puddle' : 'empty';
+      var hit = unitAt(s, x, y);
+      if (hit) addHit(ctx, hit, 1, 'direct');
+      if (to) { setTile(s, x, y, to); ctx.phrases.push(tileName(t) + 'を壊して' + (to === 'empty' ? '空きにした' : tileName(to) + 'にした')); }
+      castEv.text = unitLabel(s, u) + 'が' + DIRS[facing].name + 'を壊した（魔法は撃たない）→ ' + (ctx.phrases.length ? ctx.phrases.join('、') : (hit ? '' : '壊すものがなかった'));
+      I.applyHits(s, ctx, ev);
+    }
+
+    // F7: 作業台（正面3×3の枠。枠に当たった魔法は材料になり、ターンの終わりに積んだ順に枠の全マスへ当たる）
+    function benchCells(s, u, facing) {
+      var o = I.castOrigin(s, u, facing), out = [];
+      [[-1, 1], [0, 1], [1, 1], [-1, 2], [0, 2], [1, 2], [-1, 3], [0, 3], [1, 3]].forEach(function (p) {
+        var d = I.rotate(facing, p[0], p[1]), x = o.x + d[0], y = o.y + d[1];
+        if (inBounds(s, x, y)) out.push([x, y]);
+      });
+      return out;
+    }
+    function placeBench(s, u, facing, ev) {
+      s.labBench = { cells: benchCells(s, u, facing), owner: u.id, dir: facing, mats: [] };
+      ev.push({ type: 'info', id: u.id, cells: s.labBench.cells, text: '【ラボ】' + unitLabel(s, u) + 'が作業台を置いた（正面3×3。枠に当たった魔法は材料になり、ターンの終わりにまとめて変わる）' });
+    }
+    castMore.push(function (s, u, facing, ctx, ev) {
+      if (!on('F7') || !s.labBench) return false;
+      var o = I.castOrigin(s, u, facing);
+      var cells = I.castCells(s, u, facing);
+      if (u.magic === 'water' || u.magic === 'wind') { cells = []; var F = DIRS[facing]; for (var i = 1; i <= 4; i++) cells.push([o.x + F.dx * i, o.y + F.dy * i]); }
+      if (!cells.some(function (c) { return has(s.labBench.cells, c[0], c[1]); })) return false;
+      s.labBench.mats.push({ magic: u.magic, by: u.id, dir: facing });
+      ctx.phrases.push('【ラボ】' + I.magicName(u.magic) + 'を作業台に積んだ（' + s.labBench.mats.length + 'つ目）');
+      cells.forEach(function (c) { if (has(s.labBench.cells, c[0], c[1])) ctx.cells.push(c); });
+      return true;
+    });
+    function craft(s, ev, step) {
+      if (!on('F7') || !s.labBench) return;
+      var b = s.labBench;
+      delete s.labBench;
+      if (!b.mats.length) { ev.push({ type: 'info', cells: b.cells, text: '【ラボ】作業台に何も積まれなかった' }); return; }
+      var owner = I.findUnit(s, b.owner) || { id: b.owner, magic: 'grass', power: 1, x: b.cells[0][0], y: b.cells[0][1] };
+      var ctx = I.newShot();
+      ctx.s = s;
+      b.cells.forEach(function (c) { b.mats.forEach(function (m) { touchMagic(s, owner, m.magic, c[0], c[1], m.dir, ctx, ev); }); });
+      ev.push({ type: 'cast', id: b.owner, side: 'ally', magic: b.mats[0].magic, dir: b.dir, from: b.cells[4] || b.cells[0], cells: b.cells,
+        text: '【ラボ】作業台: ' + b.mats.map(function (m) { return I.magicName(m.magic); }).join('→') + ' が枠の全マスに当たった' + (ctx.phrases.length ? ' → ' + I.summarize(ctx.phrases) : '') });
+      I.applyHits(s, ctx, ev);
+      if (step) step();
+    }
+    // ターンの終わりの始め（敵の発動の前）: F5 の構えの発動・F7 の作業台
+    function beforeEnemyFire(s, ev, step) {
+      if (on('F5') && stancesOf(s).length) { ev.push({ type: 'phase', text: '── 【ラボ】味方の構えの発動（構えた順） ──' }); fireStances(s, ev, step); }
+      if (on('F7') && s.labBench) { ev.push({ type: 'phase', text: '── 【ラボ】作業台 ──' }); craft(s, ev, step); }
+    }
 
     // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
@@ -1626,6 +1784,8 @@
       nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
       decoys: decoysOf, mirrors: mirrors, enclosedAt: enclosedAt, intentHints: intentHints,
       twoStep: twoStep, lengthFor: lengthFor, onDeath: onDeathAll, turnEnd: turnEndAll, boostOf: boostOf, hasBoost: hasBoost, giveBoost: giveBoost,
+      interleave: interleave, intentOrder: intentOrder, stancesOf: stancesOf, setStance: setStance, fireStances: fireStances, breakFront: breakFront,
+      placeBench: placeBench, beforeEnemyFire: beforeEnemyFire, windAt: windAt,
       cannotShoot: cannotShoot, resultMore: resultMore, keepGoing: keepGoing, noAnnihilateWin: noAnnihilateWin, starText: starText, stars: stars, onStart: onStart,
       newRun: newRun, runPaths: runPaths, pathText: pathText, runPreset: runPreset, runOffers: runOffers, runPick: runPick, runAfterBattle: runAfterBattle,
       RUN_STEPS: RUN_STEPS, REWARD_NAME: REWARD_NAME, flagTaken: flagTaken,
