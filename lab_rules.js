@@ -281,7 +281,7 @@
       var t = getTile(s, x, y), tag = why ? '【ラボ】' + why + 'で、' : '【ラボ】';
       if (t === 'deadforest') { ctx.phrases.push(tag + '死の森に火が届いた'); I.doHaunt(s, x, y, ctx, ev); return true; }
       if (I.isWind(t)) { ctx.phrases.push(tag + tileName(t) + 'に火が入った'); I.doFireWhirl(s, x, y, dir, ctx, ev); return true; }
-      if (t === 'puddle') { setTile(s, x, y, 'mirage'); ctx.phrases.push(tag + '水たまりが蜃気楼になった'); return true; }
+      if (t === 'puddle') { setTile(s, x, y, 'mirage'); ctx.phrases.push(tag + '水たまりが蜃気楼になった'); if (on('E2')) (ctx.labMirage = ctx.labMirage || []).push([x, y]); return true; }
       if (t === 'ice') { setTile(s, x, y, 'puddle'); ctx.phrases.push(tag + '氷が溶けて水たまりになった'); return true; }
       if (I.isPlant(t)) { setTile(s, x, y, 'fire'); ctx.phrases.push(tag + tileName(t) + 'が燃えた'); return true; }
       if (t === 'mountain') { ctx.phrases.push(tag + '山に火が点いた'); I.doFunka(s, x, y, ctx, ev, {}); return true; }
@@ -528,8 +528,14 @@
       for (var i = 0; i < hitMore.length; i++) { amount = hitMore[i](ctx, u, amount, src, cell); if (amount === null) return null; }
       return amount;
     }
-    // E9: 閉じこめられた者は予告も撃つこともできない
-    function enclose(s, o, ev) {}
+    // E9: 閉じこめられた者は予告も撃つこともできない。閉じこめた瞬間に出ていた予告は消える
+    function enclose(s, o, ev) {
+      if (!on('E9') || !o || o.side === 'object') return;
+      if (o.intent) {
+        o.intent = false;
+        ev.push({ type: 'info', id: o.id, cells: [[o.x, o.y]], text: '【ラボ】' + unitLabel(s, o) + 'は閉じこめられて外が見えない。予告が消えた' });
+      } else ev.push({ type: 'info', id: o.id, cells: [[o.x, o.y]], text: '【ラボ】' + unitLabel(s, o) + 'は閉じこめられた（中にいる間は撃てない）' });
+    }
     // I8: 金の柱も雷を通す
     function pillarNet(s, net, seen) { return net; }
     // ラボで足した自然に「火が当たった」
@@ -903,6 +909,135 @@
     function afterShot(s, u, facing, ctx, ev) { afterShotMore.forEach(function (f) { f(s, u, facing, ctx, ev); }); }
 
     // ---------------------------------------------------------------
+    // E 敵との駆け引き（E2 偽の姿・E9 閉じこめ・E10 予告に一言）
+    // ---------------------------------------------------------------
+    // E2: 火で水たまりが蜃気楼になったマスを覚える（今の作用と同じことをして、覚えるだけ足す）
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) {
+      if (!on('E2') || u.magic !== 'fire' || t !== 'puddle') return false;
+      setTile(s, x, y, 'mirage');
+      ctx.phrases.push('【新案】水たまりが蜃気楼になった');
+      (ctx.labMirage = ctx.labMirage || []).push([x, y]);
+      return true;
+    });
+    function mirageComp(s, cells) {
+      var out = [], seen = {};
+      cells.forEach(function (c) {
+        if (getTile(s, c[0], c[1]) !== 'mirage') return;
+        connected(s, c[0], c[1], 'mirage').forEach(function (m) { var k = key(m[0], m[1]); if (!seen[k]) { seen[k] = true; out.push(m); } });
+      });
+      return out;
+    }
+    // E2: 映る場所。火を撃った者から見て、蜃気楼のかたまりの一番奥のマス（同じなら術者の筋に近いマス）から reach マス先。
+    //   通れない・蜃気楼・盤の外なら、手前へ1マスずつ戻して最初に立てるマス
+    function mirrorSpot(s, u, facing, comp) {
+      var F = DIRS[facing];
+      var proj = function (c) { return (c[0] - u.x) * F.dx + (c[1] - u.y) * F.dy; };
+      var side = function (c) { return Math.abs((c[0] - u.x) * -F.dy + (c[1] - u.y) * F.dx); };
+      var edgeC = comp.slice().sort(function (a, b) { return proj(b) - proj(a) || side(a) - side(b); })[0];
+      for (var k = Math.max(1, opt('E2', 'reach') || 2); k >= 1; k--) {
+        var x = edgeC[0] + F.dx * k, y = edgeC[1] + F.dy * k;
+        if (inBounds(s, x, y) && I.isPassable(getTile(s, x, y)) && getTile(s, x, y) !== 'mirage') return [x, y];
+      }
+      return null;
+    }
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!on('E2') || !ctx.labMirage) return;
+      var done = {};
+      ctx.labMirage.forEach(function (c) {
+        if (done[key(c[0], c[1])]) return;
+        var comp = mirageComp(s, [c]);
+        if (!comp.length) return;
+        comp.forEach(function (m) { done[key(m[0], m[1])] = true; });
+        var at = mirrorSpot(s, u, facing, comp);
+        var inComp = {};
+        comp.forEach(function (m) { inComp[key(m[0], m[1])] = true; });
+        s.labMirror = (s.labMirror || []).filter(function (mr) { return !mr.from.some(function (f) { return inComp[key(f[0], f[1])]; }); });
+        if (!at) { ev.push({ type: 'info', cells: comp, text: '【ラボ】蜃気楼の奥に立てる所がなく、姿は映らない' }); return; }
+        s.labMirror.push({ at: at, from: comp });
+        ev.push({ type: 'info', cells: [at], text: '【ラボ】蜃気楼が姿を映す場所ができた（映）。中に味方がいるあいだ、そこに偽の姿が立つ' });
+      });
+    });
+    // E2: 今立っている偽の姿 [{ at, ids, id, x, y }]。蜃気楼が消えた映る場所は数えない。映る場所に誰かが立っていると、偽の姿は立たない
+    function decoysOf(s) {
+      if (!on('E2') || !s.labMirror) return [];
+      var out = [];
+      s.labMirror.forEach(function (mr, i) {
+        var comp = mirageComp(s, mr.from);
+        if (!comp.length) return;
+        var inComp = {};
+        comp.forEach(function (m) { inComp[key(m[0], m[1])] = true; });
+        var inside = I.alliesOf(s).filter(function (a) { return unitCells(a).some(function (c) { return inComp[key(c[0], c[1])]; }); });
+        if (!inside.length || unitAt(s, mr.at[0], mr.at[1])) return;
+        out.push({ at: mr.at, ids: inside.map(function (a) { return a.id; }), id: 'decoy' + i, x: mr.at[0], y: mr.at[1], side: 'ally', decoy: true, magic: inside[0].magic, hp: 1 });
+      });
+      return out;
+    }
+    decoyList = decoysOf;
+    // E2: 映る場所の印（蜃気楼が残っているもの）
+    function mirrors(s) {
+      if (!on('E2') || !s.labMirror) return [];
+      return s.labMirror.filter(function (mr) { return mirageComp(s, mr.from).length > 0; }).map(function (mr) { return mr.at; });
+    }
+    // E2: 敵の魔法が偽の姿に当たった（何も起きない）
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!on('E2') || u.side !== 'enemy') return;
+      decoysOf(s).forEach(function (d) {
+        if (has(ctx.cells, d.x, d.y)) ev.push({ type: 'info', id: u.id, cells: [d.at], text: '【ラボ】' + unitLabel(s, u) + 'の魔法は偽の姿をすり抜けた（何も起きない）' });
+      });
+    });
+
+    // E9: 閉じこめる自然（オバケヤシキ・火の渦・B13 底なし沼）
+    function enclosing(t) { return t === 'haunted' || t === 'firewhirl' || (t === 'bog' && on('B13')); }
+    function enclosedAt(s, u, at) {
+      if (!on('E9') || !u) return false;
+      var p = at || [u.x, u.y];
+      return cellsAt(u, p[0], p[1]).concat(unitCells(u)).some(function (c) { return inBounds(s, c[0], c[1]) && enclosing(getTile(s, c[0], c[1])); });
+    }
+    cannotMore.push(function (s, e, ev) {
+      if (!enclosedAt(s, e)) return false;
+      ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: '【ラボ】' + unitLabel(s, e) + 'は閉じこめられていて、外が見えない（予告できない）' });
+      return true;
+    });
+
+    // E10: 敵の魔法ごとに「何があると何が起きるか」（mat は置く材料の名前、word は起きること）
+    var E10_MAT = {
+      fire: [{ t: ['forest', 'thicket'], mat: '森', word: '燃える' }, { t: ['breeze', 'gale'], mat: '風', word: '火の渦' }, { t: ['deadforest'], mat: '死の森', word: 'オバケヤシキ' }, { t: ['puddle'], mat: '水たまり', word: '蜃気楼' }],
+      thunder: [{ t: ['river', 'puddle'], mat: '水', word: '感電' }, { t: ['forest'], mat: '森', word: '燃える' }],
+      water: [{ t: ['firewhirl'], mat: '火の渦', word: 'センタクキ' }, { t: ['fire', 'smallfire'], mat: '炎', word: '消える' }],
+      wind: [{ t: ['fire', 'smallfire'], mat: '炎', word: '燃え広がり' }, { t: ['sakura', 'hillsakura'], mat: '桜', word: '桜吹雪' }],
+      earth: [{ t: ['river', 'puddle'], mat: '水', word: '泥沼' }],
+      ice: [{ t: ['river', 'puddle'], mat: '水', word: '凍る' }],
+      dark: [{ t: ['forest'], mat: '森', word: '死の森' }]
+    };
+    // E10: 予告の形のマスごとの一言 [{ cell, text, title, level }]。level: 'faint'（空き: 置けば起きること）／'ready'（材料がもうある）／'glow'（構えた魔法で材料を置く）
+    //   now: いまの盤面（味方の予測中は撃ったあとの盤面）、base: 予測の前の盤面、fc: now の予告（forecast）
+    function intentHints(now, base, fc) {
+      if (!on('E10') || !fc) return [];
+      var out = [], seen = {};
+      fc.enemies.forEach(function (p) {
+        if (p.cancelled) return;
+        var mats = E10_MAT[p.magic] || [];
+        if (!mats.length) return;
+        (p.cells || []).forEach(function (c) {
+          var k = key(c[0], c[1]);
+          if (seen[k] || unitAt(now, c[0], c[1])) return;
+          var t = getTile(now, c[0], c[1]);
+          var m = mats.filter(function (q) { return q.t.indexOf(t) >= 0; })[0];
+          if (m) {
+            seen[k] = true;
+            var fresh = base && getTile(base, c[0], c[1]) !== t;
+            out.push({ cell: c, text: m.word + '！', title: tileName(t) + 'に敵の' + I.magicName(p.magic) + ' → ' + m.word, level: fresh ? 'glow' : 'ready' });
+          } else if (t === 'empty') {
+            seen[k] = true;
+            out.push({ cell: c, text: mats.slice(0, 2).map(function (q) { return q.mat + '→' + q.word; }).join(' '),
+              title: mats.map(function (q) { return q.mat + 'があれば' + q.word; }).join('／') + '（敵の' + I.magicName(p.magic) + 'の予告）', level: 'faint' });
+          }
+        });
+      });
+      return out;
+    }
+
+    // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
     // setTile のたびに: 燃えると別のものになる自然（I5 蔓の橋は燃えると川）、自然ごとの印の後始末
@@ -938,6 +1073,7 @@
       castOrigin: castOrigin, castCells: castCells, unitConf: unitConf, pushBig: pushBig, onFire: onFire, beforeApply: beforeApply,
       planEnemy: planEnemy, fireStage: fireStage, intentReason: intentReason, cannotIntent: cannotIntent, castMagic: castMagic, afterShot: afterShot,
       nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
+      decoys: decoysOf, mirrors: mirrors, enclosedAt: enclosedAt, intentHints: intentHints,
       crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
       on: on, opt: opt, edge: edge, CH: I.CH,
       shock: shock, haunt: haunt, sentakuki: sentakuki, ringAt: ringAt,

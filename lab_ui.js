@@ -131,6 +131,7 @@
       '<p class="lab-desc">' + esc(c.desc) + '</p>' +
       '<div class="lab-howto"><b>試し方</b><p>' + esc(c.howto) + '</p></div>' +
       (c.deviates ? '<p class="note dev">CLAUDE.md から外れる: ' + esc(c.deviates) + '</p>' : '') +
+      (c.note ? '<p class="note">作ってみて: ' + esc(c.note) + '</p>' : '') +
       '<div class="lab-q"><b>判定の問い</b><ul>' + (c.q || []).map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul></div>' +
       optsHtml(c) +
       '<div class="lab-buttons">' + scenSel +

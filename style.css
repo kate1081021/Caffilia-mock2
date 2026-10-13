@@ -969,3 +969,10 @@ body.lab-open { padding-left: 400px; }
 .ghost.dest.d0 { border-color: #ea580c; color: #ea580c; } .ghost.dest.d1 { border-color: #9333ea; color: #9333ea; }
 .ghost.dest.d2 { border-color: #0284c7; color: #0284c7; } .ghost.dest.d3 { border-color: #16a34a; color: #16a34a; }
 .b-crush { position: absolute; right: 4%; top: 4%; font-size: .7em; font-weight: bold; color: #fff; background: #7c2d12; border-radius: 4px; padding: 0 3px; z-index: 2; pointer-events: none; }
+/* ラボ E2: 映る場所と偽の姿。E10: 予告の形の中の一言 */
+.b-mirror { position: absolute; left: 4%; top: 4%; font-size: .65em; font-weight: bold; color: #0e7490; background: rgba(207, 250, 254, .9); border: 1px dashed #0891b2; border-radius: 4px; padding: 0 3px; z-index: 2; pointer-events: none; }
+.ghost.decoy { border: 3px solid var(--ally); color: var(--ally); background: rgba(255, 255, 255, .55); opacity: .55; border-radius: 22%; font-size: .8em; }
+.b-hint { position: absolute; left: 2%; right: 2%; top: 38%; text-align: center; font-size: .5em; line-height: 1.2; font-weight: bold; border-radius: 4px; pointer-events: none; z-index: 2; white-space: normal; overflow: hidden; }
+.b-hint.faint { color: rgba(124, 58, 237, .7); }
+.b-hint.ready { color: #fff; background: rgba(124, 58, 237, .75); }
+.b-hint.glow { color: #fff; background: #f59e0b; box-shadow: 0 0 8px 2px rgba(245, 158, 11, .85); font-size: .6em; }

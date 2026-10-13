@@ -1084,6 +1084,16 @@
       if (seq.length > 1) dStop[key(lp.to[0], lp.to[1])] = { letter: le.letter, color: li % 4, why: lp.reason };
     });
     if (fcl && fcl.labPaths && R.lab('D4')) fcl.labPaths.forEach(function (lp) { (lp.crush || []).forEach(function (c) { dCrush[key(c[0], c[1])] = true; }); });
+    // ラボ E2: 映る場所の印と偽の姿（予測中は撃ったあとの盤面）。E10: 予告の形の中に「何があると何が起きるか」の一言
+    var eMirror = {}, eDecoy = {}, eHint = {};
+    if (!app.editMode && R.LX) {
+      var stE = pv ? pv.state : st;
+      if (R.lab('E2')) {
+        R.LX.mirrors(stE).forEach(function (c) { eMirror[key(c[0], c[1])] = true; });
+        R.LX.decoys(stE).forEach(function (d) { eDecoy[key(d.x, d.y)] = d; });
+      }
+      if (R.lab('E10') && fc) R.LX.intentHints(stE, pv ? st : null, fc).forEach(function (h) { eHint[key(h.cell[0], h.cell[1])] = h; });
+    }
     // チュートリアル②: 山の頂上と腕（どこが高いか）
     var slopes = st.slopes || {};
 
@@ -1217,6 +1227,9 @@
         if (dLine[k]) inner += dLine[k].arms.map(function (d) { return '<span class="wline d d' + dLine[k].color + ' ' + d + '"></span>'; }).join('') + '<span class="wline d d' + dLine[k].color + ' dot"></span>';
         if (dStop[k] && !unit) inner += '<div class="ghost dest d' + dStop[k].color + '" title="' + esc(dStop[k].why || '次のターンに向かう先') + '">' + esc(dStop[k].letter) + '</div>';
         if (dCrush[k]) inner += '<span class="b-crush" title="大きい敵が次に崩すマス（ラボ D4）">崩</span>';
+        if (eMirror[k]) inner += '<span class="b-mirror" title="映る場所（ラボ E2）: 蜃気楼の中に味方がいると、ここに偽の姿が立つ">映</span>';
+        if (eDecoy[k] && !unit) inner += '<div class="ghost decoy" title="偽の姿（ラボ E2）: 敵には本物に見える。当たっても何も起きない">' + esc(R.magicName(eDecoy[k].magic)) + '</div>';
+        if (eHint[k]) inner += '<span class="b-hint ' + eHint[k].level + '" title="' + esc(eHint[k].title) + '">' + esc(eHint[k].text) + '</span>';
         if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了で馬車が進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';

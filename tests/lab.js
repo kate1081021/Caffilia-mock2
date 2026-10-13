@@ -542,6 +542,99 @@ test('A11: 重い者は泥沼で2回休み、氷に乗ると割れる', function
   eq(R.getTile(r2.state, 2, 3), 'puddle', '氷が割れた');
 });
 
+// ===================================================================
+console.log('\n■ E 敵との駆け引き');
+
+function mirageSetup() {
+  var s = board(['.......', '.......', '.......', '.......', '...P...', '.......', '.......'], true);
+  var f = R.addAlly(s, 'fire', 3, 5, 'up');
+  var w = R.addAlly(s, 'water', 2, 5, 'up');
+  var e = enemyWith(s, 'fire', 3, 0, { aim: 'near' });
+  return { s: s, f: f, w: w, e: e };
+}
+test('E2 オフ: 蜃気楼ができても映る場所はない（今どおり）', function () {
+  var g = mirageSetup();
+  var r = act(g.s, g.f, 'up');
+  eq(tile(r.state, 3, 4), 'mirage');
+  ok(!r.state.labMirror, '盤面に印の項目を足さない');
+});
+test('E2: 蜃気楼の奥（端から2マス先）が映る場所。中に味方がいると偽の姿が立ち、敵はそれを狙う', function () {
+  R.labApply(['E2']);
+  var g = mirageSetup();
+  var r = act(g.s, g.f, 'up');
+  eq(R.LX.mirrors(r.state), [[3, 2]], '映る場所');
+  eq(R.LX.decoys(r.state).length, 0, '中にだれもいなければ立たない');
+  var r2 = R.act(r.state, g.w.id, { to: [3, 4], dir: 'up', shoot: false });
+  var d = R.LX.decoys(r2.state);
+  eq(d.length, 1); eq(d[0].at, [3, 2]); eq(d[0].ids, [g.w.id]);
+  var plan = R.planEnemy(r2.state, R.findUnit(r2.state, g.e.id));
+  eq(plan.target, d[0].id, '敵は偽の姿を狙う');
+  eq(plan.kind, 'attack');
+});
+test('E2: 映る場所が通れないときは、手前へ1マス戻す', function () {
+  R.labApply(['E2']);
+  var s = board(['.......', '.......', '...M...', '.......', '...P...', '.......', '.......'], true);
+  var f = R.addAlly(s, 'fire', 3, 5, 'up');
+  var r = act(s, f, 'up');
+  eq(R.LX.mirrors(r.state), [[3, 3]]);
+});
+test('E2: 偽の姿に敵の魔法が当たっても何も起きない。蜃気楼が晴れると偽の姿も消える', function () {
+  R.labApply(['E2']);
+  var g = mirageSetup();
+  var r = act(g.s, g.f, 'up');
+  var s2 = R.act(r.state, g.w.id, { to: [3, 4], dir: 'up', shoot: false }).state;
+  var en = R.findUnit(s2, g.e.id); en.x = 3; en.y = 1; en.facing = 'down';
+  var ctx = R.previewAct(s2, g.f.id, [3, 5], 'up');   // 撃てる状態のまま
+  ok(ctx);
+  R.setTile(s2, 3, 4, 'empty');
+  eq(R.LX.decoys(s2).length, 0, '蜃気楼がなくなった');
+  eq(R.LX.mirrors(s2).length, 0);
+});
+test('E9: オバケヤシキに閉じこめられた敵の予告は消え、次のターンも予告できない', function () {
+  R.labApply(['E9']);
+  var s = board(['.......', '.......', '...G...', '.......', '.......', '.......', '.......'], true);
+  var e = enemyWith(s, 'fire', 3, 2, { aim: 'count', facing: 'down' });
+  R.addAlly(s, 'water', 3, 3, 'up');
+  var a = R.addAlly(s, 'fire', 2, 3, 'right');
+  s.overrides = { 'enemy.move': 0 };
+  var t = R.startBattle(s).state;
+  tough(t, e);
+  ok(R.findUnit(t, e.id).intent, 'はじめは予告している');
+  R.findUnit(t, a.id).x = 2; R.findUnit(t, a.id).y = 2;
+  var r = R.act(t, a.id, { dir: 'right' });
+  ok(names(r.events).indexOf('オバケヤシキ') >= 0);
+  ok(!R.findUnit(r.state, e.id).intent, '予告が消えた');
+  ok(/予告が消えた/.test(texts(r.events)));
+  var fc = R.forecast(r.state);
+  eq(fc.enemies.length, 0, '予告の計算にも出ない');
+});
+test('E9: 火の渦の中の味方は撃てない（待機はできる）。オフなら撃てる', function () {
+  R.labApply(['E9']);
+  var s = board(['.....', '.QQ..', '.QQ..', '.....', '.....']);
+  var a = R.addAlly(s, 'water', 1, 1, 'up');
+  var r = R.act(s, a.id, { dir: 'up' });
+  ok(!r.ok && /閉じこめられて/.test(r.error), '撃てない: ' + r.error);
+  ok(R.act(s, a.id, { dir: 'up', shoot: false }).ok, '待機はできる');
+  R.labApply([]);
+  ok(R.act(s, a.id, { dir: 'up' }).ok, 'オフなら撃てる');
+});
+test('E10: 予告の形の空きに「森→燃える」、森があれば「燃える！」、構えた魔法で置くなら光る', function () {
+  R.labApply(['E10']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......'], true);
+  enemyWith(s, 'fire', 3, 1, { aim: 'nature', facing: 'down' });
+  var g = R.addAlly(s, 'grass', 3, 6, 'up');
+  s.overrides = { 'enemy.move': 0 };
+  var t = R.startBattle(s).state;
+  var fc = R.forecast(t);
+  var h = R.LX.intentHints(t, null, fc);
+  eq(h.length, 1); eq(h[0].level, 'faint'); ok(/森→燃える/.test(h[0].text), h[0].text);
+  var pv = R.previewAct(t, g.id, [3, 4], 'up');   // 草で (3,2) に森
+  var h2 = R.LX.intentHints(pv.state, t, R.forecast(pv.state));
+  eq(h2[0].level, 'glow'); eq(h2[0].text, '燃える！');
+  R.labApply([]);
+  eq(R.LX.intentHints(t, null, fc).length, 0, 'オフなら出さない');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {
