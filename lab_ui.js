@@ -223,7 +223,7 @@
   function tryCard(c, labOff) {
     var sid = (c.scen || [])[view.scen || 0];
     if (!sid) return;
-    if (sid === 'run') { if (window.LabRun) window.LabRun.start(); else app.say('周回はまだ作っていません'); return; }
+    if (sid === 'run') { if (window.LabRun) window.LabRun.start(c.id); else app.say('周回はまだ作っていません'); return; }
     var p = R.findPreset(sid);
     if (kind(c) === 'exist') {
       // 既存の切り替え: 値を入れて（オフでくらべるなら off の値）、そのシナリオを最初から

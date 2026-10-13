@@ -956,10 +956,11 @@
     if (u.side === 'enemy' && u.labReason && u.intent !== undefined && (R.lab('D1') || R.lab('D9'))) h += '<span class="u-why">' + esc(u.labReason) + '</span>';   // ラボ D1: 予告に理由を一言
     if (u.labBoss) h += '<span class="u-boss">強</span>';
     var bt = R.LX && R.LX.boostText(u);   // ラボ G: 強化の印（★と種類の1文字）
-    if (bt) h += '<span class="u-boost" title="強化: ' + esc(bt) + '">★' + esc(u.boosts.filter(function (b) { return R.lab(b.k); }).map(function (b) { var bi = R.LX.BOOST_INFO[b.k]; return bi ? bi.mark : ''; }).join('')) + '</span>';
+    if (bt) h += '<span class="u-boost" title="強化: ' + esc(bt) + '">★' + esc(u.boosts.filter(function (b) { return R.lab(b.k) || !B.lab[b.k]; }).map(function (b) { var bi = R.LX.BOOST_INFO[b.k]; return bi ? bi.mark : ''; }).join('')) + '</span>';
     if (u.labWear && R.lab('G7')) h += '<span class="u-wear" title="まとっている（次の1発に乗る。ターンの終わりまで）">纏' + esc(R.magicName(u.labWear)) + '</span>';
     if (u.labStage) h += '<span class="u-boss stage" title="大技を組む敵: ' + esc(R.magicName(u.labStage)) + 'で舞台 → ' + esc(R.magicName(u.magic)) + '">技</span>';
     if (st.mission && st.mission.carrier === u.id) h += '<span class="u-treasure" title="宝を持っている（撃てない）">宝</span>';
+    if (st.labChase && st.labChase.runner === u.id && R.lab('H6')) h += '<span class="u-treasure" title="宝を持って逃げる敵（逃げ口に着かれたら負け）">宝</span>';   // ラボ H6
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
     if (view.warn) h += '<span class="u-warn">予告 -' + view.warn + '</span>';
     if (view.dmg) h += '<span class="u-dmg">-' + view.dmg.amount + (view.dmg.dies ? ' 倒れる' : '') + '</span>';
@@ -1142,6 +1143,13 @@
       }
       if (R.lab('E10') && fc) R.LX.intentHints(stE, pv ? st : null, fc).forEach(function (h) { eHint[key(h.cell[0], h.cell[1])] = h; });
     }
+    // ラボ H13: 小さな目標の印。H9: 拠点の旗。H6: 逃げ口
+    var hGoal = {}, hFlag = {}, hExit = {};
+    if (!app.editMode && R.LX) {
+      if (R.lab('H13') && st.labGoals) st.labGoals.forEach(function (g) { g.cells.forEach(function (c) { hGoal[key(c[0], c[1])] = g; }); });
+      if (R.lab('H9') && st.labFlags) st.labFlags.forEach(function (f) { var tk = R.LX.flagTaken(st, f); f.cells.forEach(function (c) { hFlag[key(c[0], c[1])] = { f: f, taken: tk }; }); });
+      if (R.lab('H6') && st.labChase) st.labChase.exits.forEach(function (c) { hExit[key(c[0], c[1])] = true; });
+    }
     // チュートリアル②: 山の頂上と腕（どこが高いか）
     var slopes = st.slopes || {};
 
@@ -1277,6 +1285,9 @@
         if (dCrush[k]) inner += '<span class="b-crush" title="大きい敵が次に崩すマス（ラボ D4）">崩</span>';
         if (eMirror[k]) inner += '<span class="b-mirror" title="映る場所（ラボ E2）: 蜃気楼の中に味方がいると、ここに偽の姿が立つ">映</span>';
         if (eDecoy[k] && !unit) inner += '<div class="ghost decoy" title="偽の姿（ラボ E2）: 敵には本物に見える。当たっても何も起きない">' + esc(R.magicName(eDecoy[k].magic)) + '</div>';
+        if (hGoal[k]) inner += '<span class="b-goal' + (hGoal[k].done ? ' done' : '') + '" title="目標: ' + esc(hGoal[k].name) + (hGoal[k].done ? '（達成）' : '') + '">目</span>';
+        if (hFlag[k]) inner += '<span class="b-flag' + (hFlag[k].taken ? ' taken' : '') + '" title="' + esc(hFlag[k].f.name) + (hFlag[k].taken ? '（取った拠点: 上に立つと形が1マス先から）' : '（全部のマスを別の自然にすると取れる）') + '">' + (hFlag[k].taken ? '拠' : '旗') + '</span>';
+        if (hExit[k]) inner += '<span class="b-exit" title="逃げ口（宝を持った敵が着いたら負け）">逃</span>';
         if (eHint[k]) inner += '<span class="b-hint ' + eHint[k].level + '" title="' + esc(eHint[k].title) + '">' + esc(eHint[k].text) + '</span>';
         if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了で馬車が進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
         if (guide[k] && reach[k] !== undefined) {

@@ -753,6 +753,129 @@ test('G9: 2つ目の魔法と持ち替える（行動前だけ）', function () 
   ok(!R.labSwapMagic(s, g.id).ok, 'オフなら持ち替えられない');
 });
 
+// ===================================================================
+console.log('\n■ H お題と周回');
+
+function seq(list) { var i = 0; return function () { var v = list[i % list.length]; i++; return v; }; }
+test('H1: 周回の道・戦闘の盤面・強化の候補（乱数は戦闘の外だけ）', function () {
+  R.labApply(['H1']);
+  var run = R.LX.newRun(['grass', 'fire', 'wind']);
+  var paths = R.LX.runPaths(run, seq([0, 0.5, 0.2, 0.9, 0.1, 0.3]));
+  eq(paths.length, 2);
+  ok(paths[0].mission !== paths[1].mission, '2つの道はお題が違う');
+  var pr = R.LX.runPreset(run, paths[0]);
+  R.LAB_PRESETS.push(pr);
+  try {
+    R.labApply(pr.lab, pr.labOpts);
+    var s = R.startBattle(R.loadPreset(pr.id)).state;
+    eq(R.alliesOf(s).map(function (a) { return a.magic; }), ['grass', 'fire', 'wind'], 'パーティのまま');
+    var offers = R.LX.runOffers(run, paths[0], seq([0.1, 0.7, 0.4]), s);
+    eq(offers.length, 3);
+    R.LX.runPick(run, offers[0]);
+    eq(run.picked.length, 1);
+    var pr2 = R.LX.runPreset(run, paths[1]);
+    var m = offers[0].m, ally = pr2.allies.filter(function (a) { return a[0] === m; })[0];
+    ok(ally[3].lab.boosts && ally[3].lab.boosts.length === 1, '選んだ強化を持って次の戦闘へ');
+    s.labRunFin = ['燃え広がり']; s.result = 'win';
+    R.LX.runAfterBattle(run, s);
+    eq(run.step, 1); eq(run.fin.length, 1);
+    run.step = R.LX.RUN_STEPS - 1;
+    eq(R.LX.runPaths(run, Math.random)[0].mission, 'boss', '最後は大物');
+  } finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(pr), 1); }
+});
+test('H2: お題ごとに強化の方向が偏る（防衛 → 武器）', function () {
+  R.labApply(['H2']);
+  var run = R.LX.newRun(['grass', 'fire', 'wind']);
+  var offers = R.LX.runOffers(run, { mission: 'defense' }, seq([0.3, 0.6, 0.9]), null);
+  eq(offers.slice(0, 2).map(function (o) { return o.k; }), ['G6', 'G6']);
+});
+test('H5: 消火の盤面では、敵を全員倒しても勝ちにならない', function () {
+  R.labApply(['H5']);
+  var p = R.findPreset('labH5');
+  var s = R.startBattle(R.loadPreset('labH5')).state;
+  R.enemiesOf(s).forEach(function (e) { e.hp = 1; });
+  var e = R.enemiesOf(s)[0];
+  var a = R.alliesOf(s).filter(function (x) { return x.magic === 'fire'; })[0]; var u = R.findUnit(s, a.id); u.x = e.x; u.y = e.y + 1; u.facing = 'up';
+  s.units = s.units.filter(function (x) { return x.side !== 'enemy' || x.id === e.id; });
+  var r = R.act(s, a.id, { dir: 'up' });
+  ok(!R.findUnit(r.state, e.id), '倒れた');
+  ok(r.state.result !== 'win', '勝ちにならない: ' + r.state.result);
+});
+test('H6: 宝を持って逃げる敵が逃げ口に着いたら負け、倒したら勝ち', function () {
+  R.labApply(['H6', 'D1', 'D2']);
+  var s = R.startBattle(R.loadPreset('labH6')).state;
+  var t = s;
+  for (var i = 0; i < 4 && !t.result; i++) t = R.endTurn(t).state;
+  eq(t.result, 'lose', '何もしないと逃げられる');
+  var s2 = R.startBattle(R.loadPreset('labH6')).state;
+  var run = R.findUnit(s2, 'E4'); run.hp = 1;
+  var a = R.alliesOf(s2).filter(function (x) { return x.magic === 'fire'; })[0]; var u = R.findUnit(s2, a.id); u.x = run.x; u.y = run.y + 1;
+  var r = R.act(s2, a.id, { dir: 'up' });
+  eq(r.state.result, 'win');
+});
+test('H8: 持たれていない宝は、風で押される', function () {
+  R.labApply(['H8']);
+  var s = R.startBattle(R.loadPreset('labH8')).state;
+  var w = R.alliesOf(s).filter(function (a) { return a.magic === 'wind'; })[0];
+  var u = R.findUnit(s, w.id); u.x = 3; u.y = 5;
+  var r = R.act(s, w.id, { dir: 'up' });
+  eq(r.state.mission.treasure, [3, 2], '風下へ1マス');
+  R.labApply([]);
+  var r2 = R.act(s, w.id, { dir: 'up' });
+  eq(r2.state.mission.treasure, [3, 3], 'オフなら動かない');
+});
+test('H9: 敵の自然のかたまりを全部変えると拠点。拠点の上の味方は形が1マス先から。2つとも次のターンの終わりまで持てば勝ち', function () {
+  R.labApply(['H9']);
+  var s = R.startBattle(R.loadPreset('labH9')).state;
+  s.tiles[s.size * 2 + 1] = 'fire'; s.tiles[s.size * 2 + 2] = 'fire';
+  s.tiles[s.size * 2 + 4] = 'mud'; s.tiles[s.size * 2 + 5] = 'mud';
+  ok(s.labFlags.every(function (f) { return R.LX.flagTaken(s, f); }));
+  var f = R.alliesOf(s)[0]; var u = R.findUnit(s, f.id); u.x = 4; u.y = 2;
+  eq(R.previewAct(s, f.id, null, 'up').cells, [[4, 0]], '拠点の上は1マス先から');
+  s.enemyActs = false;
+  var t = R.endTurn(s).state;
+  ok(!t.result, '1回目のターン終了ではまだ');
+  t.tiles[t.size * 2 + 1] = 'empty'; t.tiles[t.size * 2 + 2] = 'empty';
+  var t2 = R.endTurn(t).state;
+  eq(t2.result, 'win');
+});
+test('H10 score: 村が壊れても続けられ、残りが星になる。faint: 倒れた味方は2ターン後に戻る', function () {
+  R.labApply(['H10'], { H10: { mode: 'score' } });
+  var s = R.startBattle(R.loadPreset('labH10')).state;
+  var vil = s.units.filter(function (u) { return u.kind === 'village'; })[0];
+  vil.hp = 0; s.enemyActs = false;
+  var t0 = R.endTurn(s).state;
+  ok(!t0.result, '続けられる: ' + t0.result);
+  eq(R.LX.stars(t0), 2, '3つのうち2つ残って星2');
+  R.labApply(['H10'], { H10: { mode: 'faint' } });
+  var s2 = R.startBattle(R.loadPreset('labH10')).state;
+  s2.enemyActs = false;
+  var a = R.alliesOf(s2)[0]; R.findUnit(s2, a.id).hp = 0;
+  var t = R.endTurn(s2).state;
+  ok(!R.findUnit(t, a.id), '倒れた');
+  ok(!t.result && t.labFaint && t.labFaint.length === 1, '気絶（負けにならない）');
+  t = R.endTurn(t).state;
+  ok(R.findUnit(t, a.id), '2ターン後に戻った');
+});
+test('H11: 動かせる人数（残りは構える仲間）', function () {
+  R.labApply(['H11'], { H11: { count: 1 } });
+  var s = R.startBattle(R.loadPreset('labH11')).state;
+  eq(R.alliesOf(s).filter(function (a) { return !a.npc; }).length, 1);
+  R.labApply(['H11'], { H11: { count: 3 } });
+  var s3 = R.startBattle(R.loadPreset('labH11')).state;
+  eq(R.alliesOf(s3).filter(function (a) { return !a.npc; }).length, 3);
+});
+test('H13: 小さな目標を達成すると、その味方はもう1回移動できる（撃てない）', function () {
+  R.labApply(['H13']);
+  var s = R.startBattle(R.loadPreset('labH13')).state;
+  var r = R.act(s, 'P1', { to: [2, 5], dir: 'up' });
+  ok(/目標/.test(texts(r.events)));
+  var u = R.findUnit(r.state, 'P1');
+  ok(!u.acted && u.labMoveOnly);
+  ok(!R.act(r.state, 'P1', { dir: 'up' }).ok, '撃てない');
+  ok(R.act(r.state, 'P1', { to: [1, 6], dir: 'up', shoot: false }).ok, '移動はできる');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

@@ -455,11 +455,12 @@
     var type = missionType(s), m = s.mission || {};
     var enemyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'enemy'; });
     var allyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'ally'; });
+    if (LX) { var lr = LX.resultMore(s, ev); if (lr) { setResult(s, ev, lr.result, lr.text); return; } }   // ラボ H: お題の勝ち負けの足し（追い込み・星 など）
     // 構える味方（チュートリアルの相方）が倒れたら失敗（同じ1発で自分も倒れたときも、こちらを出す）
-    if (ev.some(function (e) { return e.type === 'death' && e.npc; })) { setResult(s, ev, 'lose', '構える味方が倒れた…（失敗）'); return; }
+    if (ev.some(function (e) { return e.type === 'death' && e.npc; }) && !(LX && lab('H11'))) { setResult(s, ev, 'lose', '構える味方が倒れた…（失敗）'); return; }   // ラボ H11: 構える仲間が倒れても続ける
     // 動かせる味方が全員倒れたら負け（構える味方しか残っていなくても負け）
     if (allyDied && controllableOf(s).length === 0) { setResult(s, ev, 'lose', '味方が全員倒れた…（敗北）'); return; }
-    if (type === 'defense' && (m.lost || 0) >= B.mission.defense.loseAt) { setResult(s, ev, 'lose', '村が壊された…（敗北）'); return; }
+    if (type === 'defense' && (m.lost || 0) >= B.mission.defense.loseAt && !(LX && LX.keepGoing(s))) { setResult(s, ev, 'lose', '村が壊された…（敗北）'); return; }   // ラボ H10 score: 壊れても続ける
     if (type === 'escort' && ev.some(function (e) { return e.type === 'death' && e.kind === 'wagon'; }) && !objectsOf(s, 'wagon').length) {
       setResult(s, ev, 'lose', '馬車が壊された…（敗北）'); return;
     }
@@ -467,7 +468,7 @@
       var w = objectsOf(s, 'wagon')[0];
       if (w && inCells(m.goal, w.x, w.y)) { setResult(s, ev, 'win', '馬車がゴールに着いた！（勝利）'); return; }
     }
-    if ((type === 'annihilate' || type === 'defense') && enemyDied && enemiesOf(s).length === 0) {
+    if ((type === 'annihilate' || type === 'defense') && enemyDied && enemiesOf(s).length === 0 && !(LX && LX.noAnnihilateWin(s))) {   // ラボ H5 消火: 敵を倒しても勝ちにならない
       setResult(s, ev, 'win', '敵を全員倒した！（勝利）');
     }
   }
@@ -1553,7 +1554,7 @@
 
   // 奪取: 宝を持っている味方（この手番で宝のマスで移動を終える味方も）は撃てない
   function canShoot(s, u, to) {
-    if (LX && lab('E9') && u && u.side === 'ally' && LX.enclosedAt(s, u, to)) return false;   // ラボ E9: 閉じこめられている間は撃てない
+    if (LX && u && u.side === 'ally' && LX.cannotShoot(s, u, to)) return false;   // ラボ E9: 閉じこめられている間・H13: ごほうびの移動は撃てない
     var m = s.mission;
     if (!m || missionType(s) !== 'retrieve' || !u || u.side !== 'ally') return true;
     if (m.carrier === u.id) return false;
@@ -1575,7 +1576,7 @@
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
     var dist = reachInfo(s0, u0).dist[key(to[0], to[1])];
     if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
-    if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, LX && lab('E9') && LX.enclosedAt(s0, u0, to) ? '閉じこめられていて撃てない（待機だけ）' : '宝を持っている間は撃てない（待機だけ）');
+    if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, (LX && LX.cannotShoot(s0, u0, to)) || '宝を持っている間は撃てない（待機だけ）');
 
     var s = clone(s0);
     var u = findUnit(s, unitId);
@@ -2214,7 +2215,7 @@
 
     // 4b. 防衛: 決まったターンのターン終了処理が終わったとき、村が残っていれば勝ち
     if (!s.result && missionType(s) === 'defense' && s.turn >= B.mission.defense.turns && objectsOf(s, 'village').length) {
-      setResult(s, ev, 'win', 'ターン' + s.turn + 'を守り切った。村は無事！（勝利）');
+      setResult(s, ev, 'win', 'ターン' + s.turn + 'を守り切った。村は無事！（勝利）' + (LX ? LX.starText(s) : ''));   // ラボ H10 score: 星
       step();
     }
 
@@ -2240,6 +2241,7 @@
   // 戦闘の始まり: 遊び始めの状態にそろえて、敵の移動と予告まで済ませる（味方は最初の手番から予告を見られる）
   function startBattle(s0) {
     var s = normalizeForPlay(s0);
+    if (LX) LX.onStart(s);   // ラボ H11: 動かせる人数
     var ev = [], steps = [], mark = 0;
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }

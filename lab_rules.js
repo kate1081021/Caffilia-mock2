@@ -635,6 +635,7 @@
 
     // D1・D9: 欲を持つ敵・大技を組む敵の手の選び方。ほかの敵は null（今の選び方）
     function planEnemy(s, e) {
+      for (var pi = 0; pi < (planMore || []).length; pi++) { var pm = planMore[pi](s, e); if (pm) return pm; }   // H9 拠点を取り返す など
       if (on('D9') && e.labStage) { var p9 = planCombo(s, e); if (p9) return p9; }
       if (!on('D1') || !DESIRE[e.aim]) return null;
       var allies = sees(s, e);
@@ -1062,7 +1063,7 @@
     }
     function boostText(u) {
       if (!u || !u.boosts) return '';
-      return u.boosts.filter(function (b) { return on(b.k); }).map(function (b) {
+      return u.boosts.filter(function (b) { return on(b.k) || !B.lab[b.k]; }).map(function (b) {
         if (b.k === 'G2') return '伸びる×' + b.v;
         if (b.k === 'G3') { var f = FORMS[u.magic] && FORMS[u.magic][b.v]; return '姿: ' + (f ? f.name : b.v); }
         if (b.k === 'G4' || b.k === 'G5') return (b.k === 'G4' ? '融合: ' : '最終融合: ') + b.v.map(I.magicName).join('→');
@@ -1311,6 +1312,282 @@
       return { ok: true, state: s, events: [], steps: [] };
     }
 
+
+    // ---------------------------------------------------------------
+    // H お題と周回
+    // ---------------------------------------------------------------
+    // 撃てない理由（E9 閉じこめ・H13 ごほうびの移動）。撃てるなら false
+    function cannotShoot(s, u, to) {
+      if (enclosedAt(s, u, to)) return '閉じこめられていて撃てない（待機だけ）';
+      if (on('H13') && u.labMoveOnly) return 'ごほうびの移動は撃てない（待機だけ）';
+      return false;
+    }
+    // お題の勝ち負けの足し（checkResult の最初に呼ばれる）。{ result, text } か null
+    function resultMore(s, ev) {
+      var enemyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'enemy'; });
+      if (on('H6') && s.labChase && enemyDied && !I.findUnit(s, s.labChase.runner)) return { result: 'win', text: '宝を持って逃げる敵を倒した！（勝利）' };
+      if (on('H10') && opt('H10', 'mode') === 'score' && I.missionType(s) === 'defense' && !I.objectsOf(s, 'village').length) return { result: 'lose', text: '村がひとつも残らなかった…（星0・敗北）' };
+      return null;
+    }
+    function keepGoing(s) { return on('H10') && opt('H10', 'mode') === 'score'; }
+    function noAnnihilateWin(s) { return on('H5') && !!s.labExtinguish; }
+    function starText(s) {
+      if (!(on('H10') && opt('H10', 'mode') === 'score')) return '';
+      return '　星 ' + stars(s) + ' / 3';
+    }
+    function stars(s) {
+      var type = I.missionType(s);
+      if (type === 'defense') {
+        var all = s.labVillages || I.objectsOf(s, 'village').length || 1, left = I.objectsOf(s, 'village').length;
+        return Math.round(3 * left / all);
+      }
+      if (type === 'escort') { var w = I.objectsOf(s, 'wagon')[0]; return w ? Math.min(3, w.hp) : 0; }
+      return 3;
+    }
+    // H11: 動かせる人数（残りは構える仲間）。H10: 星のために村の数を覚える
+    function onStart(s) {
+      if (on('H11')) {
+        var n = Math.max(1, Math.min(3, Number(opt('H11', 'count')) || 1));
+        I.alliesOf(s).filter(function (a) { return !a.npc; }).forEach(function (a, i) { if (i >= n) { a.npc = true; a.labNpc = true; } });
+      }
+      if (on('H10') && opt('H10', 'mode') === 'score') s.labVillages = I.objectsOf(s, 'village').length;
+    }
+    // H10 faint: 倒れた味方は2ターン後に、味方の段の端に戻る
+    var deathMore = [];
+    function onDeathAll(s, dead, ev) {
+      onDeath(s, dead, ev);
+      if (on('H10') && opt('H10', 'mode') === 'faint') dead.forEach(function (d) {
+        if (d.side !== 'ally' || d.npc) return;
+        s.labFaint = (s.labFaint || []).concat([{ unit: I.clone(d), back: s.turn + 2 }]);
+        ev.push({ type: 'info', text: '【ラボ】' + unitLabel(s, d) + 'は気絶した（ターン' + (s.turn + 2) + 'に味方の段の端に戻る）' });
+      });
+    }
+    function turnEndAll(s, ev) {
+      turnEnd(s, ev);
+      if (on('H10') && s.labFaint && s.labFaint.length) {
+        var keep = [];
+        s.labFaint.forEach(function (f) {
+          if (f.back > s.turn + 1) { keep.push(f); return; }
+          var row = I.rowsOf(s) - 1, spot = null;
+          for (var i = 0; i < s.size && !spot; i++) {
+            [i, s.size - 1 - i].forEach(function (x) { if (!spot && I.isPassable(getTile(s, x, row)) && !unitAt(s, x, row)) spot = [x, row]; });
+          }
+          if (!spot) { keep.push(f); return; }
+          var u = f.unit; u.x = spot[0]; u.y = spot[1]; u.hp = u.maxHp; u.acted = false; u.stuck = false; u.burn = 0; u.facing = 'up';
+          delete u.labWear;
+          s.units.push(u);
+          ev.push({ type: 'info', id: u.id, cells: [spot], text: '【ラボ】' + unitLabel(s, u) + 'が戻ってきた' });
+        });
+        s.labFaint = keep;
+      }
+      if (on('H9') && s.labFlags) {
+        var all = s.labFlags.every(function (f) { return flagTaken(s, f); });
+        s.labHeld = all ? (s.labHeld || 0) + 1 : 0;
+        if (all) ev.push({ type: 'info', text: '【ラボ】拠点を2つとも持っている（' + s.labHeld + 'ターン目の終わり）' });
+        if (s.labHeld >= 2 && !s.result) I.setResult(s, ev, 'win', '拠点を2つとも守りきった！（勝利）');
+      }
+      if (on('H13')) s.units.forEach(function (x) { delete x.labMoveOnly; });
+    }
+
+    // H6: 宝を持って逃げる敵が逃げ口に着いたら負け
+    afterMoveMore.push(function (s, u, from, to, ev) {
+      if (!on('H6') || !s.labChase || u.id !== s.labChase.runner || s.result) return;
+      if (has(s.labChase.exits, u.x, u.y)) I.setResult(s, ev, 'lose', unitLabel(s, u) + 'が宝を持って逃げ口に着いた…（敗北）');
+    });
+
+    // H8: 持たれていない宝は、風で押され、源流に乗って流れる
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      var m = s.mission;
+      if (!on('H8') || !m || !m.treasure || m.carrier) return;
+      var t = m.treasure, F = DIRS[facing];
+      if (!has(ctx.cells, t[0], t[1])) return;
+      if (u.magic === 'wind') {
+        var nx = t[0] + F.dx, ny = t[1] + F.dy;
+        if (inBounds(s, nx, ny) && I.isPassable(getTile(s, nx, ny)) && !unitAt(s, nx, ny)) {
+          m.treasure = [nx, ny];
+          ev.push({ type: 'treasure', cells: [[nx, ny]], text: '【ラボ】宝が風で' + F.name + 'へ1マス運ばれた' });
+        }
+      } else if (u.magic === 'water' && getTile(s, t[0], t[1]) === 'river') {
+        // 川の流れの先（この1発の通り道のうち、宝より先で一番遠い川）まで流れる。着いたマスに人がいれば、その手前
+        var idx0 = -1;
+        ctx.cells.forEach(function (c, i) { if (c[0] === t[0] && c[1] === t[1]) idx0 = i; });
+        var to = null;
+        for (var i = ctx.cells.length - 1; i > idx0; i--) {
+          var c = ctx.cells[i];
+          if (getTile(s, c[0], c[1]) === 'river' && !unitAt(s, c[0], c[1])) { to = c; break; }
+        }
+        if (to) {
+          // 川の上には立てないので、流れ着いた先の隣の岸に打ち上げる（向きの先 → 左右）
+          var land = [[to[0] + F.dx, to[1] + F.dy], [to[0] - F.dy, to[1] + F.dx], [to[0] + F.dy, to[1] - F.dx]].filter(function (c) {
+            return inBounds(s, c[0], c[1]) && I.isPassable(getTile(s, c[0], c[1])) && !unitAt(s, c[0], c[1]);
+          })[0] || to;
+          m.treasure = land.slice();
+          ev.push({ type: 'treasure', cells: [land], text: '【ラボ】宝が川に乗って流れた（' + land[0] + ',' + land[1] + '）' });
+        }
+      }
+    });
+
+    // H9: 拠点（敵の旗の自然のかたまり。全部のマスが別の自然になったら取れる）
+    function flagTaken(s, f) { return f.cells.every(function (c) { return getTile(s, c[0], c[1]) !== f.tile; }); }
+    function flagAt(s, x, y) { return (s.labFlags || []).filter(function (f) { return has(f.cells, x, y); })[0] || null; }
+    originMore.push(function (s, u, facing) {
+      if (!on('H9') || u.side !== 'ally' || !s.labFlags) return null;
+      var f = flagAt(s, u.x, u.y);
+      if (!f || !flagTaken(s, f)) return null;
+      var F = DIRS[facing], k = getTile(s, u.x, u.y) === 'hill' ? 2 : 1;
+      return { x: u.x + F.dx * k, y: u.y + F.dy * k };
+    });
+    var planMore = [];
+    planMore.push(function (s, e) {
+      if (!on('H9') || !s.labFlags) return null;
+      var taken = s.labFlags.filter(function (f) { return flagTaken(s, f); });
+      if (!taken.length) return null;
+      var cs = candidates(s, e);
+      var back = function (c) {
+        var n = 0;
+        taken.forEach(function (f) { f.cells.forEach(function (q) { var i = idx(s, q[0], q[1]); if (c.r.after[i] === f.tile && c.r.before[i] !== f.tile) n++; }); });
+        return n;
+      };
+      var best = pickBest(cs.safe, function (c) { var b = back(c); return b > 0 ? [b, c.r.allyHits] : null; });
+      if (best) return { to: best.to, dir: best.dir, dist: best.dist, kind: 'nature', reason: '拠点を取り返す' };
+      var goals = [];
+      taken.forEach(function (f) { f.cells.forEach(function (q) { goals.push(q); }); });
+      return approach(s, e, cs, goals, '拠点へ向かう');
+    });
+
+    // H13: 小さな目標（印のマスを、決まった自然にする）。達成すると、撃った味方がもう1回移動できる（撃てない）
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!on('H13') || !s.labGoals || u.side !== 'ally') return;
+      s.labGoals.forEach(function (g) {
+        if (g.done || !g.cells.every(function (c) { return getTile(s, c[0], c[1]) === g.tile; })) return;
+        g.done = true;
+        u.acted = false; u.labMoveOnly = true;
+        ev.push({ type: 'info', id: u.id, cells: g.cells, text: '【ラボ】目標「' + g.name + '」達成！ ' + unitLabel(s, u) + 'はもう1回移動できる（撃てない）。' + (g.hint || '') });
+      });
+    });
+
+    // H1: 周回（戦闘の外。乱数は戦闘の外だけ）。盤面のひな型はお題ごと。敵の魔法は道ごとに変える
+    var RUN_BOARDS = {
+      annihilate: [
+        { rows: ['.......', '.......', '..F.F..', '.......', '.......', '.......', '.......'], allies: [[1, 6], [3, 6], [5, 6]], enemies: [[1, 0, 'near'], [5, 0, 'count']] },
+        { rows: ['.......', '...M...', '.......', '.R...R.', '.R...R.', '.......', '.......'], allies: [[1, 6], [3, 6], [5, 6]], enemies: [[3, 0, 'count'], [6, 1, 'near']] },
+        { rows: ['.......', '.......', '.FF.FF.', '.......', '...P...', '.......', '.......'], allies: [[2, 6], [3, 6], [4, 6]], enemies: [[0, 0, 'near'], [6, 0, 'count']] }
+      ],
+      defense: [
+        { rows: ['.......', '.......', '..F.F..', '.......', '.......', '.......', '.......'], allies: [[2, 6], [3, 6], [4, 6]], enemies: [[1, 0, 'target'], [5, 0, 'count']], villages: [[1, 6], [5, 6]] },
+        { rows: ['.......', '.......', '.......', '...M...', '.......', '.......', '.......'], allies: [[2, 5], [3, 6], [4, 5]], enemies: [[2, 0, 'target'], [5, 0, 'target']], villages: [[0, 6], [6, 6]] },
+        { rows: ['.......', '.......', '.R...R.', '.R...R.', '.......', '.......', '.......'], allies: [[1, 6], [3, 5], [5, 6]], enemies: [[3, 0, 'target'], [0, 0, 'count']], villages: [[3, 6]] }
+      ],
+      escort: [
+        { rows: ['...R...', '...R...', '...R...', '...R...', '.......', '...R...', '...R...'], allies: [[0, 6], [2, 6], [1, 4]], enemies: [[5, 0, 'target'], [6, 6, 'count']], wagon: [1, 5], goal: 'right' },
+        { rows: ['.......', '..MMM..', '.......', '.......', '.......', '..RRR..', '.......'], allies: [[0, 4], [0, 2], [1, 3]], enemies: [[6, 0, 'target'], [6, 6, 'near']], wagon: [0, 3], goal: 'right' }
+      ],
+      retrieve: [
+        { rows: ['.M...M.', '..F.F..', '.......', '.......', '.......', '.......', '.......'], allies: [[1, 6], [3, 6], [5, 6]], enemies: [[2, 0, 'target'], [4, 0, 'count']], treasure: [3, 0], exit: 'bottom' },
+        { rows: ['...M...', '.......', '.R...R.', '.......', '.......', '.......', '.......'], allies: [[1, 6], [3, 6], [5, 6]], enemies: [[1, 0, 'target'], [5, 1, 'count']], treasure: [3, 1], exit: 'bottom' }
+      ],
+      boss: [
+        { rows: ['........', '........', '........', '........', '........', '........', '........', '........'], allies: [[1, 7], [4, 7], [6, 7]], enemies: [[3, 0, 'count', true]] }
+      ]
+    };
+    var RUN_MISSIONS = ['annihilate', 'defense', 'escort', 'retrieve'];
+    var MISSION_NAME = { annihilate: '全滅', defense: '防衛', escort: '護衛', retrieve: '奪取', boss: '大物' };
+    var RUN_ENEMY_MAGICS = ['fire', 'water', 'earth', 'wind', 'thunder', 'grass'];
+    var RUN_STEPS = 5;   // 戦闘4回＋最後の大物
+    var REWARD_DIR = { retrieve: 'shape', defense: 'ground', annihilate: 'power', escort: 'carry' };
+    var REWARD_NAME = { shape: '形（姿が変わる）', ground: '足場（武器）', power: '威力（一気に二段・融合）', carry: '運ぶ（移動+1）' };
+    function newRun(party) {
+      return { party: party.slice(0, 3), step: 0, boosts: {}, fin: [], picked: [], hp: null, prevTiles: null, opts: { H2: on('H2'), H12: on('H12'), carryHp: !!opt('H1', 'carryHp'), speedBonus: !!opt('H1', 'speedBonus'), speedTurns: Number(opt('H1', 'speedTurns')) || 3 } };
+    }
+    function runPaths(run, rnd) {
+      if (run.step >= RUN_STEPS - 1) return [{ mission: 'boss', enemy: 'fire', board: 0 }];
+      var ms = RUN_MISSIONS.slice(), out = [];
+      for (var i = 0; i < 2; i++) {
+        var m = ms.splice(Math.floor(rnd() * ms.length), 1)[0];
+        out.push({ mission: m, enemy: RUN_ENEMY_MAGICS[Math.floor(rnd() * RUN_ENEMY_MAGICS.length)], board: Math.floor(rnd() * RUN_BOARDS[m].length), reward: run.opts.H2 ? REWARD_DIR[m] : null });
+      }
+      return out;
+    }
+    function pathText(p) { return MISSION_NAME[p.mission] + '・' + I.magicName(p.enemy) + 'の敵' + (p.reward ? '（報酬: ' + REWARD_NAME[p.reward] + '）' : ''); }
+    var TILE_CH = null;
+    function tileCh(t) {
+      if (!TILE_CH) { TILE_CH = {}; Object.keys(I.CH).forEach(function (k) { if (!TILE_CH[I.CH[k]]) TILE_CH[I.CH[k]] = k; }); }
+      return TILE_CH[t] || '.';
+    }
+    // 道 p の戦闘をラボ用シナリオの形で作る
+    function runPreset(run, p) {
+      var bd = RUN_BOARDS[p.mission][p.board || 0];
+      var rows = bd.rows.slice(), n = rows[0].length;
+      if (run.opts.H12 && run.prevTiles && run.prevTiles.size === n && run.prevTiles.rows === rows.length) {
+        for (var y = 0; y < Math.floor(rows.length / 2); y++) {
+          var line = '';
+          for (var x = 0; x < n; x++) line += tileCh(run.prevTiles.tiles[y * n + x]);
+          rows[y] = line;
+        }
+      }
+      var allies = bd.allies.map(function (c, i) {
+        var m = run.party[i], extra = {};
+        if (run.boosts[m] && run.boosts[m].length) extra.boosts = I.clone(run.boosts[m]);
+        if (run.opts.carryHp && run.hp && run.hp[m] !== undefined) extra.hp = Math.max(1, run.hp[m]);
+        if ((run.boosts[m] || []).some(function (b) { return b.k === 'M1'; })) extra.move = B.ally.move + 1;
+        return [m, c[0], c[1], { lab: extra }];
+      });
+      var enemies = bd.enemies.map(function (c) {
+        var e = [p.mission === 'boss' ? 'fire' : p.enemy, c[0], c[1], { aim: c[2] }];
+        if (c[3]) e[3].lab = { size: 'D3', labBoss: true };
+        return e;
+      });
+      var lab = ['H1', 'G1', 'G3', 'G4', 'G6', 'G9'].concat(run.opts.H2 ? ['H2'] : []).concat(run.opts.H12 ? ['H12'] : []).concat(p.mission === 'boss' ? ['D3', 'D5'] : []);
+      var pr = { id: 'labRunBattle', labCat: 'H', lab: lab, labOpts: { H1: { carryHp: run.opts.carryHp, speedBonus: run.opts.speedBonus, speedTurns: run.opts.speedTurns } },
+        name: '周回 ' + (run.step + 1) + '/' + RUN_STEPS + ': ' + pathText(p), desc: '【周回】' + pathText(p), rows: rows, allies: allies, enemies: enemies,
+        overrides: { 'grow.enabled': true }, mission: p.mission === 'boss' ? 'annihilate' : p.mission, labRun: true };
+      if (bd.villages) pr.villages = bd.villages;
+      if (bd.wagon) { pr.wagon = bd.wagon; pr.goal = []; for (var gy = 0; gy < rows.length; gy++) pr.goal.push([n - 1, gy]); }
+      if (bd.treasure) { pr.treasure = bd.treasure; pr.exit = []; for (var ex = 0; ex < n; ex++) pr.exit.push([ex, rows.length - 1]); }
+      return pr;
+    }
+    // 勝ったあとの強化の候補（作った強化だけ。H2 がオンなら、お題の方向から2つ）
+    function runOffers(run, p, rnd, state) {
+      var pool = [];
+      run.party.forEach(function (m) {
+        var have = function (k) { return (run.boosts[m] || []).some(function (b) { return b.k === k; }); };
+        if (!have('G1') && ['grass', 'earth', 'water', 'wind', 'fire'].indexOf(m) >= 0) pool.push({ m: m, k: 'G1', v: true, dir: 'power', label: I.magicName(m) + ': 一気に二段' });
+        if (!have('G3') && FORMS[m]) ['A', 'B'].forEach(function (f) { pool.push({ m: m, k: 'G3', v: f, dir: 'shape', label: I.magicName(m) + ': 姿「' + FORMS[m][f].name + '」（' + FORMS[m][f].note + '）' }); });
+        if (!have('G4')) run.party.forEach(function (o) { if (o !== m) pool.push({ m: m, k: 'G4', v: [o, m], dir: 'power', label: I.magicName(m) + ': 融合 ' + I.magicName(o) + '→' + I.magicName(m) }); });
+        if (!have('G6')) Object.keys(WEAPONS).forEach(function (w) { pool.push({ m: m, k: 'G6', v: w, dir: 'ground', label: I.magicName(m) + ': 武器「' + WEAPONS[w].name + '」（' + WEAPONS[w].where + 'で形が少し変わる）' }); });
+        if (!have('M1')) pool.push({ m: m, k: 'M1', v: true, dir: 'carry', label: I.magicName(m) + ': 移動+1' });
+      });
+      var n = 3 + (run.opts.speedBonus && state && state.turn <= run.opts.speedTurns ? 1 : 0);
+      var out = [], take = function (list) { var i = Math.floor(rnd() * list.length); out.push(list[i]); pool.splice(pool.indexOf(list[i]), 1); };
+      var dir = run.opts.H2 && p ? REWARD_DIR[p.mission] : null;
+      while (out.length < n && pool.length) {
+        var fav = dir ? pool.filter(function (o) { return o.dir === dir; }) : [];
+        take(fav.length && out.length < 2 ? fav : pool);
+      }
+      return out;
+    }
+    function runPick(run, offer) {
+      var list = (run.boosts[offer.m] || []).filter(function (b) { return b.k !== offer.k; });
+      list.push(offer.v === true ? { k: offer.k } : { k: offer.k, v: offer.v });
+      run.boosts[offer.m] = list;
+      run.picked.push(offer.label);
+    }
+    // 戦闘の終わりの盤面を周回に残す（決め手の一覧・HP・自然）
+    function runAfterBattle(run, s) {
+      run.fin = run.fin.concat((s.labRunFin || []).map(function (f) { return { step: run.step + 1, name: f }; }));
+      run.hp = {};
+      run.party.forEach(function (m) { var a = I.alliesOf(s).filter(function (x) { return x.magic === m || boostOf(x, 'G9') === m; })[0]; run.hp[m] = a ? a.hp : 0; });
+      run.prevTiles = { size: s.size, rows: I.rowsOf(s), tiles: s.tiles.slice() };
+      (s.labLearned || []).forEach(function (l) { run.party.forEach(function (m) { if (m === l.magic) runPick(run, { m: m, k: l.k, v: l.v === undefined ? true : l.v, label: I.magicName(m) + ': ' + (BOOST_INFO[l.k] ? BOOST_INFO[l.k].name : l.k) + '（敵から覚えた）' }); }); });
+      run.step++;
+    }
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!on('H1') || !ctx.finishers.length) return;
+      s.labRunFin = (s.labRunFin || []).concat(ctx.finishers.map(function (f) { return f.name; }));
+    });
+    // 周回の移動+1（M1）。周回の戦闘を作るときに、ユニットの移動に足す
+    BOOST_INFO.M1 = { name: '移動+1', mark: '足' };
+
     // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
@@ -1348,7 +1625,10 @@
       planEnemy: planEnemy, fireStage: fireStage, intentReason: intentReason, cannotIntent: cannotIntent, castMagic: castMagic, afterShot: afterShot,
       nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
       decoys: decoysOf, mirrors: mirrors, enclosedAt: enclosedAt, intentHints: intentHints,
-      twoStep: twoStep, lengthFor: lengthFor, onDeath: onDeath, turnEnd: turnEnd, boostOf: boostOf, hasBoost: hasBoost, giveBoost: giveBoost,
+      twoStep: twoStep, lengthFor: lengthFor, onDeath: onDeathAll, turnEnd: turnEndAll, boostOf: boostOf, hasBoost: hasBoost, giveBoost: giveBoost,
+      cannotShoot: cannotShoot, resultMore: resultMore, keepGoing: keepGoing, noAnnihilateWin: noAnnihilateWin, starText: starText, stars: stars, onStart: onStart,
+      newRun: newRun, runPaths: runPaths, pathText: pathText, runPreset: runPreset, runOffers: runOffers, runPick: runPick, runAfterBattle: runAfterBattle,
+      RUN_STEPS: RUN_STEPS, REWARD_NAME: REWARD_NAME, flagTaken: flagTaken,
       boostText: boostText, boostShape: boostShape, FORMS: FORMS, WEAPONS: WEAPONS, BOOST_INFO: BOOST_INFO, GROW_LIST: GROW_LIST, GROW_DIR: GROW_DIR,
       api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic },
       crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
