@@ -696,7 +696,8 @@
     area.forEach(function (c) {
       var t = getTile(s, c.x, c.y), tt = target(c);
       if (t === tt || t === to) return;   // もう同じか、より高い（山のまわりの丘にしようとしたら山だった）
-      if (!from[t] || unitAt(s, c.x, c.y)) { g.blocked.push([c.x, c.y]); return; }
+      var under = B.ideas.natureUnderUnits && !lab('C1') && isPassable(tt);   // 人の足元にも、立てる自然（森）なら育つ
+      if (!from[t] || (unitAt(s, c.x, c.y) && !under)) { g.blocked.push([c.x, c.y]); return; }
       setTile(s, c.x, c.y, tt);
       g.cells.push([c.x, c.y]);
       g.tiles.push(tt);
@@ -749,20 +750,22 @@
       if (o) addHit(ctx, o, u.power, 'direct');
       var t = getTile(s, x, y);
       if (LX && LX.placeCell(s, u, x, y, t, o, facing, ctx, ev)) return;   // ラボ: 置く・点ける魔法の、案ごとの作用（ほかの作用より先に見る）
+      // 人の足元にも自然ができる（ideas.natureUnderUnits）: 人がいても、立てる自然なら置く（ラボ C1 がオンなら今どおり置かない）
+      var free = function (to) { return !o || (B.ideas.natureUnderUnits && !lab('C1') && isPassable(to)); };
       if (u.magic === 'grass') {
         // 【育つ】入のときは、空きに草で草むら、草むらに草で森に育つ
         var lowG = B.grow.enabled ? 'thicket' : 'forest';
-        if (!o && t === 'empty') { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた'); planted.push([x, y, lowG]); }
-        else if (!o && t === 'thicket' && B.grow.enabled) growFrom.push([x, y]);
+        if (free(lowG) && t === 'empty') { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた' + (o ? '（' + unitLabel(s, o) + 'の足元）' : '')); planted.push([x, y, lowG]); }
+        else if (free('forest') && t === 'thicket' && B.grow.enabled) growFrom.push([x, y]);
         else if (!o && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); }
-        else if (!o && t === 'hill' && B.grow.enabled && B.sakura.from === 'grass') { setTile(s, x, y, 'hillsakura'); ctx.phrases.push('【育つ】丘に桜が咲いた'); }
+        else if (free('hillsakura') && t === 'hill' && B.grow.enabled && B.sakura.from === 'grass') { setTile(s, x, y, 'hillsakura'); ctx.phrases.push('【育つ】丘に桜が咲いた'); }
       } else if (u.magic === 'earth') {
         // 【育つ】入のときは、空きに土で丘、丘に土で山に育つ。火を埋めても丘
         var low = B.grow.enabled ? 'hill' : 'mountain';
-        if (!o && t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた'); }
+        if (free(low) && t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた' + (o ? '（' + unitLabel(s, o) + 'の足元）' : '')); }
         else if (!o && t === 'hill' && B.grow.enabled) growFrom.push([x, y]);   // 育つのは、形のほかのマスを済ませたあと（順番で結果が変わらないように）
-        else if (!o && (t === 'river' || t === 'puddle')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); }
-        else if (!o && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); }
+        else if (free('mud') && (t === 'river' || t === 'puddle')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); if (o) enterMud(s, o, ev); }
+        else if (free(low) && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); }
       } else if (u.magic === 'mount') {
         // 盛る（山）: 一度で山。ユニットのいるマスは直撃し、倒れたらそのマスにも山を盛る（倒れなければ盛らない。押し出すかは持ち帰り）
         if (!o) { if (mountCell(s, x, y, ctx)) markSlope(s, peak, x, y); }
@@ -1263,7 +1266,12 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
-      if (o) { addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった'; break; }
+      if (o) {
+        addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
+        // 人の足元にも自然ができる: 池が立てる水たまりのとき（育つが入）だけ、当たった人の足元にも水たまり
+        if (B.ideas.natureUnderUnits && !lab('C1') && puddleOn && !sourced && !growing && t === 'empty') { setTile(s, x, y, 'puddle'); made++; }
+        break;
+      }
       if (growing) {
         // 【育つ】育つ川は、空き・水たまり・草むらを川にして進む。ユニット・森・山・丘・火山・泥沼で止まり、炎は消して止まる
         left--;
@@ -1539,6 +1547,7 @@
 
   // 奪取: 宝を持っている味方（この手番で宝のマスで移動を終える味方も）は撃てない
   function canShoot(s, u, to) {
+    if (LX && lab('E9') && u && u.side === 'ally' && LX.enclosedAt(s, u, to)) return false;   // ラボ E9: 閉じこめられている間は撃てない
     var m = s.mission;
     if (!m || missionType(s) !== 'retrieve' || !u || u.side !== 'ally') return true;
     if (m.carrier === u.id) return false;
@@ -1560,7 +1569,7 @@
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
     var dist = reachInfo(s0, u0).dist[key(to[0], to[1])];
     if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
-    if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, '宝を持っている間は撃てない（待機だけ）');
+    if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, LX && lab('E9') && LX.enclosedAt(s0, u0, to) ? '閉じこめられていて撃てない（待機だけ）' : '宝を持っている間は撃てない（待機だけ）');
 
     var s = clone(s0);
     var u = findUnit(s, unitId);
@@ -1687,6 +1696,8 @@
       allyIds.push(id);
       allyDmg += h.amount;
     });
+    // ラボ E2: 形のマスに偽の姿が入ったら、味方に当たったと数える（偽の姿は撃つ前の盤面で見る）
+    if (LX && lab('E2') && u.side === 'enemy') LX.decoys(s).forEach(function (d) { if (inCells(ctx.cells, d.x, d.y) && allyIds.indexOf(d.id) < 0) { allyIds.push(d.id); allyDmg += su.power; } });
     var changed = 0;
     for (var i = 0; i < before.length; i++) if (before[i] !== 'empty' && sim.tiles[i] !== before[i]) changed++;
     return { allyHits: allyIds.length, allyIds: allyIds, allyDmg: allyDmg, targetHits: targetIds.length, targetIds: targetIds,
@@ -1733,6 +1744,7 @@
     if (!alliesOf(s).length) return null;
     if (LX) { var lp = LX.planEnemy(s, e); if (lp) return lp; }   // ラボ: 欲（D1）・大技を組む敵（D9）
     var allies = alliesOf(s).filter(function (a) { return !hidden(s, a, e); });
+    if (LX && lab('E2')) allies = allies.concat(LX.decoys(s));   // ラボ E2: 蜃気楼が映した偽の姿も、敵には本物に見える
     if (!allies.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
     var info = reachInfo(s, e);
     // 「的」: 的があれば一番近い的へ向かう。的がない（宝がまだ拾われていない・戦闘）なら「近い人」と同じ
@@ -2342,7 +2354,7 @@
     var sim = clone(s);
     function fire(list, u0) {
       var e = findUnit(sim, u0.id);
-      if (!e || sim.result) {
+      if (!e || sim.result || (LX && lab('E9') && u0.side === 'enemy' && u0.stand !== 'march' && !e.intent)) {   // ラボ E9: 前の魔法で閉じこめられた敵の予告は消える
         list.push({ id: u0.id, side: u0.side, cancelled: true, from: [u0.x, u0.y], to: [u0.x, u0.y], dir: u0.facing, magic: u0.magic, cells: [], tileChanges: [], damages: [], finishers: [] });
         return;
       }

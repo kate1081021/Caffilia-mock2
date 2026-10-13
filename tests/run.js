@@ -96,14 +96,37 @@ test('盤の外にはみ出したマスは無視される', function () {
 
 console.log('\n■ 置く・点ける');
 
-test('置く: ユニットがいるマスは直撃だけで自然は変わらない', function () {
+test('置く: ユニットがいるマスは直撃し、足元にも自然ができる（natureUnderUnits）', function () {
   var s = empty(6);
   var a = R.addAlly(s, 'grass', 2, 5);
   var e = R.addEnemy(s, 'fire', 2, 3);       // (0,2) のマス
   var r = fire(s, a, 'up');
-  eq(tile(r.state, 2, 3), 'empty', '敵のマス');
+  eq(tile(r.state, 2, 3), 'forest', '敵の足元にも森');
   eq(hp(r.state, e.id), B.enemy.hp - B.ally.power);
   eq([tile(r.state, 1, 2), tile(r.state, 2, 2), tile(r.state, 3, 2)], ['forest', 'forest', 'forest']);
+});
+test('置く: 味方に当てても足元に自然ができる。山（通れない）は足元には盛らない', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'grass', 2, 5);
+  var b = R.addAlly(s, 'earth', 2, 3);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 3), 'forest', '味方の足元に森');
+  var s2 = empty(6);
+  var c = R.addAlly(s2, 'earth', 2, 5);      // 形 (1,3)(2,3)(1,2)
+  var d = R.addAlly(s2, 'grass', 2, 3);
+  var r2 = fire(s2, c, 'up');
+  eq(tile(r2.state, 2, 3), 'empty', '育つが切なら土は山なので、足元には盛らない');
+  eq(tile(r2.state, 1, 3), 'mountain');
+});
+test('置く: natureUnderUnits を切ると、ユニットがいるマスは直撃だけで自然は変わらない（前の決まり）', function () {
+  B.ideas.natureUnderUnits = false;
+  try {
+    var s = empty(6);
+    var a = R.addAlly(s, 'grass', 2, 5);
+    var e = R.addEnemy(s, 'fire', 2, 3);
+    var r = fire(s, a, 'up');
+    eq(tile(r.state, 2, 3), 'empty', '敵のマス');
+  } finally { B.ideas.natureUnderUnits = true; }
 });
 test('置く: 土で空きは山、川は泥沼', function () {
   var s = board(['......', '......', '..R...', '......', '......', '......']);
@@ -1894,7 +1917,7 @@ test('グラデーション: まわりが丘なら通れるので、押し出さ
   var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 3));
   var r = fire(g.s, g.a, 'up');
   eq(pos(r.state, e.id), [4, 3]);
-  eq(tile(r.state, 4, 3), 'empty', 'ユニットのいるマスは丘にもならない');
+  eq(tile(r.state, 4, 3), 'hill', 'ユニットのいるマスも丘になる（丘は立てる。natureUnderUnits）');
 }, { mountainSize: 5, mountainSlope: true }); });
 
 // ---------------------------------------------------------------
@@ -1928,12 +1951,12 @@ test('草: 森の大きさ 1 は、その草むらだけ', function () { withGro
   eq(forests(r.state), ['3,3']);
   eq([tile(r.state, 3, 4), tile(r.state, 2, 3)], ['thicket', 'thicket']);
 }, { forestSize: 1 }); });
-test('草: 森は通れるので押し出さない。ユニットのいるマスには育たない', function () { withGrow(function () {
+test('草: 森は通れるので押し出さない。ユニットのいるマスにも森が育つ（natureUnderUnits）', function () { withGrow(function () {
   var g = grassBoard(['.......', '.......', '.......', '...g...', '.......', '.......', '.......']);
   var e = tough(g.s, R.addEnemy(g.s, 'fire', 3, 2));
   var r = fire(g.s, g.a, 'up');
   eq(pos(r.state, e.id), [3, 2]);
-  eq(tile(r.state, 3, 2), 'empty');
+  eq(tile(r.state, 3, 2), 'forest');
   eq(dealt(r, e.id), 0, '形の外なので直撃もない');
 }, { forestSize: 5, pushOut: true }); });
 test('草むら: 火で燃える（今は弱い炎の扱い）', function () {
