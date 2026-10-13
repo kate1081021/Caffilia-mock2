@@ -439,6 +439,7 @@
       }
     });
     s.units = s.units.filter(function (u) { return u.hp > 0; });
+    if (LX && dead.length) LX.onDeath(s, dead, ev);   // ラボ G8: 強化を持つ敵を倒すと、その強化を覚える
     return dead;
   }
 
@@ -1258,8 +1259,11 @@
     var made = 0, pond = 0, stop = null, sourced = false, tornadoHit = null, whirlHit = null;
     var growOn = B.grow.enabled, puddleOn = growOn || B.tutorial.slope, pondName = puddleOn ? '水たまり' : '池';   // チュートリアル②: 水だけなら水たまり
     var growing = false, left = 0, river = null;   // 【育つ】水たまりから川に育っている途中か、あと何マス進めるか、育った川のマス
+    var pondLen = B.shape.frontOne ? 1 : B.waterLength;
+    if (LX) pondLen = LX.lengthFor(s, u, 'water', pondLen);   // ラボ: 形が伸びる（G2）・姿（G3）・武器（G6）
+    var twoStep = LX && LX.twoStep(u);                      // ラボ G1: 一気に二段（池は川になる）
     for (var i = 1; ; i++) {
-      if (!sourced && !growing && i > (B.shape.frontOne ? 1 : B.waterLength)) break;   // 【縮尺】正面1マスなら池（水たまり）も1マス
+      if (!sourced && !growing && i > pondLen) break;   // 【縮尺】正面1マスなら池（水たまり）も1マス
       if (growing && B.grow.riverLength > 0 && left <= 0) break;
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) { if (sourced || growing) stop = '盤の端まで流れた'; break; }
@@ -1309,7 +1313,7 @@
         }
         continue;
       }
-      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn && !sourced ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
+      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn && !sourced && !twoStep ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
       if (t === 'river' || t === 'ice') continue;
       if (t === 'lava') { setTile(s, x, y, 'mountain'); stop = '【新案】溶岩が冷えて山になった'; break; }
       if (t === 'firewhirl') {
@@ -1375,6 +1379,8 @@
     var origin = null, volcano = null, whirl = null, blocked = false;
     var breezeMode = B.windMode === 'breeze';
     var limit = B.shape.frontOne ? 1 : breezeMode ? B.breezeLength : B.lineLength;   // 【縮尺】正面1マスなら風も1マス
+    if (LX) limit = LX.lengthFor(s, u, 'wind', limit);   // ラボ: 形が伸びる（G2）・姿（G3）・武器（G6）
+    var breezeTile = LX && LX.twoStep(u) ? 'gale' : 'breeze';   // ラボ G1: 一気に二段（風は強風になる）
     var galeAt = -1;   // 【育つ】強風になった通り道の位置（path の番号）。-1 は強風なし
     for (var i = 1; i <= limit; i++) {
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
@@ -1434,9 +1440,9 @@
             // 【育つ】強風の通り道は、空きと風のマスに強風が残る
             if (!gale) { gale = { origin: c.slice(), tile: 'gale', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }; ctx.grows.push(gale); }
             if ((tt === 'empty' || tt === 'breeze') && !c1Occ[key(c[0], c[1])]) { setTile(s, c[0], c[1], 'gale'); galeLeft++; gale.cells.push(c.slice()); gale.tiles.push('gale'); gale.wave.push(j - galeAt); }
-          } else if (tt === 'empty' && !c1Occ[key(c[0], c[1])]) { setTile(s, c[0], c[1], 'breeze'); left++; }   // ラボ C1: 足元には生まれない
+          } else if (tt === 'empty' && !c1Occ[key(c[0], c[1])]) { setTile(s, c[0], c[1], breezeTile); left++; }   // ラボ C1: 足元には生まれない
         });
-        if (left) ctx.phrases.push('【新案】風が' + left + 'マス吹いている（ターン終了まで）');
+        if (left) ctx.phrases.push('【新案】' + tileName(breezeTile) + 'が' + left + 'マス吹いている（ターン終了まで）');
         if (galeLeft) ctx.phrases.push('【育つ】強風が' + galeLeft + 'マス吹いている（ターン終了まで）');
       }
     } else if (!origin && !volcano && path.length && (B.tornadoRecipe === 'windWater' || B.tornadoRecipe === 'windWind')) {
@@ -2203,6 +2209,7 @@
       ev.push({ type: 'turnEnd', text: '── ターン' + s.turn + ' 終了 ──' });
       step();
       timePasses(s, ev, step);
+      if (LX) LX.turnEnd(s, ev);   // ラボ G7: まとった魔法はターンの終わりで消える
     }
 
     // 4b. 防衛: 決まったターンのターン終了処理が終わったとき、村が残っていれば勝ち

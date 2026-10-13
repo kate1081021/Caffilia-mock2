@@ -635,6 +635,124 @@ test('E10: 予告の形の空きに「森→燃える」、森があれば「燃
   eq(R.LX.intentHints(t, null, fc).length, 0, 'オフなら出さない');
 });
 
+// ===================================================================
+console.log('\n■ G 強化と融合');
+
+function boosted(s, magic, x, y, dir, boosts) { var a = R.addAlly(s, magic, x, y, dir || 'up'); R.findUnit(s, a.id).boosts = boosts; return R.findUnit(s, a.id); }
+function withGrowOn(fn) { var was = B.grow.enabled; B.grow.enabled = true; try { fn(); } finally { B.grow.enabled = was; } }
+test('G1: 一気に二段（土 → 山、風 → 強風、水 → 川）。オフなら丘・水たまり', function () { withGrowOn(function () {
+  R.labApply(['G1']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var e = boosted(s, 'earth', 3, 6, 'up', [{ k: 'G1' }]);
+  eq(tile(act(s, e, 'up').state, 3, 4), 'mountain');
+  var w = boosted(s, 'wind', 0, 6, 'up', [{ k: 'G1' }]);
+  eq(tile(act(s, w, 'up').state, 0, 5), 'gale');
+  var wa = boosted(s, 'water', 6, 6, 'up', [{ k: 'G1' }]);
+  eq(tile(act(s, wa, 'up').state, 6, 5), 'river');
+  R.labApply([]);
+  eq(tile(act(s, e, 'up').state, 3, 4), 'hill', 'オフ');
+  eq(tile(act(s, wa, 'up').state, 6, 5), 'puddle', 'オフ');
+}); });
+test('G2: 味方の魔法は正面1マスから、強化した回数だけ伸びる（風・水は長さ）', function () {
+  R.labApply(['G2']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var f0 = R.addAlly(s, 'fire', 1, 6, 'up');
+  var f3 = boosted(s, 'fire', 3, 6, 'up', [{ k: 'G2', v: 3 }]);
+  var w1 = boosted(s, 'wind', 5, 6, 'up', [{ k: 'G2', v: 1 }]);
+  var g0 = R.addAlly(s, 'grass', 0, 3, 'right');
+  eq(R.previewAct(s, (R.findUnit(s, f0.id)).id, null, 'up').cells.length, 1);
+  eq(sorted(R.previewAct(s, (f3).id, null, 'up').cells), sorted([[3, 5], [4, 4], [2, 4], [3, 3]]));
+  eq(R.previewAct(s, (R.findUnit(s, g0.id)).id, null, 'right').cells.length, 1, '草も正面1マス');
+  var r = act(s, w1, 'up');
+  eq([tile(r.state, 5, 5), tile(r.state, 5, 4), tile(r.state, 5, 3)], ['breeze', 'breeze', 'empty'], '風は2マス');
+});
+test('G3: 姿 A・B（草A 大樹の根はまっすぐ4マス、水A 二筋の川は左右の筋から2本）', function () {
+  R.labApply(['G3']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var g = boosted(s, 'grass', 3, 6, 'up', [{ k: 'G3', v: 'A' }]);
+  var r = act(s, g, 'up');
+  eq([tile(r.state, 3, 5), tile(r.state, 3, 4), tile(r.state, 3, 3), tile(r.state, 3, 2)], ['forest', 'forest', 'forest', 'forest']);
+  var s2 = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var w = boosted(s2, 'water', 3, 6, 'up', [{ k: 'G3', v: 'A' }]);
+  var r2 = act(s2, w, 'up');
+  eq([tile(r2.state, 2, 5), tile(r2.state, 4, 5), tile(r2.state, 3, 5)], ['river', 'river', 'empty'], '左右の筋');
+});
+test('G4: 融合「草＋火」は形の各マスに植えてすぐ点ける（small は2マス）。damage は決め手が半分', function () {
+  R.labApply(['G4'], { G4: { weak: 'small' } });
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var g = boosted(s, 'grass', 3, 6, 'up', [{ k: 'G4', v: ['grass', 'fire'] }]);
+  var r = act(s, g, 'up');
+  eq([tile(r.state, 3, 4), tile(r.state, 3, 3), tile(r.state, 2, 3)], ['fire', 'fire', 'empty']);
+  R.labApply(['G4'], { G4: { weak: 'damage' } });
+  var s3 = board(['.......', '.......', '...F...', '...F...', '.......', '.......', '.......']);
+  var w3 = boosted(s3, 'wind', 1, 2, 'right', [{ k: 'G4', v: ['wind', 'fire'] }]);
+  var e3 = enemyWith(s3, 'fire', 3, 2, {}); tough(s3, e3);
+  var r3 = act(s3, w3, 'right');
+  ok(names(r3.events).indexOf('火の渦') >= 0, '火の渦');
+  eq(dealt(r3, e3.id), 10, '20 の半分');
+});
+test('G5: 最終融合「草 → 闇 → 火」は3マス先に1発でオバケヤシキ（起こした本人は無事）', function () {
+  R.labApply(['G5']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var d = boosted(s, 'dark', 3, 5, 'up', [{ k: 'G5', v: ['grass', 'dark', 'fire'] }]);
+  enemyWith(s, 'fire', 3, 2, {});
+  var r = act(s, d, 'up');
+  ok(names(r.events).indexOf('オバケヤシキ') >= 0);
+  eq(tile(r.state, 3, 2), 'haunted');
+  ok(R.findUnit(r.state, d.id), '本人は無事');
+});
+test('G6: 弓は丘の上で、高台よりさらに1マス先から撃つ。杖は森の中で形の先にもう1マス', function () {
+  R.labApply(['G6']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '...h...', '.F.....']);
+  var b = boosted(s, 'fire', 3, 5, 'up', [{ k: 'G6', v: 'bow' }]);
+  eq(R.previewAct(s, (b).id, null, 'up').cells, [[3, 2]], '丘で2マス先が起点 → 正面1マスは3マス先');
+  var t = boosted(s, 'fire', 1, 6, 'up', [{ k: 'G6', v: 'staff' }]);
+  eq(R.previewAct(s, (t).id, null, 'up').cells, [[1, 5], [1, 4]]);
+  R.labApply([]);
+  eq(R.previewAct(s, (b).id, null, 'up').cells, [[3, 3]], 'オフなら丘の高台だけ');
+});
+test('G7: 魔法の直撃を受けた者はその魔法をまとい、次の1発に乗る（風をまとった火 → 火の渦）。ターンの終わりで消える', function () {
+  R.labApply(['G7']);
+  var s = board(['.......', '.FF....', '.FF....', '.......', '.......', '.......', '.......'], true);
+  var w = R.addAlly(s, 'wind', 4, 6, 'up');
+  var f = R.addAlly(s, 'fire', 4, 4, 'up');
+  var e = enemyWith(s, 'fire', 2, 1, {}); tough(s, e);
+  var r = act(s, w, 'up');
+  eq(R.findUnit(r.state, f.id).labWear, 'wind');
+  var r2 = R.act(r.state, f.id, { to: [4, 1], dir: 'left' });
+  ok(r2.ok, r2.error);
+  ok(names(r2.events).indexOf('火の渦') >= 0, '火の渦');
+  ok(!R.findUnit(r2.state, f.id).labWear, '使ったら消える');
+  var t = R.endTurn(R.act(r.state, f.id, { shoot: false }).state).state;
+  ok(!R.findUnit(t, f.id) || !R.findUnit(t, f.id).labWear, 'ターンの終わりで消える');
+  R.labApply([]);
+  var r4 = act(s, w, 'up');
+  ok(!R.findUnit(r4.state, f.id).labWear, 'オフならまとわない');
+});
+test('G8: 強化を持つ敵を倒すと、同じ魔法の味方がその強化を覚える', function () { withGrowOn(function () {
+  R.labApply(['G8', 'G1']);
+  var s = board(['.....', '.....', '..F..', '.....', '.....']);
+  var e = enemyWith(s, 'wind', 2, 2, { boosts: [{ k: 'G1' }] });
+  var a = R.addAlly(s, 'wind', 0, 4, 'up');
+  var f = R.addAlly(s, 'fire', 2, 3, 'up');
+  R.findUnit(s, e.id).hp = 1;
+  var r = act(s, f, 'up');
+  ok(!R.findUnit(r.state, e.id), '倒れた');
+  eq(R.LX.boostOf(R.findUnit(r.state, a.id), 'G1'), true, '風の味方が覚えた');
+  ok(/覚えた/.test(texts(r.events)));
+}); });
+test('G9: 2つ目の魔法と持ち替える（行動前だけ）', function () {
+  R.labApply(['G9']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = boosted(s, 'grass', 2, 4, 'up', [{ k: 'G9', v: 'water' }]);
+  var r = R.labSwapMagic(s, g.id);
+  ok(r.ok);
+  eq(R.findUnit(r.state, g.id).magic, 'water');
+  eq(R.LX.boostOf(R.findUnit(r.state, g.id), 'G9'), 'grass');
+  R.labApply([]);
+  ok(!R.labSwapMagic(s, g.id).ok, 'オフなら持ち替えられない');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {
@@ -651,6 +769,7 @@ R.LAB_PRESETS.forEach(function (p) {
         if (s.result) return;
         if (a.endTurn) { s = R.endTurn(s).state; return; }
         if (!a.id) return;
+        if (a.swap) { var sw = R.labSwapMagic(s, a.id); if (!sw.ok) throw new Error(a.id + ' が持ち替えられない: ' + sw.error); s = sw.state; }
         var r = R.act(s, a.id, { to: a.to, dir: a.dir, shoot: a.shoot !== false });
         if (!r.ok) throw new Error(a.id + ' が行動できない: ' + r.error);
         s = r.state;

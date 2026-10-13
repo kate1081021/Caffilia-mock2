@@ -976,3 +976,13 @@ body.lab-open { padding-left: 400px; }
 .b-hint.faint { color: rgba(124, 58, 237, .7); }
 .b-hint.ready { color: #fff; background: rgba(124, 58, 237, .75); }
 .b-hint.glow { color: #fff; background: #f59e0b; box-shadow: 0 0 8px 2px rgba(245, 158, 11, .85); font-size: .6em; }
+/* ラボ G: 強化の印・まとう */
+.unit .u-boost { position: absolute; left: -8%; bottom: -6%; font-size: .5em; font-weight: bold; color: #fff; background: #b45309; border-radius: 6px; padding: 0 3px; z-index: 5; transform: rotate(calc(-1 * var(--rot))); white-space: nowrap; }
+.unit .u-wear { position: absolute; right: -8%; bottom: -6%; font-size: .5em; font-weight: bold; color: #fff; background: #0e7490; border-radius: 6px; padding: 0 3px; z-index: 5; transform: rotate(calc(-1 * var(--rot))); white-space: nowrap; }
+.lab-boost label { margin-right: .4em; }
+.lab-shapes { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.lab-shape { font-size: .75em; text-align: center; }
+.lab-shape .g { display: grid; gap: 1px; margin: 2px auto; width: max-content; }
+.lab-shape .g i { display: block; width: 11px; height: 11px; background: #e5e7eb; border-radius: 2px; }
+.lab-shape .g i.c { background: #f59e0b; }
+.lab-shape .g i.me { background: #2563eb; }

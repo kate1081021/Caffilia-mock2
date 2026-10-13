@@ -132,6 +132,7 @@
       '<div class="lab-howto"><b>試し方</b><p>' + esc(c.howto) + '</p></div>' +
       (c.deviates ? '<p class="note dev">CLAUDE.md から外れる: ' + esc(c.deviates) + '</p>' : '') +
       (c.note ? '<p class="note">作ってみて: ' + esc(c.note) + '</p>' : '') +
+      shapesHtml(c) +
       '<div class="lab-q"><b>判定の問い</b><ul>' + (c.q || []).map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul></div>' +
       optsHtml(c) +
       '<div class="lab-buttons">' + scenSel +
@@ -151,6 +152,44 @@
 
   // ---- 上のバー: 今どちらで遊んでいるかを大きく出す ----
   var barSig = '';
+  // G2・G3 のカード: 強化前と後の形を小さな図で（青が術者、橙が形のマス。正面は上）
+  function shapeGrid(cells) {
+    var pts = cells.concat([[0, 0]]);
+    var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y1 = Math.max.apply(null, ys);
+    var h = '<span class="g" style="grid-template-columns:repeat(' + (x1 - x0 + 1) + ',11px)">';
+    for (var y = y1; y >= 0; y--) for (var x = x0; x <= x1; x++) {
+      var isC = cells.some(function (p) { return p[0] === x && p[1] === y; });
+      h += '<i class="' + (x === 0 && y === 0 ? 'me' : isC ? 'c' : '') + '"></i>';
+    }
+    return h + '</span>';
+  }
+  function baseCells(m) {
+    if (B.shapes[m]) return B.shapes[m];
+    var n = m === 'water' ? B.waterLength : B.breezeLength, out = [];
+    for (var i = 1; i <= n; i++) out.push([0, i]);
+    return out;
+  }
+  function shapesHtml(c) {
+    if (!R.LX || (c.id !== 'G2' && c.id !== 'G3')) return '';
+    var items = [];
+    if (c.id === 'G3') Object.keys(R.LX.FORMS).forEach(function (m) {
+      var f = R.LX.FORMS[m], cellsOf = function (x) {
+        if (x.cells) return x.cells;
+        var base = baseCells(m);
+        if (x.lanes) { var out = []; x.lanes.forEach(function (sd) { base.forEach(function (p) { out.push([sd, p[1]]); }); }); return out; }
+        var n = base.length + (x.len || 0), o = []; for (var i = 1; i <= n; i++) o.push([0, i]); return o;
+      };
+      items.push('<span class="lab-shape">' + esc(R.magicName(m)) + '（今）' + shapeGrid(baseCells(m)) + '</span>');
+      ['A', 'B'].forEach(function (k) { items.push('<span class="lab-shape" title="' + esc(f[k].note) + '">' + k + ' ' + esc(f[k].name) + shapeGrid(cellsOf(f[k])) + '</span>'); });
+    });
+    if (c.id === 'G2') Object.keys(R.LX.GROW_DIR).forEach(function (m) {
+      var g = R.LX.GROW_LIST[R.LX.GROW_DIR[m]];
+      [0, 1, 3].forEach(function (n) { items.push('<span class="lab-shape">' + esc(R.magicName(m)) + ' ' + n + '回' + shapeGrid(g.slice(0, 1 + n)) + '</span>'); });
+    });
+    return '<div class="lab-shapes">' + items.join('') + '</div>';
+  }
+
   function renderBar() {
     var onList = Object.keys(B.lab || {}).filter(function (k) { return B.lab[k].on; });
     var cmp = app.labCompare ? card(app.labCompare) : null;
@@ -160,6 +199,9 @@
         onList.map(function (k) { var c = card(k); return '<span class="lab-bar-on">' + esc(c ? c.name : k) + '　オン</span>'; }).join('') +
         (cmp ? '<span class="lab-bar-off">' + esc(cmp.name) + '　オフでくらべ中</span>' : '') +
         '<button type="button" data-act="openlab">ラボを開く</button><button type="button" data-act="alloff">全部オフ</button>';
+      // 続きのシナリオ（G8 敵の技を覚える など）: 勝ったら次の戦いへ
+      var cur = app.scenario && R.findPreset(app.scenario);
+      if (cur && cur.labNext && app.state && app.state.result === 'win') html += '<button type="button" class="primary" data-act="next">次の戦いへ: ' + esc(scenName(cur.labNext)) + '</button>';
     }
     if (html === barSig) return;
     barSig = html;
@@ -325,6 +367,7 @@
   bar.addEventListener('click', function (e) {
     var a = e.target.getAttribute && e.target.getAttribute('data-act');
     if (a === 'openlab') setOpen(true);
+    if (a === 'next') { var cur = app.scenario && R.findPreset(app.scenario); if (cur && cur.labNext) app.loadScenario(cur.labNext); }
     if (a === 'alloff') { R.labApply([]); app.labCompare = null; changed(); app.addLog('ラボの案を全部オフにした（盤面はそのまま。やり直すと反映）'); }
   });
 

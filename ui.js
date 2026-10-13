@@ -84,7 +84,7 @@
   var el = {};
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'preview', 'turnLabel', 'modeLabel', 'scenarioSelect',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
-    'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
+    'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'btnSwap', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyActs', 'boardSize', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
@@ -682,6 +682,7 @@
     if (a.endTurn) { doEndTurn(); d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // ターン終了の項目
     if (!a.id) { d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // 説明だけの項目
     if (!R.findUnit(app.state, a.id)) { demoNext(); return; }
+    if (a.swap && R.labSwapMagic) { var sw = R.labSwapMagic(app.state, a.id); if (sw.ok) { app.state = sw.state; app.clearCache(); } }   // ラボ G9: 撃つ前に持ち替える
     var aimWait = d.check ? CHECK_WAIT.aim : DEMO_WAIT.aim;
     select(a.id);
     d.timer = setTimeout(function () {
@@ -699,6 +700,50 @@
         }, aimWait);
       }, DEMO_WAIT.move);
     }, DEMO_WAIT.select);
+  }
+
+  // ラボ G9: 選んでいる味方の魔法を、2つ目の魔法と持ち替える
+  function swapMagic() {
+    var u = canControl() ? selUnit() : null;
+    if (!u || !R.labSwapMagic || !R.lab('G9')) return;
+    var r = R.labSwapMagic(app.state, u.id);
+    if (!r.ok) { say(r.error); return; }
+    pushHistory();
+    app.state = r.state;
+    addLog(r.events[0].text, 'system');
+    app.clearCache();
+    render();
+  }
+
+  // ラボ G: エディットの強化の付け外し（オンになっている案だけ出す）
+  var G4_PAIRS = ['grass,fire', 'wind,fire', 'fire,wind', 'water,earth', 'grass,water', 'earth,fire', 'water,ice', 'wind,water'];
+  var G5_TRIPLES = ['grass,dark,fire', 'wind,fire,water', 'grass,fire,wind', 'water,ice,earth'];
+  function boostEditHtml(u) {
+    if (!R.LX || u.side === 'object') return '';
+    var B2 = R.LX.boostOf, out = [];
+    var sel = function (k, label, opts) {
+      var cur = B2(u, k);
+      var curS = cur === undefined ? '' : Array.isArray(cur) ? cur.join(',') : String(cur === true ? '1' : cur);
+      out.push('<label>' + label + ' <select data-id="' + u.id + '" data-field="boost:' + k + '">' + opts.map(function (o) {
+        return '<option value="' + esc(o[0]) + '"' + (curS === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      }).join('') + '</select></label>');
+    };
+    var mn = function (list) { return list.split(',').map(R.magicName).join('→'); };
+    if (R.lab('G1')) sel('G1', '一気に二段', [['', 'なし'], ['1', 'あり']]);
+    if (R.lab('G2')) sel('G2', '伸びる', [['', '0回'], ['1', '1回'], ['2', '2回'], ['3', '3回']]);
+    if (R.lab('G3')) { var f = R.LX.FORMS[u.magic] || {}; sel('G3', '姿', [['', 'なし']].concat(['A', 'B'].filter(function (k) { return f[k]; }).map(function (k) { return [k, k + ' ' + f[k].name]; }))); }
+    if (R.lab('G4')) sel('G4', '融合', [['', 'なし']].concat(G4_PAIRS.map(function (p) { return [p, mn(p)]; })));
+    if (R.lab('G5')) sel('G5', '最終融合', [['', 'なし']].concat(G5_TRIPLES.map(function (p) { return [p, mn(p)]; })));
+    if (R.lab('G6')) sel('G6', '武器', [['', 'なし']].concat(Object.keys(R.LX.WEAPONS).map(function (k) { var w = R.LX.WEAPONS[k]; return [k, w.name + '（' + w.where + 'で強い）']; })));
+    if (R.lab('G9') && u.side === 'ally') sel('G9', '2つ目の魔法', [['', 'なし']].concat(R.allyMagics(app.state).filter(function (m) { return m !== u.magic; }).map(function (m) { return [m, R.magicName(m)]; })));
+    return out.length ? '<span class="persona-edit lab-boost">' + out.join('') + '</span>' : '';
+  }
+  function boostValue(k, v) {
+    if (v === '') return null;
+    if (k === 'G1') return true;
+    if (k === 'G2') return Number(v);
+    if (k === 'G4' || k === 'G5') return v.split(',');
+    return v;
   }
 
   function stopDemo() {
@@ -910,6 +955,9 @@
     if (R.hidden(st, u)) h += '<span class="u-hide">隠</span>';
     if (u.side === 'enemy' && u.labReason && u.intent !== undefined && (R.lab('D1') || R.lab('D9'))) h += '<span class="u-why">' + esc(u.labReason) + '</span>';   // ラボ D1: 予告に理由を一言
     if (u.labBoss) h += '<span class="u-boss">強</span>';
+    var bt = R.LX && R.LX.boostText(u);   // ラボ G: 強化の印（★と種類の1文字）
+    if (bt) h += '<span class="u-boost" title="強化: ' + esc(bt) + '">★' + esc(u.boosts.filter(function (b) { return R.lab(b.k); }).map(function (b) { var bi = R.LX.BOOST_INFO[b.k]; return bi ? bi.mark : ''; }).join('')) + '</span>';
+    if (u.labWear && R.lab('G7')) h += '<span class="u-wear" title="まとっている（次の1発に乗る。ターンの終わりまで）">纏' + esc(R.magicName(u.labWear)) + '</span>';
     if (u.labStage) h += '<span class="u-boss stage" title="大技を組む敵: ' + esc(R.magicName(u.labStage)) + 'で舞台 → ' + esc(R.magicName(u.magic)) + '">技</span>';
     if (st.mission && st.mission.carrier === u.id) h += '<span class="u-treasure" title="宝を持っている（撃てない）">宝</span>';
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
@@ -1341,6 +1389,8 @@
       if (a.stuck) status.push('泥沼: 次は移動できない');
       if (a.burn > 0) status.push('火傷: あと' + a.burn + '回（水か氷で治る）');
       if (st.mission && st.mission.carrier === a.id) status.push('宝を持っている（撃てない）');
+      if (R.LX && R.LX.boostText(a)) status.push('強化: ' + R.LX.boostText(a));   // ラボ G
+      if (a.labWear && R.lab('G7')) status.push('まとっている: ' + R.magicName(a.labWear));
       var cls = 'ally-card' + (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '');
       return '<button type="button" class="' + cls + '" data-id="' + a.id + '">' +
         '<span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
@@ -1367,7 +1417,8 @@
       return '村への道がない' + (r.stop ? '（近くまで' + r.stop + 'マス走って待つ）' : '（その場で待つ）');
     };
     var html = en.map(function (e) {
-      var note = (e.stuck ? '（泥沼: 次は移動できない）' : '') + (e.burn > 0 ? '（火傷: あと' + e.burn + '回）' : '');
+      var note = (e.stuck ? '（泥沼: 次は移動できない）' : '') + (e.burn > 0 ? '（火傷: あと' + e.burn + '回）' : '') +
+        (R.LX && R.LX.boostText(e) ? '（強化: ' + R.LX.boostText(e) + '）' : '') + (e.labWear && R.lab('G7') ? '（まとっている: ' + R.magicName(e.labWear) + '）' : '');   // ラボ G
       return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + (e.stand === 'rush' ? ' ' : '（' + esc(R.magicName(e.magic)) + '）') + 'HP ' + e.hp + '/' + e.maxHp +
         (warn[e.id] ? ' <span class="danger">予告で -' + warn[e.id] + (warn[e.id] >= e.hp ? '（倒れる）' : '') + '</span>' : '') +
         '<span class="hpbar"><span style="width:' + Math.max(0, e.hp / e.maxHp * 100) + '%"></span></span> ' + DIR_ARROW[e.facing] + esc(note) + '</span>' +
@@ -1393,6 +1444,9 @@
     el.btnStay.disabled = !u;
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
+    var m2 = u && R.lab('G9') && R.LX ? R.LX.boostOf(u, 'G9') : null;   // ラボ G9: 持ち替えのボタン
+    el.btnSwap.hidden = !m2;
+    if (m2) el.btnSwap.innerHTML = '持ち替え: ' + esc(R.magicName(u.magic)) + ' ⇄ ' + esc(R.magicName(m2)) + ' <kbd>Q</kbd>';
     if (!u) {
       el.actInfo.textContent = app.busy ? '処理中…' : '味方を選ぶと、ここで向きを選んで撃てます';
       el.dirCenter.textContent = '';
@@ -1447,6 +1501,7 @@
           return '<option value="' + d + '"' + (u.facing === d ? ' selected' : '') + '>' + DIR_ARROW[d] + ' ' + R.DIRS[d].name + '</option>';
         }).join('') + '</select>' +
         '<span class="muted">(' + u.x + ',' + u.y + ')</span>' +
+        boostEditHtml(u) +
         (u.side === 'ally' ? '<span class="persona-edit"><label>指示 <select data-id="' + u.id + '" data-field="npc">' +
           '<option value=""' + (u.npc ? '' : ' selected') + '>プレイヤーが動かす</option>' +
           '<option value="1"' + (u.npc ? ' selected' : '') + '>構える味方（毎ターン今の向きで構えて撃つ）</option></select></label></span>' : '') +
@@ -1612,6 +1667,7 @@
   el.btnShoot.addEventListener('click', function () { doAct(true); });
   el.btnRetry.addEventListener('click', retry);
   el.btnWait.addEventListener('click', function () { doAct(false); });
+  el.btnSwap.addEventListener('click', function () { swapMagic(); });
   el.btnEndTurn.addEventListener('click', doEndTurn);
   el.btnDemo.addEventListener('click', function () {
     var demos = window.DEMOS || [];
@@ -1706,7 +1762,8 @@
     if (!s) return;
     var id = s.getAttribute('data-id');
     var field = s.getAttribute('data-field');
-    var res = field === 'magic' ? R.editSetMagic(app.state, id, s.value)
+    var res = field.indexOf('boost:') === 0 ? R.editSetBoost(app.state, id, field.slice(6), boostValue(field.slice(6), s.value))   // ラボ G
+      : field === 'magic' ? R.editSetMagic(app.state, id, s.value)
       : field === 'facing' ? R.editSetFacing(app.state, id, s.value)
       : field === 'npc' ? R.editSetNpc(app.state, id, !!s.value)
       : R.editSetPersona(app.state, id, field, s.value);
@@ -1822,6 +1879,7 @@
     if (k === 'Enter') { e.preventDefault(); doAct(true); return; }
     if (k === ' ') { e.preventDefault(); stay(); return; }
     if (k === 'w' || k === 'W') { doAct(false); return; }
+    if (k === 'q' || k === 'Q') { swapMagic(); return; }   // ラボ G9: 2つ目の魔法と持ち替える
     if (k === 'Escape') {
       var u = selUnit();
       if (u && app.plan && (app.plan.to[0] !== u.x || app.plan.to[1] !== u.y)) stay();

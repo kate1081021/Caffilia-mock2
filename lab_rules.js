@@ -447,7 +447,7 @@
     function barrier(s, u) { return on('A12') && u.side !== 'object' && onOwnNature(s, u); }
 
     // 闇（吸う）のラボ版（A10 死の森は網・B13 底なし沼・B19 かまいたち・B20 暗がり・G3 闇の姿）
-    function useLabDark() { return on('A10') || on('B13') || on('B19') || on('B20') || on('G3'); }
+    function useLabDark() { return on('A10') || on('B13') || on('B19') || on('B20') || on('G2') || on('G3'); }
     var darkTargets = null;   // G3 でうしろに足す
     var darkExtra = [];       // B でうしろに足す
     function darken(s, u, facing, ctx, ev) {
@@ -1037,6 +1037,280 @@
       return out;
     }
 
+
+    // ---------------------------------------------------------------
+    // G 強化と融合（強化はユニットの boosts: [{ k: 'G1' }, { k: 'G2', v: 2 }, { k: 'G3', v: 'A' }, { k: 'G4', v: ['grass', 'fire'] } …]）
+    //   同じ種類は1つだけ。形を変える強化（G2・G3）がぶつかるときは、後から付けたほうを使う
+    // ---------------------------------------------------------------
+    var BOOST_INFO = {
+      G1: { name: '一気に二段', mark: '二' }, G2: { name: '形が伸びる', mark: '伸' }, G3: { name: '姿', mark: '姿' },
+      G4: { name: '融合', mark: '融' }, G5: { name: '最終融合', mark: '極' }, G6: { name: '武器', mark: '武' }, G9: { name: '2つ目の魔法', mark: '二魔' }
+    };
+    function boostOf(u, k) {
+      if (!u || !u.boosts) return undefined;
+      var v;
+      u.boosts.forEach(function (b) { if (b.k === k) v = b.v === undefined ? true : b.v; });
+      return v;
+    }
+    function hasBoost(u, k) { var v = boostOf(u, k); return on(k) && v !== undefined && v !== false && v !== 0; }
+    // 強化を付ける（v が null・false なら外す）。お題・周回（H）からもこれで渡す
+    function giveBoost(u, k, v) {
+      var list = (u.boosts || []).filter(function (b) { return b.k !== k; });
+      if (v !== null && v !== undefined && v !== false && v !== '') list.push(v === true ? { k: k } : { k: k, v: v });
+      if (list.length) u.boosts = list; else delete u.boosts;
+      return u;
+    }
+    function boostText(u) {
+      if (!u || !u.boosts) return '';
+      return u.boosts.filter(function (b) { return on(b.k); }).map(function (b) {
+        if (b.k === 'G2') return '伸びる×' + b.v;
+        if (b.k === 'G3') { var f = FORMS[u.magic] && FORMS[u.magic][b.v]; return '姿: ' + (f ? f.name : b.v); }
+        if (b.k === 'G4' || b.k === 'G5') return (b.k === 'G4' ? '融合: ' : '最終融合: ') + b.v.map(I.magicName).join('→');
+        if (b.k === 'G6') return '武器: ' + (WEAPONS[b.v] ? WEAPONS[b.v].name : b.v);
+        if (b.k === 'G9') return '2つ目: ' + I.magicName(b.v);
+        return BOOST_INFO[b.k] ? BOOST_INFO[b.k].name : b.k;
+      }).join('・');
+    }
+
+    // G1: 一気に二段（育つが入のときだけ。敵にも同じ）
+    function twoStep(u) { return !!u && B.grow.enabled && hasBoost(u, 'G1'); }
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) {
+      if (!twoStep(u) || t !== 'empty') return false;
+      var to = { grass: 'forest', earth: 'mountain', fire: 'fire' }[u.magic];
+      if (!to) return false;
+      if (o && (!I.isPassable(to) || !B.ideas.natureUnderUnits || on('C1'))) return false;
+      setTile(s, x, y, to);
+      ctx.phrases.push('【ラボ】一気に' + tileName(to) + 'になった（一気に二段）');
+      return true;
+    });
+
+    // G2: 形が伸びる（オンなら味方の魔法は正面1マスから。強化1回ごとに1マス）。G3: 姿が変わる
+    var GROW_LIST = {
+      forward: [[0, 1], [0, 2], [0, 3], [0, 4]], zig: [[0, 1], [1, 2], [0, 3], [1, 4]],
+      side: [[0, 1], [1, 1], [-1, 1], [2, 1]], diag: [[0, 1], [1, 2], [-1, 2], [0, 3]]
+    };
+    var GROW_DIR = { water: 'forward', wind: 'forward', ice: 'forward', thunder: 'zig', grass: 'side', earth: 'side', fire: 'diag', dark: 'diag' };
+    // 魔法ごとの姿 A・B（動詞は変えない。lanes は流れる・吹く魔法を、術者の横の筋からも撃つ。len は届く長さ）
+    var FORMS = {
+      grass: { A: { name: '大樹の根', cells: [[0, 1], [0, 2], [0, 3], [0, 4]], note: 'まっすぐ4マスの森の筋（導火線）が1発で引ける' },
+               B: { name: '森の門', cells: [[-1, 1], [-1, 2], [1, 1], [1, 2]], note: '左右に2マスずつ。真ん中の筋は空いたまま（通り道を残して囲う）' } },
+      earth: { A: { name: '城壁', cells: [[-1, 2], [0, 2], [1, 2]], note: '2マス先に横3マスの壁（道をふさぐ）' },
+               B: { name: '双つの柱', cells: [[-1, 1], [1, 1]], note: '自分の両隣の前に山。間を通る1本道ができる' } },
+      fire: { A: { name: '火の鳥', cells: [[0, 1], [-1, 2], [1, 2]], note: '正面と、その先の左右に火（3か所に同時に点ける）' },
+              B: { name: '狐火', cells: [[0, 2], [-1, 3]], note: '目の前を飛ばして2マス先と左の3マス先に点ける（決め手から離れて起こせる）' } },
+      thunder: { A: { name: '雷の槍', cells: [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5]], note: 'まっすぐ5マス（ジグザグしない）' },
+                 B: { name: '天雷', cells: [[0, 3]], note: '3マス先の1点に落ちる（手前の森や人を越える）' } },
+      ice: { A: { name: '氷の槍', cells: [[0, 1], [0, 2], [0, 3], [0, 4]], note: '冷気が4マス先まで届く' },
+             B: { name: '霜の手', cells: [[1, 1], [1, 2], [1, 3]], note: '右の筋を進む（正面を空けたまま横を凍らせる）' } },
+      dark: { A: { name: '闇の手', cells: [[0, 2]], note: '2マス先を吸う（隣に立たずに死の森を作れる）' },
+              B: { name: '双つの影', cells: [[-1, 1], [1, 1]], note: '左右の前の2マスを同時に吸う' } },
+      water: { A: { name: '二筋の川', lanes: [-1, 1], note: '左右の筋から2本流れる' },
+               B: { name: '滝', len: 2, note: '2マス長く流れる（遠くの山・炎まで届く）' } },
+      wind: { A: { name: '風の鎌', lanes: [-1, 1], note: '左右の筋から2本吹く' },
+              B: { name: '追い風の槍', len: 2, note: '2マス長く吹き抜ける' } }
+    };
+    function shapeBoost(u) {
+      var list = (u && u.boosts || []).filter(function (b) { return (b.k === 'G2' || b.k === 'G3') && on(b.k); });
+      if (on('G2') && u && u.side === 'ally' && !list.some(function (b) { return b.k === 'G2'; })) list.unshift({ k: 'G2', v: 0 });   // G2 オン: 強化0回の味方も正面1マス
+      return list.length ? list[list.length - 1] : null;
+    }
+    function boostShape(u) {
+      var b = shapeBoost(u);
+      if (!b) return null;
+      if (b.k === 'G2') { var g = GROW_LIST[GROW_DIR[u.magic]]; return g ? g.slice(0, 1 + Math.max(0, Math.min(3, b.v || 0))) : null; }
+      var f = FORMS[u.magic] && FORMS[u.magic][b.v];
+      return f && f.cells ? f.cells : null;
+    }
+    // G6: 武器。立っているマスが武器の自然なら、形が少し変わる
+    var WEAPONS = {
+      staff: { name: '杖', where: '森の中', ok: function (s, u) { var t = getTile(s, u.x, u.y); return t === 'forest' || t === 'thicket' || t === 'deepforest'; } },
+      bow: { name: '弓', where: '丘・山の上', ok: function (s, u) { var t = getTile(s, u.x, u.y); return t === 'hill' || t === 'mountain' || t === 'hillsakura'; } },
+      scepter: { name: '錫杖', where: '水辺', ok: function (s, u) {
+        return [[u.x, u.y]].concat(neighbors(s, u.x, u.y).map(function (n) { return [n.x, n.y]; })).some(function (c) { return waterTile(getTile(s, c[0], c[1])); });
+      } }
+    };
+    function weaponOn(s, u) { var w = hasBoost(u, 'G6') ? boostOf(u, 'G6') : null; return w && WEAPONS[w] && WEAPONS[w].ok(s, u) ? w : null; }
+    originMore.push(function (s, u, facing) {
+      if (weaponOn(s, u) !== 'bow') return null;
+      var F = DIRS[facing], k = getTile(s, u.x, u.y) === 'hill' ? 2 : 1;   // 丘はもともと1マス先（高台）。弓でさらに1マス
+      return { x: u.x + F.dx * k, y: u.y + F.dy * k };
+    });
+    var FLOWING = { water: true, wind: true };
+    cellsMore.push(function (s, u, o, facing) {
+      if (!(on('G2') || on('G3') || on('G6') || on('G4') || on('G5'))) return null;
+      var shp = boostShape(u);
+      var w = weaponOn(s, u);
+      if (!shp && !w) return null;
+      var cells = shp ? shapeAt(s, shp, o, facing) : I.shapeCells(s, u.magic, o.x, o.y, facing);
+      if (w === 'staff' && !FLOWING[u.magic] && cells.length) {
+        var F = DIRS[facing], last = cells[cells.length - 1], nx = last[0] + F.dx, ny = last[1] + F.dy;
+        if (inBounds(s, nx, ny) && !has(cells, nx, ny)) cells = cells.concat([[nx, ny]]);
+      }
+      if (w === 'scepter' && !FLOWING[u.magic] && cells.length) {
+        var R = I.rotate(facing, 1, 0), f0 = cells[0], sx = f0[0] + R[0], sy = f0[1] + R[1];
+        if (inBounds(s, sx, sy) && !has(cells, sx, sy)) cells = cells.concat([[sx, sy]]);
+      }
+      return cells;
+    });
+    // 流れる・吹く魔法の届く長さ（G2 伸びる・G3 滝／追い風の槍・G6 杖と錫杖）
+    function lengthFor(s, u, magic, base) {
+      if (!(on('G2') || on('G3') || on('G6'))) return base;
+      var len = base, b = shapeBoost(u);
+      if (b && b.k === 'G2') len = 1 + Math.max(0, Math.min(3, b.v || 0));
+      if (b && b.k === 'G3') { var f = FORMS[magic] && FORMS[magic][b.v]; if (f && f.len) len = base + f.len; }
+      var w = weaponOn(s, u);
+      if (w === 'staff' || w === 'scepter') len += 1;
+      return len;
+    }
+    // G3: 闇の姿は、形のマスを全部吸う（G2 で伸びた闇も）
+    darkTargets = function (s, u, facing, cells) { return boostShape(u) ? cells : cells.slice(0, 1); };
+    // G3: 流れる・吹く魔法の「筋」の姿（術者の横の筋からも撃つ）
+    castMore.push(function (s, u, facing, ctx, ev) {
+      if (!FLOWING[u.magic] || !on('G3')) return false;
+      var b = shapeBoost(u);
+      var f = b && b.k === 'G3' && FORMS[u.magic] && FORMS[u.magic][b.v];
+      if (!f || !f.lanes) return false;
+      f.lanes.forEach(function (side) {
+        var d = I.rotate(facing, side, 0), ghost = I.clone(u);
+        ghost.x = u.x + d[0]; ghost.y = u.y + d[1]; ghost.boosts = [];
+        if (!inBounds(s, ghost.x, ghost.y)) return;
+        if (u.magic === 'water') I.flow(s, ghost, facing, ctx, ev); else I.blow(s, ghost, facing, ctx, ev);
+      });
+      ctx.phrases.push('【ラボ】' + f.name + '（' + I.magicName(u.magic) + 'の姿）');
+      return true;
+    });
+
+    // G4・G5・G7: 形の各マスに、魔法を順に当てる（融合・まとう）
+    function fuseList(u) {
+      if (hasBoost(u, 'G5')) return { list: boostOf(u, 'G5'), kind: 'G5' };
+      if (hasBoost(u, 'G4')) return { list: boostOf(u, 'G4'), kind: 'G4' };
+      if (on('G7') && u.labWear) return { list: [u.labWear, u.magic], kind: 'G7' };
+      return null;
+    }
+    function fuseCells(s, u, facing, fz) {
+      var o = I.castOrigin(s, u, facing);
+      if (fz.kind === 'G5') return shapeAt(s, [[0, 3]], o, facing);   // 3マス先の1マス（近いと、起こした本人が決め手の輪や引き寄せに入る）
+      if (fz.kind === 'G7') return I.castCells(s, u, facing);
+      var cells = I.shapeCells(s, fz.list[0], o.x, o.y, facing);
+      return opt('G4', 'weak') === 'small' ? cells.slice(0, 2) : cells;
+    }
+    castMore.push(function (s, u, facing, ctx, ev) {
+      var fz = fuseList(u);
+      if (!fz || !fz.list || fz.list.length < 2) return false;
+      var cells = fuseCells(s, u, facing, fz);
+      ctx.labFuse = fz.kind;
+      cells.forEach(function (c) {
+        ctx.cells.push(c);
+        var o = unitAt(s, c[0], c[1]);
+        if (o && o.id !== u.id) addHit(ctx, o, u.power, 'direct');
+        fz.list.forEach(function (m) { touchMagic(s, u, m, c[0], c[1], facing, ctx, ev); });
+      });
+      var names = fz.list.map(I.magicName).join('→');
+      ctx.phrases.unshift('【ラボ】' + (fz.kind === 'G7' ? 'まとった' + I.magicName(fz.list[0]) + 'と一緒に撃った（' + names + '）' : (fz.kind === 'G5' ? '最終融合' : '融合') + '（' + names + '）'));
+      if (fz.kind === 'G7') delete u.labWear;
+      return true;
+    });
+    // 1マスに、その魔法の動詞が当たった（融合・まとう用。ユニットへの直撃は含まない）
+    function touchMagic(s, u, m, x, y, dir, ctx, ev) {
+      var t = getTile(s, x, y), o = unitAt(s, x, y), grow = B.grow.enabled;
+      var under = function (to) { return !o || (B.ideas.natureUnderUnits && !on('C1') && I.isPassable(to)); };
+      var once = function (k) { ctx.labDone = ctx.labDone || {}; if (ctx.labDone[k]) return false; ctx.labDone[k] = true; return true; };
+      if (m === 'grass') {
+        var lowG = grow ? 'thicket' : 'forest';
+        if (t === 'empty' && under(lowG)) { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた'); }
+        else if (t === 'thicket' && grow && under('forest')) { setTile(s, x, y, 'forest'); ctx.phrases.push('草むらが森に育った'); }
+        else if (t === 'mountain' && !o && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('山に桜が咲いた'); }
+      } else if (m === 'earth') {
+        var low = grow ? 'hill' : 'mountain';
+        if (t === 'empty' && under(low)) { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた'); }
+        else if (t === 'hill' && grow && !o) { setTile(s, x, y, 'mountain'); ctx.phrases.push('丘が山に育った'); }
+        else if ((t === 'river' || t === 'puddle') && under('mud')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); if (o) I.enterMud(s, o, ev); }
+        else if ((t === 'fire' || t === 'smallfire') && B.ideas.earthSmother && under(low)) { setTile(s, x, y, low); ctx.phrases.push('土をかぶせて' + tileName(t) + 'を消した'); }
+      } else if (m === 'fire') {
+        if (t === 'empty' && o && on('C1')) return;
+        if (t === 'empty' && twoStep(u)) { setTile(s, x, y, 'fire'); return; }
+        touchFire(s, x, y, dir, ctx, ev, '');
+      } else if (m === 'water') {
+        if (o) I.cureBurn(s, o, ctx);
+        if (t === 'empty' && under(grow ? 'puddle' : 'river')) { setTile(s, x, y, grow ? 'puddle' : 'river'); ctx.phrases.push(grow ? '水たまりができた' : '池ができた'); }
+        else if (t === 'puddle' && grow && !o) { setTile(s, x, y, 'river'); ctx.phrases.push('水たまりが川に育った'); }
+        else if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); ctx.phrases.push(tileName(t) + 'が消えた'); }
+        else if (t === 'firewhirl' && once('sentakuki')) { ctx.phrases.push('火の渦に水が入った'); I.doSentakuki(s, x, y, ctx, ev, dir); }
+      } else if (m === 'wind') {
+        if (t === 'empty') { setTile(s, x, y, twoStep(u) ? 'gale' : 'breeze'); }
+        else if (t === 'breeze' && grow) setTile(s, x, y, 'gale');
+        else if ((t === 'fire' || t === 'smallfire') && once('spread')) { ctx.phrases.push(tileName(t) + 'に風が当たった'); I.doSpread(s, x, y, dir, ctx, ev, 0); }
+        else if ((t === 'sakura' || t === 'hillsakura') && once('eruption')) { ctx.phrases.push(tileName(t) + 'に風が当たった'); I.doEruption(s, x, y, dir, ctx, ev); }
+        else if (t === 'mirage' && B.ideas.windClearsMirage) { setTile(s, x, y, 'empty'); ctx.phrases.push('風で蜃気楼が晴れた'); }
+      } else if (m === 'thunder') {
+        if (waterTile(t) && once('shock')) { ctx.phrases.push('雷が' + tileName(t) + 'に落ちた'); I.doShock(s, x, y, ctx, ev, {}); }
+        else if (t === 'forest') { setTile(s, x, y, 'fire'); ctx.phrases.push('雷が森に落ちて燃えた'); }
+      } else if (m === 'ice') {
+        if ((t === 'river' || t === 'puddle') && once('freeze')) I.doFreeze(s, x, y, ctx, ev);
+        else if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); ctx.phrases.push(tileName(t) + 'が消えた'); }
+        if (o && !o.stuck) { o.stuck = true; ev.push({ type: 'mud', id: o.id, cells: [[x, y]], text: unitLabel(s, o) + 'の足が凍りついた（次の移動は1回休み）' }); }
+      } else if (m === 'dark') {
+        if (t === 'forest') toDeadForest(s, x, y, ctx, ev);
+      }
+    }
+    // G4 damage: 融合の決め手は半分
+    hitMore.push(function (ctx, u, amount, src) {
+      if (ctx.labFuse === 'G4' && opt('G4', 'weak') === 'damage' && src === 'finisher') return Math.floor(amount / 2);
+      return amount;
+    });
+
+    // G7: 魔法の直撃を受けた者は、その魔法をまとう（ターンの終わりまで。次の1発で使う）
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!on('G7')) return;
+      ctx.order.forEach(function (id) {
+        var h = ctx.hits[id], o = I.findUnit(s, id);
+        if (!o || id === u.id || o.side === 'object' || !h || h.src !== 'direct') return;
+        o.labWear = ctx.magic;
+        ev.push({ type: 'info', id: o.id, cells: [[o.x, o.y]], text: '【ラボ】' + unitLabel(s, o) + 'は' + I.magicName(ctx.magic) + 'をまとった（次の1発に乗る。ターンの終わりまで）' });
+      });
+    });
+    function turnEnd(s, ev) {
+      if (!on('G7')) return;
+      var gone = s.units.filter(function (x) { return x.labWear; });
+      gone.forEach(function (x) { delete x.labWear; });
+      if (gone.length) ev.push({ type: 'info', text: '【ラボ】まとっていた魔法が消えた（' + gone.length + '人）' });
+    }
+
+    // G8: 強化を持つ敵を倒すと、同じ魔法の味方がその強化を覚える
+    function onDeath(s, dead, ev) {
+      if (!on('G8')) return;
+      dead.forEach(function (d) {
+        if (d.side !== 'enemy' || !d.boosts) return;
+        d.boosts.forEach(function (b) {
+          var got = I.alliesOf(s).filter(function (a) { return a.magic === d.magic && boostOf(a, b.k) === undefined; });
+          got.forEach(function (a) { giveBoost(a, b.k, b.v === undefined ? true : b.v); });
+          s.labLearned = (s.labLearned || []).concat([{ magic: d.magic, k: b.k, v: b.v }]);
+          ev.push({ type: 'info', text: '【ラボ】' + unitLabel(s, d) + 'の技「' + (BOOST_INFO[b.k] ? BOOST_INFO[b.k].name : b.k) + '」を覚えた' +
+            (got.length ? '（' + got.map(function (a) { return unitLabel(s, a); }).join('・') + 'が使えるようになった）' : '（' + I.magicName(d.magic) + 'の味方がいないので、次に持ち越す）') });
+        });
+      });
+    }
+
+    // G9: 2つ目の魔法と持ち替える（手番の前だけ。撃てるのは1発のまま）
+    function swapMagic(s0, unitId) {
+      var u0 = I.findUnit(s0, unitId);
+      if (!on('G9') || !u0 || u0.side !== 'ally') return { ok: false, state: s0, events: [], steps: [], error: '2つ目の魔法がない' };
+      var m2 = boostOf(u0, 'G9');
+      if (!m2) return { ok: false, state: s0, events: [], steps: [], error: '2つ目の魔法がない' };
+      if (u0.acted) return { ok: false, state: s0, events: [], steps: [], error: 'この味方はもう行動した' };
+      var s = I.clone(s0), u = I.findUnit(s, unitId), m1 = u.magic;
+      u.magic = m2; giveBoost(u, 'G9', m1);
+      return { ok: true, state: s, events: [{ type: 'info', id: u.id, text: '【ラボ】' + I.magicName(m2) + 'に持ち替えた（2つ目: ' + I.magicName(m1) + '）' }], steps: [] };
+    }
+    // エディット: 強化を付け外し
+    function editSetBoost(s0, unitId, k, v) {
+      var u0 = I.findUnit(s0, unitId);
+      if (!u0 || u0.side === 'object') return { ok: false, state: s0, events: [], steps: [], error: 'ユニットがいない' };
+      var s = I.clone(s0);
+      giveBoost(I.findUnit(s, unitId), k, v);
+      return { ok: true, state: s, events: [], steps: [] };
+    }
+
     // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
@@ -1074,6 +1348,9 @@
       planEnemy: planEnemy, fireStage: fireStage, intentReason: intentReason, cannotIntent: cannotIntent, castMagic: castMagic, afterShot: afterShot,
       nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
       decoys: decoysOf, mirrors: mirrors, enclosedAt: enclosedAt, intentHints: intentHints,
+      twoStep: twoStep, lengthFor: lengthFor, onDeath: onDeath, turnEnd: turnEnd, boostOf: boostOf, hasBoost: hasBoost, giveBoost: giveBoost,
+      boostText: boostText, boostShape: boostShape, FORMS: FORMS, WEAPONS: WEAPONS, BOOST_INFO: BOOST_INFO, GROW_LIST: GROW_LIST, GROW_DIR: GROW_DIR,
+      api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic },
       crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
       on: on, opt: opt, edge: edge, CH: I.CH,
       shock: shock, haunt: haunt, sentakuki: sentakuki, ringAt: ringAt,
