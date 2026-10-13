@@ -1128,6 +1128,23 @@ test('K2: 燃え尽きた跡は灰、2回目のターン終了で草むら（森
   eq(tile(t2, 2, 1), 'forest', 'よみがえった（育つが切なので森）');
 });
 
+// ===================================================================
+console.log('\n■ J 見せ方');
+
+test('J5: あと一手のヒントが、全部の決め手に広がる（燃え広がり・感電 …）', function () {
+  var s = board(['.....', '..X..', '.....', '.RR..', '.....']);
+  R.addAlly(s, 'wind', 2, 4, 'up'); R.addAlly(s, 'thunder', 0, 4, 'up');
+  eq(R.nextHints(s).length, 0, 'オフでは今の5つだけ');
+  R.labApply(['J5']);
+  var names2 = R.nextHints(s).map(function (h) { return h.name; });
+  ok(names2.indexOf('燃え広がり') >= 0 && names2.indexOf('感電') >= 0, names2.join(','));
+});
+test('J8: 図鑑の表は、ラボの決め手をその案がオンのときだけ載せる', function () {
+  var n0 = R.LX.zukanList().length;
+  R.labApply(['B7']);
+  eq(R.LX.zukanList().length, n0 + 1);
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

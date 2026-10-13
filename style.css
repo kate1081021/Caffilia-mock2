@@ -1034,3 +1034,21 @@ body.lab-open { padding-left: 400px; }
 .t-ash { background: radial-gradient(circle at 40% 40%, #d6d3d1 0 20%, transparent 21%), radial-gradient(circle at 65% 65%, #a8a29e 0 15%, transparent 16%), #e7e5e4; }
 .t-ash .tile-label { color: #57534e; }
 .b-fc .growk { background: #16a34a; color: #fff; }
+/* ラボ J: 見せ方 */
+.bigland.blossom { background: rgba(244, 114, 182, .18); }
+.bigland.blaze { background: rgba(249, 115, 22, .22); }
+.bigmark.blossom, .bigmark.blaze { filter: drop-shadow(0 0 4px rgba(255, 255, 255, .8)); }
+.b-charge { position: absolute; inset: 8%; border-radius: 6px; background: rgba(253, 224, 71, .0); pointer-events: none; z-index: 2; animation: labCharge 1.6s ease-in-out infinite; animation-delay: var(--cd, 0ms); }
+@keyframes labCharge { 0% { background: rgba(253, 224, 71, 0); } 15% { background: rgba(253, 224, 71, .75); box-shadow: 0 0 10px 3px rgba(253, 224, 71, .8); } 40% { background: rgba(253, 224, 71, 0); box-shadow: none; } 100% { background: rgba(253, 224, 71, 0); } }
+.wavecell { position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 10px; background: rgba(255, 237, 160, .85); box-shadow: 0 0 14px 6px rgba(253, 186, 116, .8); pointer-events: none; opacity: 0; animation: labWave .5s ease-out forwards; z-index: 30; }
+@keyframes labWave { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; transform: scale(1.05); } 100% { opacity: 0; transform: scale(1.2); } }
+.cell.j5-glow { box-shadow: inset 0 0 0 3px #facc15, 0 0 10px 2px rgba(250, 204, 21, .7); }
+.popup.bubble { background: #fff; color: #1f2937; border: 1px solid #94a3b8; border-radius: 10px; padding: 2px 8px; font-size: 12px; font-weight: bold; white-space: nowrap; animation-duration: 2.2s; }
+body.lab-tidy .cell:not(:hover) .b-fc, body.lab-tidy .cell:not(:hover) .u-warn, body.lab-tidy .cell:not(:hover) .u-burn, body.lab-tidy .cell:not(:hover) .u-persona,
+body.lab-tidy .cell:not(:hover) .b-hint, body.lab-tidy .cell:not(:hover) .u-why, body.lab-tidy .cell:not(:hover) .b-change, body.lab-tidy .cell:not(:hover) .b-next,
+body.lab-tidy .cell:not(:hover) .u-boost, body.lab-tidy .cell:not(:hover) .u-order, body.lab-tidy .cell:not(:hover) .wline, body.lab-tidy .cell:not(:hover) .b-crush { display: none; }
+.lab-zukan { list-style: none; padding: 0; margin: 8px 0; }
+.lab-zukan li { padding: 4px 6px; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #6b7280; }
+.lab-zukan li b { display: inline-block; min-width: 7em; color: #9ca3af; }
+.lab-zukan li.got { color: #1f2937; }
+.lab-zukan li.got b { color: #b45309; }

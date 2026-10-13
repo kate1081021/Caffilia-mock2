@@ -2334,7 +2334,7 @@
   function nextHints(s) {
     var out = [];
     if (s.result) return out;
-    (B.nextHints || []).forEach(function (h) {
+    (B.nextHints || []).concat(LX ? LX.moreHints() : []).forEach(function (h) {   // ラボ J5: 全部の決め手に
       if (h.recipe && [].concat(h.recipe).indexOf(B.tornadoRecipe) < 0) return;
       var seen = {};
       for (var y = 0; y < rowsOf(s); y++) {

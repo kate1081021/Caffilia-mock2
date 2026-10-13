@@ -199,6 +199,8 @@
         onList.map(function (k) { var c = card(k); return '<span class="lab-bar-on">' + esc(c ? c.name : k) + '　オン</span>'; }).join('') +
         (cmp ? '<span class="lab-bar-off">' + esc(cmp.name) + '　オフでくらべ中</span>' : '') +
         '<button type="button" data-act="openlab">ラボを開く</button><button type="button" data-act="alloff">全部オフ</button>';
+      if (B.lab.J7 && B.lab.J7.on) html += '<button type="button" data-act="tidy">' + (app.tidyOff ? 'すっきり表示にする' : '全部の印を出す') + '</button>';   // J7
+      if (B.lab.J8 && B.lab.J8.on) html += '<button type="button" data-act="zukan">図鑑</button>';   // J8
       // 続きのシナリオ（G8 敵の技を覚える など）: 勝ったら次の戦いへ
       var cur = app.scenario && R.findPreset(app.scenario);
       if (cur && cur.labNext && app.state && app.state.result === 'win') html += '<button type="button" class="primary" data-act="next">次の戦いへ: ' + esc(scenName(cur.labNext)) + '</button>';
@@ -367,9 +369,29 @@
   bar.addEventListener('click', function (e) {
     var a = e.target.getAttribute && e.target.getAttribute('data-act');
     if (a === 'openlab') setOpen(true);
+    if (a === 'tidy') { app.tidyOff = !app.tidyOff; app.render(); }
+    if (a === 'zukan') showZukan();
     if (a === 'next') { var cur = app.scenario && R.findPreset(app.scenario); if (cur && cur.labNext) app.loadScenario(cur.labNext); }
     if (a === 'alloff') { R.labApply([]); app.labCompare = null; changed(); app.addLog('ラボの案を全部オフにした（盤面はそのまま。やり直すと反映）'); }
   });
+
+  // J8: シナジー図鑑（起こした決め手は名前と一行。まだのものは「？」で舞台だけ）
+  function showZukan() {
+    var z = {};
+    try { z = JSON.parse(localStorage.getItem('cafilia-lab-zukan') || '{}'); } catch (err) { z = null; }
+    var list = R.LX.zukanList();
+    var found = list.filter(function (x) { return z && z[x.name]; }).length;
+    var box = document.getElementById('labZukan');
+    if (!box) { box = document.createElement('div'); box.id = 'labZukan'; box.className = 'lab-run'; document.body.appendChild(box); box.addEventListener('click', function (e) { if (e.target === box || e.target.getAttribute('data-act') === 'zclose') box.hidden = true; }); }
+    box.innerHTML = '<div class="lab-run-card"><h2>シナジー図鑑 <small>' + found + ' / ' + list.length + '</small></h2>' +
+      (z ? '' : '<p class="note danger">この環境では図鑑を保存できません（localStorage が使えない）。</p>') +
+      '<ul class="lab-zukan">' + list.map(function (x) {
+        var got = z && z[x.name];
+        return '<li class="' + (got ? 'got' : '') + '"><b>' + (got ? esc(x.name) : '？') + '</b>' +
+          (got ? '<span>' + esc(x.line) + '（' + z[x.name] + '回）</span>' : '<span>' + esc(x.stage) + 'があるところに、？？が来たら…</span>') + '</li>';
+      }).join('') + '</ul><div class="lab-run-buttons"><button type="button" data-act="zclose">閉じる</button></div></div>';
+    box.hidden = false;
+  }
 
   function setOpen(on) {
     panel.hidden = !on;

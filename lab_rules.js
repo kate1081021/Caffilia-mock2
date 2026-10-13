@@ -2306,6 +2306,50 @@
       if (melt.length) ev.push({ type: 'kindle', cells: melt, text: '【ラボ】火山のそばの氷が溶けた（' + melt.length + 'マス）' });
     }
 
+
+    // ---------------------------------------------------------------
+    // J 見せ方（ルールは変えない。あと一手のヒントの表と、図鑑の表だけ）
+    // ---------------------------------------------------------------
+    // J5: あと一手のヒントを全部の決め手に（ラボで足した決め手は、その案がオンのときだけ）
+    var MORE_HINTS = [
+      { tile: 'fire', magic: 'wind', name: '燃え広がり' }, { tile: 'smallfire', magic: 'wind', name: '燃え広がり' },
+      { tile: 'river', magic: 'thunder', name: '感電' }, { tile: 'puddle', magic: 'thunder', name: '感電' },
+      { tile: 'river', magic: 'ice', name: '凍結' }, { tile: 'puddle', magic: 'ice', name: '凍結' },
+      { tile: 'gale', magic: 'fire', name: '火の渦' }, { tile: 'sakura', magic: 'wind', name: '桜吹雪' },
+      { tile: 'deadforest', magic: 'thunder', name: 'オバケヤシキ', lab: 'B3' }, { tile: 'sakura', magic: 'water', name: '花筏', lab: 'B7' },
+      { tile: 'snowmt', magic: 'wind', name: '雪崩', lab: 'B8' }, { tile: 'mud', magic: 'water', name: '土石流', lab: 'B12' },
+      { tile: 'mud', magic: 'dark', name: '底なし沼', lab: 'B13' }, { tile: 'mirage', magic: 'fire', name: '水蒸気爆発', lab: 'B15' },
+      { tile: 'sandstorm', magic: 'fire', name: '粉塵爆発', lab: 'B17' }, { tile: 'gale', magic: 'dark', name: 'かまいたち', lab: 'B19' },
+      { tile: 'rock', magic: 'wind', name: '岩落とし', lab: 'I4' }
+    ];
+    function moreHints() {
+      if (!on('J5')) return [];
+      var have = {};
+      (B.nextHints || []).forEach(function (h) { have[h.tile + ':' + h.magic + ':' + h.name] = true; });
+      return MORE_HINTS.filter(function (h) { return (!h.lab || on(h.lab)) && !have[h.tile + ':' + h.magic + ':' + h.name]; });
+    }
+    // J8: 図鑑（決め手）。stage は舞台（先にある自然）、magic は後から来た魔法
+    var ZUKAN = [
+      { name: '燃え広がり', stage: '炎', magic: '風', line: '炎があるところに、風が来たから、燃え広がった' },
+      { name: '火の渦', stage: '風', magic: '火', line: '風が吹いているところに、火が来たから、火の渦になった' },
+      { name: '感電', stage: '水', magic: '雷', line: '水があるところに、雷が来たから、つながった水に雷が走った' },
+      { name: '凍結', stage: '水', magic: '氷', line: '水があるところに、冷気が来たから、つながった水が凍った' },
+      { name: 'センタクキ', stage: '火の渦', magic: '水', line: '火の渦があるところに、水が来たから、まわりがぐるっと回った' },
+      { name: 'オバケヤシキ', stage: '死の森', magic: '火', line: '死の森があるところに、火が来たから、オバケヤシキになった' },
+      { name: '桜吹雪', stage: '桜', magic: '風', line: '桜があるところに、風が来たから、桜吹雪になった' },
+      { name: '花筏', stage: '桜', magic: '水', line: '桜があるところに、水が来たから、花びらが流れに乗った', lab: 'B7' },
+      { name: '雪崩', stage: '雪山', magic: '風・雷', line: '雪山があるところに、風か雷が来たから、雪崩が起きた', lab: 'B8' },
+      { name: '土石流', stage: '泥沼', magic: '水', line: '泥沼があるところに、水が来たから、泥ごと押し流した', lab: 'B12' },
+      { name: '底なし沼', stage: '泥沼', magic: '闇', line: '泥沼があるところに、闇が来たから、底が抜けた', lab: 'B13' },
+      { name: '水蒸気爆発', stage: '蜃気楼', magic: '火', line: '蜃気楼があるところに、もう一度火が来たから、爆ぜた', lab: 'B15' },
+      { name: '台風', stage: '広い水', magic: '風', line: '広い水があるところに、風が来たから、台風になった', lab: 'B16' },
+      { name: '粉塵爆発', stage: '砂嵐', magic: '火', line: '砂嵐があるところに、火が来たから、爆ぜた', lab: 'B17' },
+      { name: 'かまいたち', stage: '強風', magic: '闇', line: '強風があるところに、闇が来たから、真空が走った', lab: 'B19' },
+      { name: '火の粉', stage: '火山', magic: '風', line: '火山があるところに、風が来たから、火の粉が飛んだ', lab: 'B6' },
+      { name: '岩落とし', stage: '岩', magic: '岩・風・土・水', line: '岩があるところに、魔法が来たから、岩が転がった', lab: 'I4' }
+    ];
+    function zukanList() { return ZUKAN.filter(function (z) { return !z.lab || on(z.lab); }); }
+
     // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
@@ -2344,6 +2388,7 @@
       nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
       decoys: decoysOf, mirrors: mirrors, enclosedAt: enclosedAt, intentHints: intentHints,
       twoStep: twoStep, lengthFor: lengthFor, onDeath: onDeathAll, turnEnd: turnEndAll, boostOf: boostOf, hasBoost: hasBoost, giveBoost: giveBoost,
+      moreHints: moreHints, zukanList: zukanList,
       timeFrozen: timeFrozen, burnedTo: burnedTo, growMarks: growMarks,
       flowCell: flowCell, blowCell: blowCell, tallTile: tallTile, strikeTall: strikeTall, chillCell: chillCell, LAB_TILES: LAB_TILES,
       interleave: interleave, intentOrder: intentOrder, stancesOf: stancesOf, setStance: setStance, fireStances: fireStances, breakFront: breakFront,

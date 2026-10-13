@@ -21,6 +21,7 @@
     ice: { cls: 'icefield', name: '氷原', mark: '❄' },
     deadforest: { cls: 'deadwoods', name: '死の森', mark: '🥀' }
   };
+  var J1_BIG = { river: { cls: 'lake', name: '大河', mark: '〜' }, sakura: { cls: 'blossom', name: '桜の山', mark: '🌸' }, fire: { cls: 'blaze', name: '大火', mark: '🔥' } };   // ラボ J1
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
@@ -305,7 +306,14 @@
     });
     if (!animate) return;
     app.hl = hl;
-    if (finishers.length) {
+    if (finishers.length) labRecord(finishers);   // ラボ J8: 図鑑に記録
+    if (finishers.length && R.lab('J4')) {   // ラボ J4: 連鎖は名前を続けて出し、数える
+      app.chain = (app.chain || []).concat(finishers);
+      showBanner(app.chain.join(' → ') + '！' + (app.chain.length > 1 ? '（' + app.chain.length + '連鎖）' : ''));
+      app.flash = flash;
+      clearTimeout(showEvents.timer);
+      showEvents.timer = setTimeout(function () { app.flash = {}; renderBoard(false); }, 950);
+    } else if (finishers.length) {
       showBanner(finishers.join('・') + '！');
       app.flash = flash;
       clearTimeout(showEvents.timer);
@@ -322,7 +330,17 @@
         if (e.name === '火の渦' && e.center) fxSpin(e.center, true, 2.4);
         if (e.name === 'オバケヤシキ' && e.center) fxSpin(e.center, false, 3.2, true);
         if (e.name === '桜吹雪' && e.origin) fxPetals(e.origin, e.cells || [], e.pink);
+        if (R.lab('J3') && R.LX && e.cells && e.cells.length) fxWave(e.cells, e.wave || R.LX.waveFrom(e.cells, e.origin || e.cells[0]));   // ラボ J3: 波
       });
+      if (R.lab('J6')) {   // ラボ J6: 起きたことを盤面の吹き出しで1つずつ
+        var nb = 0;
+        events.forEach(function (e) {
+          if (!e.text || !e.cells || !e.cells.length || e.type === 'damage') return;
+          var c0 = e.cells[0], t = e.text.replace(/【[^】]*】/g, '').replace(/^.*?→ /, '');
+          if (t.length > 18) t = t.slice(0, 17) + '…';
+          (function (c, txt, delay) { setTimeout(function () { popup(c[0], c[1], txt, 'bubble'); }, delay); })(c0, t, nb++ * 350);
+        });
+      }
       events.forEach(function (e) { if (e.type === 'vortex' && e.center) fxVortex(e.center); });
       if (B.fx.grow) events.forEach(function (e) { (e.grows || []).forEach(fxGrow); });
       events.forEach(function (e) {
@@ -334,8 +352,33 @@
     }, 0);
   }
 
+  // ラボ J3: 決め手の範囲を、起点から順に光らせる（波）
+  function fxWave(cells, wave) {
+    cells.forEach(function (c, i) {
+      var p = cellCenter(c[0], c[1]);
+      if (!p) return;
+      var d = document.createElement('div');
+      d.className = 'wavecell';
+      d.style.left = p.x + 'px';
+      d.style.top = p.y + 'px';
+      d.style.animationDelay = ((wave && wave[i]) || 0) * 80 + 'ms';
+      el.fx.appendChild(d);
+      setTimeout(function () { d.remove(); }, 900 + ((wave && wave[i]) || 0) * 80);
+    });
+  }
+  // ラボ J8: 起こした決め手を図鑑に記録（localStorage。使えなければ何もしない）
+  function labRecord(names) {
+    if (!R.lab('J8')) return;
+    try {
+      var z = JSON.parse(localStorage.getItem('cafilia-lab-zukan') || '{}');
+      names.forEach(function (n) { z[n] = (z[n] || 0) + 1; });
+      localStorage.setItem('cafilia-lab-zukan', JSON.stringify(z));
+    } catch (err) { /* 保存できない環境 */ }
+  }
+
   // 途中の状態を1つずつ見せる
   function play(steps, finalState, done) {
+    app.chain = [];   // ラボ J4: 1つの行動の中の連鎖を数える
     app.busy = true;
     app.playback = { steps: steps, i: 0, final: finalState, done: done, timer: null };
     nextStep();
@@ -375,7 +418,7 @@
   function selUnit() {
     if (!app.sel) return null;
     var u = R.findUnit(app.state, app.sel);
-    return u && !u.acted ? u : null;
+    return u && (!u.acted || (R.lab('F5') && u.labStance)) ? u : null;   // ラボ F5: 構えた味方は構え直せる
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
@@ -975,6 +1018,7 @@
 
   function renderBoard(animate) {
     var st = app.state;
+    document.body.classList.toggle('lab-tidy', R.lab('J7') && !app.tidyOff);   // ラボ J7: すっきり表示
     var n = st.size, rows = R.rowsOf(st);   // 横 n・縦 rows（チュートリアル②は 5×8）
     el.board.style.setProperty('--n', n);
     el.board.style.setProperty('--rows', rows);
@@ -1020,6 +1064,12 @@
     // 予測
     var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {}, finArrow = {};
     var arrowsOn = R.lab('C3');   // ラボ C3: 決め手が広がる向きの矢印
+    var charge = {}, j5glow = {};
+    if (pv && R.lab('J2') && R.LX) pv.finishers.forEach(function (f) {   // ラボ J2: 決め手の「ため」
+      var w = R.LX.waveFrom(f.cells, f.origin || f.cells[0]);
+      f.cells.forEach(function (c, i) { var k2 = key(c[0], c[1]); if (charge[k2] === undefined || w[i] < charge[k2]) charge[k2] = w[i]; });
+    });
+    if (u && R.lab('J5')) hintsNow().forEach(function (h) { if (h.magic === u.magic) h.cells.forEach(function (c) { j5glow[key(c[0], c[1])] = true; }); });   // ラボ J5
     if (pv) {
       pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
       pv.finishers.forEach(function (f) {
@@ -1200,11 +1250,13 @@
 
     // 【育つ】見た目: つながった森・水たまり・氷・死の森も、1枚の大きな絵で描く（fx.bigPicture）。かたまりが大きいほど真ん中の絵も大きい
     var bigComp = {}, bigAt = {};
-    if (B.fx.bigPicture) {
+    var BIGU = BIG;
+    if (R.lab('J1')) { BIGU = {}; Object.keys(BIG).forEach(function (t) { BIGU[t] = BIG[t]; }); Object.keys(J1_BIG).forEach(function (t) { BIGU[t] = J1_BIG[t]; }); }   // ラボ J1
+    if (B.fx.bigPicture || R.lab('J1')) {
       for (var by = 0; by < rows; by++) {
         for (var bx = 0; bx < n; bx++) {
           var bt = R.getTile(st, bx, by);
-          if (!BIG[bt] || bigComp[key(bx, by)]) continue;
+          if (!BIGU[bt] || bigComp[key(bx, by)]) continue;
           var bcomp = [], bstack = [[bx, by]], bseen = {};
           while (bstack.length) {
             var bq = bstack.pop(), bk = key(bq[0], bq[1]);
@@ -1250,6 +1302,7 @@
         if (app.hl[k]) cls.push('hl');
         if (app.flash[k]) cls.push('flash');
         if (nextAt[k]) cls.push('has-next');
+        if (j5glow[k]) cls.push('j5-glow');
         var isGoal = R.inCells(mi.goal, x, y), isExit = R.inCells(mi.exit, x, y);
         if (isGoal) cls.push('m-goal');
         if (isExit) cls.push('m-exit');
@@ -1277,11 +1330,11 @@
         if (bigComp[k] && bigComp[k] !== 'solo') {
           var bj = [];
           [['up', x, y - 1], ['right', x + 1, y], ['down', x, y + 1], ['left', x - 1, y]].forEach(function (a) { if (R.inBounds(st, a[1], a[2]) && R.getTile(st, a[1], a[2]) === tile) bj.push('j-' + a[0]); });
-          inner += '<span class="bigland ' + BIG[tile].cls + ' ' + bj.join(' ') + '"></span>';
+          inner += '<span class="bigland ' + BIGU[tile].cls + ' ' + bj.join(' ') + '"></span>';
         }
         if (bigAt[k]) {
           var ba = bigAt[k];
-          inner += '<span class="bigmark ' + BIG[ba.tile].cls + '" style="--ps:' + ba.size.toFixed(2) + ';--pdx:' + ba.dx.toFixed(2) + ';--pdy:' + ba.dy.toFixed(2) + '" title="' + esc(BIG[ba.tile].name) + '">' + BIG[ba.tile].mark + '</span>';
+          inner += '<span class="bigmark ' + BIGU[ba.tile].cls + '" style="--ps:' + ba.size.toFixed(2) + ';--pdx:' + ba.dx.toFixed(2) + ';--pdy:' + ba.dy.toFixed(2) + '" title="' + esc(BIGU[ba.tile].name) + '">' + BIGU[ba.tile].mark + '</span>';
         }
         // お題の印
         if (isGoal) inner += '<span class="m-mark goal">ゴール</span>';
@@ -1306,6 +1359,7 @@
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
         }
         if (finArrow[k]) inner += '<span class="fin-arrow" title="決め手が広がる向き（ラボ C3）">' + DIR_ARROW[finArrow[k]] + '</span>';
+        if (charge[k] !== undefined) inner += '<span class="b-charge" style="--cd:' + (charge[k] * 110) + 'ms"></span>';
         if (growPv[k]) inner += '<span class="g-ghost ' + growPv[k] + '" title="育ったあとの形（' + esc(SHORT[growPv[k]]) + '）"></span>';
         if (growNo[k]) inner += '<span class="b-nogrow" title="育たない（ユニットがいる・ほかの自然がある）">×</span>';
         if (change[k]) inner += '<span class="b-change">→' + esc(SHORT[change[k]]) + '</span>';
@@ -1320,7 +1374,7 @@
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
         if (planGhost === k && !unit) inner += '<div class="ghost ally"></div>';
-        if (nextAt[k]) {
+        if (nextAt[k] && !(R.lab('J5') && B.lab.J5.quiet)) {   // ラボ J5 quiet: 札を出さない
           var nx = nextAt[k], ready = nx.h.shooters.length > 0;
           inner += '<span class="b-next' + (ready ? ' ready' : '') + '" style="--ndx:' + nx.dx.toFixed(2) + ';--ndy:' + nx.dy.toFixed(2) + '">' +
             '<b>あと一手' + (ready ? '！' : '') + '</b><span class="m">' + esc(R.magicName(nx.h.magic)) + '</span>→ ' + esc(nx.h.name) + '</span>';
