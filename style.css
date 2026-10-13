@@ -1008,3 +1008,18 @@ body.lab-open { padding-left: 400px; }
 .unit .u-order.ally { background: var(--ally); border-radius: 6px; padding: 0 3px; }
 .b-wind { position: absolute; right: 6%; top: 30%; font-size: .9em; font-weight: bold; color: rgba(14, 116, 144, .85); z-index: 2; pointer-events: none; }
 .b-bench { position: absolute; inset: 3%; border: 3px dashed #a16207; border-radius: 6px; background: rgba(250, 204, 21, .12); z-index: 1; pointer-events: none; }
+/* ラボ B: 足した自然 */
+.t-reeds { background: repeating-linear-gradient(80deg, #65a30d 0 3px, transparent 3px 9px), linear-gradient(180deg, #7dd3fc, #38bdf8); }
+.t-bog { background: radial-gradient(circle at 50% 50%, #1e1b4b 0 35%, #422006 70%); }
+.t-bog .tile-label { color: #fde68a; }
+.t-sandstorm { background: repeating-linear-gradient(20deg, rgba(180, 140, 80, .8) 0 4px, rgba(234, 200, 140, .7) 4px 9px); }
+.t-frost { background: radial-gradient(circle at 30% 30%, #fff 0 8%, transparent 9%), radial-gradient(circle at 70% 65%, #fff 0 7%, transparent 8%), #e0f2fe; }
+.t-frost .tile-label { color: #0369a1; }
+.t-gloom { background: radial-gradient(circle, rgba(30, 27, 75, .55), rgba(30, 27, 75, .85)); }
+.t-gloom .tile-label { color: #c7d2fe; }
+.t-deepforest { background: radial-gradient(circle at 30% 35%, #14532d 0 22%, transparent 23%), radial-gradient(circle at 70% 60%, #14532d 0 22%, transparent 23%), #166534; }
+.t-deepforest .tile-label { color: #dcfce7; }
+.t-icewall { background: linear-gradient(135deg, #e0f2fe, #7dd3fc 60%, #bae6fd); box-shadow: inset 0 0 0 3px #38bdf8; }
+.t-icewall .tile-label { color: #075985; }
+.t-snowmt { background: linear-gradient(180deg, #fff 0 45%, #94a3b8 46%, #64748b); }
+.t-snowmt .tile-label { color: #334155; }

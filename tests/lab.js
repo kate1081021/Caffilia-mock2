@@ -972,6 +972,64 @@ test('F7: 作業台の枠に当たった魔法は材料になり、ターンの�
   ok(!t.labBench, '作業台はそのターンだけ');
 });
 
+// ===================================================================
+console.log('\n■ B 新しい組み合わせ');
+
+test('B5: 火の渦に土で、2×2の大きな山（中の者は外へ押し出す）', function () {
+  R.labApply(['B5']);
+  var s = board(['......', '......', '..QQ..', '..QQ..', '......', '......']);
+  var e = R.addEnemy(s, 'fire', 3, 2); tough(s, e);
+  var a = R.addAlly(s, 'earth', 3, 5, 'up');   // 形 (2,3)(3,3)(2,2)
+  var r = act(s, a, 'up');
+  eq([tile(r.state, 2, 2), tile(r.state, 2, 3), tile(r.state, 3, 3)], ['mountain', 'mountain', 'mountain']);
+  ok(String(pos(r.state, e.id)) !== '3,2', '押し出された');
+  eq(tile(r.state, 3, 2), 'mountain', '押し出したあとは山');
+});
+test('B3: 死の森に草で、つながった死の森が森によみがえる', function () {
+  R.labApply(['B3']);
+  var s = board(['.....', '.GG..', '.G...', '.....', '.....']);
+  var a = R.addAlly(s, 'grass', 1, 4, 'up');   // 形 (1,2)(0,1)(1,1)(2,1)
+  var r = act(s, a, 'up');
+  eq([tile(r.state, 1, 1), tile(r.state, 2, 1), tile(r.state, 1, 2)], ['forest', 'forest', 'forest']);
+  R.labApply([]);
+  eq(tile(act(s, a, 'up').state, 1, 1), 'deadforest', 'オフなら変わらない');
+});
+test('B18: 風の残るマスに氷で吹雪（風の上の者の足が凍る）', function () {
+  R.labApply(['B18']);
+  var s = board(['.....', '.....', '..B..', '..B..', '.....']);
+  var e = R.addEnemy(s, 'fire', 2, 2); tough(s, e);
+  var a = R.addAlly(s, 'ice', 2, 4, 'up');
+  var r = act(s, a, 'up');
+  ok(R.findUnit(r.state, e.id).stuck, '足が凍った');
+  ok(/吹雪/.test(texts(r.events)));
+});
+test('B21: 桜に草で満開（隣の山にも桜）', function () {
+  R.labApply(['B21']);
+  var s = board(['.....', '.....', '.MKM.', '.....', '.....']);
+  var a = R.addAlly(s, 'grass', 2, 4, 'up');   // 形 (2,2) …
+  var r = act(s, a, 'up');
+  eq([tile(r.state, 1, 2), tile(r.state, 3, 2)], ['sakura', 'sakura']);
+});
+test('B20: 霜は歩くと滑る（A2）。ターン終了で消える', function () {
+  R.labApply(['B20', 'A2']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var a = R.addAlly(s, 'ice', 2, 4, 'up');
+  var r = act(s, a, 'up');
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2)], ['frost', 'frost']);
+  var t = R.endTurn(r.state).state;
+  eq(tile(t, 2, 3), 'empty', '消えた');
+});
+test('B14: 葦原は歩いて渡れて、水のまま（感電する）', function () {
+  R.labApply(['B14']);
+  var s = board(['.....', '.....', 'eeeee', '.....', '.....']);
+  ok(R.isPassable('reeds'), '通れる');
+  var e = R.addEnemy(s, 'fire', 2, 2); tough(s, e);
+  var a = R.addAlly(s, 'thunder', 0, 4, 'up');   // (0,3) 空き、(1,2) 葦原
+  var r = act(s, a, 'up');
+  ok(names(r.events).indexOf('感電') >= 0, '感電');
+  eq(dealt(r, e.id), 20);
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

@@ -826,13 +826,15 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
-      var tall = o || t === 'forest' || t === 'mountain' || t === 'hill' || t === 'volcano' || t === 'sakura' || t === 'hillsakura' || t === 'deadforest' || t === 'haunted';
-      var water = t === 'river' || t === 'puddle';
+      var tall = o || t === 'forest' || t === 'mountain' || t === 'hill' || t === 'volcano' || t === 'sakura' || t === 'hillsakura' || t === 'deadforest' || t === 'haunted' || (LX && LX.tallTile(t));
+      var water = t === 'river' || t === 'puddle' || (LX && LX.waterTile(t));   // ラボ B14: 葦原も水
       if (!tall && !water) continue;
       if (o) addHit(ctx, o, u.power, 'direct');
       if (water) {
         ctx.phrases.push('【新案】雷が' + tileName(t) + 'に落ちた');
         doShock(s, x, y, ctx, ev, {});
+      } else if (LX && LX.strikeTall(s, u, x, y, t, facing, ctx, ev)) {
+        // ラボ B3: 死の森に雷でオバケヤシキ／B8: 雪山に雷で雪崩
       } else if (t === 'forest') {
         setTile(s, x, y, 'fire');
         ctx.phrases.push('【新案】雷が森に落ちて燃えた');
@@ -854,6 +856,7 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
+      if (LX) { var lc = LX.chillCell(s, u, x, y, t, o, facing, ctx, ev); if (lc === 'stop') return; if (lc === 'pass') continue; }   // ラボ B: 雪山・火山が冷える・吹雪・氷の壁・霜
       if (t === 'river' || t === 'puddle') {
         if (o) { addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); }
         ctx.phrases.push('【新案】冷気が' + tileName(t) + 'に触れた');
@@ -1271,6 +1274,7 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
+      if (LX && !growing && !sourced) { var lf = LX.flowCell(s, u, x, y, t, facing, ctx, ev, o); if (lf) { stop = lf; break; } }   // ラボ B: 草むら → 森・火山が冷える・花筏・雨・土石流（泥沼の上の者ごと）
       if (o) {
         addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
         // 人の足元にも自然ができる: 池が立てる水たまりのとき（育つが入）だけ、当たった人の足元にも水たまり
@@ -1393,6 +1397,7 @@
         limit = i + B.grow.galeLength - 1;
         ctx.phrases.push('【育つ】' + tileName(t) + 'に風が重なって強風に育った');
       }
+      if (LX && LX.blowCell(s, u, x, y, t, facing, ctx, ev)) { blocked = true; break; }   // ラボ B: 雪崩・火の粉・台風・氷の壁で止まる
       if (t === 'mountain') { ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
       if (t === 'tornado') { ctx.phrases.push('【新案】風が竜巻に吸いこまれた'); blocked = true; break; }
       if (t === 'whirlwind' && B.tornadoRecipe === 'windWind') { whirl = [x, y]; ctx.cells.push([x, y]); break; }
