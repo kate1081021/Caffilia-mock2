@@ -1100,6 +1100,34 @@ test('I8: 雷は金の柱に落ち、柱から感電する', function () {
   ok(names(r.events).indexOf('感電') >= 0 || dealt(r, e.id) > 0, '雷が届いた');
 });
 
+// ===================================================================
+console.log('\n■ K 時間と繁栄');
+
+test('K1 none: ターン終了で燃え移り・小さな炎が消える・風がやむ、が起きない。炎の上のダメージは残る', function () {
+  R.labApply(['K1'], { K1: { mode: 'none' } });
+  var s = board(['.....', '.XF..', '..s..', '..B..', '.....']);
+  var e = R.addEnemy(s, 'fire', 1, 1); tough(s, e);
+  s.enemyActs = false;
+  var t = R.endTurn(s).state;
+  eq([tile(t, 2, 1), tile(t, 2, 2), tile(t, 2, 3)], ['forest', 'smallfire', 'breeze']);
+  ok(R.findUnit(t, e.id).hp < 99, '炎の上のダメージ');
+  R.labApply(['K1'], { K1: { mode: 'now' } });
+  var t2 = R.endTurn(s).state;
+  eq([tile(t2, 2, 1), tile(t2, 2, 2), tile(t2, 2, 3)], ['fire', 'empty', 'empty'], 'now は今どおり');
+});
+test('K2: 燃え尽きた跡は灰、2回目のターン終了で草むら（森）がよみがえる。水辺の草むらは森に育つ', function () {
+  R.labApply(['K2']);
+  var s = board(['.....', '..X..', '.....', 'g....', 'RRRRR']);
+  s.enemyActs = false; s.fireAge = {}; s.fireAge[1 * 5 + 2] = 1;
+  var t = R.endTurn(s).state;
+  eq(tile(t, 2, 1), 'ash', '灰');
+  eq(tile(t, 0, 3), 'forest', '水辺の草むら → 森');
+  var fc = R.forecast(t);
+  ok(fc.labGrow && fc.labGrow.revive.length === 1, 'よみがえる予告');
+  var t2 = R.endTurn(t).state;
+  eq(tile(t2, 2, 1), 'forest', 'よみがえった（育つが切なので森）');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

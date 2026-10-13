@@ -1030,3 +1030,7 @@ body.lab-open { padding-left: 400px; }
 .t-vinebridge { background: repeating-linear-gradient(90deg, #4d7c0f 0 4px, #84cc16 4px 7px), #38bdf8; }
 .t-pillar { background: linear-gradient(90deg, #e7e5e4, #facc15 40%, #a16207 60%, #e7e5e4); }
 .t-pillar .tile-label { color: #422006; }
+/* ラボ K: 灰・育つ印 */
+.t-ash { background: radial-gradient(circle at 40% 40%, #d6d3d1 0 20%, transparent 21%), radial-gradient(circle at 65% 65%, #a8a29e 0 15%, transparent 16%), #e7e5e4; }
+.t-ash .tile-label { color: #57534e; }
+.b-fc .growk { background: #16a34a; color: #fff; }

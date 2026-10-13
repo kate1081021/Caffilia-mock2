@@ -1036,6 +1036,7 @@
       });
     }
     // 予告
+    var fcGrowK = {};
     var fcShot = {}, fcGhost = {}, fcSpread = {}, fcOut = {}, fcChange = {}, fcRange = {}, fcStrong = {}, warn = {};
     // 構える味方の予告（青）: 「予告を表示」を切っていても常に出す。狙うマスの枠と向きの矢印、結果（変わるマス・決め手の範囲・ダメージ）
     var faShot = {}, faChange = {}, faRange = {}, faStrong = {}, npcIds = {};
@@ -1078,6 +1079,7 @@
         if (me) fcGhost[key(m.to[0], m.to[1])] = { letter: me.letter, dir: m.dir };
       });
       fc.fireSpread.forEach(function (c) { fcSpread[key(c[0], c[1])] = true; });
+      if (fc.labGrow) { fc.labGrow.grow.forEach(function (c) { fcGrowK[key(c[0], c[1])] = 'grow'; }); fc.labGrow.revive.forEach(function (c) { fcGrowK[key(c[0], c[1])] = 'revive'; }); }   // ラボ K2
       (fc.burnOut || []).forEach(function (c) { fcOut[key(c[0], c[1])] = true; });
       fc.burn.forEach(function (b) { warn[b.id] = (warn[b.id] || 0) + b.amount; });
       fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });   // 構える味方の分は上で足した
@@ -1312,6 +1314,7 @@
         var badges = '';
         if (fcSpread[k]) badges += '<span class="spread">燃</span>';
         if (fcOut[k]) badges += '<span class="burnout" title="次のターン終了で燃え尽きる">尽</span>';
+        if (fcGrowK[k]) badges += fcGrowK[k] === 'grow' ? '<span class="growk" title="次のターン終了で育つ（ラボ K2）">育</span>' : '<span class="growk" title="次のターン終了で灰からよみがえる（ラボ K2）">よ</span>';
         if (faShot[k]) badges += '<span class="ally" title="構える味方が狙っているマス">' + DIR_ARROW[faShot[k]] + '</span>';
         if (fcShot[k]) badges += '<span class="enemy">' + esc(fcShot[k].join('')) + '</span>';
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';

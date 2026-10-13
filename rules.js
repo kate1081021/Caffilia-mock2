@@ -2129,8 +2129,9 @@
 
   // 時間で変わる自然（燃え移り・炎の上のダメージ・火傷・燃え尽き・小さな炎が消える・花びらが散る・風がやむ・火の渦が解ける）
   function timePasses(s, ev, step) {
+    var frozen = LX && LX.timeFrozen();   // ラボ K1 none: 時間なし（燃え移り・燃え尽き・消える・やむ を止める。炎の上と火傷のダメージは残す）
     // 1. 炎が隣の森へ燃え移る（処理開始時の盤面で同時に判定）
-    var caught = fireSpreadCells(s);
+    var caught = frozen ? [] : fireSpreadCells(s);
     // ラボ C6: 燃え移りの炎が死の森に届いたら、火が当たったことにする（オバケヤシキ）
     var hauntAt = caught.filter(function (c) { return getTile(s, c[0], c[1]) === 'deadforest'; });
     if (hauntAt.length) caught = caught.filter(function (c) { return getTile(s, c[0], c[1]) !== 'deadforest'; });
@@ -2163,8 +2164,9 @@
     step();
 
     // 2c. 炎が燃え尽きる（できてからターン終了を burnOutTurns 回迎えたら空きに戻る。いま燃え移った炎はここから数える）
-    var out2 = burnOutCells(s, caught);
-    out2.cells.forEach(function (c) { setTile(s, c[0], c[1], 'empty'); });
+    var out2 = frozen ? { cells: [], age: s.fireAge || {} } : burnOutCells(s, caught);
+    var ashTo = LX ? LX.burnedTo(s) : 'empty';   // ラボ K2: 燃え尽きた跡は灰
+    out2.cells.forEach(function (c) { setTile(s, c[0], c[1], ashTo); });
     s.fireAge = out2.age;
     if (out2.cells.length) ev.push({ type: 'burnOut', cells: out2.cells, text: '炎が燃え尽きた（' + out2.cells.length + 'マス）' });
     step();
@@ -2177,6 +2179,7 @@
       }
       return cells;
     }
+    if (frozen) { step(); return; }
     var gone = sweep('smallfire', 'empty');
     if (gone.length) ev.push({ type: 'smallfireOut', cells: gone, text: '小さな炎が消えた（' + gone.length + 'マス）' });
     var fallen = sweep('petals', 'empty');
@@ -2419,8 +2422,10 @@
       wagonPhase(sim, [], function () {});
       if (sim.result) return out;
     }
-    out.fireSpread = fireSpreadCells(sim);
-    out.burnOut = burnOutCells(sim, out.fireSpread).cells;
+    var frozenFc = LX && LX.timeFrozen();   // ラボ K1 none
+    out.fireSpread = frozenFc ? [] : fireSpreadCells(sim);
+    out.burnOut = frozenFc ? [] : burnOutCells(sim, out.fireSpread).cells;
+    if (LX) { var lg = LX.growMarks(sim, out.burnOut); if (lg) out.labGrow = lg; }   // ラボ K2: 次のターン終了で育つ・よみがえるマス
     // ターン終了処理で受けるダメージ（炎の上・火傷）。燃え移りも含めて、そのまま動かして数える
     var later = clone(sim), laterEv = [];
     timePasses(later, laterEv, function () {});

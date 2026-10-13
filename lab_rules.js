@@ -1365,7 +1365,8 @@
     }
     function turnEndAll(s, ev) {
       turnEnd(s, ev);
-      sweepLab(s, ev);   // B: 砂嵐・霜・暗がり・底なし沼
+      if (!timeFrozen()) sweepLab(s, ev);   // B: 砂嵐・霜・暗がり・底なし沼（K1 時間なしなら消えない）
+      flourishTurn(s, ev);   // K2: 灰がよみがえる・水辺の草むらが育つ・氷が溶ける
       if (on('H10') && s.labFaint && s.labFaint.length) {
         var keep = [];
         s.labFaint.forEach(function (f) {
@@ -2259,6 +2260,52 @@
       else ctx.phrases.push('柱を立てられなかった（' + tileName(t) + '）');
     }
 
+
+    // ---------------------------------------------------------------
+    // K 時間と繁栄
+    // ---------------------------------------------------------------
+    if (!I.TILE_INFO.ash) I.TILE_INFO.ash = { name: '灰', label: '灰', passable: true };   // K2: 燃え尽きた跡。燃えない・風で運ばれない
+    if (!I.CH.a) I.CH.a = 'ash';
+    LAB_TILES.ash = { name: '灰', label: '灰', passable: true, ch: 'a' };
+    function timeMode() { return on('K1') ? (opt('K1', 'mode') || 'now') : 'now'; }
+    function timeFrozen() { return timeMode() === 'none'; }
+    function flourish() { return on('K2') || timeMode() === 'grow'; }
+    function burnedTo(s) { return flourish() ? 'ash' : 'empty'; }
+    function wetAt(s, x, y) { return neighbors(s, x, y).some(function (n) { return waterTile(getTile(s, n.x, n.y)); }); }
+    // 次のターン終了で育つマス（grow）・よみがえるマス（revive）。fresh は、いま燃え尽きる炎（灰になる）
+    function growMarks(s, burnOut) {
+      if (!flourish()) return null;
+      var grow = [], revive = [];
+      for (var i = 0; i < s.tiles.length; i++) {
+        var x = i % s.size, y = Math.floor(i / s.size), t = s.tiles[i];
+        if (t === 'ash' && ((s.labAge && s.labAge[i]) || 0) + 1 >= 2) revive.push([x, y]);
+        else if (t === 'thicket' && wetAt(s, x, y)) grow.push([x, y]);
+        else if (t === 'ice' && neighbors(s, x, y).some(function (n) { return getTile(s, n.x, n.y) === 'volcano'; })) grow.push([x, y]);
+      }
+      return { grow: grow, revive: revive };
+    }
+    // ターン終了処理のあと: 灰がよみがえる・水辺の草むらが森に・火山のそばの氷が溶ける
+    function flourishTurn(s, ev) {
+      if (!flourish() || timeFrozen()) return;
+      var regrow = [], grown = [], melt = [], seed = B.grow.enabled ? 'thicket' : 'forest';
+      var marks = growMarks(s, []);
+      var fresh = {};
+      for (var i = 0; i < s.tiles.length; i++) {
+        if (s.tiles[i] !== 'ash') continue;
+        s.labAge = s.labAge || {};
+        var a = (s.labAge[i] || 0) + 1;
+        if (a >= 2) { regrow.push([i % s.size, Math.floor(i / s.size)]); }
+        else { s.labAge[i] = a; fresh[i] = true; }
+      }
+      marks.grow.forEach(function (c) { var t = getTile(s, c[0], c[1]); if (t === 'thicket') grown.push(c); else if (t === 'ice') melt.push(c); });
+      regrow.forEach(function (c) { setTile(s, c[0], c[1], seed); });
+      grown.forEach(function (c) { setTile(s, c[0], c[1], 'forest'); });
+      melt.forEach(function (c) { setTile(s, c[0], c[1], 'puddle'); });
+      if (regrow.length) ev.push({ type: 'kindle', cells: regrow, text: '【ラボ】灰から' + tileName(seed) + 'がよみがえった（' + regrow.length + 'マス）' });
+      if (grown.length) ev.push({ type: 'kindle', cells: grown, text: '【ラボ】水辺の草むらが森に育った（' + grown.length + 'マス）' });
+      if (melt.length) ev.push({ type: 'kindle', cells: melt, text: '【ラボ】火山のそばの氷が溶けた（' + melt.length + 'マス）' });
+    }
+
     // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
@@ -2297,6 +2344,7 @@
       nextPaths: nextPaths, crushTo: crushTo, DESIRE: DESIRE, labValue: labValue,
       decoys: decoysOf, mirrors: mirrors, enclosedAt: enclosedAt, intentHints: intentHints,
       twoStep: twoStep, lengthFor: lengthFor, onDeath: onDeathAll, turnEnd: turnEndAll, boostOf: boostOf, hasBoost: hasBoost, giveBoost: giveBoost,
+      timeFrozen: timeFrozen, burnedTo: burnedTo, growMarks: growMarks,
       flowCell: flowCell, blowCell: blowCell, tallTile: tallTile, strikeTall: strikeTall, chillCell: chillCell, LAB_TILES: LAB_TILES,
       interleave: interleave, intentOrder: intentOrder, stancesOf: stancesOf, setStance: setStance, fireStances: fireStances, breakFront: breakFront,
       placeBench: placeBench, beforeEnemyFire: beforeEnemyFire, windAt: windAt,
