@@ -11,11 +11,13 @@
 - 作業は `lab` ブランチだけ。main・grow には戻さない。公開（`tools/publish.js`）はしない。
 - 展示用のチュートリアル・ステージ・シナリオ・デモには触らない。
 
-## 今の状態
+## 今の状態（10/13 夜）
 
-- 終わった: LAB_00（土台）・C・A・D。案ごとの状態は `LAB_PROGRESS.md`。
-- 次: **LAB_E**（`.claude/lab/LAB_E_interplay.md`）から。
-- テストは全部通る。案ごとの気づきは `LAB_REPORT.md`、決めたことは `DECISIONS.md` の「試作ラボ」の節。
+- **LAB_00〜LAB_K を全部作った**（判定パネルの123枚すべて「未実装」なし）。案ごとの状態は `LAB_PROGRESS.md`、気づきは `LAB_REPORT.md`（最後に「全体を通して」）、決めたことは `DECISIONS.md` の「試作ラボ」の節。
+- オーナーの割り込み（10/13）: 「味方に魔法を当てたとき、足元に自然が残らないのは違和感」→ 標準のルールとして `ideas.natureUnderUnits`（初期値 true）を入れた。草・土・水を人に当てると、立てる自然なら足元にもできる（敵にも同じ）。影響で2つのデモ（燃え広がり・護衛）を差し替え、`tests/snapshot.js` の記録を取り直した。
+- 次: オーナーが判定パネルで判定する。直す・捨てる案は、`lab_rules.js` の関数と rules.js の `LX.…` の差し込み口を探す。
+- 周回（H1）は `lab_run.js`（戦闘の外の画面）。
+- テスト: run.js 275件・scenarios.js・lab.js 284件・tune.js・snapshot 8561件 すべて通る。
 
 ## ファイルの分け方
 
@@ -26,7 +28,8 @@
 | `rules.js` | `lab('XX')` を見て `LX.…` を呼ぶ差し込み口だけ。新しい差し込み口が要るときだけ触る |
 | `lab_cards.js` | 判定パネルのカード（全123案）。`scen` にシナリオ id、`needs`、`opts`（文字の切り替え）、`params`（数値） |
 | `lab_scenarios.js` | ラボ用シナリオ（`lab: ['XX']`・`labOpts`・`overrides`・`enemyActs: false`・`demo`）。敵・味方の4つ目の `lab: {…}` はユニットに足す項目 |
-| `lab_ui.js` | 判定パネル・上のバー。ui.js の `app.loadScenario`・`app.playLabDemo` などを使う |
+| `lab_ui.js` | 判定パネル・上のバー（G8 の次の戦いへ・J7・J8 のボタンも）。ui.js の `app.loadScenario`・`app.playLabDemo` などを使う |
+| `lab_run.js` | H1 周回のミニ版の画面（パーティ → 道 → 戦闘 → 強化 → … → 結果） |
 | `tests/lab.js` | 案のテスト（オン／オフ）＋全ラボ用シナリオの読み込み＋デモの再生と `expect` |
 
 ### lab_rules.js にすでにある差し込み口
@@ -58,13 +61,13 @@
 - `LX.useLabShock`・`LX.useLabDark`
 - `waterTile`（葦原・飛び石も水として数える）
 
-「ラボの自然」は名前だけ予約してある: reeds・bog・sandstorm・frost・gloom・deepforest・icewall・ash・rock・stepstone・vinebridge・pillar・snowmt。**TILE_INFO と、シナリオの文字 CH には、まだ入れていない**ので、B・I・K で足す。
+「ラボの自然」（葦原 e・底なし沼 n・砂嵐 S・霜 f・暗がり y・深い森 Z・氷の壁 J・雪山 N・灰 a・岩 r・飛び石 t・蔓の橋 v・金の柱 l）は、lab_rules.js が `TILE_INFO` とシナリオの文字 `CH` に足す。エディットの自然の並び（`TILES`）には入れていない。
 
 ## 守ること
 
 - **全部オフなら今と同じ。** 盤面の状態（`s`・ユニット）に新しい項目を足すのは、案がオンのときだけにする。足すと `tests/snapshot.js` の記録とずれる。
 - 変えたら次を全部通す。
-  - `node tests/run.js`（273件）
+  - `node tests/run.js`（275件）
   - `node tests/scenarios.js`
   - `node tests/lab.js`
   - `node tests/tune.js`
