@@ -394,6 +394,9 @@
       Object.keys(cur.ui || {}).filter(function (k) { return k !== 'howto'; }).map(function (k) { return field(UI_LABELS[k] || k, 'ui.' + k, cur.ui[k], String(cur.ui[k]).length > 24); }).join('') +
       '<h3>遊び方の行</h3>' + (cur.ui.howto || []).map(function (l, i) { return lineEditor(cur.ui.howto, i, 'howto'); }).join('') +
       '<div class="row"><button type="button" data-act="addLine" data-path="howto">＋ 行を足す</button></div></details>';
+    // 進行モック（クエスト制とステージ制）の画面のことば
+    if (cur.run) h += '<details class="tx-section"><summary>進行モックのことば</summary>' +
+      Object.keys(cur.run).map(function (k) { return field(k, 'run.' + k, cur.run[k], String(cur.run[k]).length > 24); }).join('') + '</details>';
     el.panel.innerHTML = h;
   }
 

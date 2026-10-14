@@ -43,6 +43,7 @@
       </select>
     </label>
     <div class="buttons">
+      <button id="btnRun" type="button" class="run-open">進行モック</button>
       <span class="tut-pick">
         <button id="btnTutorial" type="button" class="tutorial" aria-haspopup="true" aria-expanded="false" aria-controls="tutorialMenu">チュートリアル ▾</button>
         <span id="tutorialMenu" class="tut-menu" role="menu" hidden></span>
@@ -63,6 +64,7 @@
 
   <main class="layout">
     <section class="board-area">
+      <div id="runBar" class="run-bar" hidden></div>
       <div id="missionBar" class="mission-bar" aria-live="polite"></div>
       <div id="checkCaption" class="check-caption" aria-live="polite" hidden></div>
       <div id="stageHint" class="stage-hint" aria-live="polite" hidden></div>
@@ -247,6 +249,10 @@
   <!-- 会話の窓（IMPROVE_simul）: 画面の下。押す（クリックかスペース）と次の文へ -->
   <div id="dialog" class="dialog" hidden aria-live="polite"></div>
 
+  <!-- 進行モック（クエスト制とステージ制）: 戦闘以外の画面。中身は progress_ui.js が作る -->
+  <div id="runScreen" class="run-screen" hidden></div>
+  <div id="runModal" class="run-modal" hidden></div>
+
   <div id="versionTag" class="version-tag">版 手元</div>
 
   <script src="balance.js"></script>
@@ -259,5 +265,8 @@
   <script src="ui.js"></script>
   <script src="tune_ui.js"></script>
   <script src="texts_ui.js"></script>
+  <script src="progress_data.js"></script>
+  <script src="progress.js"></script>
+  <script src="progress_ui.js"></script>
 </body>
 </html>

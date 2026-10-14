@@ -410,6 +410,7 @@
     app.chain = null; app.chainCombo = null;
     render(true);
     if (pb.done) pb.done();
+    if (app.afterPlayback) app.afterPlayback();   // 進行モック: 戦闘の決着を見る
   }
   function skipPlayback() {
     var pb = app.playback;
@@ -1391,6 +1392,7 @@
       return '<button type="button" class="' + cls + '" data-id="' + a.id + '">' +
         '<span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
         '<span class="info"><b>' + (i + 1) + '. ' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
+        (a.runTag ? '<span class="run-tag">' + esc(a.runTag) + '</span>' : '') +   // 進行モック: 強化
         '<span class="sub">' + esc(status.join('・')) +
         (nextFor[a.id] ? '<br><span class="next">あと一手: ' + esc(R.magicName(nextFor[a.id].magic)) + 'を当てれば' + esc(nextFor[a.id].name) + '</span>' : '') +
         (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
@@ -1932,7 +1934,7 @@
     var tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (e.ctrlKey || e.metaKey || e.altKey) {
-      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && !app.runLock) { e.preventDefault(); undo(); }
       return;
     }
     var k = e.key;
@@ -1941,6 +1943,7 @@
       if (k !== 'Shift') { e.preventDefault(); skipPlayback(); }
       return;
     }
+    if (app.runLock && /^[zZeE]$/.test(k)) return;   // 進行モックの戦闘中は、1手戻す・エディットを使わない
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
@@ -1969,6 +1972,7 @@
   app.render = render;
   // 調整パネル（tune_ui.js）から: 数値を変えたあと、今のシナリオを最初からやり直す
   app.restart = function () {
+    if (app.onRestart) { app.onRestart(); return; }   // 進行モック: 今の戦闘を最初からやり直す
     stopDemo();
     if (app.editMode) setEditMode(false);
     app.cache = {};
@@ -1983,6 +1987,24 @@
       showCaption('');
     } else loadScenario(app.scenario);
   };
+  // 進行モック（progress_ui.js）から: 作った盤面で戦闘を始める（1手戻すの履歴は消す）
+  app.startCustom = function (s, label) {
+    stopDemo();
+    endCheck();
+    if (app.busy) skipPlayback();
+    if (app.editMode) { app.editMode = false; }
+    app.scenario = '';
+    if (label) addLog(label, 'system');
+    app.state = s;
+    app.history = [];
+    app.sel = null; app.plan = null; app.editPick = null;
+    app.cache = {};
+    sideSig = '';
+    app.resetPoint = R.clone(app.state);
+    selectNext(null);
+    render();
+  };
+
   // 調整パネル（見本）から: 次にやり直すシナリオを決める（新案プレイの切り替えは外す）
   app.setScenario = function (id) { stopDemo(); endCheck(); app.scenario = id; };
   app.scenarioName = function () {

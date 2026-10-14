@@ -974,3 +974,110 @@ body.texts-open { padding-left: 420px; }
   75% { opacity: 1; transform: translate(-50%, -55%) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -75%) scale(1); }
 }
+
+/* ---------- 進行モック（クエスト制とステージ制） ---------- */
+button.run-open, button.run-open:hover:not(:disabled) { background: linear-gradient(135deg, #0f766e, #1d4ed8); border-color: #0f4c5c; color: #fff; font-weight: bold; }
+.run-screen { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: rgba(244, 241, 234, .98); padding: 16px; }
+.run-wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.run-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.run-top h2 { margin: 0 auto 0 0; font-size: 20px; }
+.run-top h2 small { font-size: 14px; color: var(--muted); margin-left: 6px; }
+.run-wrap h3 { margin: 4px 0; font-size: 17px; }
+.run-wrap h3 small { font-weight: normal; color: var(--muted); font-size: 13px; margin-left: 6px; }
+.run-wrap .note { color: var(--muted); font-size: 13px; }
+.run-wrap .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.run-wrap .row button { min-height: 44px; padding: 6px 20px; font-size: 16px; }
+.mode-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.mode-btn { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 18px; border-radius: 14px; border: 2px solid var(--line); background: #fff; }
+.mode-btn b { font-size: 22px; color: var(--ally); }
+.mode-btn span { color: var(--muted); }
+.mode-btn:hover:not(:disabled) { border-color: var(--ally); }
+.sides-left { margin: 0; }
+.sides-left b { font-size: 20px; color: var(--accent); }
+.q-list { display: flex; flex-direction: column; gap: 10px; }
+.q-card { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.q-card.t-key { border-color: #b45309; background: #fffbeb; }
+.q-card.t-rich { border-color: #db2777; }
+.q-card.boss { border-color: #7f1d1d; background: #fef2f2; }
+.q-card.s-win, .q-card.s-lose, .q-card.s-locked, .q-card.s-done { opacity: .55; }
+.q-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.q-head b { font-size: 17px; }
+.q-type { font-size: 12px; font-weight: bold; color: #fff; background: #57534e; border-radius: 4px; padding: 1px 6px; }
+.t-key .q-type { background: #b45309; }
+.t-rich .q-type { background: #db2777; }
+.t-easy .q-type { background: #0f766e; }
+.t-stage .q-type { background: #1d4ed8; }
+.boss .q-type { background: #7f1d1d; }
+.q-state { margin-left: auto; font-weight: bold; color: var(--muted); }
+.q-body { display: flex; gap: 12px; margin-top: 6px; align-items: flex-start; }
+.q-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.q-desc { color: #44403c; }
+.q-go { align-self: flex-start; min-height: 44px; padding: 6px 24px; font-size: 16px; margin-top: 4px; }
+@media (max-width: 600px) { .q-body { flex-direction: column; } }
+.mini { display: grid; grid-template-columns: repeat(var(--w), 18px); gap: 2px; flex: 0 0 auto; }
+.mini span { width: 18px; height: 18px; border-radius: 3px; font-size: 10px; line-height: 18px; text-align: center; color: #fff; font-weight: bold; background: var(--t-empty); }
+.mini .m-f { background: var(--t-forest); }
+.mini .m-m { background: var(--t-mountain); }
+.mini .m-r { background: var(--t-river); }
+.mini .m-x { background: var(--t-fire); }
+.mini .u-en { background: var(--enemy); border-radius: 50%; }
+.mini .u-vi { background: #92400e; }
+.mini .u-al { background: var(--ally); border-radius: 50%; font-size: 9px; }
+.rec, .rw { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rec small { color: var(--muted); }
+.mg { display: inline-block; border-radius: 999px; padding: 0 8px; background: #dbeafe; color: #1e3a8a; font-weight: bold; }
+.mg.not-owned { background: #f5f5f4; color: #a8a29e; border: 1px dashed #a8a29e; }
+.mg.new { background: #fce7f3; color: #9d174d; }
+.path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.node { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 96px; padding: 8px; border: 2px solid var(--line); border-radius: 10px; background: #fff; }
+.node .n-no { font-weight: bold; color: var(--muted); }
+.node .n-name { font-weight: bold; }
+.node .n-rec { font-size: 11px; color: var(--muted); }
+.node.s-done { opacity: .5; }
+.node.s-current { border-color: var(--ally); box-shadow: 0 0 0 3px rgba(29, 78, 216, .25); }
+.node.boss { border-color: #7f1d1d; }
+.n-arrow { color: var(--muted); font-weight: bold; }
+.team-top { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.members { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.member { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 64px; border: 2px solid var(--line); border-radius: 12px; background: #fff; }
+.member.on { border-color: var(--ally); background: #eff6ff; }
+.member.rec .m-dot { box-shadow: 0 0 0 3px #f9a8d4; }
+.member .m-no { width: 1.2em; font-size: 20px; font-weight: bold; color: var(--ally); }
+.member .m-info { display: flex; flex-direction: column; gap: 2px; }
+.rec-tag { font-size: 11px; color: #9d174d; font-weight: bold; }
+.m-dot { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; border: 3px solid var(--ally); color: var(--ally); background: #fff; font-weight: bold; flex: 0 0 auto; }
+.m-dot.big { width: 56px; height: 56px; font-size: 26px; margin-right: 10px; }
+.ups { display: flex; flex-wrap: wrap; gap: 8px; }
+.up { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; }
+.up .bar { display: inline-flex; gap: 2px; }
+.up .bar i { width: 10px; height: 10px; border-radius: 2px; background: #e7e5e4; border: 1px solid #d6d3d1; }
+.up .bar i.on { background: var(--accent); border-color: var(--accent); }
+.new-magic { display: flex; align-items: center; font-size: 20px; font-weight: bold; padding: 10px; border-radius: 12px; background: #fdf2f8; border: 2px solid #f9a8d4; }
+.cands { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.cand { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 10px; border: 2px solid var(--line); border-radius: 12px; background: #fff; min-height: 110px; }
+.cand.on { border-color: var(--accent); background: #fff7ed; box-shadow: 0 0 0 3px rgba(194, 65, 12, .2); }
+.cand .lv { font-weight: bold; color: var(--accent); }
+.result h3.clear { color: #15803d; font-size: 24px; }
+.result h3.fail { color: #b91c1c; font-size: 24px; }
+.hist { padding-left: 1.4em; display: flex; flex-direction: column; gap: 4px; }
+.party-list { display: flex; flex-direction: column; gap: 6px; }
+.pm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.run-modal { position: fixed; inset: 0; z-index: 60; background: rgba(30, 27, 22, .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.run-modal[hidden] { display: none; }
+.run-modal-card { background: var(--panel); border-radius: 14px; padding: 14px 16px; width: min(560px, 100%); max-height: 90vh; overflow-y: auto; }
+.run-modal-card .row { display: flex; gap: 8px; margin-top: 8px; }
+.run-modal-card .row button { min-height: 44px; padding: 6px 20px; }
+/* 戦闘中の帯 */
+.run-bar { width: 100%; max-width: 640px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 6px 10px; border-radius: 10px; background: #ecfeff; border: 2px solid #67e8f9; }
+.run-bar[hidden] { display: none; }
+.run-bar .rb-type { font-size: 12px; font-weight: bold; color: #fff; background: #0f766e; border-radius: 4px; padding: 1px 6px; }
+.run-bar .rb-tools { margin-left: auto; display: flex; gap: 6px; }
+.run-bar .rb-tools button { min-height: 40px; }
+.run-tag { display: block; font-size: 11px; color: #0f766e; font-weight: normal; }
+/* 戦闘中は、遊びを変えてしまう道具を隠す（1手戻す・リセット・エディット・シナリオ・デモ・調整） */
+body.run-battle #btnUndo, body.run-battle #btnReset, body.run-battle #btnEdit, body.run-battle #btnTune,
+body.run-battle .demo-pick, body.run-battle .tut-pick, body.run-battle #btnRun,
+body.run-battle .topbar .scenario:not(.turnmode) { display: none !important; }
+.run-screen { background: var(--bg); }
+.member { flex-wrap: nowrap; }
+.member .m-info { flex: 1 1 auto; min-width: 0; }
