@@ -1145,6 +1145,583 @@ test('J8: 図鑑の表は、ラボの決め手をその案がオンのときだ�
   eq(R.LX.zukanList().length, n0 + 1);
 });
 
+// ===================================================================
+console.log('\n■ L ターゲットで育つ（LAB_L2: 作る・決める・止める・動かす）');
+var LL = R.LX.L;
+function gotBy(s, id) { var t = (s.labTargets || []).filter(function (x) { return x.id === id; })[0]; return t && t.got ? (t.got.by ? t.got.by.magic : t.got.cands.map(function (h) { return h.magic; }).join('+')) : null; }
+function withTargets(s, list) { s.labTargetList = list; return R.startBattle(s).state; }
+function setPath(s, u, p) { R.findUnit(s, u.id).labPath = LL.normPath(u.magic, p); }
+function cellsOf(s, t) { return s.tiles.map(function (x, i) { return x === t ? [i % s.size, Math.floor(i / s.size)] : null; }).filter(Boolean); }
+// LAB_L の草の起点・育てるの道（データは lab_paths.js の LEGACY）を、その間だけ草の道に戻す
+function withLegacyGrass(fn) {
+  var P = LL.PATHS, keep = P.grass, lg = LL.LEGACY.grass;
+  P.grass = { dirs: ['origin', 'grow', 'stop'], extend: 'side', real: { origin: true, grow: true, stop: true },
+    steps: { make: keep.steps.make, origin: lg.origin, grow: lg.grow, stop: keep.steps.stop },
+    awaken: { origin: lg.awaken.origin, grow: lg.awaken.grow, stop: keep.awaken.stop } };
+  try { fn(); } finally { P.grass = keep; }
+}
+
+test('L0 オフ: シナリオにターゲットがあっても、盤面にターゲットも作り手の記録も足さない', function () {
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 2, 4, 'up'); R.addEnemy(s, 'fire', 0, 0);
+  s = withTargets(s, ['farNature']);
+  ok(!s.labTargets, 'ターゲットなし');
+  var r = act(s, g, 'up');
+  ok(!r.state.labMaker, '作り手の記録なし');
+});
+test('L 方向は4つ（作る・決める・止める・動かす）。どの方向も2つ以上の属性が得意。1つの属性は作る＋1〜2つ', function () {
+  eq(LL.DIR_ORDER, ['make', 'decide', 'stop', 'move']);
+  var count = { decide: 0, stop: 0, move: 0 };
+  Object.keys(LL.PATHS).forEach(function (m) {
+    var d = LL.PATHS[m];
+    ok(d.dirs.length >= 1 && d.dirs.length <= 2, m);
+    ok(d.dirs.indexOf('make') < 0, m + ' の得意な方向に作るは入らない');
+    eq(LL.dirsOf(m)[0], 'make', m + ' は作るを持つ');
+    d.dirs.forEach(function (k) { count[k]++; ok(d.steps[k].length === 3 && d.awaken[k], m + ' ' + k); });
+    eq(d.steps.make.length, 3);
+  });
+  ok(count.decide >= 2 && count.stop >= 2 && count.move >= 2, JSON.stringify(count));
+  eq(LL.PATHS.grass.dirs, ['stop']); eq(LL.PATHS.earth.dirs, ['stop', 'move']); eq(LL.PATHS.wind.dirs, ['decide', 'move']);
+});
+test('L 道: 得意な方向は3マスで覚醒、ほかの得意な方向は閉じる。作るは閉じず、3マスで上限（覚醒しない）', function () {
+  R.labApply(['L0']);
+  var p = LL.newPath('earth');
+  eq(p, { make: 0, stop: 0, move: 0, awake: null });
+  eq(LL.advance(p, 'earth', 'move').ok, true);
+  LL.advance(p, 'earth', 'stop'); LL.advance(p, 'earth', 'stop');
+  var r = LL.advance(p, 'earth', 'stop');
+  eq(r.awake.name, '城壁');
+  ok(LL.advance(p, 'earth', 'move').closed, '動かすは閉じた');
+  eq(p.move, 1, '動かすの1マスは残る');
+  ok(LL.advance(p, 'earth', 'decide').none, '土は決めるを持たない');
+  ok(LL.advance(p, 'earth', 'stop').full, 'もう覚醒した');
+  eq([LL.advance(p, 'earth', 'make').ok, LL.advance(p, 'earth', 'make').ok, LL.advance(p, 'earth', 'make').ok], [true, true, true], '覚醒しても作るは閉じない');
+  ok(LL.advance(p, 'earth', 'make').makeFull, '作るは3マスで上限');
+  eq(p.awake, 'stop', '作るで覚醒しない');
+  eq(LL.pathMarks('earth', p), '作●●● 止●●● 動●○○×');
+  eq(LL.normPath('earth', { make: 5, stop: 3, move: 3 }), { make: 3, stop: 3, move: 2, awake: 'stop' }, '覚醒は1つだけ');
+  eq(LL.normPath('grass', { origin: 2, grow: 3, stop: 1 }), { make: 0, stop: 1, awake: null }, 'LAB_L の道（起点・育てる）は読み捨てる');
+});
+test('L5: 得意でない方向で取ると make 作るが進む（初期）／nothing 何も起きない／remain 達成にならない', function () {
+  R.labApply(['L0']);
+  var p = LL.newPath('grass');
+  var g = LL.gain(p, 'grass', 'decide');
+  eq([g.dir, g.res.ok, p.make], ['make', true, 1]);
+  eq(LL.outlook('grass', LL.newPath('grass'), 'decide'), '草は決めるを持たないので、作るが1マス進む（あと2つで森に覚醒。止めるは閉じる）');
+  eq(LL.outlook('grass', { make: 3, stop: 0 }, 'decide'), '草は決めるを持たないので、作るに入るが、作るはもう伸びない');
+  eq(LL.outlook('grass', { make: 3, stop: 0 }, 'make'), '作るはもう伸びない（草は3マス）');
+  eq(LL.outlook('fire', { make: 0, decide: 3, stop: 0, awake: 'decide' }, 'stop'), '火は業火に覚醒して、止めるは閉じているので、作るが1マス進む');
+  R.labApply(['L0', 'L5'], { L5: { dest: 'nothing' } });
+  var p2 = LL.newPath('grass');
+  LL.gain(p2, 'grass', 'decide');
+  eq(p2.make, 0, '何も起きない');
+  eq(LL.outlook('grass', null, 'decide'), '草は決めるを持たないので、何も起きない');
+  R.labApply(['L0', 'L5'], { L5: { dest: 'remain' } });
+  eq(LL.outlook('grass', null, 'decide'), '草は決めるを持たないので、達成にならない（L5: 残る）');
+});
+test('L5 remain: 得意でない魔法の手では取れずに残り、得意な仲間がまだ取れる', function () {
+  R.labApply(['L0', 'L5'], { L5: { dest: 'remain' } });
+  var s2 = board(['......', '......', '..P...', '......', '......', '......']);
+  var e2 = R.addAlly(s2, 'earth', 2, 4, 'up');
+  var en2 = R.addEnemy(s2, 'fire', 2, 2); tough(s2, en2);
+  s2 = withTargets(s2, ['held']);
+  var r = act(s2, e2, 'up');   // 水たまりの敵に土 → 泥沼で足止め（土は止めるが得意）
+  ok(R.findUnit(r.state, en2.id).stuck);
+  r.state.enemyActs = true;
+  eq(gotBy(R.endTurn(r.state).state, 'held'), 'earth', '得意な土は取れる');
+  // 風（止めるを持たない）で泥沼へ押しこんで止めても、取れずに残る
+  var s3 = board(['......', '......', '..D...', '......', '......', '......']);
+  var w3 = R.addAlly(s3, 'wind', 2, 5, 'up'); var en3 = R.addEnemy(s3, 'fire', 2, 3); tough(s3, en3);
+  s3 = withTargets(s3, ['held']);
+  var r3 = act(s3, w3, 'up');
+  ok(R.findUnit(r3.state, en3.id).stuck, '泥沼にはまった');
+  r3.state.enemyActs = true;
+  var t3 = R.endTurn(r3.state);
+  eq(gotBy(t3.state, 'held'), null, '残る');
+  ok(/風では取れない（風は止めるを持たないので、達成にならない（L5: 残る））/.test(texts(t3.events)), texts(t3.events));
+});
+test('L0 作る「敵から離れた所に自然」: どの魔法が取っても作るが進む（撃つ前にいた敵から測る）', function () {
+  R.labApply(['L0']);
+  var s = board(['......', '......', '......', '......', '......', '......']);
+  var g = R.addAlly(s, 'grass', 5, 5, 'up'), f = R.addAlly(s, 'fire', 1, 5, 'up'); R.addEnemy(s, 'fire', 0, 0);
+  s = withTargets(s, ['farNature']);
+  var r = act(s, f, 'up');
+  eq(gotBy(r.state, 'farNature'), 'fire', '火の小さな炎（1,4）は敵から5マス');
+  ok(/火の作るが1マス進む/.test(texts(r.events)), texts(r.events));
+  eq(gotBy(act(s, g, 'up').state, 'farNature'), 'grass');
+});
+test('L0 作る「同じ自然を5マス」: 5マスつなげると取る（4マスでは取れない）', function () {
+  R.labApply(['L0']);
+  var s = board(['......', '......', '..F...', '......', '......', '......']);
+  var g = R.addAlly(s, 'grass', 2, 5, 'up'); R.addEnemy(s, 'fire', 5, 0);
+  var s1 = withTargets(R.clone(s), ['chain5']);
+  eq(gotBy(act(s1, g, 'up').state, 'chain5'), null, '森4つ');
+  R.setTile(s, 4, 2, 'forest');
+  var s2 = withTargets(s, ['chain5']);
+  eq(gotBy(act(s2, g, 'up').state, 'chain5'), 'grass', '森5つ');
+});
+test('L0 作る「敵に変えさせる」: 敵の火が草の森を焼くと、森を作った草が取る（取る魔法: 作った魔法）', function () {
+  R.labApply(['L0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 2, 4, 'up'); var en = R.addEnemy(s, 'fire', 2, 0, 'down'); tough(s, en);
+  s = withTargets(s, ['enemyChange']);
+  var t = act(s, g, 'up').state;   // (2,2) に森（T の上）、(1..3,1) に森
+  eq(tile(t, 2, 1), 'forest');
+  eq(gotBy(t, 'enemyChange'), null, '自分で作っただけでは取れない');
+  var e = R.findUnit(t, en.id); e.intent = true; e.facing = 'down';
+  t.enemyActs = true;
+  var r = R.endTurn(t);
+  eq(tile(r.state, 2, 1), 'fire', '敵の火で森が燃えた');
+  eq(gotBy(r.state, 'enemyChange'), 'grass');
+  ok(/自然を作った草が取った/.test(texts(r.events)), texts(r.events));
+});
+test('L1: 燃え広がりで倒すと最後の一手（風）が取る。choose なら材料を作った草・火と風から選ぶ', function () {
+  R.labApply(['L0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 2, 4, 'up'), f = R.addAlly(s, 'fire', 1, 2, 'right'), w = R.addAlly(s, 'wind', 2, 3, 'up');
+  R.addEnemy(s, 'fire', 2, 1); R.addEnemy(s, 'fire', 4, 0);
+  s = withTargets(s, ['finKill', 'kill']);
+  var t = act(act(s, g, 'up').state, f, 'right').state;
+  var r = act(t, w, 'up');
+  ok(names(r.events).indexOf('燃え広がり') >= 0, '燃え広がり');
+  eq(gotBy(r.state, 'finKill'), 'wind');
+  eq(gotBy(r.state, 'kill'), 'wind');
+  ok(/風の決めるが1マス進む/.test(texts(r.events)), '風は決めるが得意');
+  R.labApply(['L0', 'L1'], { L1: { who: 'choose' } });
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var g2 = R.addAlly(s2, 'grass', 2, 4, 'up'), f2 = R.addAlly(s2, 'fire', 1, 2, 'right'), w2 = R.addAlly(s2, 'wind', 2, 3, 'up');
+  R.addEnemy(s2, 'fire', 2, 1); R.addEnemy(s2, 'fire', 4, 0);
+  s2 = withTargets(s2, ['finKill']);
+  var r2 = act(act(act(s2, g2, 'up').state, f2, 'right').state, w2, 'up');
+  eq(gotBy(r2.state, 'finKill'), 'grass+fire+wind', '材料（作った順）と一手');
+  ok(/戦闘の終わりに1人選ぶ/.test(texts(r2.events)));
+});
+test('L1 choose は「達成の一手」のミッションにだけ効く（止めるは止めた魔法が取る）', function () {
+  R.labApply(['L0', 'L1'], { L1: { who: 'choose' } });
+  var s = board(['.....', '.....', '..P..', '.....', '.....']);
+  var e = R.addAlly(s, 'earth', 2, 4, 'up'); var en = R.addEnemy(s, 'fire', 2, 2); tough(s, en);
+  s = withTargets(s, ['held']);
+  var r = act(s, e, 'up');
+  r.state.enemyActs = true;
+  var t = R.endTurn(r.state);
+  eq(gotBy(t.state, 'held'), 'earth');
+  eq(t.state.labTargets[0].got.how, 'stopper');
+});
+test('L2: 敵の手が最後の一手のとき、none は取れない（まだ取れる）・preparer は材料を作った草が取る（草は決めるを持たないので作る）', function () {
+  var p = R.findPreset('labL2e');
+  function play(opts) {
+    R.labApply(['L0', 'L2'], opts);
+    var s = R.startBattle(R.loadPreset('labL2e')).state;
+    s = R.act(s, 'P1', { to: [1, 4], dir: 'up' }).state;
+    s = R.act(s, 'P2', { to: [4, 5], dir: 'right' }).state;
+    s = R.act(s, 'P3', { to: [5, 6], dir: 'up' }).state;
+    return R.endTurn(s);
+  }
+  var a = play({ L2: { enemy: 'preparer' } });
+  ok(!R.findUnit(a.state, 'E5'), '敵Bが敵の燃え広がりで倒れた');
+  eq(gotBy(a.state, 'finKill'), 'grass');
+  ok(/草は決めるを持たないので、作るが1マス進む/.test(texts(a.events)), texts(a.events));
+  var b = play({ L2: { enemy: 'none' } });
+  eq(gotBy(b.state, 'finKill'), null);
+  ok(/敵の手で起きたので、取れない/.test(texts(b.events)));
+  ok(p.labOpts.L2.enemy === 'preparer');
+});
+test('L0 止める「敵が動けなかった」: 水たまりの敵に土で泥沼 → 敵の番に動けず、土が取る', function () {
+  R.labApply(['L0']);
+  var s = board(['.....', '.....', '..P..', '.....', '.....']);
+  var e = R.addAlly(s, 'earth', 2, 4, 'up'); var en = R.addEnemy(s, 'fire', 2, 2); tough(s, en);
+  s = withTargets(s, ['held']);
+  var r = act(s, e, 'up');
+  ok(R.findUnit(r.state, en.id).stuck, '泥沼にはまった');
+  ok(/足が止まった/.test(texts(r.events)), '予測・ログの一言');
+  r.state.enemyActs = true;
+  var t = R.endTurn(r.state);
+  eq(gotBy(t.state, 'held'), 'earth');
+});
+test('L0 止める「2ターン続けて止める」: 止まる回数2の足止めで、2回目の敵の番に取る', function () {
+  R.labApply(['L0']);
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var e2 = R.addAlly(s2, 'earth', 2, 4, 'up'); var en2 = R.addEnemy(s2, 'fire', 2, 2); tough(s2, en2);
+  s2 = withTargets(s2, ['held2', 'held']);
+  setPath(s2, e2, { stop: 2 });
+  var r2 = act(s2, e2, 'up');
+  eq(R.findUnit(r2.state, en2.id).stuck, 2, '止まる回数2');
+  r2.state.enemyActs = true;
+  var t1 = R.endTurn(r2.state);
+  eq([gotBy(t1.state, 'held'), gotBy(t1.state, 'held2')], ['earth', null], '1回目');
+  t1.state.units.forEach(function (u) { if (u.side === 'ally') u.acted = true; });
+  var t2 = R.endTurn(t1.state);
+  eq(gotBy(t2.state, 'held2'), 'earth', '2回目');
+});
+test('L0 止める「止めた敵を巻き込む」: 泥沼の敵を燃え広がりに巻き込むと、止めた土が取る（決め手を起こした風ではない）', function () {
+  R.labApply(['L0']);
+  var s = board(['......', '......', '.FPF..', '......', '......', '......']);
+  var e = R.addAlly(s, 'earth', 2, 4, 'up'), f = R.addAlly(s, 'fire', 0, 3, 'up'), w = R.addAlly(s, 'wind', 0, 4, 'up');
+  var en = R.addEnemy(s, 'fire', 2, 2); tough(s, en, 30); R.addEnemy(s, 'fire', 5, 0);
+  s = withTargets(s, ['heldFin', 'finKill']);
+  var t = act(s, e, 'up').state;
+  ok(R.findUnit(t, en.id).stuck, '泥沼で止まった');
+  eq(tile(t, 2, 2), 'mud');
+  t = act(t, f, 'up', [1, 3]).state;      // (1,2) の森に火
+  var r = act(t, w, 'right', [0, 2]);      // 左から風 → 燃え広がり
+  ok(names(r.events).indexOf('燃え広がり') >= 0, names(r.events).join(','));
+  eq(gotBy(r.state, 'heldFin'), 'earth');
+});
+test('L0 止める「予告の決め手を潰す」: 守るで、土が炎をふさぐと敵Aの燃え広がりが起きず、土が取る', function () {
+  R.labApply(['L0']);
+  var s = R.startBattle(R.loadPreset('labL2')).state;
+  ok(s.labPlanFin && s.labPlanFin.E4, '敵Aの予告に燃え広がり');
+  s = R.act(s, 'P2', { to: [4, 4], dir: 'up' }).state;
+  ok(s.labFoil && s.labFoil.E4 && s.labFoil.E4.magic === 'earth', '潰した手を覚えた');
+  s = R.act(s, 'P1', { to: [1, 5], dir: 'up', shoot: false }).state;
+  s = R.act(s, 'P3', { to: [5, 4], dir: 'up', shoot: false }).state;
+  var t = R.endTurn(s);
+  eq(gotBy(t.state, 'foiled'), 'earth');
+  // 水で消しても潰せる（2人が取れる。水は止めるを持たないので作るに入る）
+  var s2 = R.startBattle(R.loadPreset('labL2')).state;
+  s2 = R.act(s2, 'P3', { to: [5, 2], dir: 'left' }).state;
+  ok(s2.labFoil && s2.labFoil.E4 && s2.labFoil.E4.magic === 'water', '水でも潰せる');
+});
+test('L0 決める「決め手の連鎖」: 1つの手で決め手が2つ（燃え広がり → オバケヤシキ）', function () {
+  R.labApply(['L0', 'C6']);
+  var s = board(['........', '........', '........', '.XFFG...', '........', '........', '........', '........']);
+  var w = R.addAlly(s, 'wind', 0, 3, 'right'); R.addEnemy(s, 'fire', 7, 7);
+  var en = R.addEnemy(s, 'fire', 5, 3); tough(s, en);
+  s = withTargets(s, ['finChain']);
+  var r = act(s, w, 'right');
+  ok(names(r.events).length >= 2, names(r.events).join(','));
+  eq(gotBy(r.state, 'finChain'), 'wind');
+});
+test('L0 動かす「敵を2マス動かす」「泥沼・森・川へ」: 強風・道の動かすで2マス、森へ押しこむ', function () {
+  R.labApply(['L0']);
+  var s = board(['......', '......', '..F...', '......', '......', '......']);
+  var w = R.addAlly(s, 'wind', 2, 5, 'up'); var en = R.addEnemy(s, 'fire', 2, 4); tough(s, en);
+  s = withTargets(s, ['push2', 'pushInto']);
+  var r = act(s, w, 'up');
+  eq(pos(r.state, en.id), [2, 3], 'ふつうの風は1マス');
+  eq([gotBy(r.state, 'push2'), gotBy(r.state, 'pushInto')], [null, null]);
+  setPath(s, w, { move: 1 });
+  var r2 = act(s, w, 'up');
+  eq(pos(r2.state, en.id), [2, 2], '動かす1: もう1マス（森の中）');
+  eq([gotBy(r2.state, 'push2'), gotBy(r2.state, 'pushInto')], ['wind', 'wind']);
+  ok(/風の動かすが1マス進む/.test(texts(r2.events)));
+});
+test('L0 動かす「予告を別の敵に」: 風で押した敵Aの予告が敵Bに当たると、押した風が取る', function () {
+  R.labApply(['L0']);
+  var s = board(['......', '......', '......', '......', '......', '......']);
+  var w = R.addAlly(s, 'wind', 0, 3, 'right'), f = R.addAlly(s, 'fire', 5, 5, 'up');
+  var a = R.addEnemy(s, 'fire', 1, 3, 'down'); tough(s, a);
+  var b = R.addEnemy(s, 'fire', 2, 4, 'up'); tough(s, b);
+  s = withTargets(s, ['redirect']);   // 敵は動かさずに始め、予告は手で決める
+  s.enemyActs = true;
+  var ea = R.findUnit(s, a.id); ea.intent = true; ea.facing = 'down';   // 敵A: 下へ火（今は (1,4) に落ちる。押されると (2,4) の敵Bに落ちる）
+  var eb = R.findUnit(s, b.id); eb.intent = false;
+  var r = act(s, w, 'right');
+  eq(pos(r.state, a.id), [2, 3]);
+  ok(R.findUnit(r.state, a.id).labMovedBy, '動かした手を覚えた');
+  var notes = LL.redirectPreview(s, r.state, R.forecast(r.state));
+  ok(notes.length && /予告が 敵B に当たる/.test(notes[0].text), JSON.stringify(notes));
+  R.findUnit(r.state, f.id).acted = true;
+  var t = R.endTurn(r.state);
+  ok(t.events.some(function (e) { return e.type === 'damage' && e.id === b.id; }), '敵Aの火が敵Bに当たった');
+  eq(gotBy(t.state, 'redirect'), 'wind');
+});
+test('L 作るの覚醒: 草・土・水は作るの3マス目で森・山・川に覚醒し、ほかの得意な方向は閉じる。火・風・雷・氷・闇は覚醒しない', function () {
+  R.labApply(['L0']);
+  eq(['grass', 'earth', 'water', 'fire', 'wind', 'thunder', 'ice', 'dark'].map(LL.makeGood), [true, true, true, false, false, false, false, false]);
+  var p = LL.newPath('grass');
+  LL.advance(p, 'grass', 'make'); LL.advance(p, 'grass', 'make');
+  var r = LL.advance(p, 'grass', 'make');
+  eq([r.awake.name, p.awake], ['森', 'make']);
+  ok(LL.advance(p, 'grass', 'stop').closed, '森に覚醒すると、止める（茨の牢への道）は閉じる');
+  ok(LL.advance(p, 'grass', 'make').makeFull);
+  var e = LL.newPath('earth'); e.make = 2;
+  eq(LL.advance(e, 'earth', 'make').awake.name, '山');
+  ok(LL.advance(e, 'earth', 'stop').closed && LL.advance(e, 'earth', 'move').closed, '山に覚醒すると、止める・動かすは閉じる');
+  var w = LL.newPath('water'); w.make = 2;
+  eq([LL.advance(w, 'water', 'make').awake.name, LL.advance(w, 'water', 'move').closed], ['川', true]);
+  var f = LL.newPath('fire'); f.make = 2;
+  var rf = LL.advance(f, 'fire', 'make');
+  eq([rf.ok, !!rf.awake, f.awake], [true, false, null], '火は作るで覚醒しない');
+  // 先に茨の牢に覚醒したら、作るは得意でない属性と同じ（3マス目は形が1マス、覚醒しない）
+  var g = LL.newPath('grass'); g.stop = 2;
+  LL.advance(g, 'grass', 'stop');
+  eq(g.awake, 'stop');
+  LL.advance(g, 'grass', 'make'); LL.advance(g, 'grass', 'make');
+  var r3 = LL.advance(g, 'grass', 'make');
+  eq([r3.ok, !!r3.awake, g.awake, g.make], [true, false, 'stop', 3]);
+  var s = board(['........', '........', '........', '........', '........', '........', '........', '........']);
+  var u = R.addAlly(s, 'grass', 3, 7, 'up');
+  setPath(s, u, g);
+  eq(LL.shapeSteps(R.findUnit(s, u.id)), 3, '茨の牢のあとの作るの3マス目は、形が1マス');
+  eq(R.LX.formName(R.findUnit(s, u.id)), '茨の牢');
+  setPath(s, u, { make: 3 });
+  eq([LL.shapeSteps(R.findUnit(s, u.id)), R.LX.formName(R.findUnit(s, u.id))], [2, '森'], '森の3マス目は覚醒（形は2マス）');
+  eq(LL.normPath('grass', { make: 3 }).awake, 'make');
+  eq(LL.normPath('grass', { make: 3, stop: 3, awake: 'stop' }), { make: 3, stop: 3, awake: 'stop' });
+});
+test('L 作るの覚醒の予測: 得意でない方向の達成でも森に近づく。予測に「あと1つで森に覚醒。止めるは閉じる」', function () {
+  R.labApply(['L0']);
+  eq(LL.outlook('grass', { make: 1, stop: 0 }, 'decide'), '草は決めるを持たないので、作るが1マス進む（あと1つで森に覚醒。止めるは閉じる）');
+  eq(LL.outlook('grass', { make: 2, stop: 1 }, 'decide'), '草は決めるを持たないので、作るが1マス進む（覚醒「森」！ 止めるは閉じる）');
+  eq(LL.outlook('grass', { make: 2, stop: 2 }, 'stop'), '草の止めるが1マス進む（覚醒「茨の牢」！ 作るは森に覚醒しなくなる）');
+  eq(LL.outlook('earth', { make: 0, stop: 1, move: 0 }, 'stop'), '土の止めるが1マス進む（あと1つで城壁に覚醒。動かすは閉じる。作るは山に覚醒しなくなる）');
+  eq(LL.outlook('grass', LL.normPath('grass', { make: 3 }), 'stop'), '草は森に覚醒して、止めるは閉じているので、作るに入るが、作るはもう伸びない');
+  eq(LL.outlook('fire', { make: 1, decide: 0, stop: 0 }, 'make'), '火の作るが1マス進む', '作るが得意でない火は見通しを出さない');
+  // 戦闘の中: 先に取ったターゲットの分も数える（同じ戦闘で草が2つ取ると、2つ目で森）
+  var s = board(['......', '......', '..F...', '......', '......', '......']);
+  var g = R.addAlly(s, 'grass', 2, 5, 'up'); R.addEnemy(s, 'fire', 5, 0);
+  R.setTile(s, 4, 2, 'forest');
+  s = withTargets(s, ['farNature', 'chain5']);
+  setPath(s, g, { make: 1, stop: 1 });
+  var r = act(s, g, 'up');
+  eq([gotBy(r.state, 'chain5'), gotBy(r.state, 'farNature')], ['grass', 'grass']);
+  ok(/草の作るが1マス進む（あと1つで森に覚醒。止めるは閉じる）/.test(texts(r.events)), texts(r.events));
+  ok(/草の作るが1マス進む（覚醒「森」！ 止めるは閉じる）/.test(texts(r.events)), '2つ目で森');
+  eq(LL.gotOrder(r.state).map(function (t) { return t.got.seq; }), [1, 2], '取った順');
+});
+test('L 作るの覚醒の中身（育つが入）: 森は空きに一発で森・森に撃つと外側へ茂る、山は一発で山、川は一発で川。育つが切なら名前だけ', function () {
+  R.labApply(['L0']);
+  B.grow.enabled = true;
+  try {
+    var s = board(['........', '........', '........', '........', '........', '........', '........', '........']);
+    var g = R.addAlly(s, 'grass', 3, 7, 'up'), e = R.addAlly(s, 'earth', 5, 7, 'up'), w = R.addAlly(s, 'water', 7, 7, 'up');
+    eq(tile(act(s, g, 'up').state, 3, 5), 'thicket', 'ふつうは草むら');
+    setPath(s, g, { make: 3 }); setPath(s, e, { make: 3 }); setPath(s, w, { make: 3 });
+    var r = act(s, g, 'up');
+    eq(tile(r.state, 3, 5), 'forest', '森: 一発で森');
+    ok(/森: 一発で森になった/.test(texts(r.events)), texts(r.events));
+    eq(cellsOf(act(s, e, 'up').state, 'mountain').length >= 3, true, '山: 一発で山');
+    eq(tile(act(s, w, 'up').state, 7, 6), 'river', '川: 一発で川');
+    var s2 = board(['......', '......', '..F...', '......', '......', '......']);
+    var g2 = R.addAlly(s2, 'grass', 2, 4, 'up'); setPath(s2, g2, { make: 3 });
+    ok(/外側へ広がった/.test(texts(act(s2, g2, 'up').events)), '森に撃つと茂る');
+  } finally { B.grow.enabled = false; }
+  var s3 = board(['........', '........', '........', '........', '........', '........', '........', '........']);
+  var g3 = R.addAlly(s3, 'grass', 3, 7, 'up'); setPath(s3, g3, { make: 3 });
+  eq([tile(act(s3, g3, 'up').state, 3, 5), R.LX.formName(R.findUnit(s3, g3.id))], ['forest', '森'], '育つが切なら、いつもの森（名前と駒だけ変わる）');
+  var s4 = board(['......', '......', '..F...', '......', '......', '......']);
+  var g4 = R.addAlly(s4, 'grass', 2, 4, 'up'); setPath(s4, g4, { make: 3 });
+  ok(!/外側へ広がった/.test(texts(act(s4, g4, 'up').events)), '育つが切なら茂らない');
+});
+test('L 作る: 形が1マス増える（草・土は横、水・風は奥へ長く、火・闇は斜め前）。上限3マス', function () {
+  R.labApply(['L0']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var f = R.addAlly(s, 'fire', 3, 6, 'up'), w = R.addAlly(s, 'water', 0, 6, 'up'), g = R.addAlly(s, 'grass', 6, 6, 'up');
+  setPath(s, f, { make: 2 });
+  eq(sorted(cellsOf(act(s, f, 'up').state, 'smallfire')), sorted([[3, 5], [4, 4], [2, 4]]), '火は斜め前');
+  setPath(s, w, { make: 2 });
+  eq(tile(act(s, w, 'up').state, 0, 2), 'river', '水は2マス長く（池4マス）');
+  var s2 = board(['........', '........', '........', '........', '........', '........', '........', '........']);
+  var g2 = R.addAlly(s2, 'grass', 3, 7, 'up');
+  setPath(s2, g2, { make: 1 });
+  eq(tile(act(s2, g2, 'up').state, 5, 4), 'forest', '草は横に1マス（術者から見て右）');
+  setPath(s2, g2, { make: 3 });
+  eq(cellsOf(act(s2, g2, 'up').state, 'forest').length, 6, '草の形4マス＋2マス（3マス目は森への覚醒）');
+  setPath(s2, g2, { make: 3, stop: 3, awake: 'stop' });
+  eq(cellsOf(act(s2, g2, 'up').state, 'forest').length, 7, '茨の牢に覚醒したあとなら、作るの3マス目も形が1マス');
+  var f2 = R.addAlly(s2, 'fire', 0, 7, 'up');
+  setPath(s2, f2, { make: 3 });
+  eq([LL.shapeSteps(R.findUnit(s2, f2.id)), R.LX.formName(R.findUnit(s2, f2.id))], [3, null], '火は3マスで上限、覚醒しない');
+  setPath(s2, g2, { make: 3 });
+  R.labApply([]);
+  eq(cellsOf(act(s2, g2, 'up').state, 'forest').length, 4, 'L0 オフなら今のまま');
+});
+test('L 決める1・覚醒: 決め手の範囲が1マス（覚醒で2マス）広い。2: 形が1マス離れて届く。覚醒で名前が変わる', function () {
+  R.labApply(['L0']);
+  // 燃え広がり (1..4,2) の1マス下 (3,3) にいる敵
+  var s = board(['......', '......', '.XFFF.', '......', '......', '......']);
+  var w = R.addAlly(s, 'wind', 0, 2, 'right');
+  var en = R.addEnemy(s, 'fire', 3, 3); tough(s, en); var far = R.addEnemy(s, 'fire', 3, 5); tough(s, far);
+  eq(dealt(act(s, w, 'right'), en.id), 0, '範囲の外');
+  setPath(s, w, { decide: 1 });
+  var r = act(s, w, 'right');
+  eq(dealt(r, en.id), 20, '1マス外にも燃え広がりの20');
+  eq(dealt(r, far.id), 0, '3マス外には届かない');
+  ok(/風が1マス外まで巻きこむ/.test(texts(r.events)), texts(r.events));
+  var s3 = board(['......', '......', '.XFFF.', '......', '......', '......']);
+  var w3 = R.addAlly(s3, 'wind', 0, 1, 'right'); var en3 = R.addEnemy(s3, 'fire', 3, 4); tough(s3, en3);
+  setPath(s3, w3, { decide: 3 });
+  eq(R.LX.formName(R.findUnit(s3, w3.id)), 'かまいたち');
+  eq(R.unitLabel(s3, R.findUnit(s3, w3.id)), '味方「かまいたち」');
+  // 決める2: 前1マスを飛ばす（風は (1,1) からではなく (2,1) から）
+  var s4 = board(['......', '......', '......', '......', '......', '......']);
+  var f4 = R.addAlly(s4, 'fire', 2, 5, 'up');
+  setPath(s4, f4, { decide: 2 });
+  eq(cellsOf(act(s4, f4, 'up').state, 'smallfire'), [[2, 3]], '火は2マス先に');
+  R.labApply([]);
+  eq(R.LX.formName(R.findUnit(s3, w3.id)), null, 'L0 オフなら今のまま');
+});
+test('L 止める1〜覚醒: 当たった者は次の移動ができない → 2回 → 覚醒は次の敵の番に予告もできない', function () {
+  R.labApply(['L0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var f = R.addAlly(s, 'fire', 2, 4, 'up'); var en = R.addEnemy(s, 'fire', 2, 3); tough(s, en);
+  ok(!R.findUnit(act(s, f, 'up').state, en.id).stuck, '道なし');
+  setPath(s, f, { stop: 1 });
+  var r = act(s, f, 'up');
+  eq(R.findUnit(r.state, en.id).stuck, true);
+  ok(/炎に巻かれて足が止まった/.test(texts(r.events)));
+  setPath(s, f, { stop: 2 });
+  eq(R.findUnit(act(s, f, 'up').state, en.id).stuck, 2);
+  setPath(s, f, { stop: 3 });
+  var r3 = act(s, f, 'up');
+  ok(R.findUnit(r3.state, en.id).labBind, '縛り');
+  r3.state.enemyActs = true;
+  var t = R.endTurn(r3.state);
+  var e = R.findUnit(t.state, en.id);
+  eq([e.x, e.y, e.intent], [2, 3, false], '動けず、予告もできない');
+  eq(R.LX.formName(R.findUnit(s, f.id)), '炎の壁');
+});
+test('L 動かす1・2・覚醒: 水は押し流す、土は押し出して山、闇はもう一度引き寄せる。物は2マス目から。覚醒は止まるまで', function () {
+  R.labApply(['L0']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var w = R.addAlly(s, 'water', 3, 6, 'up'); var en = R.addEnemy(s, 'fire', 3, 4); tough(s, en);
+  setPath(s, w, { move: 1 });
+  eq(pos(act(s, w, 'up').state, en.id), [3, 3], '水で1マス');
+  setPath(s, w, { move: 3 });
+  eq(pos(act(s, w, 'up').state, en.id), [3, 0], '覚醒: 盤の端まで');
+  // 土: 山に押し出される（押し出したマスに山）
+  var s2 = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var e2 = R.addAlly(s2, 'earth', 3, 6, 'up'); var en2 = R.addEnemy(s2, 'fire', 3, 4); tough(s2, en2);
+  setPath(s2, e2, { move: 1 });
+  var r2 = act(s2, e2, 'up');
+  eq(pos(r2.state, en2.id), [3, 3]);
+  eq(tile(r2.state, 3, 4), 'mountain', '押し出したマスに山');
+  // 闇: 3マス先の者も引き寄せる
+  var s3 = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var d3 = R.addAlly(s3, 'dark', 3, 6, 'up'); var en3 = R.addEnemy(s3, 'fire', 3, 2); tough(s3, en3);
+  eq(pos(act(s3, d3, 'up').state, en3.id), [3, 2], '闇の引き寄せは2マスまで');
+  setPath(s3, d3, { move: 1 });
+  eq(pos(act(s3, d3, 'up').state, en3.id), [3, 3], '動かす1: 3マス先から1マス');
+  // 物: 馬車は動かすの2マス目から
+  var s4 = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var w4 = R.addAlly(s4, 'water', 3, 6, 'up'); var wg = R.addObject(s4, 'wagon', 3, 4);
+  setPath(s4, w4, { move: 1 });
+  eq(pos(act(s4, w4, 'up').state, wg.id), [3, 4], '1マス目では物は動かない');
+  setPath(s4, w4, { move: 2 });
+  eq(pos(act(s4, w4, 'up').state, wg.id), [3, 3], '2マス目で物も');
+  R.addObject(s4, 'village', 3, 2);
+  setPath(s4, w4, { move: 3, awake: 'move' });
+  eq(pos(act(s4, w4, 'up').state, wg.id), [3, 3], '村は動かない（村の手前で止まる）');
+});
+test('L シナリオ 草の道: (2,5) から撃つと蔓で「敵が動けなかった」→ 茨の牢、(3,6) から撃つと「5マス」→ 森', function () {
+  var p = R.findPreset('labLP');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labLP')).state;
+  eq(LL.pathMarks('grass', R.findUnit(s, 'P1').labPath), '作●●○ 止●●○');
+  var a = R.act(s, 'P1', { to: [2, 5], dir: 'up' });
+  eq(gotBy(a.state, 'chain5'), null, '川で途切れて5マスにならない');
+  ok(/覚醒「茨の牢」！ 作るは森に覚醒しなくなる/.test(texts(a.events)), texts(a.events));
+  var t = a.state;
+  t = R.act(t, 'P3', { to: [6, 6], dir: 'up', shoot: false }).state;
+  t = R.act(t, 'P2', { to: [4, 7], dir: 'up', shoot: false }).state;
+  var e = R.endTurn(t);
+  eq(gotBy(e.state, 'held'), 'grass');
+  var b = R.act(s, 'P1', { to: [3, 6], dir: 'up' });
+  eq(gotBy(b.state, 'chain5'), 'grass');
+  ok(/覚醒「森」！ 止めるは閉じる/.test(texts(b.events)), texts(b.events));
+});
+test('L シナリオ 連戦: 4戦（燃え広がり → 守る → 動かす → 森を育てる）。1戦目の草は 作る0・止める1 から', function () {
+  var ids = ['labLs1', 'labLs2', 'labLs3', 'labLs4'];
+  ids.forEach(function (id, i) {
+    var p = R.findPreset(id);
+    ok(p, id);
+    eq(p.labSeries, (i + 1) + '/4');
+    eq(p.labNext || null, ids[i + 1] || null);
+  });
+  R.labApply(['L0']);
+  var s = R.startBattle(R.loadPreset('labLs1')).state;
+  var g = R.alliesOf(s).filter(function (u) { return u.magic === 'grass'; })[0];
+  eq(LL.normPath('grass', g.labPath), { make: 0, stop: 1, awake: null });
+  eq(R.findPreset('labLs3').allies.map(function (a) { return a[0]; }), ['wind', 'water', 'fire'], '3戦目は動かす');
+});
+test('L シナリオ 動かす: 4つ目（L3=4）の「敵が動けなかった」は、風が敵Bを泥沼へ押しこむと風が取る（作るに入る）', function () {
+  R.labApply(['L0', 'L3'], { L3: { count: 4 } });
+  var s = R.startBattle(R.loadPreset('labLM')).state;
+  s = R.act(s, 'P3', { to: [1, 2], dir: 'up', shoot: false }).state;
+  s = R.act(s, 'P1', { to: [1, 4], dir: 'right' }).state;
+  s = R.act(s, 'P2', { to: [2, 3], dir: 'up', shoot: false }).state;
+  var t = R.endTurn(s);
+  eq(gotBy(t.state, 'held'), 'wind');
+  ok(/風は止めるを持たないので、作るが1マス進む/.test(texts(t.events)), texts(t.events));
+});
+test('L6 クエスト: 方向ごとに4つ。お題に合う方向が先頭（戦闘は討伐、防衛は足止め）。ミッションはその方向が2つ＋盤面のもとの別の方向が1つ', function () {
+  R.labApply(['L0', 'L6']);
+  var q1 = LL.questsOf(R.findPreset('labL1'));
+  eq(q1.map(function (q) { return q.name; }), ['討伐', '開拓', '足止め', '誘導']);
+  ok(q1[0].fit && !q1[1].fit);
+  eq(q1[1].list.slice(0, 3), ['chain5', 'farNature', 'finKill'], '開拓: 作るが2つ＋もとの決める');
+  eq(LL.questsOf(R.findPreset('labL2'))[0].name, '足止め', '防衛は止める寄り');
+  eq(LL.questOf(R.findPreset('labLM'), 'move').list[0], 'redirect', 'シナリオが決めたクエストの中身');
+  // 選んだクエストのミッションで戦闘が始まる（画面では labPrepare が labTargetList を差し替える）
+  var s = R.loadPreset('labL1');
+  s.labTargetList = LL.questOf(R.findPreset('labL1'), 'stop').list.slice();
+  var t = R.startBattle(s).state;
+  eq(t.labTargets.map(function (x) { return x.dir; }), ['stop', 'stop', 'make'], '足止め: 止める2つ＋作る1つ');
+});
+test('L 育つが前提: L のシナリオは全部、育つが入', function () {
+  R.LAB_PRESETS.filter(function (p) { return p.labCat === 'L'; }).forEach(function (p) {
+    ok(p.overrides && p.overrides['grow.enabled'] === true, p.id);
+  });
+});
+test('L 草の止める1〜2: 森の隣の者に当たると蔓（次の移動は休み）。2マス目は森から2マスまで', function () {
+  R.labApply(['L0']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var g = R.addAlly(s, 'grass', 3, 6, 'up'); var e = R.addEnemy(s, 'fire', 3, 4); tough(s, e);
+  R.setTile(s, 5, 4, 'forest');
+  setPath(s, g, { stop: 1 });
+  ok(!R.findUnit(act(s, g, 'up').state, e.id).stuck, '森から2マス: 1マス目では絡まない');
+  setPath(s, g, { stop: 2 });
+  ok(R.findUnit(act(s, g, 'up').state, e.id).stuck, '2マス目なら絡む');
+  R.setTile(s, 4, 4, 'forest');
+  setPath(s, g, { stop: 1 });
+  ok(R.findUnit(act(s, g, 'up').state, e.id).stuck, '森の隣なら1マス目で絡む');
+});
+test('L 草の止める3 茨の牢: 森に3方向を囲まれた者は動けず、敵は予告できず、味方は撃てない', function () {
+  R.labApply(['L0']);
+  var s = board(['......', '.F....', 'F.F...', '......', '...F..', '......']);
+  var g = R.addAlly(s, 'grass', 5, 5, 'up'); setPath(s, g, { stop: 3 });
+  var e = R.addEnemy(s, 'fire', 1, 2);
+  var a = R.addAlly(s, 'fire', 3, 3, 'up');
+  eq(Object.keys(R.reachableCells(s, e.id)).length, 1, '敵は動けない');
+  s.enemyActs = true;
+  var t = R.startBattle(s).state;
+  ok(!R.findUnit(t, e.id).intent, '予告できない');
+  eq(R.canShoot(s, R.findUnit(s, a.id)), true, '味方は1方向だけ');
+  R.setTile(s, 2, 3, 'forest'); R.setTile(s, 4, 3, 'forest');
+  eq(R.canShoot(s, R.findUnit(s, a.id)), false, '森に3方向を囲まれた味方は撃てない');
+  setPath(s, g, { stop: 2 });
+  eq(R.canShoot(s, R.findUnit(s, a.id)), true, '茨の牢に覚醒した草がいなければ撃てる');
+  R.labApply([]);
+  setPath(s, g, { stop: 3 });
+  eq(Object.keys(R.reachableCells(s, e.id)).length > 1, true, 'L0 オフなら動ける');
+});
+test('L 草の LAB_L の道（使わない。fx で処理は残してある）: 葦原・種が風に乗る・種まき・茂らせる・大樹', function () {
+  R.labApply(['L0']);
+  withLegacyGrass(function () {
+    var s = board(['......', '......', 'RRRRRR', '......', '......', '......']);
+    var g = R.addAlly(s, 'grass', 2, 5, 'up'); setPath(s, g, { origin: 1 });
+    eq([tile(act(s, g, 'up').state, 1, 2), tile(act(s, g, 'up').state, 0, 2)], ['reeds', 'river'], '葦原');
+    var s2 = board(['......', '......', '..B...', '......', '......', '......']);
+    var g2 = R.addAlly(s2, 'grass', 2, 5, 'up'); setPath(s2, g2, { origin: 2 });
+    eq(tile(act(s2, g2, 'up').state, 2, 1), 'forest', '種が風に乗る');
+    var s3 = board(['........', '........', '........', '........', '........', '........', '........', '........']);
+    var g3 = R.addAlly(s3, 'grass', 2, 7, 'up'); setPath(s3, g3, { origin: 3 }); R.addEnemy(s3, 'fire', 2, 1);
+    eq(tile(act(s3, g3, 'up').state, 2, 2), 'forest', '種まき');
+    var s4 = board(['......', '......', '..F...', '......', '......', '......']);
+    var g4 = R.addAlly(s4, 'grass', 2, 4, 'up'); setPath(s4, g4, { grow: 2 });
+    ok(/外側へ広がった/.test(texts(act(s4, g4, 'up').events)), '茂らせる');
+    var s5 = board(['........', '........', '........', '.......F', '........', '........', '........', '........']);
+    var g5 = R.addAlly(s5, 'grass', 3, 6, 'up'), f5 = R.addAlly(s5, 'fire', 2, 4, 'up'), w5 = R.addAlly(s5, 'wind', 0, 3, 'right');
+    var e5 = R.addEnemy(s5, 'fire', 7, 3);
+    setPath(s5, g5, { grow: 3 });
+    var t5 = act(act(s5, g5, 'up').state, f5, 'up').state;
+    eq(tile(t5, 3, 3), 'bigtree', '大樹');
+    ok(!R.findUnit(act(t5, w5, 'right').state, e5.id), '大樹とつながった森は2マス長く燃え広がる');
+  });
+  eq(LL.PATHS.grass.dirs, ['stop'], '元に戻した');
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {
@@ -1173,6 +1750,12 @@ R.LAB_PRESETS.forEach(function (p) {
     if (ex.result) eq(s.result, ex.result, '結果');
     (ex.gone || []).forEach(function (id) { ok(!R.findUnit(s, id), id + ' が倒れている'); });
     (ex.alive || []).forEach(function (id) { ok(!!R.findUnit(s, id), id + ' が残っている'); });
+    // ラボ L: ターゲットを取った魔法（{ ターゲットの id: 魔法 }。null はまだ取れていない）
+    Object.keys(ex.targets || {}).forEach(function (tid) {
+      var t = (s.labTargets || []).filter(function (x) { return x.id === tid; })[0];
+      ok(!!t, 'ターゲット ' + tid + ' がある');
+      eq(t.got ? (t.got.by ? t.got.by.magic : 'choose') : null, ex.targets[tid], 'ターゲット ' + tid + ' を取った魔法');
+    });
   });
 });
 

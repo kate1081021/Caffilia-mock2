@@ -213,7 +213,7 @@
       return OBJECT_INFO[u.kind].name + (kin.length > 1 ? (kin.indexOf(u) + 1) : '');
     }
     var same = alliesOf(s).filter(function (a) { return a.magic === u.magic && !!a.npc === !!u.npc; });
-    var base = (u.npc ? '構える味方「' : '味方「') + magicName(u.magic) + '」';
+    var base = (u.npc ? '構える味方「' : '味方「') + ((LX && LX.formName(u)) || magicName(u.magic)) + '」';   // ラボ L: 覚醒した魔法は名前が変わる
     if (same.length > 1) base += (same.indexOf(u) + 1);
     return base;
   }
@@ -505,7 +505,7 @@
         var c = stack.pop();
         var k = key(c[0], c[1]);
         var bt = getTile(s, c[0], c[1]);
-        if (burned[k] || !isPlant(bt)) continue;
+        if (burned[k] || !(isPlant(bt) || (LX && LX.plantLike(bt)))) continue;   // ラボ L: 大樹も森として燃える
         burned[k] = bt;
         burnedList.push(c);
         neighbors(s, c[0], c[1]).forEach(function (n) { stack.push([n.x, n.y]); });
@@ -514,6 +514,7 @@
 
     var maxLen = B.spread.maxLength + (bonus || 0);
     if (LX && lab('C4') && B.lab.C4.sharp) maxLen = LX.sharpLength(s, ox, oy, dir, bonus);   // ラボ C4 sharp: 4マス＋燃えた森の数の半分
+    if (LX) maxLen += LX.spreadBonus(s, ox, oy, ctx);   // ラボ L: 大樹とつながった森が燃えると2マス長く走る
     var before = [];
     for (var i = 1; i <= maxLen; i++) {
       var x = ox + F.dx * i, y = oy + F.dy * i;
@@ -538,13 +539,13 @@
       if (!cells.some(function (p) { return p[0] === c[0] && p[1] === c[1]; })) cells.push(c);
     });
     // 強い炎になるのは、燃えた森のマス（【育つ】草むらは燃えるが、今は弱い炎）
-    var strongList = burnedList.filter(function (c) { return burnsStrong(burned[key(c[0], c[1])]); });
+    var strongList = burnedList.filter(function (c) { var bt = burned[key(c[0], c[1])]; return burnsStrong(bt) || (LX && LX.plantLike(bt)); });
     var grassN = burnedList.length - strongList.length;
     if (LX) ctx.curFin = '燃え広がり';   // ラボ D7: 水の体は燃え広がりでは倒れない
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
-      if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher', c);
+      if (burnsStrong(burned[key(c[0], c[1])]) || (LX && LX.plantLike(burned[key(c[0], c[1])]))) addHit(ctx, u, B.fire.strongDamage, 'finisher', c);
       else addHit(ctx, u, B.fire.weakDamage, 'weakfire', c);
     });
     var amount = strongList.length ? B.fire.strongDamage : B.fire.weakDamage;
@@ -1626,6 +1627,7 @@
     } else {
       shoot(s, u, dir, ev);
     }
+    if (LX) LX.afterAct(s, u, ev);   // ラボ L: この手で、敵の予告の決め手が起きなくなったか（足止めのターゲット）
     if (LX && lab('F4') && !s.result) LX.interleave(s, ev, step);   // ラボ F4: 味方が1人動くごとに、敵の予告が1つ発動
     step();
     return { ok: true, state: s, events: ev, steps: steps };
@@ -1844,6 +1846,7 @@
       if (e.stand === 'rush') { rushMove(s, e, ev, step); return; }   // 突進: 村へ走って、隣なら体当たり
       var plan = planEnemy(s, e);
       if (!plan || plan.kind === 'still' || plan.kind === 'march') { e.intent = false; return; }
+      if (LX) LX.planStart(s, e, plan, ev);   // ラボ L: 敵が自分の番に動けなかった（足止めのターゲット）
       if (e.stuck) {
         unstick(e);
         ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
@@ -2254,6 +2257,7 @@
       step();
       allyReadyPhase(s, ev, step);
       if (s.enemyActs) enemyPlanPhase(s, ev, step);
+      if (LX) LX.afterPlan(s, ev);   // ラボ L: 予告どおりなら決め手が起きる敵を覚える（足止めのターゲット）
     }
     step();
     return { ok: true, state: s, events: ev, steps: steps };
@@ -2269,6 +2273,7 @@
     }
     allyReadyPhase(s, ev, step);
     if (s.enemyActs) enemyPlanPhase(s, ev, step);
+    if (LX) LX.afterPlan(s, ev);   // ラボ L: 予告どおりなら決め手が起きる敵を覚える（足止めのターゲット）
     step();
     return { ok: true, state: s, events: ev, steps: steps };
   }
@@ -2385,7 +2390,7 @@
     var sim = clone(s);
     function fire(list, u0) {
       var e = findUnit(sim, u0.id);
-      if (!e || sim.result || (LX && lab('E9') && u0.side === 'enemy' && u0.stand !== 'march' && !e.intent)) {   // ラボ E9: 前の魔法で閉じこめられた敵の予告は消える
+      if (!e || sim.result || (LX && (lab('E9') || lab('L0')) && u0.side === 'enemy' && u0.stand !== 'march' && !e.intent)) {   // ラボ E9: 前の魔法で閉じこめられた敵の予告は消える（L: 茨の牢も）
         list.push({ id: u0.id, side: u0.side, cancelled: true, from: [u0.x, u0.y], to: [u0.x, u0.y], dir: u0.facing, magic: u0.magic, cells: [], tileChanges: [], damages: [], finishers: [] });
         return;
       }
@@ -3055,7 +3060,7 @@
     reachInfo: reachInfo, moveUnit: moveUnit, distanceField: distanceField, faceToward: faceToward, nearestAlly: nearestAlly,
     missionTargets: missionTargets, trialShot: trialShot, planEnemy: planEnemy, timePasses: timePasses, fireSpreadCells: fireSpreadCells,
     makeUnit: makeUnit, addAlly: addAlly, addEnemy: addEnemy, addObject: addObject, unitConf: unitConf,
-    lab: lab, labAny: labAny
+    lab: lab, labAny: labAny, forecast: forecast
   };
   LX = LabRules ? LabRules.bind(LABI) : null;
   LABI.LX = LX;

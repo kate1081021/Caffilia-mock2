@@ -1052,3 +1052,82 @@ body.lab-tidy .cell:not(:hover) .u-boost, body.lab-tidy .cell:not(:hover) .u-ord
 .lab-zukan li b { display: inline-block; min-width: 7em; color: #9ca3af; }
 .lab-zukan li.got { color: #1f2937; }
 .lab-zukan li.got b { color: #b45309; }
+/* ラボ L: ターゲットで育つ（方向の色は lab_targets.js と同じ: 作る 緑・決める 赤・止める 青・動かす 紫。LAB_L の起点・育てるは残してある） */
+.d-make { --ld: #2f9e5b; } .d-decide { --ld: #d24a3c; } .d-stop { --ld: #3d73c9; } .d-move { --ld: #8b5cf6; }
+.d-origin { --ld: #2f9e5b; } .d-grow { --ld: #c2861a; } .d-break { --ld: #d24a3c; }
+.lt-mark { display: inline-flex; align-items: center; justify-content: center; width: 1.45em; height: 1.45em; border-radius: 50%; background: var(--ld, #64748b); color: #fff; font-size: 12px; font-weight: bold; flex: none; }
+.lt-box { border: 2px solid #c7d2fe; background: #f8fafc; border-radius: 10px; padding: 6px 8px; margin-bottom: 8px; }
+.lt-head { font-size: 14px; margin-bottom: 4px; }
+.lt-head small { color: var(--muted); font-size: 11px; }
+.lt-series { background: #4338ca; color: #fff; border-radius: 6px; padding: 0 6px; font-size: 12px; }
+.lt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.lt-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; border-left: 4px solid var(--ld); background: #fff; font-size: 13px; }
+.lt-row .lt-name { flex: 1; line-height: 1.25; }
+.lt-row .lt-name small { display: block; color: var(--muted); font-size: 11px; }
+.lt-row.got { background: color-mix(in srgb, var(--ld) 14%, #fff); }
+.lt-row.flash { animation: ltFlash 1.6s ease-out 2; }
+@keyframes ltFlash { 0% { box-shadow: 0 0 0 0 var(--ld); background: #fef9c3; } 30% { box-shadow: 0 0 0 4px var(--ld), 0 0 16px 4px var(--ld); background: #fef08a; } 100% { box-shadow: none; } }
+.lt-who { font-weight: bold; color: var(--ld); white-space: nowrap; }
+.lt-who.none { color: #9ca3af; font-weight: normal; }
+.lt-who small { font-weight: normal; font-size: 11px; margin-left: 2px; }
+.lt-party { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 12px; }
+.lt-ally { display: inline-flex; align-items: center; gap: 4px; }
+.lt-path { display: inline-flex; align-items: center; gap: 2px; margin-right: 3px; }
+.lt-path .lt-mark { width: 1.3em; height: 1.3em; font-size: 10px; }
+.lt-path .dots { display: inline-flex; gap: 1px; }
+.lt-path .dots i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--ld); background: #fff; display: inline-block; }
+.lt-path .dots i.on { background: var(--ld); }
+.lt-path.closed { opacity: .35; }
+.lt-path.awake .lt-mark { box-shadow: 0 0 0 2px #fde047, 0 0 6px 2px #facc15; }
+.lt-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; margin-top: 6px; }
+.lt-foot small { color: var(--muted); font-size: 11px; }
+.lt-btns { display: inline-flex; gap: 4px; }
+.lt-btns button { padding: 2px 8px; font-size: 12px; font-weight: normal; }
+.pv-line.ltarget { color: #1f2937; font-weight: bold; border-left: 4px solid var(--ld); padding-left: 6px; background: color-mix(in srgb, var(--ld) 10%, #fff); }
+.b-ltarget { position: absolute; left: 4%; top: 4%; font-size: .6em; font-weight: bold; color: #fff; background: var(--ld); border-radius: 50%; width: 1.5em; height: 1.5em; display: flex; align-items: center; justify-content: center; z-index: 2; pointer-events: none; box-shadow: 0 0 0 2px #fff; }
+.b-ltarget.got { opacity: .45; }
+.lt-card { margin: 6px 0; padding: 6px 8px; background: #f8fafc; border-radius: 8px; font-size: 13px; }
+.lt-card ul { list-style: none; padding: 0; margin: 4px 0 0; }
+.lt-card li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.lt-card li small { color: var(--muted); }
+.lt-card li.off { opacity: .4; }
+.lt-edit label { white-space: nowrap; }
+.lt-edit button { padding: 0 6px; font-size: 12px; }
+.unit.ally.awake { border-color: #d97706; background: #fffbeb; box-shadow: 0 0 0 2px #fde047, 0 0 10px 3px rgba(250, 204, 21, .7); }
+.unit.ally.awake .u-name { font-size: .85em; white-space: nowrap; }
+.unit .u-form { display: block; font-size: .5em; }
+.unit.ally.awake .u-mark { display: block; font-size: 1.15em; line-height: 1; color: #92400e; }
+.t-bigtree { background: radial-gradient(circle at 50% 40%, #166534 0 36%, #15803d 37% 52%, transparent 53%), radial-gradient(circle at 50% 85%, #78350f 0 12%, transparent 13%), linear-gradient(180deg, #86efac, #4ade80); }
+.t-bigtree .tile-label { color: #fff; font-weight: bold; }
+.lt-gcard { max-width: 640px; }
+.lt-gcard h2 small { color: var(--muted); font-weight: normal; font-size: 12px; }
+.lt-steps { padding-left: 1.4em; margin: 8px 0; }
+.lt-step { opacity: 0; transform: translateY(4px); transition: opacity .35s, transform .35s; margin: 6px 0; padding: 6px 8px; border-left: 4px solid var(--ld); border-radius: 6px; background: color-mix(in srgb, var(--ld) 10%, #fff); font-size: 14px; }
+.lt-step.show { opacity: 1; transform: none; }
+.lt-step.lost { text-decoration: line-through; color: #9ca3af; }
+.lt-step .lt-inline { margin-left: 4px; }
+.lt-choose button { margin: 0 2px; padding: 1px 8px; font-size: 13px; }
+.lt-pathcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.lt-pathcard { border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 8px; font-size: 12px; background: #fff; }
+.lt-pathcard.awoke { border-color: #f59e0b; box-shadow: 0 0 0 2px #fde047, 0 0 14px 4px rgba(250, 204, 21, .55); animation: ltAwake 1.2s ease-out 2; }
+@keyframes ltAwake { 0% { transform: scale(.96); } 40% { transform: scale(1.04); } 100% { transform: none; } }
+.lt-pc-head { margin-bottom: 3px; font-size: 13px; }
+/* ラボ L6: クエストを選ぶ */
+.lt-quest { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: bold; color: var(--ld); }
+.lt-quest .lt-mark { width: 1.3em; height: 1.3em; font-size: 10px; }
+.lt-quests { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+.lt-questcard { border: 1px solid #e5e7eb; border-left: 4px solid var(--ld); border-radius: 8px; padding: 6px 8px; background: #fff; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.lt-questcard.now { box-shadow: 0 0 0 2px var(--ld); }
+.lt-questcard ul { list-style: none; padding: 0; margin: 0; }
+.lt-questcard li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.lt-questcard li.off { opacity: .4; }
+.lt-questcard button { margin-top: auto; }
+.lt-awake { color: #b45309; font-weight: bold; }
+.lt-pc-row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.lt-pc-l { color: var(--muted); width: 2.2em; }
+.lt-pc-dirs { list-style: none; padding: 0; margin: 4px 0 0; }
+.lt-pc-dirs > li { margin: 3px 0; }
+.lt-pc-dirs > li small { display: block; color: var(--muted); margin-left: 1.8em; }
+.lt-pc-dirs > li.closed { opacity: .4; }
+.lt-pc-dirs ol { margin: 2px 0 4px 1.2em; padding-left: 1em; color: var(--muted); }
+.lt-pc-dirs ol li.on { color: #1f2937; font-weight: bold; }

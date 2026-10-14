@@ -129,6 +129,7 @@
       '<div class="lab-badges">' + badges(c) + '</div>' +
       (c.needs && c.needs.length ? '<p class="note">一緒にオンになる案: ' + esc(c.needs.map(function (n) { var x = card(n); return n + (x ? ' ' + x.name : ''); }).join('・')) + '</p>' : '') +
       '<p class="lab-desc">' + esc(c.desc) + '</p>' +
+      (window.LabTargetUI && p ? window.LabTargetUI.cardHtml(p) : '') +   // ラボ L: このシナリオのターゲット
       '<div class="lab-howto"><b>試し方</b><p>' + esc(c.howto) + '</p></div>' +
       (c.deviates ? '<p class="note dev">CLAUDE.md から外れる: ' + esc(c.deviates) + '</p>' : '') +
       (c.note ? '<p class="note">作ってみて: ' + esc(c.note) + '</p>' : '') +
@@ -402,6 +403,10 @@
   }
   btn.addEventListener('click', function () { setOpen(panel.hidden); btn.blur(); });
 
-  window.LabUI = { render: render, open: setOpen, exportText: exportText, importText: importText, judge: function () { return judge; } };
+  window.LabUI = { render: render, open: setOpen, exportText: exportText, importText: importText, judge: function () { return judge; },
+    // review.js（見て判定）から使う: i 番目のデモを再生する／試し方の盤面を読む／判定とメモを書く
+    play: function (id, i) { var c = card(id); if (!c) return; view.scen = i || 0; demoCard(c); },
+    tryIt: function (id) { var c = card(id); if (!c) return; view.scen = 0; tryCard(c); },
+    setJudge: function (id, patch) { var e = entry(id); Object.keys(patch).forEach(function (k) { e[k] = patch[k]; }); save(); render(); } };
   renderBar();
 })();

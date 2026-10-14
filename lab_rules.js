@@ -34,7 +34,7 @@
     // ---------------------------------------------------------------
     // 水としてつながるマス（B14 葦原・I4 飛び石も水のまま）
     function waterTile(t) {
-      return t === 'river' || t === 'puddle' || (t === 'reeds' && on('B14')) || (t === 'stepstone' && on('I4'));
+      return t === 'river' || t === 'puddle' || (t === 'reeds' && (on('B14') || on('L0'))) || (t === 'stepstone' && on('I4'));   // L0: 草の起点1 の葦原
     }
     // ユニットが占めるマス（D3 大きい敵は size×size）
     function unitCells(u) {
@@ -318,7 +318,7 @@
 
     // 移動の探し方をラボのものにするか（今の BFS と同じ結果になる場面でも、案がオンなら使う）
     function useLabReach(s, u) {
-      return on('A2') || on('A5') || on('A6') || on('F2') || on('B20') || on('B21') || on('D4') || on('D7') || (u.size || 1) > 1;
+      return on('A2') || on('A5') || on('A6') || on('F2') || on('B20') || on('B21') || on('D4') || on('D7') || (u.size || 1) > 1 || thornActive(s);   // L: 茨の牢
     }
     // 入ると止まる自然（泥沼・丘。A5: 森、B21: 深い森）
     function moveStops(t) { return t === 'mud' || t === 'hill' || (on('A5') && t === 'forest') || (on('B21') && t === 'deepforest'); }
@@ -348,7 +348,7 @@
       var dist = {}, order = [], prev = {}, pass = {}, seqOf = {};
       var k0 = key(u.x, u.y);
       dist[k0] = 0; order.push([u.x, u.y]); seqOf[k0] = 0;
-      if (u.stuck) return { dist: dist, order: order, prev: prev, pass: pass };
+      if (u.stuck || thornCaged(s, u)) return { dist: dist, order: order, prev: prev, pass: pass };   // L: 茨の牢では動けない
       var open = [{ x: u.x, y: u.y, c: 0, seq: 0 }], seq = 1, done = {};
       while (open.length) {
         var bi = 0;
@@ -821,6 +821,7 @@
       return amount;
     });
     function beforeApply(s, ctx, ev) {
+      if (on('L0')) finRing(s, ctx, ev);   // L 決めるの道: 決め手の範囲が広い（D3 の覆い方の前に足す）
       ctx.order.forEach(function (id) {
         var u = I.findUnit(s, id), h = ctx.hits[id];
         if (!u || (u.size || 1) <= 1 || h.src !== 'finisher' || h.amount < B.fire.strongDamage) return;
@@ -887,6 +888,7 @@
     // ---------------------------------------------------------------
     var castMore = [];   // G・I でうしろに足す
     function castMagic(s, u, facing, ctx, ev) {
+      if (on('L0')) shotStart(s, u, ctx);   // L: 撃つ前の盤面を覚える（ターゲットの判定・作り手）
       for (var i = 0; i < castMore.length; i++) if (castMore[i](s, u, facing, ctx, ev)) return true;
       if (u.magic === 'revert') { revert(s, u, facing, ctx, ev); return true; }
       return false;
@@ -1074,14 +1076,14 @@
     }
 
     // G1: 一気に二段（育つが入のときだけ。敵にも同じ）
-    function twoStep(u) { return !!u && B.grow.enabled && hasBoost(u, 'G1'); }
+    function twoStep(u) { return !!u && B.grow.enabled && (hasBoost(u, 'G1') || makeFormOn(u)); }   // L: 作るの覚醒（森・山・川）も一気に二段
     placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) {
       if (!twoStep(u) || t !== 'empty') return false;
       var to = { grass: 'forest', earth: 'mountain', fire: 'fire' }[u.magic];
       if (!to) return false;
       if (o && (!I.isPassable(to) || !B.ideas.natureUnderUnits || on('C1'))) return false;
       setTile(s, x, y, to);
-      ctx.phrases.push('【ラボ】一気に' + tileName(to) + 'になった（一気に二段）');
+      ctx.phrases.push(makeFormOn(u) && !hasBoost(u, 'G1') ? '【道】' + formName(u) + ': 一発で' + tileName(to) + 'になった' : '【ラボ】一気に' + tileName(to) + 'になった（一気に二段）');
       return true;
     });
 
@@ -1155,12 +1157,13 @@
     });
     // 流れる・吹く魔法の届く長さ（G2 伸びる・G3 滝／追い風の槍・G6 杖と錫杖）
     function lengthFor(s, u, magic, base) {
-      if (!(on('G2') || on('G3') || on('G6') || on('F3'))) return base;
+      if (!(on('G2') || on('G3') || on('G6') || on('F3') || on('L0'))) return base;
       var len = base, b = shapeBoost(u);
       if (b && b.k === 'G2') len = 1 + Math.max(0, Math.min(3, b.v || 0));
       if (b && b.k === 'G3') { var f = FORMS[magic] && FORMS[magic][b.v]; if (f && f.len) len = base + f.len; }
       var w = weaponOn(s, u);
       if (w === 'staff' || w === 'scepter') len += 1;
+      if (u.magic === magic) len += shapeSteps(u);   // L 仮の道: 水・風は届く長さが1マスずつ伸びる
       return footLength(s, u, magic, len);   // F3: 水辺で水は1マス長い
     }
     // G3: 闇の姿は、形のマスを全部吸う（G2 で伸びた闇も）
@@ -1319,6 +1322,7 @@
     // 撃てない理由（E9 閉じこめ・H13 ごほうびの移動）。撃てるなら false
     function cannotShoot(s, u, to) {
       if (enclosedAt(s, u, to)) return '閉じこめられていて撃てない（待機だけ）';
+      if (thornCaged(s, u)) return '茨の牢に囚われていて撃てない（待機だけ）';   // L: 草の足止めの覚醒
       if (on('H13') && u.labMoveOnly) return 'ごほうびの移動は撃てない（待機だけ）';
       return false;
     }
@@ -1352,6 +1356,7 @@
       }
       if (on('H10') && opt('H10', 'mode') === 'score') s.labVillages = I.objectsOf(s, 'village').length;
       s.units.forEach(function (u) { if (u.labHpStart) { u.hp = Math.min(u.maxHp, u.labHpStart); delete u.labHpStart; } });   // H1 carryHp: 持ち越した HP
+      setupTargets(s);   // L: この戦闘のターゲット
     }
     // H10 faint: 倒れた味方は2ターン後に、味方の段の端に戻る
     var deathMore = [];
@@ -1364,6 +1369,7 @@
       });
     }
     function turnEndAll(s, ev) {
+      targetTurnEnd(s, ev);   // L: ターン終了で倒れた敵・撃たれずに終わった予告の決め手
       turnEnd(s, ev);
       if (!timeFrozen()) sweepLab(s, ev);   // B: 砂嵐・霜・暗がり・底なし沼（K1 時間なしなら消えない）
       flourishTurn(s, ev);   // K2: 灰がよみがえる・水辺の草むらが育つ・氷が溶ける
@@ -1603,7 +1609,7 @@
     });
     // F2・F3: 風のマスの向きを覚える（風を置いたとき）
     afterShotMore.push(function (s, u, facing, ctx, ev) {
-      if (!(on('F2') || on('F3')) || u.magic !== 'wind') return;
+      if (!(on('F2') || on('F3') || on('L0')) || u.magic !== 'wind') return;   // L0: 草の起点2（種が風下へ飛ぶ）にも風の向きが要る
       ctx.cells.forEach(function (c) {
         if (!inBounds(s, c[0], c[1]) || !I.isWind(getTile(s, c[0], c[1]))) return;
         s.labWind = s.labWind || {};
@@ -2009,8 +2015,9 @@
     }
 
     // 走る（雷）: 高いものとして落ちる自然と、その作用
-    function tallTile(t) { return (t === 'deepforest' && on('B21')) || (t === 'snowmt') || (t === 'icewall') || (t === 'pillar' && on('I8')); }
+    function tallTile(t) { return (t === 'deepforest' && on('B21')) || (t === 'snowmt') || (t === 'icewall') || (t === 'pillar' && on('I8')) || (t === 'bigtree' && on('L0')); }
     function strikeTall(s, u, x, y, t, facing, ctx, ev) {
+      if (on('L0') && t === 'bigtree') { setTile(s, x, y, 'fire'); ctx.phrases.push('【道】雷が大樹に落ちて燃えた'); return true; }
       if (on('I8') && t === 'pillar') { ctx.phrases.push('【ラボ】雷が金の柱に落ちた'); I.doShock(s, x, y, ctx, ev, {}); return true; }
       if (on('B3') && t === 'deadforest') { ctx.phrases.push('【ラボ】雷が死の森に落ちて木が燃えた'); I.doHaunt(s, x, y, ctx, ev); return true; }
       if (on('B8') && t === 'snowmt') { ctx.phrases.push('【ラボ】雷が雪山に落ちた'); avalanche(s, x, y, facing, ctx, ev); return true; }
@@ -2350,6 +2357,869 @@
     ];
     function zukanList() { return ZUKAN.filter(function (z) { return !z.lab || on(z.lab); }); }
 
+
+    // ---------------------------------------------------------------
+    // L ターゲットで育つ（サブターゲットと魔法の道）。ターゲットは lab_targets.js、魔法の道は lab_paths.js、画面は lab_target_ui.js
+    //   LAB_L2 で方向を「作る・決める・止める・動かす」に組み直した（作るは全魔法に共通。得意な方向は属性ごとに1〜2つ）
+    //   L0 がオンのときだけ、盤面とユニットに次を足す
+    //     s.labTargets  この戦闘のターゲット [{ id, dir, name, text, check, taker, got }]
+    //                   got = { by: 手 } か { cands: [手] }（L1 choose: 戦闘の終わりに選ぶ）。
+    //                   how: 'hand' 一手 ／'preparer' 材料（L2）／'maker' 作った ／'stopper' 止めた ／'mover' 動かした
+    //                   手 = { id, side, magic }（取った味方がそのあと倒れても、取ったものは残る）
+    //     s.labMaker    マスごとの「その自然を作った手」{ マスの番号: { by, side, magic, n } }（撃った1発の中で変わったマス。n は作った順）
+    //     s.labShot     撃っている最中の手（1発のあいだだけ）
+    //     s.labPlanFin  敵の予告で起きるはずの決め手 { 敵の id: [名前] }、s.labFoil その予告を潰した手 { 敵の id: 手 }
+    //     u.labPath     魔法の道（lab_paths.js の形）、u.labHeldBy 敵の足を止めた手、u.labHeldRun 続けて止まった敵の番の数、
+    //     u.labMovedBy  敵を動かした味方の手（その敵が撃つまで）、u.labBind 止めるの覚醒（次の敵の番に予告できない）
+    //   道が進むのは戦闘の終わり（育ちの画面）。戦闘の中では道は変わらない
+    // ---------------------------------------------------------------
+    var IS_NODE_L = typeof module !== 'undefined' && module.exports;
+    var LT = (IS_NODE_L ? require('./lab_targets.js') : root.LAB_TARGETS) || { DIRS: {}, DIR_ORDER: [], TARGETS: [], TAKERS: {} };
+    var LP = (IS_NODE_L ? require('./lab_paths.js') : root.LAB_PATHS) || { PATHS: {}, EXTRA_CELLS: {}, FLAVOR: {} };
+    var L_TILES = { bigtree: { name: '大樹', label: '樹', passable: false, ch: 'Y' } };   // LAB_L の草の育てるの覚醒「大樹」（LAB_L2 では道にない。処理は残してある）
+    Object.keys(L_TILES).forEach(function (t) {
+      var d = L_TILES[t];
+      if (!I.TILE_INFO[t]) I.TILE_INFO[t] = { name: d.name, label: d.label, passable: d.passable };
+      if (!I.CH[d.ch]) I.CH[d.ch] = t;
+      LAB_TILES[t] = d;
+    });
+    function lon() { return on('L0'); }
+    function lclone(o) { return JSON.parse(JSON.stringify(o)); }
+    // L1〜L5 はオフなら初期の値（オンにして切り替えを変えると、その値）
+    function lopt(id, k, d) { if (!on(id)) return d; var v = opt(id, k); return v === undefined ? d : v; }
+    function whoMode() { return lopt('L1', 'who', 'last'); }
+    function enemyMode() { return lopt('L2', 'enemy', 'none'); }
+    function targetCount() { var n = Math.round(Number(lopt('L3', 'count', 3))); return Math.max(2, Math.min(4, n || 3)); }
+    function loseMode() { return lopt('L4', 'lose', 'lose'); }
+    // L5 得意でない方向・閉じた方向で達成したときの行き先。make 作るが1マス進む ／nothing 何も起きない ／remain 達成にならず残る
+    function destMode() { var v = lopt('L5', 'dest', 'make'); return v === 'nothing' || v === 'remain' ? v : 'make'; }
+    var FOREST_LIKE = { forest: true, deepforest: true, bigtree: true };
+    var GROWN = { thicket: 'forest', hill: 'mountain', puddle: 'river', breeze: 'gale', smallfire: 'fire' };   // 一段 → 二段
+    var INTO = { mud: true, bog: true, forest: true, deepforest: true, river: true, puddle: true, reeds: true };   // 動かす「泥沼・森・川へ」（川は立てる水も）
+    function dirName(d) { return LT.DIRS[d] ? LT.DIRS[d].name : d; }
+
+    // ---- 魔法の道 ----
+    function pathDef(m) { return LP.PATHS[m] || null; }
+    // その魔法の道の方向（作る ＋ 得意な方向）
+    function dirsOf(m) { var d = pathDef(m); return d ? ['make'].concat(d.dirs) : []; }
+    function isGood(m, dir) { var d = pathDef(m); return !!d && (dir === 'make' ? !!d.makeGood : d.dirs.indexOf(dir) >= 0); }
+    // 作るが得意（草・土・水。作るの3マス目で覚醒する）
+    function makeGood(m) { var d = pathDef(m); return !!(d && d.makeGood && d.awaken.make); }
+    // 覚醒できる方向（作るが得意なら作るも）
+    function awakeDirs(m) { var d = pathDef(m); return d ? (makeGood(m) ? ['make'] : []).concat(d.dirs) : []; }
+    function newPath(m) { var d = pathDef(m); if (!d) return null; var p = { make: 0 }; d.dirs.forEach(function (k) { p[k] = 0; }); p.awake = null; return p; }
+    function clamp3(v) { return Math.max(0, Math.min(3, Math.round(Number(v) || 0))); }
+    // 道の形をそろえる（各方向 0〜3。覚醒は1つだけ。得意な方向は3に届いた1つが覚醒で、ほかは2まで。
+    //   作るは3まで進める。作るが得意なら、ほかに覚醒がないとき3で覚醒。ほかに先に覚醒していれば、3でも覚醒しない）
+    function normPath(m, p0) {
+      var d = pathDef(m);
+      if (!d) return null;
+      var p = newPath(m), src = p0 || {};
+      p.make = clamp3(src.make);
+      var aw = src.awake && awakeDirs(m).indexOf(src.awake) >= 0 && clamp3(src[src.awake]) >= 3 ? src.awake : null;
+      d.dirs.forEach(function (k) {
+        var v = clamp3(src[k]);
+        if (v >= 3 && !aw) aw = k;
+        if (v >= 3 && aw !== k) v = 2;
+        p[k] = v;
+      });
+      if (!aw && makeGood(m) && p.make >= 3) aw = 'make';
+      p.awake = aw;
+      return p;
+    }
+    function lpathOf(u) { return lon() && u && u.labPath && pathDef(u.magic) ? u.labPath : null; }
+    function stepOf(u, dir) { var p = lpathOf(u); return p ? (p[dir] || 0) : 0; }
+    function awakeOf(u) { var p = lpathOf(u); return p && p.awake ? p.awake : null; }
+    function formOf(u) { var a = awakeOf(u), d = a ? pathDef(u.magic) : null; return d && d.awaken[a] ? d.awaken[a] : null; }
+    function formName(u) { var f = formOf(u); return f ? f.name : null; }
+    // 作るの覚醒（森・山・川）。育つ（X1）が入のときだけ一発で育った姿を作る（切なら名前と駒が変わるだけ）
+    function makeForm(u) { return !!u && awakeOf(u) === 'make' && makeGood(u.magic); }
+    function makeFormOn(u) { return makeForm(u) && B.grow.enabled; }
+    // 道で手に入れた効果。進んだマスの効果は、覚醒でほかの方向が閉じても残る
+    function fxCount(u, fx) {
+      var p = lpathOf(u), d = p ? pathDef(u.magic) : null, n = 0;
+      if (!d) return 0;
+      Object.keys(d.steps).forEach(function (k) {
+        var st = d.steps[k] || [];
+        for (var i = 0; i < Math.min(3, p[k] || 0); i++) if (st[i] && st[i].fx === fx) n++;
+      });
+      return n;
+    }
+    function fxOn(u, fx) { return fxCount(u, fx) > 0; }
+    // 作る: 形が1マス増えるマスの数（上限3）。作るが得意でも、先にほかの方向に覚醒していれば、3マス目は形が1マス
+    function shapeSteps(u) {
+      var n = fxCount(u, 'shape'), p = lpathOf(u);
+      if (p && makeGood(u.magic) && (p.make || 0) >= 3 && p.awake !== 'make') n++;
+      return Math.min(3, n);
+    }
+    // i マス目（0〜2）の中身の一言（作るが得意でも、ほかに覚醒したあとの3マス目は形が1マス）
+    function stepText(m, p, k, i) {
+      var d = pathDef(m), st = d && d.steps[k] && d.steps[k][i];
+      if (!st) return '';
+      if (k === 'make' && i === 2 && makeGood(m) && p && p.awake && p.awake !== 'make') {
+        return '形が1マス増える（' + (LP.EXTEND_NAME || {})[d.extend] + '）。' + d.awaken[p.awake].name + 'に覚醒したので、作るは覚醒しない（ここが上限）';
+      }
+      return st.text;
+    }
+    // 道を1マス進める（p を書き換える）。{ ok, step, awake } ／{ none }（その方向を持たない）／{ closed }（覚醒で閉じた）／{ full }（もう覚醒した方向）／{ makeFull }（作るは3マスで上限）
+    function advance(p, m, dir) {
+      var d = pathDef(m);
+      if (!d || !p) return { none: true };
+      if (dir === 'make') {
+        if ((p.make || 0) >= 3) return { makeFull: true };
+        p.make = (p.make || 0) + 1;
+        var mo = { ok: true, step: p.make };
+        if (p.make >= 3 && makeGood(m) && !p.awake) { p.awake = 'make'; mo.awake = d.awaken.make; }   // 作るが得意なら3マス目で覚醒
+        return mo;
+      }
+      if (d.dirs.indexOf(dir) < 0) return { none: true };
+      if (p.awake && p.awake !== dir) return { closed: true };
+      if ((p[dir] || 0) >= 3) return { full: true };
+      p[dir] = (p[dir] || 0) + 1;
+      var out = { ok: true, step: p[dir] };
+      if (p[dir] >= 3) { p.awake = dir; out.awake = d.awaken[dir]; }
+      return out;
+    }
+    // 達成したときの行き先（L5）。p を書き換える。{ dir: 進んだ方向, res, via: 得意でなかったときの元の結果, dest: L5 の値, after: 進めたあとの道 }
+    function gain(p, m, dir) {
+      var g, r = advance(p, m, dir);
+      if (r.ok || dir === 'make' || !pathDef(m) || !p) g = { dir: dir, res: r };
+      else if (destMode() !== 'make') g = { dir: dir, res: r, dest: destMode() };
+      else g = { dir: 'make', res: advance(p, m, 'make'), via: r };
+      if (p) g.after = lclone(p);
+      return g;
+    }
+    // 取ったら、その方向の道がそのまま進むか（L5 remain: 進まない手では達成にならない）
+    function advances(p, m, dir) { return !!(p && pathDef(m) && advance(lclone(p), m, dir).ok); }
+    // 進み具合の印（作●○○ 止●●○ …。閉じた方向は × を足す）
+    function pathMarks(m, p) {
+      var d = pathDef(m);
+      if (!d) return '';
+      p = p || newPath(m);
+      return dirsOf(m).map(function (k) {
+        var n = p[k] || 0, s = '';
+        for (var i = 0; i < 3; i++) s += i < n ? '●' : '○';
+        return (LT.DIRS[k] ? LT.DIRS[k].mark : k) + s + (k !== 'make' && p.awake && p.awake !== k ? '×' : '');
+      }).join(' ');
+    }
+    // k に覚醒すると閉じるもの（「止める・動かすは閉じる」「作るは森に覚醒しなくなる」）
+    function closeText(m, k) {
+      var d = pathDef(m), parts = [];
+      if (!d) return '';
+      var others = d.dirs.filter(function (x) { return x !== k; }).map(dirName);
+      if (others.length) parts.push(others.join('・') + 'は閉じる');
+      if (k !== 'make' && makeGood(m)) parts.push('作るは' + d.awaken.make.name + 'に覚醒しなくなる');
+      return parts.join('。');
+    }
+    // 進んだあとの覚醒の見通し（「覚醒「森」！ 止めるは閉じる」「あと1つで森に覚醒。止めるは閉じる」）
+    function awakeHint(m, k, r, after) {
+      var d = pathDef(m), ct = closeText(m, k);
+      if (r.awake) return '（覚醒「' + r.awake.name + '」！' + (ct ? ' ' + ct : '') + '）';
+      if (!after || after.awake || awakeDirs(m).indexOf(k) < 0) return '';
+      var left = 3 - (after[k] || 0);
+      return left > 0 ? '（あと' + left + 'つで' + d.awaken[k].name + 'に覚醒' + (ct ? '。' + ct : '') + '）' : '';
+    }
+    // 得意でない・閉じた・覚醒ずみ、の理由（before は進める前の道）
+    function notWhy(m, dir, r, before) {
+      var nm = I.magicName(m), d = pathDef(m);
+      if (r.none) return nm + 'は' + dirName(dir) + 'を持たない';
+      if (r.closed) return nm + 'は' + ((before && before.awake && d.awaken[before.awake]) ? d.awaken[before.awake].name : '覚醒') + 'に覚醒して、' + dirName(dir) + 'は閉じている';
+      if (r.full) return nm + 'の' + dirName(dir) + 'はもう覚醒している';
+      if (r.makeFull) return nm + 'の作るはもう伸びない（3マス）';
+      return '';
+    }
+    // gain の結果の一言（dir は達成したターゲットの方向）
+    function gainText(m, dir, g, before) {
+      var nm = I.magicName(m), r = g.res;
+      if (!pathDef(m)) return nm + 'には道がない（育たない）';
+      if (g.via) return notWhy(m, dir, g.via, before) + 'ので、' + (r.ok ? '作るが1マス進む' + awakeHint(m, 'make', r, g.after) : '作るに入るが、作るはもう伸びない');
+      if (r.ok) return nm + 'の' + dirName(g.dir) + 'が1マス進む' + awakeHint(m, g.dir, r, g.after);
+      if (r.makeFull) return '作るはもう伸びない（' + nm + 'は3マス）';
+      if (g.dest === 'remain') return notWhy(m, dir, r, before) + 'ので、達成にならない（L5: 残る）';
+      return notWhy(m, dir, r, before) + 'ので、何も起きない';
+    }
+    // 取ったら道がどうなるか（一言）。p はその魔法の今の道（なければ 0 から）
+    function outlook(m, p, dir) {
+      if (!pathDef(m)) return '達成するが、' + I.magicName(m) + 'には道がない（育たない）';
+      p = p || newPath(m);
+      return gainText(m, dir, gain(lclone(p), m, dir), p);
+    }
+
+    // ---- ターゲット ----
+    function targetDef(x) {
+      var t = typeof x === 'string' ? LT.TARGETS.filter(function (d) { return d.id === x; })[0] : x;
+      return t && t.check ? JSON.parse(JSON.stringify(t)) : null;
+    }
+    // 戦闘の始まり: シナリオの labState.labTargetList から、この戦闘のターゲットを決める（数は L3。育つが切なら「二段」は出さない）
+    function setupTargets(s) {
+      if (!lon()) return;
+      if (!s.labTargets && s.labTargetList) {
+        var list = s.labTargetList.map(targetDef).filter(function (t) { return t && (!t.needsGrow || B.grow.enabled); });
+        s.labTargets = list.slice(0, targetCount());
+      }
+      (s.labTargets || []).forEach(function (t) { t.got = null; delete t.missed; delete t.remainSeen; });
+      delete s.labPlanFin; delete s.labFoil; delete s.labShot;
+      s.units.forEach(function (u) { delete u.labHeldBy; delete u.labHeldRun; delete u.labMovedBy; delete u.labBind; });
+    }
+    function openT(s, kind) { return (s.labTargets || []).filter(function (t) { return !t.got && t.check && t.check.kind === kind; }); }
+    function uniqHands(list) { var out = []; list.forEach(function (h) { out = out.filter(function (x) { return x.id !== h.id; }); out.push(h); }); return out; }
+    function handName(s, h) {
+      if (!h) return '？';
+      if (h.side === 'time') return 'ターン終了';
+      var u = h.id ? I.findUnit(s, h.id) : null;
+      if (h.side !== 'ally') return u ? unitLabel(s, u) : '敵';
+      return (u && formName(u)) || I.magicName(h.magic);
+    }
+    // この戦闘で、もう取ったターゲットの分を進めた道（道が進むのは戦闘の終わり。行き先の予想と L5 remain に使う）
+    function projected(s, h) {
+      if (!h || !pathDef(h.magic)) return null;
+      var u = h.id ? I.findUnit(s, h.id) : null;
+      if (!u || !u.labPath) u = s.units.filter(function (x) { return x.side === 'ally' && x.magic === h.magic && x.labPath; })[0] || null;
+      var p = u && u.labPath ? normPath(h.magic, u.labPath) : newPath(h.magic);
+      gotOrder(s).forEach(function (t) { if (t.got.by && t.got.by.magic === h.magic) gain(p, h.magic, t.dir); });
+      return p;
+    }
+    // 取ったターゲットを、取った順に（道は戦闘の終わりに、この順で進む）
+    function gotOrder(s) {
+      return (s.labTargets || []).filter(function (t) { return t.got; }).sort(function (a, b) { return (a.got.seq || 0) - (b.got.seq || 0); });
+    }
+    // 材料のマスを作った味方（作った順。同じ味方は最後の1回だけ）
+    function preparersAt(s, maker, cells) {
+      var list = [];
+      (cells || []).forEach(function (c) {
+        if (!inBounds(s, c[0], c[1])) return;
+        var m = maker[idx(s, c[0], c[1])];
+        if (m && m.side === 'ally') list.push(m);
+      });
+      list.sort(function (a, b) { return a.n - b.n; });
+      return uniqHands(list.map(function (m) { return { id: m.by, side: 'ally', magic: m.magic }; }));
+    }
+    // L5 remain: 取っても道が進まない魔法の手では達成にならない（一言は魔法ごとに1回）
+    function remainNote(s, t, h, ev, cells) {
+      t.remainSeen = t.remainSeen || {};
+      if (h && !t.remainSeen[h.magic]) {
+        t.remainSeen[h.magic] = true;
+        var p = projected(s, h);
+        ev.push({ type: 'info', cells: cells || [], text: '【ターゲット】' + dirName(t.dir) + '「' + t.name + '」: ' + handName(s, h) + 'では取れない（' + outlook(h.magic, p, t.dir) + '）。まだ取れる' });
+      }
+      return false;
+    }
+    // 達成: 誰が取るかを決めて記録する（取る魔法・L1・L2・L5）。取れなければ false
+    //   hand は取る魔法の手（taker が hand なら達成の一手、ほかはミッションが決めた手）
+    function achieve(s, t, hand, preps, ev, cells) {
+      var who = whoMode(), taker = t.taker || 'hand', got;
+      preps = uniqHands(preps || []);
+      var canTake = function (h) { return destMode() !== 'remain' || advances(projected(s, h), h.magic, t.dir); };
+      if (hand.side === 'ally') {
+        if (taker === 'hand' && who === 'choose') {
+          var all = uniqHands(preps.concat([hand])), cands = all.filter(canTake);
+          if (!cands.length) return remainNote(s, t, hand, ev, cells);
+          got = cands.length > 1 ? { cands: cands } : { by: cands[0] };
+        } else {
+          if (!canTake(hand)) return remainNote(s, t, hand, ev, cells);
+          got = { by: hand };
+        }
+        got.how = taker;
+      } else {
+        if (enemyMode() !== 'preparer' || !preps.length) {
+          if (!t.missed) {
+            t.missed = true;
+            ev.push({ type: 'info', cells: cells || [], text: '【ターゲット】' + dirName(t.dir) + '「' + t.name + '」は' + (hand.side === 'time' ? 'ターン終了' : '敵の手') + 'で起きたので、取れない（まだ取れる）' });
+          }
+          return false;
+        }
+        var okp = preps.filter(canTake);
+        if (!okp.length) return remainNote(s, t, preps[preps.length - 1], ev, cells);
+        got = who === 'choose' && okp.length > 1 ? { cands: okp } : { by: okp[okp.length - 1] };
+        got.how = 'preparer';
+      }
+      got.turn = s.turn;
+      s.labGotSeq = (s.labGotSeq || 0) + 1;
+      got.seq = s.labGotSeq;   // 取った順（道はこの順に進む。作るの覚醒と得意な方向の覚醒の、どちらが先かが決まる）
+      var HOW = { preparer: '材料を作った', maker: '自然を作った', stopper: '止めた', mover: '動かした' };
+      var whoText = got.by ? (HOW[got.how] || '') + handName(s, got.by) + 'が取った → ' + outlook(got.by.magic, projected(s, got.by), t.dir)
+        : (HOW[got.how] ? HOW[got.how] + ' ' : '') + got.cands.map(function (h) { return handName(s, h); }).join('・') + ' から、戦闘の終わりに1人選ぶ';
+      t.got = got;
+      ev.push({ type: 'labTarget', target: t.id, dir: t.dir, cells: cells || [], text: '【ターゲット】' + dirName(t.dir) + '「' + t.name + '」達成！ ' + whoText });
+      return true;
+    }
+
+    // ---- 撃つ前と後（1発の中で変わったマスを、撃った手のものとして覚える） ----
+    function stopOpen(s) { return openT(s, 'held').length + openT(s, 'heldFin').length > 0; }
+    function shotStart(s, u, ctx) {
+      if (!lon()) return;
+      var track = s.labTargets && stopOpen(s);
+      ctx.labPre = { tiles: s.tiles.slice(), maker: lclone(s.labMaker || {}),
+        units: s.units.map(function (x) {
+          return { id: x.id, side: x.side, magic: x.magic, x: x.x, y: x.y, size: x.size || 1,
+            held: track && x.side === 'enemy' ? heldNow(s, x) : false, heldBy: x.labHeldBy || null };
+        }) };
+      ctx.labPrevShot = s.labShot;
+      s.labShot = { by: u.id, side: u.side, magic: u.magic };
+    }
+    function makerSet(s, i, t) {
+      if (t === 'empty') { if (s.labMaker) delete s.labMaker[i]; return; }
+      if (!s.labShot) return;   // 撃った1発の外（燃え移り・燃え尽き・エディット）は、元の作り手のまま
+      s.labMaker = s.labMaker || {};
+      s.labSeq = (s.labSeq || 0) + 1;
+      s.labMaker[i] = { by: s.labShot.by, side: s.labShot.side, magic: s.labShot.magic, n: s.labSeq };
+    }
+    afterShotMore.push(function (s, u, facing, ctx, ev) {
+      if (!lon() || !ctx.labPre) return;
+      grassAfter(s, u, facing, ctx, ev);   // 草の道（蔓。LAB_L の起点・育てるの処理も fx で残してある）。作った自然は、この1発のもの
+      pathAfter(s, u, facing, ctx, ev);    // 止める・動かすの道（共通の処理）
+      if (ctx.labPrevShot) s.labShot = ctx.labPrevShot; else delete s.labShot;
+      thornIntent(s, ev);
+      if (!s.labTargets) return;
+      heldTrack(s, u, ctx, ev);
+      judgeShot(s, u, ctx, ev);
+    });
+    function judgeShot(s, u, ctx, ev) {
+      var pre = ctx.labPre, hand = { id: u.id, side: u.side, magic: u.magic };
+      var changed = [];
+      for (var i = 0; i < s.tiles.length && i < pre.tiles.length; i++) {
+        if (s.tiles[i] !== pre.tiles[i]) changed.push({ x: i % s.size, y: Math.floor(i / s.size), from: pre.tiles[i], to: s.tiles[i] });
+      }
+      var deadEnemies = pre.units.filter(function (p) { return p.side === 'enemy' && !I.findUnit(s, p.id); });
+      var finCells = [];
+      ctx.finishers.forEach(function (f) { (f.cells || []).concat(f.labRing || []).forEach(function (c) { finCells.push(c); }); if (f.origin) finCells.push(f.origin); });
+      var byFin = function (id) { var h = ctx.hits[id]; return !!h && h.src !== 'direct' && ctx.finishers.length > 0; };
+      var at = function (list) { return list.map(function (c) { return [c.x, c.y]; }); };
+      // この1発で動いた敵（動く前と後の縦横の歩数）
+      var moved = [];
+      pre.units.forEach(function (p) {
+        if (p.side !== 'enemy') return;
+        var e = I.findUnit(s, p.id);
+        if (e && (e.x !== p.x || e.y !== p.y)) moved.push({ id: p.id, from: [p.x, p.y], to: [e.x, e.y], d: Math.abs(e.x - p.x) + Math.abs(e.y - p.y) });
+      });
+      (s.labTargets || []).forEach(function (t) {
+        if (t.got) return;
+        var k = t.check.kind, r = null, taker = null;
+        if (k === 'farNature') {
+          // 距離は、撃つ前にいた敵から（その1発で倒した敵のそばも「離れた所」ではない）
+          var dist = t.check.dist || 3, foes = pre.units.filter(function (p) { return p.side === 'enemy'; });
+          var far = changed.filter(function (c) {
+            return c.from === 'empty' && c.to !== 'empty' && foes.every(function (e) { return unitCells(e).every(function (q) { return Math.abs(q[0] - c.x) + Math.abs(q[1] - c.y) >= dist; }); });
+          });
+          if (far.length) r = { cells: at(far), mat: [] };
+        } else if (k === 'chain') {
+          for (var j = 0; j < changed.length && !r; j++) {
+            if (changed[j].to === 'empty') continue;
+            var comp = connected(s, changed[j].x, changed[j].y, changed[j].to);
+            if (comp.length >= (t.check.n || 5)) r = { cells: comp, mat: comp };
+          }
+        } else if (k === 'enemyChange') {
+          // 敵の魔法で、味方が作った自然が別の自然に変わった。取るのは、変えられた自然を作った魔法（何人もいれば最後に作った味方）
+          if (u.side === 'enemy') {
+            var mk = null, mc = [];
+            changed.forEach(function (c) {
+              var m0 = pre.maker[idx(s, c.x, c.y)];
+              if (!m0 || m0.side !== 'ally' || c.from === 'empty' || c.to === 'empty') return;
+              mc.push([c.x, c.y]);
+              if (!mk || m0.n > mk.n) mk = m0;
+            });
+            if (mk) { taker = { id: mk.by, side: 'ally', magic: mk.magic }; r = { cells: mc, mat: [] }; }
+          }
+        } else if (k === 'twoStage') {
+          var gr = B.grow.enabled ? changed.filter(function (c) { return GROWN[c.from] === c.to; }) : [];
+          if (gr.length) r = { cells: at(gr), mat: at(gr) };
+        } else if (k === 'finKill') {
+          if (deadEnemies.some(function (d) { return byFin(d.id); })) r = { cells: finCells, mat: finCells };
+        } else if (k === 'finHits') {
+          var n = pre.units.filter(function (p) { return p.side === 'enemy' && byFin(p.id); }).length;
+          if (n >= (t.check.n || 2)) r = { cells: finCells, mat: finCells };
+        } else if (k === 'finChain') {
+          if (ctx.finishers.length >= (t.check.n || 2)) r = { cells: finCells, mat: finCells };
+        } else if (k === 'kill') {
+          if (deadEnemies.length) r = { cells: deadEnemies.map(function (d) { return [d.x, d.y]; }), mat: finCells };
+        } else if (k === 'heldFin') {
+          // 足が止まっていた敵（撃つ前に）が決め手に巻き込まれた。取るのは止めた魔法（自分ではまったなら敵の手 → L2）
+          var hf = pre.units.filter(function (p) { return p.side === 'enemy' && p.held && byFin(p.id); })[0];
+          if (hf) {
+            taker = hf.heldBy || { id: hf.id, side: 'enemy', magic: hf.magic };
+            r = { cells: [[hf.x, hf.y]], mat: [[hf.x, hf.y]] };
+          }
+        } else if (k === 'push') {
+          var pm = moved.filter(function (m) { return m.d >= (t.check.n || 2); });
+          if (pm.length) r = { cells: pm.map(function (m) { return m.to; }), mat: [] };
+        } else if (k === 'pushInto') {
+          var pi = moved.filter(function (m) { return INTO[getTile(s, m.to[0], m.to[1])]; });
+          if (pi.length) r = { cells: pi.map(function (m) { return m.to; }), mat: [] };
+        } else if (k === 'redirect') {
+          // 動かされた敵が撃って、別の敵に当たった。取るのは動かした魔法
+          if (u.side === 'enemy' && u.labMovedBy) {
+            var hitE = ctx.order.filter(function (id) {
+              var p = pre.units.filter(function (q) { return q.id === id; })[0];
+              return id !== u.id && p && p.side === 'enemy' && ctx.hits[id].amount > 0;
+            });
+            if (hitE.length) {
+              taker = u.labMovedBy;
+              r = { cells: hitE.map(function (id) { var p = pre.units.filter(function (q) { return q.id === id; })[0]; return [p.x, p.y]; }), mat: [] };
+            }
+          }
+        } else if (k === 'hitTile') {
+          var cc = t.check.cells || [];
+          var hit = (!t.check.magic || t.check.magic === u.magic) && cc.some(function (q) {
+            return has(ctx.cells, q[0], q[1]) && (!t.check.tile || pre.tiles[idx(s, q[0], q[1])] === t.check.tile);
+          });
+          if (hit) r = { cells: cc, mat: [] };
+        }
+        if (r) achieve(s, t, taker || hand, preparersAt(s, pre.maker, r.mat), ev, r.cells);
+      });
+      // 動かす「予告を別の敵に」: 味方が動かした敵を覚える（その敵が撃つまで）。敵の手で動いたら忘れる
+      if (openT(s, 'redirect').length) moved.forEach(function (m) {
+        var e = I.findUnit(s, m.id);
+        if (!e || e.id === u.id) return;
+        if (u.side === 'ally') e.labMovedBy = hand; else delete e.labMovedBy;
+      });
+      if (u.side === 'enemy') delete u.labMovedBy;
+      // 止める「予告の決め手を潰す」: 予告で決め手が起きるはずだった敵が撃って、決め手が起きなかった
+      if (u.side === 'enemy' && s.labPlanFin && s.labPlanFin[u.id]) {
+        var names = s.labPlanFin[u.id];
+        delete s.labPlanFin[u.id];
+        if (!ctx.finishers.length) foiled(s, u.id, names, ev);
+        if (s.labFoil) delete s.labFoil[u.id];
+      }
+    }
+
+    // ---- 止める「敵が動けなかった」: 泥沼・凍結・蔓（stuck）、茨の牢、閉じこめ（E9）、道の縛り、まわりを囲まれて1歩も動けない ----
+    function caged(s, e) {
+      if (!e || e.side !== 'enemy' || !(e.move > 0) || e.stand === 'still' || e.stand === 'march' || e.stand === 'rush') return false;
+      return I.reachInfo(s, e).order.length <= 1;
+    }
+    function heldNow(s, e) { return !!(e.stuck || e.labBind || thornCaged(s, e) || enclosedAt(s, e) || caged(s, e)); }
+    // この1発で足が止まった敵に、止めた手を覚える（自分ではまったときは afterMove で、敵自身の手）
+    function heldTrack(s, u, ctx, ev) {
+      if (!stopOpen(s)) return;
+      var open = openT(s, 'held');
+      I.enemiesOf(s).forEach(function (e) {
+        var was = ctx.labPre.units.filter(function (p) { return p.id === e.id; })[0];
+        if (!heldNow(s, e)) { delete e.labHeldBy; return; }
+        if (was && was.held) return;
+        e.labHeldBy = { id: u.id, side: u.side, magic: u.magic };
+        if (u.side === 'ally' && open.length) ev.push({ type: 'labTargetSoon', dir: 'stop', id: e.id, cells: [[e.x, e.y]],
+          text: '【ターゲット】' + unitLabel(s, e) + 'の足が止まった → 敵の番に動けなければ、止める「' + open[0].name + '」（' + handName(s, e.labHeldBy) + 'の手 → ' + soonOutlook(s, e.labHeldBy, open[0]) + '）' });
+      });
+    }
+    // 取れそうなときの一言の、行き先（作るに入る・覚醒の見通しも）
+    function soonOutlook(s, h, t) { return h && h.side === 'ally' ? outlook(h.magic, projected(s, h), t.dir) : '敵の手なので L2 しだい'; }
+    afterMoveMore.push(function (s, u, from, to, ev) {
+      if (lon() && u.side === 'enemy' && u.stuck && !u.labHeldBy) u.labHeldBy = { id: u.id, side: 'enemy', magic: u.magic };   // 自分ではまった
+    });
+    // 敵の番の始め（移動と予告の前）。rules.js の enemyPlanPhase から
+    function planStart(s, e, plan, ev) {
+      if (!lon() || !s.labTargets) return;
+      delete e.labMovedBy;   // 自分の番が来たら、動かされた手は忘れる
+      var open = openT(s, 'held');
+      if (!open.length) return;
+      if (!heldNow(s, e)) { delete e.labHeldBy; delete e.labHeldRun; return; }
+      e.labHeldRun = (e.labHeldRun || 0) + 1;
+      var hand = e.labHeldBy || { id: e.id, side: 'enemy', magic: e.magic };
+      var mat = e.stuck ? [[e.x, e.y]] : [[e.x, e.y]].concat(neighbors(s, e.x, e.y).map(function (n) { return [n.x, n.y]; }));
+      open.forEach(function (t) { if (e.labHeldRun >= (t.check.turns || 1)) achieve(s, t, hand, preparersAt(s, s.labMaker || {}, mat), ev, [[e.x, e.y]]); });
+    }
+
+    // ---- 止める「予告の決め手を潰す」 ----
+    // 敵の予告が出そろったあと: 予告どおりなら決め手が起きる敵を覚える
+    function afterPlan(s, ev) {
+      if (!lon()) return;
+      delete s.labPlanFin; delete s.labFoil;
+      if (s.result || !s.labTargets || !openT(s, 'foiled').length) return;
+      var fin = {}, any = false;
+      I.forecast(s).enemies.forEach(function (p) {
+        if (p.cancelled || !p.finishers || !p.finishers.length) return;
+        fin[p.id] = p.finishers.map(function (f) { return f.name; }); any = true;
+      });
+      if (any) s.labPlanFin = fin;
+    }
+    // 味方が1人動いたあと: その手で、予告の決め手が起きなくなった敵を覚える（また起きるようになったら消す）
+    function afterAct(s, u, ev) {
+      if (!lon() || s.result || !s.labPlanFin || !openT(s, 'foiled').length) return;
+      var still = {};
+      I.forecast(s).enemies.forEach(function (p) { if (!p.cancelled && p.finishers && p.finishers.length) still[p.id] = true; });
+      s.labFoil = s.labFoil || {};
+      Object.keys(s.labPlanFin).forEach(function (id) {
+        if (still[id]) { delete s.labFoil[id]; return; }
+        if (s.labFoil[id]) return;
+        s.labFoil[id] = { id: u.id, side: u.side, magic: u.magic };
+        var e = I.findUnit(s, id);
+        ev.push({ type: 'labTargetSoon', dir: 'stop', id: id, cells: e ? [[e.x, e.y]] : [],
+          text: '【ターゲット】' + (e ? unitLabel(s, e) : '敵') + 'の予告の決め手（' + s.labPlanFin[id].join('・') + '）が起きなくなった → 敵の番に起きなければ、止める「' + openT(s, 'foiled')[0].name + '」（' + handName(s, s.labFoil[id]) + 'の手 → ' + soonOutlook(s, s.labFoil[id], openT(s, 'foiled')[0]) + '）' });
+      });
+    }
+    function foiled(s, eid, names, ev) {
+      var open = openT(s, 'foiled');
+      if (!open.length) return;
+      var e = I.findUnit(s, eid);
+      var hand = (s.labFoil && s.labFoil[eid]) || { id: eid, side: 'enemy', magic: e ? e.magic : '' };
+      open.forEach(function (t) { achieve(s, t, hand, [], ev, e ? [[e.x, e.y]] : []); });
+    }
+    // 予測の一言（画面から）: 選んでいる手のあとの予告 fc で、予告の決め手が起きなくなる敵
+    function foilPreview(s0, fc) {
+      if (!lon() || !s0.labPlanFin || !fc || !openT(s0, 'foiled').length) return [];
+      var still = {}, out = [];
+      fc.enemies.forEach(function (p) { if (!p.cancelled && p.finishers && p.finishers.length) still[p.id] = true; });
+      Object.keys(s0.labPlanFin).forEach(function (id) {
+        if (still[id] || (s0.labFoil && s0.labFoil[id])) return;
+        var e = I.findUnit(s0, id);
+        out.push({ dir: 'stop', text: '【ターゲット】この手で ' + (e ? unitLabel(s0, e) : '敵') + 'の予告の決め手（' + s0.labPlanFin[id].join('・') + '）が起きなくなる → 敵の番に起きなければ、止める「' + openT(s0, 'foiled')[0].name + '」' });
+      });
+      return out;
+    }
+    // 予測の一言（画面から）: 選んでいる手で動いた敵の予告が、別の敵に当たるようになる（ps は手のあとの盤面、fc はその予告）
+    function redirectPreview(s0, ps, fc) {
+      if (!lon() || !fc || !ps || !openT(s0, 'redirect').length) return [];
+      var out = [];
+      fc.enemies.forEach(function (p) {
+        if (p.cancelled) return;
+        var a = I.findUnit(s0, p.id), b = I.findUnit(ps, p.id);
+        if (!a || !b || !b.labMovedBy || (a.x === b.x && a.y === b.y)) return;
+        var hit = (p.damages || []).filter(function (d) { return d.side === 'enemy' && d.id !== p.id && d.amount > 0; });
+        if (!hit.length) return;
+        var names = hit.map(function (d) { var q = I.findUnit(ps, d.id); return q ? unitLabel(ps, q) : '敵'; }).join('・');
+        out.push({ dir: 'move', text: '【ターゲット】この手で ' + unitLabel(s0, a) + 'が動き、予告が ' + names + ' に当たる → 敵の番に当たれば、動かす「' + openT(s0, 'redirect')[0].name + '」（' + handName(ps, b.labMovedBy) + 'の手）' });
+      });
+      return out;
+    }
+    // ターン終了処理のあと: 炎・火傷で倒れた敵（手はターン終了）と、撃たれずに終わった予告の決め手
+    function targetTurnEnd(s, ev) {
+      if (!lon() || !s.labTargets) return;
+      var mark = -1;
+      for (var i = ev.length - 1; i >= 0; i--) if (ev[i].type === 'turnEnd') { mark = i; break; }
+      if (mark >= 0) ev.slice(mark).forEach(function (e) {
+        if (e.type !== 'death' || e.side !== 'enemy') return;
+        var c = (e.cells || [])[0];
+        openT(s, 'kill').forEach(function (t) { achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []); });
+      });
+      if (s.labPlanFin) Object.keys(s.labPlanFin).forEach(function (id) { foiled(s, id, s.labPlanFin[id], ev); });
+      delete s.labPlanFin; delete s.labFoil;
+    }
+
+    // ---- 決める・止める・動かすの道（共通の処理。見え方だけ属性の動詞に合わせる） ----
+    var STOP_TEXT = { earth: 'の足が土に埋まった', fire: 'は炎に巻かれて足が止まった', ice: 'の足が凍りついた' };
+    function flavorOf(dir, m) { return ((LP.FLAVOR || {})[dir] || {})[m] || ''; }
+    // 決める1・覚醒: 決め手の範囲が広い（撃った1発の決め手のまわり w マスの者にも、その決め手のダメージ）。applyHits の前（beforeApply）から
+    function finWide(u) { return (fxOn(u, 'finWide') ? 1 : 0) + (fxOn(u, 'finAwake') ? 1 : 0); }
+    function finRing(s, ctx, ev) {
+      if (!lon() || !ctx.caster || !ctx.finishers.length) return;
+      var u = I.findUnit(s, ctx.caster), w = u ? finWide(u) : 0;
+      if (!w) return;
+      ctx.finishers.slice().forEach(function (f) {
+        if (!(f.damage > 0) || f.labRing) return;
+        var inF = {}, seen = {}, ring = [];
+        (f.cells || []).forEach(function (c) { inF[key(c[0], c[1])] = true; });
+        (f.cells || []).forEach(function (c) {
+          for (var dy = -w; dy <= w; dy++) for (var dx = -w; dx <= w; dx++) {
+            if (Math.abs(dx) + Math.abs(dy) > w) continue;
+            var x = c[0] + dx, y = c[1] + dy, k = key(x, y);
+            if (!inBounds(s, x, y) || inF[k] || seen[k]) continue;
+            seen[k] = true; ring.push([x, y]);
+          }
+        });
+        f.labRing = ring;
+        if (!ring.length) return;
+        ring.forEach(function (c) { var o = unitAt(s, c[0], c[1]); if (o) addHit(ctx, o, f.damage, 'finisher', c); });
+        ev.push({ type: 'kindle', cells: ring, text: '【道】' + (formName(u) || I.magicName(u.magic)) + ': ' + f.name + 'の範囲が' + w + 'マス広い（' + flavorOf('decide', u.magic) + '）' });
+      });
+    }
+    // 決める2: 形が術者から1マス離れて届く（前1マスを飛ばす）
+    originMore.push(function (s, u, facing) {
+      if (!lon() || !fxOn(u, 'finFar')) return null;
+      var F = DIRS[facing], k = getTile(s, u.x, u.y) === 'hill' ? 2 : 1;
+      return { x: u.x + F.dx * k, y: u.y + F.dy * k };
+    });
+    // 止める: 当たった者（魔法の形が直接当たった者）の足を止める。草は本物の道（蔓）なので除く
+    function pathHold(s, u, ctx, ev) {
+      var d = pathDef(u.magic);
+      if (!d || (d.real && d.real.stop)) return;
+      var n = fxOn(u, 'hold2') ? 2 : fxOn(u, 'hold') ? 1 : 0, bind = fxOn(u, 'bind');
+      if (!n) return;
+      ctx.order.forEach(function (id) {
+        var h = ctx.hits[id], q = I.findUnit(s, id);
+        if (!h || h.src !== 'direct' || id === u.id || !q || q.side === 'object') return;
+        var cur = q.stuck === true ? 1 : (Number(q.stuck) || 0);
+        if (n > cur) q.stuck = n === 1 ? true : n;
+        var b = bind && q.side === 'enemy';   // 縛り（予告できない）は敵だけ。味方には予告がないので、足止めだけ
+        if (b) q.labBind = true;
+        ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: '【道】' + unitLabel(s, q) + (STOP_TEXT[u.magic] || 'の足が止まった') +
+          '（' + (b ? '次のターン、移動も予告もできない' : '次の移動は' + Math.max(n, cur) + '回休み') + '）' });
+      });
+    }
+    // 止めるの覚醒: 縛られた敵は、次の自分の番に予告できない（足は stuck で止まっている）
+    cannotMore.push(function (s, e, ev) {
+      if (!lon() || !e.labBind) return false;
+      delete e.labBind;
+      ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: '【道】' + unitLabel(s, e) + 'は縛られていて、動けず予告もできない' });
+      return true;
+    });
+    // 動かす: 当たった者を1マス動かす（風・闇はもとから動かすので1マス多く）。物（馬車・落ちている宝）は2マス目から。覚醒は何かに当たるまで
+    function canShove(u, q) { return !!q && q.id !== u.id && (q.side !== 'object' || fxOn(u, 'pushThings')); }
+    // q を dir へ（n マス、slide なら押せなくなるまで）。泥沼にはまったらそこで止まる。動いたマス数
+    function shove(s, q, dir, n, slide, ev, text) {
+      var k = 0;
+      while ((slide || k < n) && k < 20) {
+        if (k > 0 && q.stuck && getTile(s, q.x, q.y) === 'mud') break;
+        if (!I.pushOne(s, q, dir, ev, text)) break;
+        k++;
+      }
+      return k;
+    }
+    function moveText(s, u, q, dir) {
+      var F = DIRS[dir], nm = formName(u) || I.magicName(u.magic), who = unitLabel(s, q);
+      if (u.magic === 'wind') return '【道】' + nm + ': ' + who + 'を' + F.name + 'へもう1マス運んだ';
+      if (u.magic === 'water') return '【道】' + nm + ': ' + who + 'は水に押し流された（' + F.name + 'へ）';
+      if (u.magic === 'earth') return '【道】' + nm + ': ' + who + 'は盛り上がる山に押し出された（' + F.name + 'へ）';
+      return '【道】' + nm + ': ' + who + 'を動かした（' + F.name + 'へ）';
+    }
+    function pathMove(s, u, facing, ctx, ev) {
+      var n = fxOn(u, 'push') ? 1 : 0, slide = fxOn(u, 'slide');
+      if (!n) return;
+      var F = DIRS[facing];
+      if (u.magic === 'wind' || u.magic === 'water') {
+        // 風の通り道・水の当たった者（遠い者から）
+        var list = ctx.order.filter(function (id) { return ctx.hits[id].src === 'direct'; }).map(function (id) { return I.findUnit(s, id); })
+          .filter(function (q) { return canShove(u, q); });
+        list.sort(function (a, b) { return (b.x * F.dx + b.y * F.dy) - (a.x * F.dx + a.y * F.dy); });
+        list.forEach(function (q) { shove(s, q, facing, n, slide, ev, moveText(s, u, q, facing)); });
+      } else if (u.magic === 'dark') {
+        // 闇: もう一度引き寄せる（1マス遠くからも）。覚醒なら、近づけなくなるまで
+        var c = (ctx.cells || [])[0];
+        if (c) for (var i = 0; i < (slide ? 10 : 1); i++) if (!pullAgain(s, u, c, B.dark.pullRange + 1, ev).length) break;
+      }
+      // 物: 落ちている宝も、当たったマスにあれば動く（風・水・土は向きへ）
+      var m = s.mission;
+      if (fxOn(u, 'pushThings') && m && m.treasure && !m.carrier && u.magic !== 'dark' && has(ctx.cells, m.treasure[0], m.treasure[1])) {
+        var k = 0;
+        while ((slide || k < n) && k < 20) {
+          var nx = m.treasure[0] + F.dx, ny = m.treasure[1] + F.dy;
+          if (!inBounds(s, nx, ny) || !I.isPassable(getTile(s, nx, ny)) || unitAt(s, nx, ny)) break;
+          m.treasure = [nx, ny]; k++;
+        }
+        if (k) ev.push({ type: 'treasure', cells: [m.treasure.slice()], text: '【道】宝が' + F.name + 'へ' + k + 'マス動いた' });
+      }
+    }
+    // 闇の引き寄せをもう1回（darkPull と同じ決まり。動かすのは canShove の者だけ）
+    function pullAgain(s, u, c, range, ev) {
+      var dist = function (x, y) { return Math.abs(x - c[0]) + Math.abs(y - c[1]); };
+      var near = s.units.filter(function (q) { var d = dist(q.x, q.y); return canShove(u, q) && !I.isFixed(q) && d >= 2 && d <= range; });
+      near.sort(function (a, b) { return dist(a.x, a.y) - dist(b.x, b.y); });
+      var out = [];
+      near.forEach(function (q) {
+        var d0 = dist(q.x, q.y);
+        var step = DIR_ORDER.filter(function (d) {
+          var nx = q.x + DIRS[d].dx, ny = q.y + DIRS[d].dy;
+          return inBounds(s, nx, ny) && !(nx === c[0] && ny === c[1]) && dist(nx, ny) < d0 && I.isPassable(getTile(s, nx, ny)) && !unitAt(s, nx, ny);
+        })[0];
+        if (!step) return;
+        var from = [q.x, q.y];
+        q.x += DIRS[step].dx; q.y += DIRS[step].dy;
+        out.push(q);
+        ev.push({ type: 'push', id: q.id, ok: true, from: from, to: [q.x, q.y], text: '【道】' + (formName(u) || I.magicName(u.magic)) + ': ' + unitLabel(s, q) + 'は闇にさらに引き寄せられた' });
+        if (getTile(s, q.x, q.y) === 'mud') I.enterMud(s, q, ev);
+      });
+      return out;
+    }
+    // 土の動かす: 形のマスにいる者を、盛り上がる山が向こうへ押し出す（押し出したマスには、いつもどおり土が盛られる）
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) {
+      if (!lon() || u.magic !== 'earth' || !o || !fxOn(u, 'push') || !canShove(u, o)) return false;
+      ctx.labShoved = ctx.labShoved || {};
+      if (ctx.labShoved[o.id]) return false;   // 押し出した先も形のマスなら、もう押さない
+      ctx.labShoved[o.id] = true;
+      if (!shove(s, o, facing, 1, fxOn(u, 'slide'), ev, moveText(s, u, o, facing))) return false;
+      var low = B.grow.enabled && !twoStep(u) ? 'hill' : 'mountain';
+      if (t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた'); }
+      else if (t === 'river' || t === 'puddle') { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); }
+      else return false;   // ほかの自然は、いつもどおりの作用に任せる
+      return true;
+    });
+    function pathAfter(s, u, facing, ctx, ev) {
+      if (!lpathOf(u)) return;
+      pathHold(s, u, ctx, ev);
+      pathMove(s, u, facing, ctx, ev);
+    }
+
+    // ---- 草の道（本物は止める。LAB_L の起点・育てるの処理も、fx で残してある） ----
+    // 起点1 葦原・起点2 種が風に乗る・育てる2 茂らせる（集めるだけ。広げるのは撃ったあと）
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) {
+      if (!lon() || u.magic !== 'grass' || !lpathOf(u)) return false;
+      if (fxOn(u, 'reeds') && (t === 'river' || t === 'puddle')) {
+        setTile(s, x, y, 'reeds');
+        ctx.phrases.push('【道】' + tileName(t) + 'に葦が茂って葦原になった（渡れる。水のまま）');
+        return true;
+      }
+      if (fxOn(u, 'windSeed') && I.isWind(t)) {
+        var F = DIRS[windAt(s, x, y) || facing], cx = x + F.dx, cy = y + F.dy, guard = 0;
+        while (inBounds(s, cx, cy) && I.isWind(getTile(s, cx, cy)) && guard++ < 20) { cx += F.dx; cy += F.dy; }
+        if (inBounds(s, cx, cy) && getTile(s, cx, cy) === 'empty' && !unitAt(s, cx, cy)) {
+          var seed = B.grow.enabled ? 'thicket' : 'forest';
+          setTile(s, cx, cy, seed);
+          if (!has(ctx.cells, cx, cy)) ctx.cells.push([cx, cy]);
+          ctx.phrases.push('【道】種が風に乗って、風下に' + tileName(seed) + 'が芽吹いた');
+        }
+        return false;
+      }
+      if ((fxOn(u, 'thicken') || makeFormOn(u)) && FOREST_LIKE[t]) { (ctx.labThicken = ctx.labThicken || []).push([x, y]); return false; }
+      return false;
+    });
+    // 森（大樹も）と草むらのかたまり
+    function forestComp(s, x, y) {
+      var out = [], seen = {}, stack = [[x, y]];
+      while (stack.length) {
+        var c = stack.pop(), k = key(c[0], c[1]);
+        if (seen[k] || !inBounds(s, c[0], c[1])) continue;
+        var t = getTile(s, c[0], c[1]);
+        if (!FOREST_LIKE[t] && t !== 'thicket') continue;
+        seen[k] = true; out.push(c);
+        stack.push([c[0] + 1, c[1]], [c[0] - 1, c[1]], [c[0], c[1] + 1], [c[0], c[1] - 1]);
+      }
+      return out;
+    }
+    // 撃つ前の盤面で、(x,y) から縦横の歩数 r 以内に森があるか
+    function forestWithin(s, tiles, x, y, r) {
+      for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) > r) continue;
+        var cx = x + dx, cy = y + dy;
+        if (inBounds(s, cx, cy) && FOREST_LIKE[tiles[idx(s, cx, cy)]]) return true;
+      }
+      return false;
+    }
+    // 撃ったあと: 止める1〜2 蔓（LAB_L の 茂らせる・種まき・大樹 も fx があれば）
+    function grassAfter(s, u, facing, ctx, ev) {
+      if (u.magic !== 'grass' || !lpathOf(u)) return;
+      var seed = B.grow.enabled ? 'thicket' : 'forest';
+      if (ctx.labThicken && ctx.labThicken.length) {
+        var n = I.castCells(s, u, facing).length, made = [], done = {};
+        ctx.labThicken.forEach(function (c) {
+          if (done[key(c[0], c[1])]) return;
+          var comp = forestComp(s, c[0], c[1]), ring = [];
+          comp.forEach(function (p) {
+            done[key(p[0], p[1])] = true;
+            neighbors(s, p[0], p[1]).forEach(function (nb) { if (getTile(s, nb.x, nb.y) === 'empty' && !unitAt(s, nb.x, nb.y) && !has(ring, nb.x, nb.y)) ring.push([nb.x, nb.y]); });
+          });
+          ring.slice(0, n).forEach(function (r) { setTile(s, r[0], r[1], 'forest'); made.push(r); });
+        });
+        if (made.length) ev.push({ type: 'kindle', cells: made, text: '【道】森が茂って、かたまりの外側へ広がった（' + made.length + 'マス）' });
+      }
+      var o = I.castOrigin(s, u, facing), F = DIRS[facing];
+      if (fxOn(u, 'sow')) {
+        var depth = 0, spot = null;
+        I.castCells(s, u, facing).forEach(function (c) { var dd = (c[0] - o.x) * F.dx + (c[1] - o.y) * F.dy; if (dd > depth) depth = dd; });
+        for (var k = depth + 1; k < 20; k++) {
+          var x = o.x + F.dx * k, y = o.y + F.dy * k;
+          if (!inBounds(s, x, y) || getTile(s, x, y) !== 'empty' || unitAt(s, x, y)) break;
+          spot = [x, y];
+        }
+        if (spot) { setTile(s, spot[0], spot[1], seed); ev.push({ type: 'kindle', cells: [spot], text: '【道】種まき: 正面の奥（' + spot[0] + ',' + spot[1] + '）に' + tileName(seed) + 'が芽吹いた' }); }
+      }
+      if (fxOn(u, 'bigtree')) {
+        var d = I.rotate(facing, 0, 3), mx = o.x + d[0], my = o.y + d[1], mt = inBounds(s, mx, my) ? getTile(s, mx, my) : null;
+        if (mt && !unitAt(s, mx, my) && mt !== 'bigtree' && (FOREST_LIKE[mt] || mt === 'thicket' || mt === 'empty')) {
+          setTile(s, mx, my, 'bigtree');
+          ev.push({ type: 'kindle', cells: [[mx, my]], text: '【道】形の真ん中に大樹がそびえた（通れない・高い。つながった森が燃えると、燃え広がりが2マス長く走る）' });
+        }
+      }
+      var vine = fxOn(u, 'vineFar') ? 2 : fxOn(u, 'vine') ? 1 : 0;
+      if (vine >= 1) {
+        ctx.order.forEach(function (id) {
+          var h = ctx.hits[id], q = I.findUnit(s, id);
+          if (!h || h.src !== 'direct' || id === u.id || !q || q.side === 'object' || q.stuck) return;
+          if (!unitCells(q).some(function (c) { return forestWithin(s, ctx.labPre.tiles, c[0], c[1], vine); })) return;
+          q.stuck = true;
+          ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: '【道】' + unitLabel(s, q) + 'の足に蔓が絡んだ（森から' + vine + 'マス以内。次の移動は1回休み）' });
+        });
+      }
+    }
+    // 止める3 茨の牢（茨の牢に覚醒した草がいる盤面では、森に3方向以上を囲まれたマスの者は、移動も予告も撃つこともできない）
+    function thornActive(s) { return lon() && s.units.some(function (x) { return x.magic === 'grass' && fxOn(x, 'thorn'); }); }
+    function thornCaged(s, u) {
+      if (!u || u.side === 'object' || !thornActive(s)) return false;
+      return unitCells(u).some(function (c) {
+        var n = 0;
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) { var x = c[0] + d[0], y = c[1] + d[1]; if (inBounds(s, x, y) && FOREST_LIKE[getTile(s, x, y)]) n++; });
+        return n >= 3;
+      });
+    }
+    function thornIntent(s, ev) {
+      if (!thornActive(s)) return;
+      I.enemiesOf(s).forEach(function (e) {
+        if (!e.intent || !thornCaged(s, e)) return;
+        e.intent = false;
+        ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: '【道】' + unitLabel(s, e) + 'は茨の牢に囚われた。予告が消えた' });
+      });
+    }
+    cannotMore.push(function (s, e, ev) {
+      if (!thornCaged(s, e)) return false;
+      ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: '【道】' + unitLabel(s, e) + 'は茨の牢に囚われていて、動けず予告もできない' });
+      return true;
+    });
+    // 大樹（LAB_L の草の育てるの覚醒）: 火で燃える・雷が落ちる・燃え移る。つながった森が燃えると燃え広がりが2マス長い
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) {
+      if (!lon() || u.magic !== 'fire' || t !== 'bigtree') return false;
+      setTile(s, x, y, 'fire'); ctx.phrases.push('【道】大樹が燃えた');
+      return true;
+    });
+    function plantLike(t) { return t === 'bigtree' && lon(); }
+    function spreadBonus(s, ox, oy, ctx) {
+      if (!lon()) return 0;
+      var ok = { fire: true, smallfire: true, forest: true, thicket: true, deepforest: true, bigtree: true }, seen = {}, stack = [[ox, oy]], found = false;
+      while (stack.length && !found) {
+        var c = stack.pop(), k = key(c[0], c[1]);
+        if (seen[k] || !inBounds(s, c[0], c[1])) continue;
+        var t = getTile(s, c[0], c[1]);
+        if (!ok[t]) continue;
+        seen[k] = true;
+        if (t === 'bigtree') found = true;
+        stack.push([c[0] + 1, c[1]], [c[0] - 1, c[1]], [c[0], c[1] + 1], [c[0], c[1] - 1]);
+      }
+      if (found && ctx) ctx.phrases.push('【道】大樹とつながった森が燃えて、燃え広がりが2マス長く走る');
+      return found ? 2 : 0;
+    }
+
+    // ---- 作る（全魔法に共通）: 形が1マス増える（水・風は届く長さが伸びる。lengthFor） ----
+    cellsMore.push(function (s, u, o, facing) {
+      if (!lon() || !lpathOf(u)) return null;
+      var n = shapeSteps(u), extra = LP.EXTRA_CELLS[u.magic];
+      if (!n || !extra || !B.shapes[u.magic]) return null;
+      return shapeAt(s, B.shapes[u.magic].concat(extra.slice(0, n)), o, facing);
+    });
+
+    // ---- L6 クエストで方向を選ぶ（お題ごとに、どの方向のミッションが出るか） ----
+    //   同じ盤面で、方向ごとのクエスト（開拓・討伐・足止め・誘導）を作る。ミッションは QUEST_POOL の上から2つ＋盤面のもとのミッションから別の方向を1つ（＋4つ目は3番目）。
+    //   シナリオの labQuests: { 方向: [ミッション] } があれば、そちらを使う。お題に合う方向（QUEST_LEAN）を先頭に、fit を付けて返す
+    function questsOf(p) {
+      var base = (p && p.labState && p.labState.labTargetList) || [];
+      if (!base.length) return [];
+      var lean = (LT.QUEST_LEAN || {})[p.mission || 'annihilate'] || 'decide';
+      var order = [lean].concat(LT.DIR_ORDER.filter(function (d) { return d !== lean; }));
+      return order.map(function (dir) {
+        var pool = (LT.QUEST_POOL || {})[dir] || [];
+        var other = base.map(targetDef).filter(function (q) { return q && q.dir !== dir; })[0];
+        var list = (p.labQuests && p.labQuests[dir]) || pool.slice(0, 2).concat(other ? [other.id] : []).concat(pool.slice(2, 3));
+        var seen = {};
+        list = list.filter(function (id) { var k = typeof id === 'string' ? id : id.id; if (seen[k]) return false; seen[k] = true; return true; });
+        return { dir: dir, name: (LT.QUEST_NAME || {})[dir] || dir, list: list, fit: dir === lean };
+      });
+    }
+    function questOf(p, dir) { var qs = questsOf(p); return qs.filter(function (q) { return q.dir === dir; })[0] || qs[0] || null; }
+
+    // ---- エディット: 味方の道を直接いじる（p が null なら外す） ----
+    function editSetPath(s0, unitId, p) {
+      var u0 = I.findUnit(s0, unitId);
+      if (!u0 || u0.side === 'object' || !pathDef(u0.magic)) return { ok: false, state: s0, events: [], steps: [], error: 'この魔法には道がない' };
+      var s = I.clone(s0), u = I.findUnit(s, unitId);
+      if (p) u.labPath = normPath(u.magic, p); else delete u.labPath;
+      return { ok: true, state: s, events: [], steps: [] };
+    }
+    var LAPI = {
+      DIRS: LT.DIRS, DIR_ORDER: LT.DIR_ORDER, TARGETS: LT.TARGETS, TAKERS: LT.TAKERS || {}, PATHS: LP.PATHS, EXTRA_CELLS: LP.EXTRA_CELLS, LEGACY: LP.LEGACY,
+      pathDef: pathDef, dirsOf: dirsOf, isGood: isGood, makeGood: makeGood, awakeDirs: awakeDirs, makeForm: makeForm, stepText: stepText, closeText: closeText, gotOrder: gotOrder, newPath: newPath, normPath: normPath, advance: advance, gain: gain, gainText: gainText,
+      pathMarks: pathMarks, outlook: outlook, projected: projected, fxOn: fxOn,
+      stepOf: stepOf, awakeOf: awakeOf, formOf: formOf, formName: formName, shapeSteps: shapeSteps, dirName: dirName,
+      questsOf: questsOf, questOf: questOf,
+      targetDef: targetDef, openT: openT, handName: handName, foilPreview: foilPreview, redirectPreview: redirectPreview, thornCaged: thornCaged,
+      whoMode: whoMode, enemyMode: enemyMode, targetCount: targetCount, loseMode: loseMode, destMode: destMode
+    };
+
     // ---------------------------------------------------------------
     // rules.js から呼ばれるところ（どれも、切り替えがオフなら何もしない）
     // ---------------------------------------------------------------
@@ -2358,6 +3228,7 @@
       if (old === 'vinebridge' && t === 'fire' && on('I5')) return 'river';
       if (s.labWind && old !== t && s.labWind[i] !== undefined) delete s.labWind[i];
       if (s.labAge && old !== t && s.labAge[i] !== undefined) delete s.labAge[i];
+      if (lon()) makerSet(s, i, t);   // L: その自然を作った手
       return t;
     }
     // ダメージを入れる前に: 盾・バリア・大きい敵 など。null を返すとダメージなし
@@ -2367,14 +3238,14 @@
     }
     // 燃え広がりを止めるマス（ラボで足した自然）
     function spreadBlocks(t) { return LAB_SPREAD_BLOCK[t] === true; }
-    function useLabShock() { return on('C2') || on('D3') || on('D7') || on('B14') || on('I4') || on('I8'); }
+    function useLabShock() { return on('C2') || on('D3') || on('D7') || on('B14') || on('I4') || on('I8') || on('L0'); }
     // 火の渦ができたあと（E9: 中の者は閉じこめられる）
     function afterWhirl(s, cells, ev) {
       if (!on('E9')) return;
       cells.forEach(function (c) { var o = unitAt(s, c[0], c[1]); if (o) enclose(s, o, ev); });
     }
     // 燃え移りの先になる自然（C6: 死の森 → オバケヤシキ、I5: 蔓の橋 → 川）
-    function catchesFire(s, t) { return (t === 'deadforest' && on('C6')) || (t === 'vinebridge' && on('I5')) || (t === 'deepforest' && on('B21')); }
+    function catchesFire(s, t) { return (t === 'deadforest' && on('C6')) || (t === 'vinebridge' && on('I5')) || (t === 'deepforest' && on('B21')) || plantLike(t); }
     // 燃え移りの元になる自然（A9: 火山はずっと熱い）
     function spreadsFire(s, t) { return t === 'volcano' && on('A9'); }
 
@@ -2397,7 +3268,8 @@
       newRun: newRun, runPaths: runPaths, pathText: pathText, runPreset: runPreset, runOffers: runOffers, runPick: runPick, runAfterBattle: runAfterBattle,
       RUN_STEPS: RUN_STEPS, REWARD_NAME: REWARD_NAME, flagTaken: flagTaken,
       boostText: boostText, boostShape: boostShape, FORMS: FORMS, WEAPONS: WEAPONS, BOOST_INFO: BOOST_INFO, GROW_LIST: GROW_LIST, GROW_DIR: GROW_DIR,
-      api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic },
+      api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic, labSetPath: editSetPath },
+      formName: formName, planStart: planStart, afterPlan: afterPlan, afterAct: afterAct, spreadBonus: spreadBonus, plantLike: plantLike, L: LAPI,
       crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
       on: on, opt: opt, edge: edge, CH: I.CH,
       shock: shock, haunt: haunt, sentakuki: sentakuki, ringAt: ringAt,
