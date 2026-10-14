@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Caffilia シナジーモック</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="review.css">
 </head>
 <body>
   <header class="topbar">
@@ -44,6 +45,7 @@
     </label>
     <div class="buttons">
       <button id="btnRun" type="button" class="run-open">進行モック</button>
+      <button id="btnLab" type="button" class="lab" aria-expanded="false" aria-controls="labPanel">ラボ</button>
       <span class="tut-pick">
         <button id="btnTutorial" type="button" class="tutorial" aria-haspopup="true" aria-expanded="false" aria-controls="tutorialMenu">チュートリアル ▾</button>
         <span id="tutorialMenu" class="tut-menu" role="menu" hidden></span>
@@ -61,6 +63,7 @@
     </div>
   </header>
   <div id="tuneBar" class="tune-bar" hidden></div>
+  <div id="labBar" class="lab-bar" hidden></div>
 
   <main class="layout">
     <section class="board-area">
@@ -99,6 +102,7 @@
               <button id="btnStay" type="button">その場で撃つ <kbd>Space</kbd></button>
               <button id="btnShoot" type="button" class="primary">撃つ <kbd>Enter</kbd></button>
               <button id="btnWait" type="button">待機 <kbd>W</kbd></button>
+              <button id="btnSwap" type="button" hidden>持ち替え <kbd>Q</kbd></button>
             </div>
           </div>
         </div>
@@ -236,6 +240,8 @@
     </div>
   </aside>
 
+  <aside id="labPanel" class="lab-panel" hidden aria-label="試作ラボ"></aside>
+
   <div id="howto" class="howto-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="howtoTitle">
     <div class="howto-card">
       <h2 id="howtoTitle"></h2>
@@ -256,9 +262,14 @@
   <div id="versionTag" class="version-tag">版 手元</div>
 
   <script src="balance.js"></script>
+  <script src="lab_cards.js"></script>
   <script src="tune.js"></script>
   <script src="texts.js"></script>
   <script src="texts_io.js"></script>
+  <script src="lab_targets.js"></script>
+  <script src="lab_paths.js"></script>
+  <script src="lab_rules.js"></script>
+  <script src="lab_scenarios.js"></script>
   <script src="rules.js"></script>
   <script src="demos.js"></script>
   <script src="checks.js"></script>
@@ -268,5 +279,9 @@
   <script src="progress_data.js"></script>
   <script src="progress.js"></script>
   <script src="progress_ui.js"></script>
+  <script src="lab_ui.js"></script>
+  <script src="lab_run.js"></script>
+  <script src="lab_target_ui.js"></script>
+  <script src="review.js"></script>
 </body>
 </html>

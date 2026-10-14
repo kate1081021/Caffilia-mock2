@@ -82,6 +82,17 @@
     { id: 'large', name: '大きい世界（10×10・移動3）', set: { boardSize: 10, 'ally.move': 3, 'shape.frontOne': false, 'grow.enabled': true, 'grow.mountainSize': 9, 'grow.forestSize': 9, 'grow.riverLength': 0 } }
   ];
 
+  // 試作ラボ: lab.XX.on は「ラボ: 案の名前」、数値は「ラボ: 案の名前（数値の名前）」（lab_cards.js から）
+  var LabData = (typeof module !== 'undefined' && module.exports) ? require('./lab_cards.js') : { CARDS: root.LAB_CARDS || [] };
+  function labLabel(path) {
+    var m = /^lab\.(\w+)\.(\w+)$/.exec(path);
+    if (!m) return null;
+    var c = (LabData.CARDS || []).filter(function (x) { return x.id === m[1]; })[0];
+    if (!c) return null;
+    return 'ラボ ' + m[1] + ': ' + c.name + (m[2] === 'on' ? '' : '（' + ((c.params || {})[m[2]] || m[2]) + '）');
+  }
+  GROUPS.lab = 'ラボ（試作の案。判定パネルの「ラボ」でも切り替わる）';
+
   var PREFIX = 'CAFFILIA-TUNE:';
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -109,7 +120,7 @@
         var v = o[k];
         if (!prefix && SKIP.indexOf(k) !== -1) return;
         if (typeof v === 'number' || typeof v === 'boolean') {
-          out.push({ path: path, type: typeof v, def: v, label: LABELS[path] || path, group: prefix ? path.split('.')[0] : '_top' });
+          out.push({ path: path, type: typeof v, def: v, label: LABELS[path] || labLabel(path) || path, group: prefix ? path.split('.')[0] : '_top' });
         } else if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, path);
       });
     })(defaults, '');

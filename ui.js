@@ -31,6 +31,7 @@
   var ORDER_MARK = ['', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];   // 【一斉】発動の順番
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
   var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
+  Object.keys(R.TILE_INFO).forEach(function (t) { if (!SHORT[t]) SHORT[t] = R.TILE_INFO[t].name; });   // ラボで足した自然（葦原・雪山 など）
   var STORE_KEY = 'cafilia-mock-v2-layouts';
   // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
   var BIG = {
@@ -39,6 +40,7 @@
     ice: { cls: 'icefield', name: '氷原', mark: '❄' },
     deadforest: { cls: 'deadwoods', name: '死の森', mark: '🥀' }
   };
+  var J1_BIG = { river: { cls: 'lake', name: '大河', mark: '〜' }, sakura: { cls: 'blossom', name: '桜の山', mark: '🌸' }, fire: { cls: 'blaze', name: '大火', mark: '🔥' } };   // ラボ J1
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
@@ -103,7 +105,7 @@
   var el = {};
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'preview', 'turnLabel', 'modeLabel', 'scenarioSelect',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
-    'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
+    'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'btnSwap', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyActs', 'boardSize', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
@@ -347,9 +349,11 @@
     });
     if (!animate) return;
     app.hl = hl;
+    if (finishers.length) labRecord(finishers);   // ラボ J8: 図鑑に記録
     if (finishers.length) {
       // 【一斉】発動の流れの中で続けて起きた決め手は、名前をつないで出す（「燃え広がり → オバケヤシキ！」）。合体なら上に「合体！ 土・草・風」
-      if (app.chain) showBanner(app.chain.join(ui('chain', ' → ')) + '！', app.chainCombo || combo);
+      //   ラボ J4: 1つの行動の中の連鎖も、名前をつないで数える
+      if (app.chain) showBanner(app.chain.join(ui('chain', ' → ')) + '！' + (R.lab('J4') && app.chain.length > 1 ? '（' + app.chain.length + '連鎖）' : ''), app.chainCombo || combo);
       else showBanner(finishers.map(finName).join('・') + '！');
       app.flash = flash;
       clearTimeout(showEvents.timer);
@@ -366,7 +370,17 @@
         if (e.name === '火の渦' && e.center) fxSpin(e.center, true, 2.4);
         if (e.name === 'オバケヤシキ' && e.center) fxSpin(e.center, false, 3.2, true);
         if (e.name === '桜吹雪' && e.origin) fxPetals(e.origin, e.cells || [], e.pink);
+        if (R.lab('J3') && R.LX && e.cells && e.cells.length) fxWave(e.cells, e.wave || R.LX.waveFrom(e.cells, e.origin || e.cells[0]));   // ラボ J3: 波
       });
+      if (R.lab('J6')) {   // ラボ J6: 起きたことを盤面の吹き出しで1つずつ
+        var nb = 0;
+        events.forEach(function (e) {
+          if (!e.text || !e.cells || !e.cells.length || e.type === 'damage') return;
+          var c0 = e.cells[0], t = e.text.replace(/【[^】]*】/g, '').replace(/^.*?→ /, '');
+          if (t.length > 18) t = t.slice(0, 17) + '…';
+          (function (c, txt, delay) { setTimeout(function () { popup(c[0], c[1], txt, 'bubble'); }, delay); })(c0, t, nb++ * 350);
+        });
+      }
       events.forEach(function (e) { if (e.type === 'vortex' && e.center) fxVortex(e.center); });
       events.forEach(function (e) { if (e.type === 'cast' && e.order) fxStance(e); });   // 【一斉】発動した構えが、どのマスに当たったか
       if (B.fx.grow) events.forEach(function (e) { (e.grows || []).forEach(fxGrow); });
@@ -379,8 +393,33 @@
     }, 0);
   }
 
+  // ラボ J3: 決め手の範囲を、起点から順に光らせる（波）
+  function fxWave(cells, wave) {
+    cells.forEach(function (c, i) {
+      var p = cellCenter(c[0], c[1]);
+      if (!p) return;
+      var d = document.createElement('div');
+      d.className = 'wavecell';
+      d.style.left = p.x + 'px';
+      d.style.top = p.y + 'px';
+      d.style.animationDelay = ((wave && wave[i]) || 0) * 80 + 'ms';
+      el.fx.appendChild(d);
+      setTimeout(function () { d.remove(); }, 900 + ((wave && wave[i]) || 0) * 80);
+    });
+  }
+  // ラボ J8: 起こした決め手を図鑑に記録（localStorage。使えなければ何もしない）
+  function labRecord(names) {
+    if (!R.lab('J8')) return;
+    try {
+      var z = JSON.parse(localStorage.getItem('cafilia-lab-zukan') || '{}');
+      names.forEach(function (n) { z[n] = (z[n] || 0) + 1; });
+      localStorage.setItem('cafilia-lab-zukan', JSON.stringify(z));
+    } catch (err) { /* 保存できない環境 */ }
+  }
+
   // 途中の状態を1つずつ見せる
   function play(steps, finalState, done) {
+    if (R.lab('J4') && !app.chain) app.chain = [];   // ラボ J4: 1つの行動の中の連鎖を数える（【一斉】の発動は runEndTurn が先に始める）
     app.busy = true;
     app.playback = { steps: steps, i: 0, final: finalState, done: done, timer: null };
     nextStep();
@@ -426,14 +465,14 @@
   function selUnit() {
     if (!app.sel) return null;
     var u = R.findUnit(app.state, app.sel);
-    return u && (!u.acted || R.restancing(u)) ? u : null;   // 【一斉】構えた味方は、発動の前なら構え直せる
+    return u && (!u.acted || R.restancing(u) || (R.lab('F5') && u.labStance)) ? u : null;   // 【一斉】構えた味方は、発動の前なら構え直せる（ラボ F5 も）
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
   function select(id) {
     var u = R.findUnit(app.state, id);
     if (!u || u.side !== 'ally' || u.npc) return;   // 構える味方は選べない
-    if (u.acted && !R.restancing(u)) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }
+    if (u.acted && !R.restancing(u) && !(R.lab('F5') && u.labStance)) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }   // 【一斉】・ラボ F5: 構えた味方は構え直せる
     app.sel = id;
     app.plan = { to: [u.x, u.y], dir: u.facing };
     render();
@@ -465,10 +504,12 @@
     render();
   }
 
-  function doAct(shoot) {
+  function doAct(shoot, extra) {
     var u = selUnit();
     if (!u || !canControl()) return;
-    var res = R.act(app.state, u.id, { to: app.plan.to, dir: app.plan.dir, shoot: shoot });
+    var opts = { to: app.plan.to, dir: app.plan.dir, shoot: shoot };
+    Object.keys(extra || {}).forEach(function (k) { opts[k] = extra[k]; });   // ラボ F6 壊す・F7 作業台
+    var res = R.act(app.state, u.id, opts);
     if (!res.ok) { say(res.error); return; }
     pushHistory();
     var id = u.id;
@@ -579,15 +620,40 @@
     if (app.busy) skipPlayback();
     var check = opts && opts.check;
     if (!check) endCheck();
+    // 試作ラボ: ラボ用シナリオは、盤面を作る前に案の切り替えを決める（大きい敵の大きさ などが切り替えで変わるため）
+    var labPre = !check && id ? R.findPreset(id) : null;
+    if (labPre && labPre.lab) {
+      R.labApply(labPre.lab, labPre.labOpts);
+      if (opts && opts.labOff && B.lab[opts.labOff]) B.lab[opts.labOff].on = false;
+    }
+    // 試作ラボのシナリオ・デモは「1人ずつ」で作ってある。読むときだけ1人ずつにして（覚えた形は変えない）、ラボ以外を読んだら元の形に戻す。
+    //   ラボのシナリオの中で上のバーから形を選んだら、そちらを使う（app.labTurnKeep）
+    if (labPre && labPre.lab) {
+      if (!app.labTurnKeep && B.turnMode !== 'single') { app.labTurnRestore = B.turnMode; B.turnMode = 'single'; app.cache = {}; }
+    } else if (!check) {
+      app.labTurnKeep = false;
+      if (app.labTurnRestore) { B.turnMode = app.labTurnRestore; app.labTurnRestore = null; app.cache = {}; }
+    }
     var s = check ? R.buildPreset(check.layout) : id ? R.loadPreset(id) : R.createState();
     if (opts && opts.enemyActs === false) s = R.editSetEnemyActs(s, false).state;
+    if (app.labPrepare && !check) s = app.labPrepare(s, labPre, opts || {});   // ラボ L: 味方に魔法の道を入れる（lab_target_ui.js）
     var preset = !check && id ? (id === 'plaza' ? R.plazaLayout(B.boardSize) : R.findPreset(id)) : null;   // 【縮尺】広場は今の盤面の大きさで作る
     var name = check ? check.name : preset ? preset.name : '標準';
+    // 試作ラボ: ラボ用シナリオは、その案と needs だけをオンにする（ほかのラボの案はオフに戻る）。
+    //   opts.labOff: その案だけオフにして同じ盤面をやり直す（オフでくらべる）
+    if (preset && preset.lab) {
+      app.cache = {};
+      sideSig = '';
+      var labOn = R.labOnList().map(function (k) { var c = R.labCard(k); return c ? c.name : k; });
+      if (app.onLabChange) app.onLabChange();
+    }
+    app.labCompare = preset && preset.lab && opts && opts.labOff ? opts.labOff : null;
     if (preset && preset.recipe) setRecipe(preset.recipe);
     if (preset && preset.windMode) setWindMode(preset.windMode);
     if (preset && preset.sakuraFrom) setSakuraFrom(preset.sakuraFrom);
     app.scenario = check ? 'check:' + check.id : id;
     addLog((check ? '新案プレイの盤面' : 'シナリオ') + '「' + name + '」を読み込んだ', 'system');
+    if (labOn) addLog('ラボの案: ' + (labOn.length ? labOn.join('・') + ' をオン' : 'すべてオフ') + (app.labCompare ? '（「' + (R.labCard(app.labCompare) || {}).name + '」だけオフでくらべる）' : ''), 'system');
     if (check) addLog(check.desc, 'system');
     else if (id && !preset.tutorial) addLog(preset.desc, 'system');   // チュートリアルは説明を出さない（盤面と表示だけで伝わるかを見る）
     if (opts && opts.enemyActs === false) addLog('（このデモでは敵は何もしない設定）', 'system');
@@ -689,9 +755,10 @@
     var c = app.check;
     if (!c) return;
     var sets = Object.keys(c.set || {}).map(function (p) { return setLabel(p, c.set[p]); }).join('・');
-    el.checkCaption.innerHTML = '<div class="cc-head"><b>新案プレイ</b> ' + esc(c.name) + (sets ? '<span class="cc-set">' + esc(sets) + '</span>' : '') + '</div>' +
+    var kind = c.labDemo ? 'ラボのデモ' : '新案プレイ';
+    el.checkCaption.innerHTML = '<div class="cc-head"><b>' + kind + '</b> ' + esc(c.name) + (sets ? '<span class="cc-set">' + esc(sets) + '</span>' : '') + '</div>' +
       (text ? '<div class="cc-say">' + esc(text) + '</div>' : '') +
-      (done ? '<div class="cc-done">■ 新案プレイ終了（「1手戻す」でさかのぼれます。続けて手で遊ぶこともできます。この設定はほかのシナリオを読むと元に戻ります）</div>' : '');
+      (done ? '<div class="cc-done">■ ' + kind + '終了（「1手戻す」でさかのぼれます。続けて手で遊ぶこともできます。' + (c.labDemo ? '' : 'この設定はほかのシナリオを読むと元に戻ります') + '）</div>' : '');
     el.checkCaption.hidden = false;
   }
   function playCheck(c) {
@@ -712,12 +779,29 @@
     app.demo.timer = setTimeout(demoNext, 1000);
   }
 
+  // 試作ラボ: ラボ用シナリオのデモ（スーパープレイ）。シナリオを読み（案をオンにして）、say を盤面の上に出しながら再生する
+  function playLabDemo(p, labOff) {
+    stopDemo();
+    if (app.editMode) setEditMode(false);
+    loadScenario(p.id, { labOff: labOff, demo: true });   // demo: ラボ L の道は、持ち越した道ではなくシナリオのものを使う
+    var c = { id: 'lab:' + p.id, name: p.name, set: {}, labDemo: true };
+    app.check = c;
+    var queue = [];
+    p.demo.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); });
+    app.demo = { queue: queue, i: 0, timer: null, name: p.name, check: c };
+    addLog('▶ ラボのデモ: ' + p.name, 'system');
+    if (p.demo.desc) addLog(p.demo.desc, 'system');
+    showCaption(p.demo.desc || '');
+    render();
+    app.demo.timer = setTimeout(demoNext, 1000);
+  }
+
   function demoNext() {
     var d = app.demo;
     if (!d) return;
     if (app.busy) { d.timer = setTimeout(demoNext, 150); return; }
     if (d.i >= d.queue.length || app.state.result) {
-      addLog('■ ' + (d.check ? '新案プレイ' : 'デモ') + '終了（「1手戻す」で1手ずつさかのぼれます）', 'system');
+      addLog('■ ' + (d.check ? (d.check.labDemo ? 'ラボのデモ' : '新案プレイ') : 'デモ') + '終了（「1手戻す」で1手ずつさかのぼれます）', 'system');
       if (d.check) showCaption(d.lastSay, true);
       app.demo = null;
       render();
@@ -741,6 +825,7 @@
     }
     if (!a.id) { d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // 説明だけの項目
     if (!R.findUnit(app.state, a.id)) { demoNext(); return; }
+    if (a.swap && R.labSwapMagic) { var sw = R.labSwapMagic(app.state, a.id); if (sw.ok) { app.state = sw.state; app.clearCache(); } }   // ラボ G9: 撃つ前に持ち替える
     var aimWait = d.check ? CHECK_WAIT.aim : DEMO_WAIT.aim;
     select(a.id);
     d.timer = setTimeout(function () {
@@ -753,11 +838,56 @@
         render();
         d.timer = setTimeout(function () {
           if (app.demo !== d) return;
-          doAct(a.shoot !== false);
+          doAct(a.shoot !== false, { labBreak: a.labBreak, labBench: a.labBench });   // ラボ F6・F7 の項目
           d.timer = setTimeout(demoNext, DEMO_WAIT.after);
         }, aimWait);
       }, DEMO_WAIT.move);
     }, DEMO_WAIT.select);
+  }
+
+  // ラボ G9: 選んでいる味方の魔法を、2つ目の魔法と持ち替える
+  function swapMagic() {
+    var u = canControl() ? selUnit() : null;
+    if (!u || !R.labSwapMagic || !R.lab('G9')) return;
+    var r = R.labSwapMagic(app.state, u.id);
+    if (!r.ok) { say(r.error); return; }
+    pushHistory();
+    app.state = r.state;
+    addLog(r.events[0].text, 'system');
+    app.clearCache();
+    render();
+  }
+
+  // ラボ G: エディットの強化の付け外し（オンになっている案だけ出す）
+  var G4_PAIRS = ['grass,fire', 'wind,fire', 'fire,wind', 'water,earth', 'grass,water', 'earth,fire', 'water,ice', 'wind,water'];
+  var G5_TRIPLES = ['grass,dark,fire', 'wind,fire,water', 'grass,fire,wind', 'water,ice,earth'];
+  function boostEditHtml(u) {
+    if (!R.LX || u.side === 'object') return '';
+    var B2 = R.LX.boostOf, out = [];
+    var sel = function (k, label, opts) {
+      var cur = B2(u, k);
+      var curS = cur === undefined ? '' : Array.isArray(cur) ? cur.join(',') : String(cur === true ? '1' : cur);
+      out.push('<label>' + label + ' <select data-id="' + u.id + '" data-field="boost:' + k + '">' + opts.map(function (o) {
+        return '<option value="' + esc(o[0]) + '"' + (curS === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      }).join('') + '</select></label>');
+    };
+    var mn = function (list) { return list.split(',').map(R.magicName).join('→'); };
+    if (R.lab('G1')) sel('G1', '一気に二段', [['', 'なし'], ['1', 'あり']]);
+    if (R.lab('G2')) sel('G2', '伸びる', [['', '0回'], ['1', '1回'], ['2', '2回'], ['3', '3回']]);
+    if (R.lab('G3')) { var f = R.LX.FORMS[u.magic] || {}; sel('G3', '姿', [['', 'なし']].concat(['A', 'B'].filter(function (k) { return f[k]; }).map(function (k) { return [k, k + ' ' + f[k].name]; }))); }
+    if (R.lab('G4')) sel('G4', '融合', [['', 'なし']].concat(G4_PAIRS.map(function (p) { return [p, mn(p)]; })));
+    if (R.lab('G5')) sel('G5', '最終融合', [['', 'なし']].concat(G5_TRIPLES.map(function (p) { return [p, mn(p)]; })));
+    if (R.lab('G6')) sel('G6', '武器', [['', 'なし']].concat(Object.keys(R.LX.WEAPONS).map(function (k) { var w = R.LX.WEAPONS[k]; return [k, w.name + '（' + w.where + 'で強い）']; })));
+    if (R.lab('G9') && u.side === 'ally') sel('G9', '2つ目の魔法', [['', 'なし']].concat(R.allyMagics(app.state).filter(function (m) { return m !== u.magic; }).map(function (m) { return [m, R.magicName(m)]; })));
+    var lp = app.labPathEditHtml ? app.labPathEditHtml(u) : '';   // ラボ L: 魔法の道（lab_target_ui.js）
+    return (out.length ? '<span class="persona-edit lab-boost">' + out.join('') + '</span>' : '') + lp;
+  }
+  function boostValue(k, v) {
+    if (v === '') return null;
+    if (k === 'G1') return true;
+    if (k === 'G2') return Number(v);
+    if (k === 'G4' || k === 'G5') return v.split(',');
+    return v;
   }
 
   function stopDemo() {
@@ -846,6 +976,7 @@
     renderPreview();
     renderHint();
     renderLog();
+    if (app.onRender) app.onRender();   // 試作ラボの上のバー（lab_ui.js）
   }
 
   // お題: 名前・勝ち方・負け方・残りの数を常に出す
@@ -930,7 +1061,7 @@
   var cellEls = [];
 
   // 敵の個性: 駒の小さな印（狙い 人/近/自・危ない所も避ける 避・川を渡る 渡）と、一覧の説明
-  var AIM_MARK = { count: '人', near: '近', nature: '自', target: '的' };
+  var AIM_MARK = { count: '人', near: '近', nature: '自', target: '的', forest: '森', own: '己', flee: '逃', moved: '動' };   // 森・己・逃・動 はラボ D1 の欲
   function personaMark(u) {
     if (u.stand === 'still') return '止';
     if (u.stand === 'march') return '進';
@@ -964,16 +1095,36 @@
     if (R.hidden(st, u)) cls.push('hidden');
     if (view.next) cls.push('next-ready');
     if (view.order) cls.push('stanced');
+    if (R.LX && R.LX.barrier(st, u)) cls.push('barrier');   // ラボ A12: 自分の自然の上でバリア
     var facing = view.facing || u.facing;
-    var name = u.side === 'ally' ? esc(R.magicName(u.magic)) : '敵<small>' + esc(u.letter) + '</small>';
-    var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg">' +
+    var form = R.LX && R.LX.formName(u);   // ラボ L: 覚醒した魔法は名前と駒の印が変わる
+    if (form) cls.push('awake');
+    var fo = form && R.LX.L ? R.LX.L.formOf(u) : null;   // 覚醒先の印（1文字）を駒に大きく、名前を小さく
+    var name = u.side === 'ally' ? (fo ? '<b class="u-mark">' + esc(fo.mark) + '</b>' + (fo.mark !== form ? '<small class="u-form">' + esc(form) + '</small>' : '') : esc(R.magicName(u.magic)))
+      : '敵<small>' + esc(u.letter) + '</small>' + (form ? '<small class="u-form">' + esc((fo ? fo.mark + ' ' : '') + form) + '</small>' : '');
+    // ラボ: 大きい敵（D3）・体（D6・D7）・欲（D1）・めちゃ強い敵（D5）の見た目
+    if (u.size > 1) cls.push('big');
+    if (u.body) cls.push('body-' + u.body);
+    if (u.side === 'enemy' && AIM_MARK[u.aim] && R.LX && R.LX.DESIRE[u.aim] && R.lab('D1')) cls.push('desire-' + u.aim);
+    if (u.labBoss) cls.push('boss');
+    var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg' + (u.size > 1 ? ';--sz:' + u.size : '') + '">' +
       '<span class="facing"></span><span class="u-name">' + name + '</span><span class="u-hp">HP' + u.hp + '</span>';
     if (u.side === 'enemy') {
       if (u.stand !== 'rush') h += '<span class="u-magic">' + esc(R.magicName(u.magic)) + '</span>';   // 突進の敵は魔法を撃たない
       h += '<span class="u-persona" title="' + esc(personaText(u)) + '">' + esc(personaMark(u)) + '</span>';
     }
     if (R.hidden(st, u)) h += '<span class="u-hide">隠</span>';
+    if (u.side === 'enemy' && u.labReason && u.intent !== undefined && (R.lab('D1') || R.lab('D9'))) h += '<span class="u-why">' + esc(u.labReason) + '</span>';   // ラボ D1: 予告に理由を一言
+    if (u.labBoss) h += '<span class="u-boss">強</span>';
+    var bt = R.LX && R.LX.boostText(u);   // ラボ G: 強化の印（★と種類の1文字）
+    if (bt) h += '<span class="u-boost" title="強化: ' + esc(bt) + '">★' + esc(u.boosts.filter(function (b) { return R.lab(b.k) || !B.lab[b.k]; }).map(function (b) { var bi = R.LX.BOOST_INFO[b.k]; return bi ? bi.mark : ''; }).join('')) + '</span>';
+    var ord = u.side === 'enemy' && u.intent && R.LX ? R.LX.intentOrder(st, u.id) : 0;   // ラボ F4: 発動の順番
+    if (ord) h += '<span class="u-order" title="味方が1人動くごとに、この順で発動する">' + '①②③④⑤'.charAt(ord - 1) + '</span>';
+    if (u.labStance && R.lab('F5')) h += '<span class="u-order ally" title="構えている（ターンの終わりに、この順で発動）">構' + u.labStance.n + '</span>';
+    if (u.labWear && R.lab('G7')) h += '<span class="u-wear" title="まとっている（次の1発に乗る。ターンの終わりまで）">纏' + esc(R.magicName(u.labWear)) + '</span>';
+    if (u.labStage) h += '<span class="u-boss stage" title="大技を組む敵: ' + esc(R.magicName(u.labStage)) + 'で舞台 → ' + esc(R.magicName(u.magic)) + '">技</span>';
     if (st.mission && st.mission.carrier === u.id) h += '<span class="u-treasure" title="宝を持っている（撃てない）">宝</span>';
+    if (st.labChase && st.labChase.runner === u.id && R.lab('H6')) h += '<span class="u-treasure" title="宝を持って逃げる敵（逃げ口に着かれたら負け）">宝</span>';   // ラボ H6
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
     if (view.warn) h += '<span class="u-warn">予告 -' + view.warn + '</span>';
     if (view.dmg) h += '<span class="u-dmg">-' + view.dmg.amount + (view.dmg.dies ? ' 倒れる' : '') + '</span>';
@@ -983,6 +1134,7 @@
 
   function renderBoard(animate) {
     var st = app.state;
+    document.body.classList.toggle('lab-tidy', R.lab('J7') && !app.tidyOff);   // ラボ J7: すっきり表示
     var n = st.size, rows = R.rowsOf(st);   // 横 n・縦 rows（チュートリアル②は 5×8）
     el.board.style.setProperty('--n', n);
     el.board.style.setProperty('--rows', rows);
@@ -1026,13 +1178,21 @@
     });
 
     // 予測
-    var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {};
+    var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {}, finArrow = {};
+    var arrowsOn = R.lab('C3');   // ラボ C3: 決め手が広がる向きの矢印
+    var charge = {}, j5glow = {};
+    if (pv && R.lab('J2') && R.LX) pv.finishers.forEach(function (f) {   // ラボ J2: 決め手の「ため」
+      var w = R.LX.waveFrom(f.cells, f.origin || f.cells[0]);
+      f.cells.forEach(function (c, i) { var k2 = key(c[0], c[1]); if (charge[k2] === undefined || w[i] < charge[k2]) charge[k2] = w[i]; });
+    });
+    if (u && R.lab('J5')) hintsNow().forEach(function (h) { if (h.magic === u.magic) h.cells.forEach(function (c) { j5glow[key(c[0], c[1])] = true; }); });   // ラボ J5
     if (pv) pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
     // 【一斉】予測の結果（変わるマス・決め手の範囲・ダメージ）は、構え全部の予告（下の fa）として出す
     if (pv && !simul()) {
       pv.finishers.forEach(function (f) {
         f.cells.forEach(function (c) { range[key(c[0], c[1])] = true; });
         (f.strong || []).forEach(function (c) { strong[key(c[0], c[1])] = true; });
+        if (arrowsOn && f.dir && f.origin) finArrow[key(f.origin[0], f.origin[1])] = f.dir;
       });
       pv.tileChanges.forEach(function (c) { change[key(c.x, c.y)] = c.to; });
       pv.damages.forEach(function (d) { dmg[d.id] = d; });
@@ -1045,6 +1205,7 @@
       });
     }
     // 予告
+    var fcGrowK = {};
     var fcShot = {}, fcGhost = {}, fcSpread = {}, fcOut = {}, fcChange = {}, fcRange = {}, fcStrong = {}, warn = {};
     // 構える味方の予告（青）: 「予告を表示」を切っていても常に出す。狙うマスの枠と向きの矢印、結果（変わるマス・決め手の範囲・ダメージ）
     var faShot = {}, faChange = {}, faRange = {}, faStrong = {}, npcIds = {}, stanceNo = {};
@@ -1090,6 +1251,7 @@
         (p.finishers || []).forEach(function (f) {
           f.cells.forEach(function (c) { fcRange[key(c[0], c[1])] = true; });
           (f.strong || []).forEach(function (c) { fcStrong[key(c[0], c[1])] = true; });
+          if (arrowsOn && f.dir && f.origin && !finArrow[key(f.origin[0], f.origin[1])]) finArrow[key(f.origin[0], f.origin[1])] = f.dir;
         });
       });
       // 「進む」敵: 次のターン終了で進むマスに、点線の丸と向き
@@ -1098,6 +1260,7 @@
         if (me) fcGhost[key(m.to[0], m.to[1])] = { letter: me.letter, dir: m.dir };
       });
       fc.fireSpread.forEach(function (c) { fcSpread[key(c[0], c[1])] = true; });
+      if (fc.labGrow) { fc.labGrow.grow.forEach(function (c) { fcGrowK[key(c[0], c[1])] = 'grow'; }); fc.labGrow.revive.forEach(function (c) { fcGrowK[key(c[0], c[1])] = 'revive'; }); }   // ラボ K2
       (fc.burnOut || []).forEach(function (c) { fcOut[key(c[0], c[1])] = true; });
       fc.burn.forEach(function (b) { warn[b.id] = (warn[b.id] || 0) + b.amount; });
       fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });   // 構える味方の分は上で足した
@@ -1142,6 +1305,43 @@
       if (v) rushWarn[v.id] = v.hp;
     });
     Object.keys(rushWarn).forEach(function (id) { warn[id] = Math.max(warn[id] || 0, rushWarn[id]); });
+    // ラボ D2: 敵が次のターンに向かう先（敵ごとに色の違う点線と、着く先の丸）。D4: 崩すマスに「崩」
+    var dLine = {}, dStop = {}, dCrush = {};
+    var fcl = (app.editMode || app.busy) ? null : forecastNow(true);
+    if (fcl && fcl.labPaths && R.lab('D2')) fcl.labPaths.forEach(function (lp, li) {
+      var le = R.findUnit(st, lp.id);
+      if (!le) return;
+      var seq = [lp.from].concat(lp.path);
+      var stepDir = function (a, b) { return b[0] > a[0] ? 'right' : b[0] < a[0] ? 'left' : b[1] > a[1] ? 'down' : 'up'; };
+      var OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+      if (seq.length > 1) seq.forEach(function (c, i) {
+        var arms = dLine[key(c[0], c[1])] = dLine[key(c[0], c[1])] || { color: li % 4, arms: [] };
+        if (i > 0) arms.arms.push(OPP[stepDir(seq[i - 1], c)]);
+        if (i < seq.length - 1) arms.arms.push(stepDir(c, seq[i + 1]));
+      });
+      if (seq.length > 1) dStop[key(lp.to[0], lp.to[1])] = { letter: le.letter, color: li % 4, why: lp.reason };
+    });
+    if (fcl && fcl.labPaths && R.lab('D4')) fcl.labPaths.forEach(function (lp) { (lp.crush || []).forEach(function (c) { dCrush[key(c[0], c[1])] = true; }); });
+    // ラボ E2: 映る場所の印と偽の姿（予測中は撃ったあとの盤面）。E10: 予告の形の中に「何があると何が起きるか」の一言
+    var eMirror = {}, eDecoy = {}, eHint = {};
+    if (!app.editMode && R.LX) {
+      var stE = pv ? pv.state : st;
+      if (R.lab('E2')) {
+        R.LX.mirrors(stE).forEach(function (c) { eMirror[key(c[0], c[1])] = true; });
+        R.LX.decoys(stE).forEach(function (d) { eDecoy[key(d.x, d.y)] = d; });
+      }
+      if (R.lab('E10') && fc) R.LX.intentHints(stE, pv ? st : null, fc).forEach(function (h) { eHint[key(h.cell[0], h.cell[1])] = h; });
+    }
+    // ラボ H13: 小さな目標の印。H9: 拠点の旗。H6: 逃げ口
+    var hGoal = {}, hFlag = {}, hExit = {}, fWind = {}, fBench = {}, lTarget = {};
+    if (!app.editMode && R.LX && (R.lab('F2') || R.lab('F3')) && st.labWind) Object.keys(st.labWind).forEach(function (i) { var t = R.getTile(st, i % n, Math.floor(i / n)); if (t === 'breeze' || t === 'gale') fWind[key(i % n, Math.floor(i / n))] = st.labWind[i]; });
+    if (!app.editMode && R.lab('F7') && st.labBench) st.labBench.cells.forEach(function (c) { fBench[key(c[0], c[1])] = st.labBench; });
+    if (!app.editMode && R.LX) {
+      if (R.lab('H13') && st.labGoals) st.labGoals.forEach(function (g) { g.cells.forEach(function (c) { hGoal[key(c[0], c[1])] = g; }); });
+      if (R.lab('L0') && st.labTargets) st.labTargets.forEach(function (t) { ((t.check && t.check.cells) || []).forEach(function (c) { lTarget[key(c[0], c[1])] = t; }); });   // ラボ L: ステージだけの目標のマス
+      if (R.lab('H9') && st.labFlags) st.labFlags.forEach(function (f) { var tk = R.LX.flagTaken(st, f); f.cells.forEach(function (c) { hFlag[key(c[0], c[1])] = { f: f, taken: tk }; }); });
+      if (R.lab('H6') && st.labChase) st.labChase.exits.forEach(function (c) { hExit[key(c[0], c[1])] = true; });
+    }
     // チュートリアル②: 山の頂上と腕（どこが高いか）
     var slopes = st.slopes || {};
 
@@ -1182,11 +1382,13 @@
 
     // 【育つ】見た目: つながった森・水たまり・氷・死の森も、1枚の大きな絵で描く（fx.bigPicture）。かたまりが大きいほど真ん中の絵も大きい
     var bigComp = {}, bigAt = {};
-    if (B.fx.bigPicture) {
+    var BIGU = BIG;
+    if (R.lab('J1')) { BIGU = {}; Object.keys(BIG).forEach(function (t) { BIGU[t] = BIG[t]; }); Object.keys(J1_BIG).forEach(function (t) { BIGU[t] = J1_BIG[t]; }); }   // ラボ J1
+    if (B.fx.bigPicture || R.lab('J1')) {
       for (var by = 0; by < rows; by++) {
         for (var bx = 0; bx < n; bx++) {
           var bt = R.getTile(st, bx, by);
-          if (!BIG[bt] || bigComp[key(bx, by)]) continue;
+          if (!BIGU[bt] || bigComp[key(bx, by)]) continue;
           var bcomp = [], bstack = [[bx, by]], bseen = {};
           while (bstack.length) {
             var bq = bstack.pop(), bk = key(bq[0], bq[1]);
@@ -1233,6 +1435,7 @@
         if (app.hl[k]) cls.push('hl');
         if (app.flash[k]) cls.push('flash');
         if (nextAt[k]) cls.push('has-next');
+        if (j5glow[k]) cls.push('j5-glow');
         var isGoal = R.inCells(mi.goal, x, y), isExit = R.inCells(mi.exit, x, y);
         if (isGoal) cls.push('m-goal');
         if (isExit) cls.push('m-exit');
@@ -1260,11 +1463,11 @@
         if (bigComp[k] && bigComp[k] !== 'solo') {
           var bj = [];
           [['up', x, y - 1], ['right', x + 1, y], ['down', x, y + 1], ['left', x - 1, y]].forEach(function (a) { if (R.inBounds(st, a[1], a[2]) && R.getTile(st, a[1], a[2]) === tile) bj.push('j-' + a[0]); });
-          inner += '<span class="bigland ' + BIG[tile].cls + ' ' + bj.join(' ') + '"></span>';
+          inner += '<span class="bigland ' + BIGU[tile].cls + ' ' + bj.join(' ') + '"></span>';
         }
         if (bigAt[k]) {
           var ba = bigAt[k];
-          inner += '<span class="bigmark ' + BIG[ba.tile].cls + '" style="--ps:' + ba.size.toFixed(2) + ';--pdx:' + ba.dx.toFixed(2) + ';--pdy:' + ba.dy.toFixed(2) + '" title="' + esc(BIG[ba.tile].name) + '">' + BIG[ba.tile].mark + '</span>';
+          inner += '<span class="bigmark ' + BIGU[ba.tile].cls + '" style="--ps:' + ba.size.toFixed(2) + ';--pdx:' + ba.dx.toFixed(2) + ';--pdy:' + ba.dy.toFixed(2) + '" title="' + esc(BIGU[ba.tile].name) + '">' + BIGU[ba.tile].mark + '</span>';
         }
         // お題の印
         if (isGoal) inner += '<span class="m-mark goal">ゴール</span>';
@@ -1273,10 +1476,24 @@
         if (wLine[k]) inner += wLine[k].map(function (d) { return '<span class="wline ' + d + '"></span>'; }).join('') + '<span class="wline dot"></span>';
         if (eLine[k]) inner += eLine[k].map(function (d) { return '<span class="wline e ' + d + '"></span>'; }).join('') + '<span class="wline e dot"></span>';
         if (eStop[k] && !unit) inner += '<div class="ghost rush">' + esc(eStop[k].letter) + DIR_ARROW[eStop[k].dir] + '</div>';
+        if (dLine[k]) inner += dLine[k].arms.map(function (d) { return '<span class="wline d d' + dLine[k].color + ' ' + d + '"></span>'; }).join('') + '<span class="wline d d' + dLine[k].color + ' dot"></span>';
+        if (dStop[k] && !unit) inner += '<div class="ghost dest d' + dStop[k].color + '" title="' + esc(dStop[k].why || '次のターンに向かう先') + '">' + esc(dStop[k].letter) + '</div>';
+        if (dCrush[k]) inner += '<span class="b-crush" title="大きい敵が次に崩すマス（ラボ D4）">崩</span>';
+        if (eMirror[k]) inner += '<span class="b-mirror" title="映る場所（ラボ E2）: 蜃気楼の中に味方がいると、ここに偽の姿が立つ">映</span>';
+        if (eDecoy[k] && !unit) inner += '<div class="ghost decoy" title="偽の姿（ラボ E2）: 敵には本物に見える。当たっても何も起きない">' + esc(R.magicName(eDecoy[k].magic)) + '</div>';
+        if (fWind[k]) inner += '<span class="b-wind" title="風の向き（追い風・向かい風）">' + DIR_ARROW[fWind[k]] + '</span>';
+        if (fBench[k]) inner += '<span class="b-bench" title="作業台（積まれた材料: ' + esc(fBench[k].mats.map(function (m) { return R.magicName(m.magic); }).join('→') || 'なし') + '）"></span>';
+        if (lTarget[k]) inner += '<span class="b-ltarget d-' + lTarget[k].dir + (lTarget[k].got ? ' got' : '') + '" title="ターゲット: ' + esc(lTarget[k].name) + (lTarget[k].got ? '（取った）' : '') + '">' + esc((R.LX.L.DIRS[lTarget[k].dir] || {}).mark || '的') + '</span>';   // ラボ L
+        if (hGoal[k]) inner += '<span class="b-goal' + (hGoal[k].done ? ' done' : '') + '" title="目標: ' + esc(hGoal[k].name) + (hGoal[k].done ? '（達成）' : '') + '">目</span>';
+        if (hFlag[k]) inner += '<span class="b-flag' + (hFlag[k].taken ? ' taken' : '') + '" title="' + esc(hFlag[k].f.name) + (hFlag[k].taken ? '（取った拠点: 上に立つと形が1マス先から）' : '（全部のマスを別の自然にすると取れる）') + '">' + (hFlag[k].taken ? '拠' : '旗') + '</span>';
+        if (hExit[k]) inner += '<span class="b-exit" title="逃げ口（宝を持った敵が着いたら負け）">逃</span>';
+        if (eHint[k]) inner += '<span class="b-hint ' + eHint[k].level + '" title="' + esc(eHint[k].title) + '">' + esc(eHint[k].text) + '</span>';
         if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了で馬車が進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
         }
+        if (finArrow[k]) inner += '<span class="fin-arrow" title="決め手が広がる向き（ラボ C3）">' + DIR_ARROW[finArrow[k]] + '</span>';
+        if (charge[k] !== undefined) inner += '<span class="b-charge" style="--cd:' + (charge[k] * 110) + 'ms"></span>';
         if (growPv[k]) inner += '<span class="g-ghost ' + growPv[k] + '" title="育ったあとの形（' + esc(SHORT[growPv[k]]) + '）"></span>';
         if (growNo[k]) inner += '<span class="b-nogrow" title="育たない（ユニットがいる・ほかの自然がある）">×</span>';
         if (change[k]) inner += '<span class="b-change">→' + esc(SHORT[change[k]]) + '</span>';
@@ -1285,6 +1502,7 @@
         var badges = '';
         if (fcSpread[k]) badges += '<span class="spread">燃</span>';
         if (fcOut[k]) badges += '<span class="burnout" title="次のターン終了で燃え尽きる">尽</span>';
+        if (fcGrowK[k]) badges += fcGrowK[k] === 'grow' ? '<span class="growk" title="次のターン終了で育つ（ラボ K2）">育</span>' : '<span class="growk" title="次のターン終了で灰からよみがえる（ラボ K2）">よ</span>';
         if (faShot[k] && simul()) badges += faShot[k].map(function (f) {
           return '<span class="ally stance' + (f.npc ? ' npc' : '') + '" title="' + esc(f.n + '番目に発動: ' + R.magicName(f.magic)) + '">' + (ORDER_MARK[f.n] || f.n) + esc(R.magicName(f.magic)) + '</span>';
         }).join('');
@@ -1293,7 +1511,7 @@
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
         if (planGhost === k && !unit) inner += '<div class="ghost ally"></div>';
-        if (nextAt[k]) {
+        if (nextAt[k] && !(R.lab('J5') && B.lab.J5.quiet)) {   // ラボ J5 quiet: 札を出さない
           var nx = nextAt[k], ready = nx.h.shooters.length > 0;
           inner += '<span class="b-next' + (ready ? ' ready' : '') + '" style="--ndx:' + nx.dx.toFixed(2) + ';--ndy:' + nx.dy.toFixed(2) + '">' +
             '<b>あと一手' + (ready ? '！' : '') + '</b><span class="m">' + esc(R.magicName(nx.h.magic)) + '</span>→ ' + esc(nx.h.name) + '</span>';
@@ -1388,9 +1606,12 @@
       if (a.stuck) status.push('泥沼: 次は移動できない');
       if (a.burn > 0) status.push('火傷: あと' + a.burn + '回（水か氷で治る）');
       if (st.mission && st.mission.carrier === a.id) status.push('宝を持っている（撃てない）');
+      if (R.LX && R.LX.boostText(a)) status.push('強化: ' + R.LX.boostText(a));   // ラボ G
+      if (a.labWear && R.lab('G7')) status.push('まとっている: ' + R.magicName(a.labWear));
+      if (a.labPath && R.lab('L0') && R.LX.L.pathDef(a.magic)) status.push('道 ' + R.LX.L.pathMarks(a.magic, a.labPath));   // ラボ L
       var cls = 'ally-card' + (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '') + (a.stance ? ' stanced' : '');
       return '<button type="button" class="' + cls + '" data-id="' + a.id + '">' +
-        '<span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
+        '<span class="dot">' + esc((R.LX && R.LX.formName(a)) || R.magicName(a.magic)) + '</span>' +
         '<span class="info"><b>' + (i + 1) + '. ' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
         (a.runTag ? '<span class="run-tag">' + esc(a.runTag) + '</span>' : '') +   // 進行モック: 強化
         '<span class="sub">' + esc(status.join('・')) +
@@ -1417,7 +1638,8 @@
       return '村への道がない' + (r.stop ? '（近くまで' + r.stop + 'マス走って待つ）' : '（その場で待つ）');
     };
     var html = en.map(function (e) {
-      var note = (e.stuck ? '（泥沼: 次は移動できない）' : '') + (e.burn > 0 ? '（火傷: あと' + e.burn + '回）' : '');
+      var note = (e.stuck ? '（泥沼: 次は移動できない）' : '') + (e.burn > 0 ? '（火傷: あと' + e.burn + '回）' : '') +
+        (R.LX && R.LX.boostText(e) ? '（強化: ' + R.LX.boostText(e) + '）' : '') + (e.labWear && R.lab('G7') ? '（まとっている: ' + R.magicName(e.labWear) + '）' : '');   // ラボ G
       return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + (e.stand === 'rush' ? ' ' : '（' + esc(R.magicName(e.magic)) + '）') + 'HP ' + e.hp + '/' + e.maxHp +
         (warn[e.id] ? ' <span class="danger">予告で -' + warn[e.id] + (warn[e.id] >= e.hp ? '（倒れる）' : '') + '</span>' : '') +
         '<span class="hpbar"><span style="width:' + Math.max(0, e.hp / e.maxHp * 100) + '%"></span></span> ' + DIR_ARROW[e.facing] + esc(note) + '</span>' +
@@ -1473,6 +1695,9 @@
     el.btnStay.disabled = !u;
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
+    var m2 = u && R.lab('G9') && R.LX ? R.LX.boostOf(u, 'G9') : null;   // ラボ G9: 持ち替えのボタン
+    el.btnSwap.hidden = !m2;
+    if (m2) el.btnSwap.innerHTML = '持ち替え: ' + esc(R.magicName(u.magic)) + ' ⇄ ' + esc(R.magicName(m2)) + ' <kbd>Q</kbd>';
     if (!u) {
       el.actInfo.textContent = app.busy ? '処理中…' : simul() ? ui('actIdleSimul', '味方を選ぶと、ここで向きを選んで構えられます') : ui('actIdleSingle', '味方を選ぶと、ここで向きを選んで撃てます');
       el.dirCenter.textContent = '';
@@ -1527,6 +1752,7 @@
           return '<option value="' + d + '"' + (u.facing === d ? ' selected' : '') + '>' + DIR_ARROW[d] + ' ' + R.DIRS[d].name + '</option>';
         }).join('') + '</select>' +
         '<span class="muted">(' + u.x + ',' + u.y + ')</span>' +
+        boostEditHtml(u) +
         (u.side === 'ally' ? '<span class="persona-edit"><label>指示 <select data-id="' + u.id + '" data-field="npc">' +
           '<option value=""' + (u.npc ? '' : ' selected') + '>プレイヤーが動かす</option>' +
           '<option value="1"' + (u.npc ? ' selected' : '') + '>構える味方（毎ターン今の向きで構えて撃つ）</option></select></label></span>' : '') +
@@ -1602,14 +1828,17 @@
     if (u && app.plan && !app.state.result) {
       var p = previewNow(u);
       var lines = p.events.map(function (e) {
-        var cls = e.type === 'finisher' ? 'finisher' : e.type === 'damage' ? 'damage' : e.type === 'death' ? 'death' : '';
+        var cls = e.type === 'finisher' ? 'finisher' : e.type === 'damage' ? 'damage' : e.type === 'death' ? 'death' : (e.type === 'labTarget' || e.type === 'labTargetSoon') ? 'ltarget d-' + e.dir : '';   // ラボ L: ターゲットの行
         var text = e.type === 'cast' && !p.stance ? e.text.replace(/^.*?→ /, '') : (e.combo ? '【' + comboText(e) + '】' : '') + e.text;
         return '<div class="pv-line ' + cls + '">' + esc(text) + '</div>';
       });
       var head = p.waitOnly ? '予測: (' + p.to[0] + ',' + p.to[1] + ') へ移動して待機（宝を持っているので撃てない）'
         : p.stance ? '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'を構える（' + p.order + '番目に発動）→ 構えた順に全部起きたあと'
         : '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'の魔法（' + R.MAGIC_INFO[u.magic].verb + '）';
-      box.innerHTML = '<div class="pv-head">' + head + '</div>' + lines.join('');
+      // ラボ C5: 「育っていれば: 〇〇」
+      var notes = (p.notes || []).map(function (n) { return '<div class="pv-line note">' + esc(n) + '</div>'; });
+      if (app.labPreviewNotes) notes = notes.concat(app.labPreviewNotes(u, p));   // ラボ L: 予告の決め手を潰す、の一言
+      box.innerHTML = '<div class="pv-head">' + head + '</div>' + lines.join('') + notes.join('');
       return;
     }
     var t = app.hover;
@@ -1699,6 +1928,7 @@
   el.btnShoot.addEventListener('click', function () { doAct(true); });
   el.btnRetry.addEventListener('click', retry);
   el.btnWait.addEventListener('click', function () { doAct(false); });
+  el.btnSwap.addEventListener('click', function () { swapMagic(); });
   el.btnEndTurn.addEventListener('click', doEndTurn);
   el.btnDemo.addEventListener('click', function () {
     var demos = window.DEMOS || [];
@@ -1762,7 +1992,12 @@
     '<optgroup label="お題（防衛・護衛・奪取）">' + shown.filter(function (p) { return p.mission; }).map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="戦闘（敵の全滅）"><option value="">標準（火・水・風 / 敵1体）</option>' +
     shown.filter(function (p) { return !p.mission; }).map(presetOpt).join('') + '</optgroup>' +
-    '<optgroup label="縮尺くらべ"><option value="plaza">広場（見本・調整パネルの盤面の大きさ）</option></optgroup>';
+    '<optgroup label="縮尺くらべ"><option value="plaza">広場（見本・調整パネルの盤面の大きさ）</option></optgroup>' +
+    // 試作ラボ: カテゴリごとに分けて並べる
+    (R.LAB.CATS || []).map(function (cat) {
+      var list = R.LAB_PRESETS.filter(function (p) { return p.labCat === cat.id && !p.hidden; });
+      return list.length ? '<optgroup label="ラボ ' + esc(cat.name) + '">' + list.map(presetOpt).join('') + '</optgroup>' : '';
+    }).join('');
   el.scenarioSelect.value = app.scenario;
   }
   buildScenarioSelect();
@@ -1788,6 +2023,9 @@
     if (app.busy) skipPlayback();
     B.turnMode = m;
     try { window.localStorage.setItem(TURN_KEY, m); } catch (e) { /* 覚えられなくても遊べる */ }
+    var lp = app.scenario && R.findPreset(app.scenario);
+    app.labTurnRestore = null;
+    app.labTurnKeep = !!(lp && lp.lab);   // ラボのシナリオの中で選んだ形は、そのまま使う
     app.cache = {};
     sideSig = '';
     addLog('ターンの形: ' + (m === 'simul' ? ui('turnModeSimul', '一斉に発動') : ui('turnModeSingle', '1人ずつ')) + '（最初からやり直した）', 'system');
@@ -1843,7 +2081,9 @@
     if (!s) return;
     var id = s.getAttribute('data-id');
     var field = s.getAttribute('data-field');
-    var res = field === 'magic' ? R.editSetMagic(app.state, id, s.value)
+    if (field.indexOf('lpath:') === 0) return;   // ラボ L: 道は lab_target_ui.js が受け取る
+    var res = field.indexOf('boost:') === 0 ? R.editSetBoost(app.state, id, field.slice(6), boostValue(field.slice(6), s.value))   // ラボ G
+      : field === 'magic' ? R.editSetMagic(app.state, id, s.value)
       : field === 'facing' ? R.editSetFacing(app.state, id, s.value)
       : field === 'npc' ? R.editSetNpc(app.state, id, !!s.value)
       : R.editSetPersona(app.state, id, field, s.value);
@@ -1960,6 +2200,9 @@
     if (k === 'Enter') { e.preventDefault(); doAct(true); return; }
     if (k === ' ') { e.preventDefault(); stay(); return; }
     if (k === 'w' || k === 'W') { doAct(false); return; }
+    if (k === 'q' || k === 'Q') { swapMagic(); return; }   // ラボ G9: 2つ目の魔法と持ち替える
+    if ((k === 'b' || k === 'B') && R.lab('F6')) { doAct(true, { labBreak: true }); return; }   // ラボ F6: 壊す
+    if ((k === 'k' || k === 'K') && R.lab('F7')) { doAct(true, { labBench: true }); return; }   // ラボ F7: 作業台を置く
     if (k === 'Escape') {
       var u = selUnit();
       if (u && app.plan && (app.plan.to[0] !== u.x || app.plan.to[1] !== u.y)) stay();
@@ -1970,6 +2213,13 @@
   // 確認用（コンソールから状態を見られる）
   window.CafiliaApp = app;
   app.render = render;
+  // 試作ラボ（lab_ui.js）から使う
+  app.loadScenario = function (id, opts) { stopDemo(); if (app.editMode) setEditMode(false); endCheck(); loadScenario(id, opts); };
+  app.playLabDemo = playLabDemo;
+  app.playCheckById = function (id) { var c = CHECKS.filter(function (x) { return x.id === id; })[0]; if (c) playCheck(c); };
+  app.say = say;
+  app.addLog = function (t) { addLog(t, 'system'); renderLog(); };
+  app.clearCache = function () { app.cache = {}; sideSig = ''; };
   // 調整パネル（tune_ui.js）から: 数値を変えたあと、今のシナリオを最初からやり直す
   app.restart = function () {
     if (app.onRestart) { app.onRestart(); return; }   // 進行モック: 今の戦闘を最初からやり直す
