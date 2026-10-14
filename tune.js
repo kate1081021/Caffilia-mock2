@@ -28,7 +28,7 @@
     _fav: 'よく触る', _top: 'そのほか',
     ally: '味方', enemy: '敵', mission: 'お題', fire: '炎', spread: '燃え広がり', shock: '感電',
     funka: '噴火', fireTornado: '火炎竜巻', sentakuki: 'センタクキ', dark: '闇', haunt: 'オバケヤシキ',
-    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方', shape: '形'
+    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方', shape: '形', simul: '一斉発動'
   };
 
   // 項目の日本語ラベル。ここにない項目は元の名前をそのまま出す
@@ -43,6 +43,7 @@
     'fire.burnOutTurns': '炎が燃え尽きるまでのターン数',
     'lineLength': '風（元の形）の長さ', 'breezeLength': '風（標準の形）の長さ', 'waterLength': '水の池の長さ',
     'stepDelayMs': '演出の間隔（ミリ秒）',
+    'simul.fireDelayMs': '一斉発動: 1人ずつ見せる間隔（ミリ秒）',
     'spread.maxLength': '燃え広がりの長さ（最大）',
     'shock.base': '感電のダメージ', 'shock.perWater': '感電: 水1マスごとの追加',
     'funka.lava': '噴火で溶岩があふれる', 'funka.base': '噴火のダメージ', 'funka.perMountain': '噴火: 山1つごとの追加', 'funka.reach': '溶岩が流れ出すマス数',

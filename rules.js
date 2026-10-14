@@ -11,9 +11,12 @@
  * ブラウザでは グローバル変数 Rules、node では module.exports で読める。
  */
 (function (root) {
-  var B = (typeof module !== 'undefined' && module.exports)
-    ? require('./balance.js')
-    : root.BALANCE;
+  var NODE = typeof module !== 'undefined' && module.exports;
+  var B = NODE ? require('./balance.js') : root.BALANCE;
+  // 画面に出す文（texts.js）。ブラウザでは画面が書き換えることがあるので、使うたびに読む
+  var NODE_TEXTS = null;
+  if (NODE) { try { NODE_TEXTS = require('./texts.js'); } catch (e) { NODE_TEXTS = null; } }
+  function texts() { return NODE ? NODE_TEXTS : root.TEXTS; }
 
   // ---------------------------------------------------------------
   // 定義
@@ -182,6 +185,27 @@
   function isNpc(u) { return !!u && u.side === 'ally' && !!u.npc; }
   // プレイヤーが指示できる味方
   function controllableOf(s) { return alliesOf(s).filter(function (u) { return !u.npc; }); }
+
+  // 【一斉】ターンの形（IMPROVE_simul）。'simul' のとき、味方の手番は「移動 → 向き → 構える」。
+  //   構え（u.stance = { n }）はまだ起きず、味方の予告として盤面に出る。ターンの終わり（敵の発動の前）に、構えた順に発動する。
+  //   構える味方（チュートリアル）の構えは、いつも最後。そのターンのうちなら構え直せる（移動は戻らない）。構えた順は並べ替えられる
+  function simulOn() { return B.turnMode === 'simul'; }
+  // 発動する順の味方: 構えた味方（n の小さい順）→ 構える味方（いつも最後）
+  function stanceList(s) {
+    var mine = alliesOf(s).filter(function (a) { return !a.npc && a.stance; }).sort(function (a, b) { return a.stance.n - b.stance.n; });
+    return mine.concat(alliesOf(s).filter(function (a) { return a.npc && a.intent; }));
+  }
+  // 発動の順番（1から）。構えていなければ 0
+  function stanceOrder(s, id) {
+    var list = stanceList(s);
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return i + 1;
+    return 0;
+  }
+  function nextStanceN(s) {
+    var n = 0;
+    alliesOf(s).forEach(function (a) { if (a.stance && a.stance.n > n) n = a.stance.n; });
+    return n + 1;
+  }
   function enemiesOf(s) { return s.units.filter(function (u) { return u.side === 'enemy'; }); }
   // お題の置きもの（村・馬車）。自然ではなく、ユニットと同じ法則に従う（直撃・決め手・炎の上・風）
   function objectsOf(s, kind) { return s.units.filter(function (u) { return u.side === 'object' && (!kind || u.kind === kind); }); }
@@ -1422,6 +1446,56 @@
     return ctx;
   }
 
+  // 【一斉】合体の見分け。links = { by: { マスの番号: [味方の id] }, order: [発動した順の味方の id] }
+  //   このターンの構えの発動で、どの味方の魔法がどのマスの自然を作り変えたかを覚えておく。
+  //   決め手が起きたら、起点のマスと、決め手で変わったマスを作った味方を集める。違う味方が2人以上なら「合体」（出来事に combo: [id…] を付ける）
+  function newLinks() { return { by: {}, order: [], magic: {} }; }
+  function linkedShot(s, a, links, ev) {
+    if (links.order.indexOf(a.id) < 0) links.order.push(a.id);
+    links.magic[a.id] = a.magic;
+    var before = s.tiles.slice(), mark = ev.length;
+    var ctx = shoot(s, a, a.facing, ev);
+    var changed = {};
+    for (var i = 0; i < before.length; i++) if (before[i] !== s.tiles[i]) changed[i] = true;
+    var extra = {};   // 決め手で変わったマスには、その決め手に関わった味方も残す（次の決め手へつながるように）
+    for (var j = mark; j < ev.length; j++) {
+      var e = ev[j];
+      if (e.type !== 'finisher') continue;
+      var ids = {};
+      ids[a.id] = true;
+      var take = function (c) {
+        if (!c || !inBounds(s, c[0], c[1])) return;
+        (links.by[idx(s, c[0], c[1])] || []).forEach(function (id) { ids[id] = true; });
+      };
+      take(e.origin || (e.cells && e.cells[0]));
+      (e.cells || []).forEach(function (c) { if (inBounds(s, c[0], c[1]) && changed[idx(s, c[0], c[1])]) take(c); });
+      var list = links.order.filter(function (id) { return ids[id]; });
+      (e.cells || []).forEach(function (c) { if (inBounds(s, c[0], c[1])) extra[idx(s, c[0], c[1])] = list; });
+      if (list.length >= 2) { e.combo = list; e.comboMagics = list.map(function (id) { return links.magic[id]; }); }
+    }
+    Object.keys(changed).forEach(function (k) {
+      var set = (links.by[k] || []).concat(extra[k] || []).concat([a.id]);
+      links.by[k] = links.order.filter(function (id) { return set.indexOf(id) >= 0; });
+    });
+    return ctx;
+  }
+  // 【一斉】構えの発動: 構えた順に1人ずつ、発動の瞬間の位置と向きから撃つ（倒れた味方の構えは消える）。終わったら構えを消す
+  function fireStances(s, ev, step) {
+    var ids = stanceList(s).map(function (a) { return a.id; });
+    var links = newLinks();
+    ids.forEach(function (id, i) {
+      if (s.result) return;
+      var a = findUnit(s, id);
+      if (!a) return;
+      a.intent = false;
+      var mark = ev.length;
+      linkedShot(s, a, links, ev);
+      if (ev[mark] && ev[mark].type === 'cast') ev[mark].order = i + 1;
+      step();
+    });
+    alliesOf(s).forEach(function (a) { delete a.stance; if (a.npc) a.intent = false; });
+  }
+
   // ---------------------------------------------------------------
   // 移動
   // ---------------------------------------------------------------
@@ -1456,8 +1530,11 @@
   function reachableCells(s, unitId) {
     var u = findUnit(s, unitId);
     if (!u) return {};
+    if (restancing(u)) { var here = {}; here[key(u.x, u.y)] = 0; return here; }   // 【一斉】構え直しは動けない
     return reachInfo(s, u).dist;
   }
+  // 【一斉】このターンもう構えた（か待機した）味方が、構え直すところか
+  function restancing(u) { return simulOn() && !!u && u.side === 'ally' && !u.npc && u.acted; }
 
   function moveUnit(s, u, x, y, dist, ev) {
     var from = [u.x, u.y];
@@ -1488,12 +1565,13 @@
     var u0 = findUnit(s0, unitId);
     if (!u0 || u0.side !== 'ally') return fail(s0, '味方を選んでいない');
     if (u0.npc) return fail(s0, '構える味方には指示できない');
-    if (u0.acted) return fail(s0, 'この味方はもう行動した');
+    var again = restancing(u0);   // 【一斉】押す前なら構え直せる（移動は戻らない）
+    if (u0.acted && !again) return fail(s0, 'この味方はもう行動した');
     var to = opts.to || [u0.x, u0.y];
     var dir = opts.dir || u0.facing;
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
-    var dist = reachInfo(s0, u0).dist[key(to[0], to[1])];
-    if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
+    var dist = again ? (to[0] === u0.x && to[1] === u0.y ? 0 : undefined) : reachInfo(s0, u0).dist[key(to[0], to[1])];
+    if (dist === undefined) return fail(s0, again ? '構え直しでは動けない（向きと構えだけ）' : u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
     if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, '宝を持っている間は撃てない（待機だけ）');
 
     var s = clone(s0);
@@ -1502,7 +1580,7 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
-    if (u.stuck) {
+    if (u.stuck && !again) {
       u.stuck = false;
       ev.push({ type: 'mudSkip', id: u.id, text: unitLabel(s, u) + 'は泥沼にはまっていて動けない（1回休み）' });
     }
@@ -1524,12 +1602,33 @@
       }
     }
     if (opts.shoot === false) {
+      if (u.stance) delete u.stance;   // 【一斉】待機にすると構えは消える
       ev.push({ type: 'wait', id: u.id, text: unitLabel(s, u) + 'は' + DIRS[dir].name + 'を向いて待機した' });
+    } else if (simulOn()) {
+      // 【一斉】構える（まだ起きない。ターンの終わりに、構えた順に発動）。構え直しは順番をそのままにする
+      var first = !u.stance;
+      if (first) u.stance = { n: nextStanceN(s) };
+      var no = stanceOrder(s, u.id);
+      ev.push({ type: 'stance', id: u.id, side: 'ally', magic: u.magic, dir: dir, from: [u.x, u.y], cells: castCells(s, u, dir), order: no,
+        text: unitLabel(s, u) + 'は' + DIRS[dir].name + 'を向いて' + magicName(u.magic) + 'の魔法を' + (first ? '構えた' : '構え直した') + '（発動 ' + no + '番目）' });
     } else {
       shoot(s, u, dir, ev);
     }
     step();
     return { ok: true, state: s, events: ev, steps: steps };
+  }
+
+  // 【一斉】構えた順を並べ替える（delta: -1 で1つ前へ、+1 で1つ後ろへ）。構える味方（いつも最後）は動かせない
+  function reorderStance(s0, unitId, delta) {
+    var list = alliesOf(s0).filter(function (a) { return !a.npc && a.stance; }).sort(function (a, b) { return a.stance.n - b.stance.n; });
+    var i = -1;
+    list.forEach(function (a, k) { if (a.id === unitId) i = k; });
+    var j = i + delta;
+    if (s0.result || i < 0 || j < 0 || j >= list.length) return fail(s0, 'その順番には動かせない');
+    var s = clone(s0);
+    var a = findUnit(s, list[i].id), b = findUnit(s, list[j].id);
+    var t = a.stance.n; a.stance.n = b.stance.n; b.stance.n = t;
+    return { ok: true, state: s, events: [{ type: 'reorder', id: a.id, text: unitLabel(s, a) + 'の発動を' + (j + 1) + '番目にした' }], steps: [] };
   }
 
   function allAlliesActed(s) {
@@ -2085,8 +2184,14 @@
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
     alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck) a.stuck = false; });
 
-    // 3a. 構える味方の魔法の発動（敵より先）
-    if (alliesOf(s).some(function (a) { return a.npc && a.intent; })) {
+    // 3a. 構える味方の魔法の発動（敵より先）。【一斉】味方の構えを構えた順に発動（構える味方はその最後）
+    if (simulOn()) {
+      if (stanceList(s).length) {
+        ev.push({ type: 'phase', text: '── 構えの発動（構えた順） ──' });
+        fireStances(s, ev, step);
+      }
+      alliesOf(s).forEach(function (a) { delete a.stance; });
+    } else if (alliesOf(s).some(function (a) { return a.npc && a.intent; })) {
       ev.push({ type: 'phase', text: '── 構える味方の発動 ──' });
       allyFirePhase(s, ev, step);
     }
@@ -2159,6 +2264,7 @@
   function previewAct(s0, unitId, to, dir) {
     var u0 = findUnit(s0, unitId);
     if (!u0 || !DIRS[dir]) return null;
+    if (simulOn()) return previewStance(s0, unitId, to, dir);
     var s = clone(s0);
     var u = findUnit(s, unitId);
     var ev = [];
@@ -2184,20 +2290,88 @@
     };
   }
 
+  // 【一斉】u が to へ動いて dir に構えた盤面（まだ発動していない）。構え直しなら順番はそのまま、新しい構えなら構える味方の前
+  function placeStance(s0, unitId, to, dir) {
+    var s = clone(s0);
+    var u = findUnit(s, unitId);
+    if (to && (to[0] !== u.x || to[1] !== u.y)) { u.x = to[0]; u.y = to[1]; }
+    u.facing = dir;
+    if (!u.stance) u.stance = { n: nextStanceN(s) };
+    u.acted = true;
+    return s;
+  }
+  // 【一斉】構えを全部、構えた順に発動したら何が起きるか（state は変えない）
+  //   { after: 発動のあとの盤面, events, tileChanges, damages（同じ者へは合計）, moves, finishers, grows, cells: { 味方の id: 当たるマス }, combos }
+  function fireAllStances(s) {
+    var sim = clone(s);
+    var startUnits = clone(sim.units), startTiles = sim.tiles.slice();
+    var ev = [], links = newLinks(), hit = {}, hitOrder = [], src = {}, finishers = [], grows = [], cells = {};
+    stanceList(sim).forEach(function (a0) {
+      if (sim.result) return;
+      var a = findUnit(sim, a0.id);
+      if (!a) return;
+      a.intent = false;
+      var ctx = linkedShot(sim, a, links, ev);
+      ctx.order.forEach(function (id) {
+        if (!hit[id]) { hit[id] = 0; hitOrder.push(id); }
+        hit[id] += ctx.hits[id].amount;
+        src[id] = ctx.hits[id].src;
+      });
+      finishers = finishers.concat(ctx.finishers);
+      grows = grows.concat(ctx.grows);
+      cells[a.id] = ctx.cells;
+    });
+    var tileChanges = [];
+    for (var i = 0; i < sim.tiles.length; i++) {
+      if (sim.tiles[i] !== startTiles[i]) tileChanges.push({ x: i % sim.size, y: Math.floor(i / sim.size), from: startTiles[i], to: sim.tiles[i] });
+    }
+    var damages = [], moves = [];
+    startUnits.forEach(function (b) {
+      var a = findUnit(sim, b.id);
+      if (hit[b.id] !== undefined) damages.push({ id: b.id, side: b.side, label: unitLabel({ units: startUnits }, b), x: a ? a.x : b.x, y: a ? a.y : b.y, amount: hit[b.id], src: src[b.id], dies: !a });
+      if (a && (a.x !== b.x || a.y !== b.y)) moves.push({ id: b.id, from: [b.x, b.y], to: [a.x, a.y] });
+    });
+    var combos = ev.filter(function (e) { return e.type === 'finisher' && e.combo; }).map(function (e) { return { name: e.name, ids: e.combo, magics: e.comboMagics }; });
+    return { after: sim, events: ev, tileChanges: tileChanges, damages: damages, moves: moves, finishers: finishers, grows: grows, cells: cells, combos: combos };
+  }
+  // 【一斉】予測: その構えを置いて、構えた順に全部起きたあと。state は構えを置いた盤面（敵の予告はこの盤面の forecast で計算し直す）
+  function previewStance(s0, unitId, to, dir) {
+    var u0 = findUnit(s0, unitId);
+    var s = placeStance(s0, unitId, to, dir);
+    var r = fireAllStances(s);
+    return {
+      state: s, after: r.after, events: r.events, cells: r.cells[unitId] || [], tileChanges: r.tileChanges, damages: r.damages, moves: r.moves,
+      finishers: r.finishers, grows: r.grows, combos: r.combos, from: [u0.x, u0.y], to: to || [u0.x, u0.y], dir: dir, stance: true, order: stanceOrder(s, unitId)
+    };
+  }
+
   // 立ち位置の導き: 動ける各マスについて、どれかの向きで 決め手 → 'finisher'、自然のマスが変わる → 'change'
   //   空きマスはどの魔法でも何かができるので、「空き → 何か」だけの変化は数えない
   function guideMap(s, unitId) {
     var u = findUnit(s, unitId);
     var map = {};
-    if (!u || u.acted) return map;
-    var info = reachInfo(s, u);
-    info.order.forEach(function (pos) {
+    if (!u || (u.acted && !restancing(u))) return map;
+    // 【一斉】ほかの味方の構えだけで起きる決め手・変化は数えない（この味方の構えで増えるものだけ）
+    var baseFin = {}, baseChg = {};
+    if (simulOn()) {
+      var b0 = clone(s), bu = findUnit(b0, unitId);
+      delete bu.stance;
+      var br = fireAllStances(b0);
+      br.finishers.forEach(function (f) { baseFin[f.name] = (baseFin[f.name] || 0) + 1; });
+      br.tileChanges.forEach(function (c) { baseChg[key(c.x, c.y)] = c.to; });
+    }
+    var more = function (fins) {
+      var n = {};
+      return fins.some(function (f) { n[f.name] = (n[f.name] || 0) + 1; return n[f.name] > (baseFin[f.name] || 0); });
+    };
+    var order = restancing(u) ? [[u.x, u.y]] : reachInfo(s, u).order;
+    order.forEach(function (pos) {
       var best = null;
       if (!canShoot(s, u, pos)) return;
       DIR_ORDER.forEach(function (dir) {
         var p = previewAct(s, unitId, pos, dir);
-        if (p.finishers.length) best = 'finisher';
-        else if (!best && p.tileChanges.some(function (c) { return c.from !== 'empty'; })) best = 'change';
+        if (more(p.finishers)) best = 'finisher';
+        else if (!best && p.tileChanges.some(function (c) { return c.from !== 'empty' && baseChg[key(c.x, c.y)] !== c.to; })) best = 'change';
       });
       if (best) map[key(pos[0], pos[1])] = best;
     });
@@ -2259,14 +2433,16 @@
     var out = { allies: [], enemies: [], marches: [], rushes: [], fireSpread: [], burnOut: [], burn: [], enemyDamage: [], wagon: null };
     if (s.result) return out;
     var sim = clone(s);
-    function fire(list, u0) {
+    var links = newLinks();   // 【一斉】合体の見分け
+    function fire(list, u0, linked) {
       var e = findUnit(sim, u0.id);
+      var order = linked ? list.length + 1 : 0;
       if (!e || sim.result) {
-        list.push({ id: u0.id, side: u0.side, cancelled: true, from: [u0.x, u0.y], to: [u0.x, u0.y], dir: u0.facing, magic: u0.magic, cells: [], tileChanges: [], damages: [], finishers: [] });
+        list.push({ id: u0.id, side: u0.side, cancelled: true, from: [u0.x, u0.y], to: [u0.x, u0.y], dir: u0.facing, magic: u0.magic, cells: [], tileChanges: [], damages: [], finishers: [], order: order });
         return;
       }
-      var before = sim.tiles.slice(), units = clone(sim.units);
-      var ctx = shoot(sim, e, e.facing, []);
+      var before = sim.tiles.slice(), units = clone(sim.units), evs = [];
+      var ctx = linked ? linkedShot(sim, e, links, evs) : shoot(sim, e, e.facing, evs);
       e.intent = false;
       var tileChanges = [];
       for (var i = 0; i < before.length; i++) {
@@ -2279,9 +2455,11 @@
       });
       damages.forEach(function (d) { out.enemyDamage.push({ id: d.id, amount: d.amount, side: d.side, by: e.id }); });
       list.push({ id: e.id, side: e.side, from: [e.x, e.y], to: [e.x, e.y], shootFrom: [e.x, e.y], dir: e.facing, magic: e.magic,
-        cells: ctx.cells, tileChanges: tileChanges, damages: damages, finishers: ctx.finishers });
+        cells: ctx.cells, tileChanges: tileChanges, damages: damages, finishers: ctx.finishers, order: order,
+        combos: evs.filter(function (x) { return x.type === 'finisher' && x.combo; }).map(function (x) { return { name: x.name, ids: x.combo, magics: x.comboMagics }; }) });
     }
-    alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
+    if (simulOn()) stanceList(s).forEach(function (a0) { fire(out.allies, a0, true); });   // 【一斉】味方の構え（構えた順。構える味方は最後）
+    else alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
     if (s.enemyActs) enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) { fire(out.enemies, e0); });
     if (sim.result) return out;
     // 「進む」敵: 発動のあとの盤面で、次に進むマスと、そこから撃つ魔法（enemies に入る。from は進んだ先）
@@ -2524,6 +2702,7 @@
       var conf = unitConf(u);
       u.maxHp = conf.hp; u.hp = conf.hp; u.power = conf.power; u.move = conf.move;
       u.stuck = false; u.acted = false;
+      delete u.stance;
       if (u.side === 'enemy' || u.npc) u.intent = false;
     });
     return s;
@@ -2772,9 +2951,21 @@
       enemies: [['earth', 3, 0, { stand: 'rush' }, 'down'], ['earth', 3, 1, { stand: 'rush' }, 'down']],
       villages: [[2, 10], [3, 10], [4, 10]],
       spawn: { x: 3, y: 0, facing: 'down', magic: 'earth', stand: 'rush' },   // 増援の出てくる所【仮】
-      retryHint: '山に向かって水を撃つと…？',   // やり直したときに盤面の上に1行だけ出す【仮の文】
+      // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
       // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、5ターン目の終わりまで守れば勝ち、移動2
       overrides: { waterLength: 1, 'tutorial.slope': true, 'mission.defense.turns': 5, 'ally.move': 2 }
+    },
+    {
+      id: 'tut3', tutorial: 3, name: '【チュートリアル】③ 3人で合わせる', short: '③ 3人で合わせる',
+      desc: '3人を動かす見せ場（IMPROVE_simul）。教えること: 3人の魔法を順に重ねると、1ターンで3段目まで流れる（合体）。' +
+        '一例: 土がその場で上（(3,4)(4,4)(3,3) に山）→ 草がその場で上（山の (3,4)(3,3) に桜、(2,3)(4,3) は森）→ 風が (3,5) へ動いて上 → ' +
+        '桜 (3,4) に風が当たって桜吹雪。扇（(3,3)／(2,2)〜(4,2)／(1,1)〜(5,1)）に、1ターン目に1マス進んだ敵2体 (2,1)(4,1) が入る。3人とも扇の後ろ。' +
+        '1ターン目に勝てる手は3通り（tests/tut3_search.js）。敵はこのステージだけ1ターンに1マス進むので、外しても2ターン目はまだ遠く、同じ形で立て直せる。',
+      rows: ['.......', '.......', '.......', '.......', '.......', '.......', '.......'],
+      allies: [['earth', 4, 6], ['grass', 3, 6], ['wind', 2, 6]],
+      enemies: [['fire', 2, 0], ['fire', 4, 0]],
+      // 敵は1ターンに1マス（標準は2。2だと外したあと2ターン目に敵が扇を抜けてしまい、立て直せない）、移動2
+      overrides: { 'enemy.move': 1, 'ally.move': 2 }
     }
   ];
 
@@ -2808,9 +2999,14 @@
     return withOverrides(s.overrides, function () { return startBattle(s); });
   }
   // やり直したとき（2回目以降の開始時）に盤面の上に出すヒント（1文）。なければ null
+  //   文は texts.js の stages[ステージ].hint（ターンの形ごと: { simul, single }）。空ならなし
   function stageHint(s) {
     var p = s && s.stage && findPreset(s.stage);
-    return p && p.retryHint && (s.tries || 0) > 0 ? p.retryHint : null;
+    if (!p || !((s.tries || 0) > 0)) return null;
+    var T = texts(), st = T && T.stages && T.stages[p.id];
+    var h = st && st.hint;
+    if (h && typeof h === 'object') h = h[simulOn() ? 'simul' : 'single'];
+    return h || null;
   }
 
   // シナリオ（チュートリアルも）の定義を id で探す
@@ -2931,7 +3127,10 @@
     npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, validOverrides: validOverrides,
     // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
-    withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); }
+    withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); },
+    // 【一斉】ターンの形（構えて、ターンの終わりに一斉に発動）
+    simulOn: simulOn, stanceList: stanceList, stanceOrder: stanceOrder, reorderStance: withStage(reorderStance),
+    fireAllStances: withStage(fireAllStances), restancing: restancing, texts: texts
   };
 
   if (typeof module !== 'undefined' && module.exports) {

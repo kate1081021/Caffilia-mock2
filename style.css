@@ -866,3 +866,111 @@ button.tutorial, button.tutorial:hover:not(:disabled) { background: linear-gradi
 /* やり直したときのヒント（盤面の上に1行、控えめに） */
 .stage-hint { width: 100%; max-width: 640px; text-align: center; color: #1e3a8a; background: #eef4ff; border: 1px solid #c7d7f5; border-radius: 8px; padding: 3px 10px; font-size: 14px; }
 button.retry { margin: 2px auto 0; font-size: 16px; padding: 6px 22px; }
+
+/* ---------- 一斉発動・文章（IMPROVE_simul） ---------- */
+.scenario.turnmode select { font-weight: bold; border-color: var(--ally); color: var(--ally); }
+/* 構えの印: 敵の予告（紫）と同じ置き方で、色だけ青。マスの右上に「発動の順番＋魔法」 */
+.cell.st-shot { box-shadow: inset 0 0 0 3px rgba(29, 78, 216, .9); }
+.b-fc .ally.stance { font-size: .68em; letter-spacing: -.02em; }
+.b-fc .ally.stance.npc { background: #60a5fa; }
+.unit .u-order {
+  position: absolute; left: -12%; top: -14%;
+  min-width: 1.5em; height: 1.5em; line-height: 1.5em; text-align: center;
+  font-size: .72em; font-weight: bold;
+  background: var(--ally); color: #fff; border-radius: 999px; border: 2px solid #fff;
+  z-index: 6; pointer-events: none;
+}
+.ally-card.stanced .dot { box-shadow: 0 0 0 2px var(--ally); }
+/* 発動の順番の一覧（▲▼はスマホでも押せる大きさ） */
+.order-panel { margin: 8px 0 10px; padding: 8px 10px; border: 2px solid #bfd3f7; border-radius: 10px; background: #f3f7ff; }
+.order-panel h3 { margin: 0 0 6px; color: #1e3a8a; }
+.order-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.order-row { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #c7d7f5; border-radius: 8px; padding: 4px 6px; }
+.order-row.selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(245, 197, 24, .6); }
+.order-row.fixed { background: #eaf2ff; border-style: dashed; }
+.order-row .o-no { font-size: 22px; font-weight: bold; color: var(--ally); min-width: 1.2em; text-align: center; }
+.order-row .o-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.order-row .o-name small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.order-row .o-fixed { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.order-row .o-move { display: flex; gap: 4px; }
+.o-btn { min-width: 44px; min-height: 44px; font-size: 18px; padding: 0; }
+.order-combo { margin: 8px 0 0; font-weight: bold; color: #be185d; }
+/* 発動ボタン: 全員構えたら光る */
+#btnEndTurn.fire-ready { animation: fireReady 1.2s ease-in-out infinite; }
+@keyframes fireReady {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(194, 65, 12, .0); }
+  50% { box-shadow: 0 0 0 4px rgba(194, 65, 12, .25), 0 0 14px 4px rgba(245, 158, 11, .7); }
+}
+.hint.ready { color: var(--accent); font-weight: bold; }
+/* 決め手の名前をつなぐ・合体 */
+.banner { display: flex; flex-direction: column; align-items: center; }
+.banner .banner-sub {
+  font-size: .5em; letter-spacing: .04em; color: #fff;
+  background: linear-gradient(135deg, #ec4899, #2563eb); border-radius: 999px; padding: 2px 16px; margin-bottom: 4px;
+  text-shadow: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+}
+.banner.combo.show { animation-duration: 2.4s; }
+@media (max-width: 600px) { .banner { white-space: normal; text-align: center; width: 92vw; } }
+/* 目標（チュートリアル） */
+.m-goal-text { flex-basis: 100%; color: #1e3a8a; }
+/* 会話の窓: 画面の下。盤面は見えたまま */
+.dialog {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  width: min(720px, calc(100vw - 32px)); z-index: 45;
+  background: rgba(30, 27, 22, .9); color: #fffaf0;
+  border: 2px solid #f5c518; border-radius: 14px; padding: 12px 16px 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .35);
+  cursor: pointer; user-select: none;
+}
+.dialog .d-who { display: inline-block; font-weight: bold; color: #1e1b16; background: #f5c518; border-radius: 6px; padding: 0 10px; margin-bottom: 6px; }
+.dialog .d-text { font-size: 17px; line-height: 1.6; white-space: pre-wrap; min-height: 1.6em; }
+.dialog .d-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: #d6cfc2; }
+.dialog .d-edit { position: absolute; right: 8px; top: 6px; border: none; background: transparent; color: #f5c518; font-size: 16px; padding: 4px 8px; }
+.dialog .d-edit:hover:not(:disabled) { background: rgba(255, 255, 255, .1); }
+.dialog.editing { cursor: default; }
+.dialog textarea, .dialog input { width: 100%; color: var(--ink); }
+.dialog .d-edit-row { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; }
+/* 文章パネル: 調整パネルと同じ作りで、左から開く */
+.tune-panel.texts-panel { left: 0; right: auto; border-left: none; border-right: 1px solid var(--line); box-shadow: 6px 0 24px rgba(42, 38, 32, .12); width: 420px; }
+body.texts-open { padding-left: 420px; }
+@media (max-width: 980px) { body.texts-open { padding-left: 0; } }
+.pill.unsaved { background: #fde68a; color: #713f12; }
+.tx-section { border-top: 1px solid var(--line); padding: 8px 0; }
+.tx-section > summary { cursor: pointer; font-weight: bold; padding: 2px 0; }
+.tx-field { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; font-size: 13px; }
+.tx-field > span { color: var(--muted); font-size: 12px; }
+.tx-field input, .tx-field textarea { width: 100%; }
+.tx-line { border: 1px solid var(--line); border-radius: 8px; padding: 6px; margin: 6px 0; background: #fff; }
+.tx-line .row { margin-bottom: 4px; }
+.tx-line input.tx-who { width: 8em; }
+.tx-line textarea { width: 100%; }
+.tx-line .tx-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.tx-line .tx-tools button { min-width: 36px; padding: 2px 8px; }
+.tx-scene-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.tx-note { font-size: 12px; color: var(--muted); }
+.tx-warn { font-size: 12px; color: #92400e; background: #fef3c7; border-radius: 6px; padding: 4px 8px; }
+.tx-out { width: 100%; font-size: 12px; }
+/* パネルを開いている間は、盤面がパネルの下にはみ出さないように細くする */
+@media (min-width: 981px) {
+  body.texts-open .board { width: min(max(240px, calc(100vw - 870px)), calc(600px * var(--n) / var(--rows)), calc((100vh - 230px) * var(--n) / var(--rows))); }
+  body.tune-open .board { width: min(max(240px, calc(100vw - 830px)), calc(600px * var(--n) / var(--rows)), calc((100vh - 230px) * var(--n) / var(--rows))); }
+}
+@media (max-width: 600px) {
+  .dialog { padding: 8px 12px 6px; bottom: 8px; }
+  .dialog .d-text { font-size: 15px; }
+}
+/* 構えの発動: 当たったマスに浮かぶ札 */
+.cast-mark {
+  position: absolute; transform: translate(-50%, -50%);
+  background: var(--ally); color: #fff; font-weight: bold; font-size: 15px; white-space: nowrap;
+  border: 2px solid #fff; border-radius: 8px; padding: 0 7px;
+  box-shadow: 0 0 12px 3px rgba(59, 130, 246, .85);
+  pointer-events: none; z-index: 30; opacity: 0;
+  animation: castMark 1.5s ease-out forwards;
+}
+@keyframes castMark {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  75% { opacity: 1; transform: translate(-50%, -55%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -75%) scale(1); }
+}

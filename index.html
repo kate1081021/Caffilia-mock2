@@ -13,6 +13,9 @@
       <span id="turnLabel" class="pill">ターン 1</span>
       <span id="modeLabel" class="pill mode">プレイ中</span>
     </div>
+    <label class="scenario turnmode"><span id="turnModeLabel">ターンの形</span>
+      <select id="turnModeSelect" aria-label="ターンの形"></select>
+    </label>
     <label class="scenario">シナリオ
       <select id="scenarioSelect"></select>
     </label>
@@ -52,6 +55,8 @@
       <button id="btnEdit" type="button">エディット <kbd>E</kbd></button>
       <button id="btnTune" type="button" aria-expanded="false" aria-controls="tunePanel">調整</button>
       <button id="btnHowto" type="button">遊び方</button>
+      <button id="btnTexts" type="button" aria-expanded="false" aria-controls="textsPanel">文章</button>
+      <span id="textsUnsaved" class="pill unsaved" hidden>未保存</span>
     </div>
   </header>
   <div id="tuneBar" class="tune-bar" hidden></div>
@@ -76,6 +81,7 @@
       <div id="playPanel" class="panel">
         <h2>味方 <small>クリックか 1〜3 キーで選ぶ</small></h2>
         <div id="roster" class="roster"></div>
+        <div id="orderPanel" class="order-panel" hidden></div>
 
         <div id="actPanel" class="act-panel">
           <div id="actInfo" class="act-info"></div>
@@ -230,26 +236,28 @@
 
   <div id="howto" class="howto-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="howtoTitle">
     <div class="howto-card">
-      <h2 id="howtoTitle">遊び方</h2>
-      <ol>
-        <li>魔法を撃つとマスが<b>自然</b>になる。自然に別の魔法を重ねると変わり、最後は<b>壊して敵ごと吹き飛ばす</b>（決め手）。</li>
-        <li>味方を選ぶ → 緑のマスで移動先 → 矢印で向き → 「撃つ」。着弾点は立ち位置と向きで決まる。</li>
-        <li><b>紫</b>は敵の予告。敵が次に何をするかが見えている。</li>
-        <li>勝ち方は画面の上（お題）。迷ったら「スーパープレイを見る」。</li>
-        <li>上の<b>調整</b>で数値をいじれる。変えたら「設定を書き出す」で送ってね。</li>
-      </ol>
-      <button id="howtoClose" type="button" class="primary">はじめる</button>
+      <h2 id="howtoTitle"></h2>
+      <ol id="howtoList"></ol>
+      <button id="howtoClose" type="button" class="primary"></button>
     </div>
   </div>
+
+  <!-- 文章パネル（IMPROVE_simul）: 調整パネルと同じ作りで左から開く。中身は texts_ui.js が作る -->
+  <aside id="textsPanel" class="tune-panel texts-panel" hidden aria-label="文章"></aside>
+  <!-- 会話の窓（IMPROVE_simul）: 画面の下。押す（クリックかスペース）と次の文へ -->
+  <div id="dialog" class="dialog" hidden aria-live="polite"></div>
 
   <div id="versionTag" class="version-tag">版 手元</div>
 
   <script src="balance.js"></script>
   <script src="tune.js"></script>
+  <script src="texts.js"></script>
+  <script src="texts_io.js"></script>
   <script src="rules.js"></script>
   <script src="demos.js"></script>
   <script src="checks.js"></script>
   <script src="ui.js"></script>
   <script src="tune_ui.js"></script>
+  <script src="texts_ui.js"></script>
 </body>
 </html>

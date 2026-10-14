@@ -8,8 +8,27 @@
   var R = window.Rules;
   var B = window.BALANCE;
 
+  // 【一斉】画面に出す文（texts.js）。文章パネルで書き換えられるので、使うたびに読む
+  function TX() { return window.TEXTS || {}; }
+  function ui(k, fallback) { var u = TX().ui || {}; return u[k] !== undefined && u[k] !== '' ? u[k] : (fallback || ''); }
+  function finName(n) { var f = TX().finishers || {}; return f[n] || n; }
+  function stageTexts(id) { var st = TX().stages || {}; return (id && st[id]) || null; }
+  function stageName(p) { var t = p && stageTexts(p.id); return (t && t.name) || (p && (p.short || p.name)) || ''; }
+  // 行の「ターンの形」の指定が今の形に合うか（both / simul / single）
+  function modeOk(line) { var m = (line && line.mode) || 'both'; return m === 'both' || m === (simul() ? 'simul' : 'single'); }
+
+  // 【一斉】ターンの形。選んだ形は覚える（読み書きは try/catch。使えなければ毎回、一斉から）
+  var TURN_KEY = 'caffilia-turn-mode';
+  function simul() { return B.turnMode === 'simul'; }
+  (function () {
+    var saved = null;
+    try { saved = window.localStorage.getItem(TURN_KEY); } catch (e) { saved = null; }
+    B.turnMode = saved === 'single' || saved === 'simul' ? saved : 'simul';
+  })();
+
   var DIR_ARROW = { up: '↑', right: '→', down: '↓', left: '←' };
   var DIR_ROT = { up: 0, right: 90, down: 180, left: 270 };
+  var ORDER_MARK = ['', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];   // 【一斉】発動の順番
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
   var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
   var STORE_KEY = 'cafilia-mock-v2-layouts';
@@ -89,7 +108,8 @@
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
     'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption',
-    'btnTutorial', 'tutorialMenu', 'btnRetry', 'stageHint'].forEach(function (id) { el[id] = $(id); });
+    'btnTutorial', 'tutorialMenu', 'btnRetry', 'stageHint',
+    'turnModeSelect', 'turnModeLabel', 'orderPanel', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
     return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -159,12 +179,15 @@
     setTimeout(function () { d.remove(); }, 1200);
   }
 
-  function showBanner(text) {
-    el.banner.textContent = text;
+  function showBanner(text, sub) {
+    el.banner.innerHTML = (sub ? '<span class="banner-sub">' + esc(sub) + '</span>' : '') + '<span class="banner-main">' + esc(text) + '</span>';
+    el.banner.classList.toggle('combo', !!sub);
     el.banner.classList.remove('show');
     void el.banner.offsetWidth;
     el.banner.classList.add('show');
   }
+  // 【一斉】合体した味方の魔法の名前（「土・草・風」）
+  function comboText(e) { return ui('combo', '合体！') + ' ' + (e.comboMagics || []).map(function (m) { return m ? R.magicName(m) : '？'; }).join('・'); }
 
   // 【新案】感電: つながった水の上で⚡が瞬く
   function fxSparks(cells) {
@@ -270,6 +293,23 @@
     });
   }
 
+  // 【一斉】構えの発動: 当たったマスに「①火」の札を浮かべる（構えの印と同じ形。外れても、どこに当たったかが見える）
+  function fxStance(e) {
+    var label = (ORDER_MARK[e.order] || e.order) + R.magicName(e.magic);
+    (e.cells || []).forEach(function (c, i) {
+      var p = cellCenter(c[0], c[1]);
+      if (!p) return;
+      var d = document.createElement('div');
+      d.className = 'cast-mark';
+      d.textContent = label;
+      d.style.left = p.x + 'px';
+      d.style.top = p.y + 'px';
+      d.style.animationDelay = (i * 40) + 'ms';
+      el.fx.appendChild(d);
+      setTimeout(function () { d.remove(); }, 1500 + i * 40);
+    });
+  }
+
   // 【育つ】育つ瞬間: 元のマスから育つ先へ、順に盛り上がって見せる
   function fxGrow(g) {
     g.cells.forEach(function (c, i) {
@@ -287,9 +327,12 @@
 
   // 出来事をログに足し、演出を出す
   function showEvents(events, animate) {
-    var hl = {}, flash = {}, finishers = [];
+    var hl = {}, flash = {}, finishers = [], combo = null;
     events.forEach(function (e) {
-      addLog(e.text, logType(e));
+      addLog((e.combo ? '【' + comboText(e) + '】' : '') + e.text, logType(e));
+      if (app.onEvent) app.onEvent(e);   // 文章（きっかけ: 決め手・敵の予告など）
+      if (e.type === 'finisher' && app.chain) { app.chain.push(finName(e.name)); if (e.combo) app.chainCombo = comboText(e); }
+      if (e.combo) combo = comboText(e);
       if (!animate) return;
       if (e.type === 'cast' || e.type === 'fireSpread' || e.type === 'smallfireOut' || e.type === 'burnOut' || e.type === 'vortex' || e.type === 'tornado' || e.type === 'kindle') {
         (e.cells || []).forEach(function (c) { hl[key(c[0], c[1])] = true; });
@@ -305,7 +348,9 @@
     if (!animate) return;
     app.hl = hl;
     if (finishers.length) {
-      showBanner(finishers.join('・') + '！');
+      // 【一斉】発動の流れの中で続けて起きた決め手は、名前をつないで出す（「燃え広がり → オバケヤシキ！」）。合体なら上に「合体！ 土・草・風」
+      if (app.chain) showBanner(app.chain.join(ui('chain', ' → ')) + '！', app.chainCombo || combo);
+      else showBanner(finishers.map(finName).join('・') + '！');
       app.flash = flash;
       clearTimeout(showEvents.timer);
       showEvents.timer = setTimeout(function () { app.flash = {}; renderBoard(false); }, 950);
@@ -323,6 +368,7 @@
         if (e.name === '桜吹雪' && e.origin) fxPetals(e.origin, e.cells || [], e.pink);
       });
       events.forEach(function (e) { if (e.type === 'vortex' && e.center) fxVortex(e.center); });
+      events.forEach(function (e) { if (e.type === 'cast' && e.order) fxStance(e); });   // 【一斉】発動した構えが、どのマスに当たったか
       if (B.fx.grow) events.forEach(function (e) { (e.grows || []).forEach(fxGrow); });
       events.forEach(function (e) {
         if (e.type === 'damage' && e.cells) {
@@ -347,7 +393,11 @@
     app.state = st.state;
     showEvents(st.events, true);
     render(true);
-    pb.timer = setTimeout(nextStep, app.demo ? B.stepDelayMs * 1.6 : B.stepDelayMs);
+    // 【一斉】構えの発動は1人ずつ間をあけて見せる
+    var stance = st.events.some(function (e) { return e.type === 'cast' && e.order; });
+    var wait = stance ? ((B.simul && B.simul.fireDelayMs) || 900) : B.stepDelayMs;
+    if (st.events.every(function (e) { return e.type === 'stance'; })) wait = 120;   // 構えただけ（まだ何も起きない）は、すぐ次へ
+    pb.timer = setTimeout(nextStep, app.demo ? wait * 1.6 : wait);
   }
   function finishPlayback() {
     var pb = app.playback;
@@ -357,6 +407,7 @@
     app.busy = false;
     app.state = pb.final;
     app.hl = {};
+    app.chain = null; app.chainCombo = null;
     render(true);
     if (pb.done) pb.done();
   }
@@ -374,14 +425,14 @@
   function selUnit() {
     if (!app.sel) return null;
     var u = R.findUnit(app.state, app.sel);
-    return u && !u.acted ? u : null;
+    return u && (!u.acted || R.restancing(u)) ? u : null;   // 【一斉】構えた味方は、発動の前なら構え直せる
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
   function select(id) {
     var u = R.findUnit(app.state, id);
     if (!u || u.side !== 'ally' || u.npc) return;   // 構える味方は選べない
-    if (u.acted) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }
+    if (u.acted && !R.restancing(u)) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }
     app.sel = id;
     app.plan = { to: [u.x, u.y], dir: u.facing };
     render();
@@ -421,25 +472,48 @@
     pushHistory();
     var id = u.id;
     app.sel = null; app.plan = null;
+    if (app.onAct) app.onAct(u, shoot !== false);   // 文章（きっかけ: 構えたとき）
     play(res.steps, res.state, function () {
+      if (simul()) { if (!app.state.result) selectNext(id); return; }   // 【一斉】全員構えても、発動はボタンで
       if (!app.state.result && R.allAlliesActed(app.state)) {
         addLog(R.controllableOf(app.state).length === 3 ? '3人とも行動したので、ターン終了' : '全員行動したので、ターン終了', 'system');
-        var t = R.endTurn(app.state);
-        play(t.steps, t.state, function () { selectNext(null); });
+        runEndTurn();
       } else {
         selectNext(id);
       }
     });
   }
 
+  // ターン終了（1人ずつ）・発動（一斉）。発動の前の文章があれば、読み終えてから
+  function runEndTurn() {
+    var go = function () {
+      var t = R.endTurn(app.state);
+      if (!t.ok) { say(t.error); return; }
+      if (simul()) { app.chain = []; app.chainCombo = null; }
+      play(t.steps, t.state, function () { selectNext(null); if (app.onTurnDone) app.onTurnDone(); });
+    };
+    if (app.onBeforeFire) app.onBeforeFire(go); else go();
+  }
+
   function doEndTurn() {
     if (app.busy || app.editMode) return;
     if (app.state.result) { say('勝負はついています。「1手戻す」か「リセット」で続けられます'); return; }
-    var res = R.endTurn(app.state);
-    if (!res.ok) { say(res.error); return; }
+    // 【一斉】発動は、動かせる味方が全員構え終えて（か待機して）から
+    if (simul() && !R.allAlliesActed(app.state) && R.controllableOf(app.state).length) { say(ui('notReady', 'まだ構えていない味方がいます（構えるか「待機」）')); return; }
     pushHistory();
     app.sel = null; app.plan = null;
-    play(res.steps, res.state, function () { selectNext(null); });
+    runEndTurn();
+  }
+
+  // 【一斉】発動の順番を並べ替える（▲▼）
+  function reorder(id, delta) {
+    if (!canControl() || !simul()) return;
+    var res = R.reorderStance(app.state, id, delta);
+    if (!res.ok) { say(res.error); return; }
+    pushHistory();
+    app.state = res.state;
+    res.events.forEach(function (e) { addLog(e.text, 'event'); });
+    render();
   }
 
   function undo() {
@@ -466,6 +540,7 @@
     if (app.busy) skipPlayback();
     setState(R.clone(app.resetPoint), 'リセット（最初の配置に戻した）');
     if (isTutorial()) selectNext(null);
+    if (app.onStage) app.onStage('start');
   }
 
   // チュートリアル: 負けたあと、ステージを最初から始め直す（やり直した回数が増え、ヒントが出る）
@@ -479,6 +554,7 @@
     setState(r.state);
     app.resetPoint = R.clone(app.state);
     selectNext(null);
+    if (app.onStage) app.onStage('retry');   // 文章（きっかけ: やり直し）
   }
 
   function setEditMode(on) {
@@ -518,6 +594,7 @@
     app.resetPoint = R.clone(app.state);
     if (preset && preset.tutorial) selectNext(null);   // チュートリアル: 動かせる味方を最初から選んでおく
     render();
+    if (app.onStage) app.onStage('start');   // 文章（きっかけ: ステージの始め）
   }
   function isTutorial() { var p = app.scenario && R.findPreset(app.scenario); return !!(p && p.tutorial); }
 
@@ -562,9 +639,10 @@
     if (app.editMode) setEditMode(false);
     setRecipe(demo.recipe || 'off');
     setWindMode(demo.windMode || 'breeze');
-    loadScenario(demo.preset, { enemyActs: demo.enemyActs });
+    app.demoLoading = true;   // デモでは文章（会話の窓）を出さない
+    try { loadScenario(demo.preset, { enemyActs: demo.enemyActs }); } finally { app.demoLoading = false; }
     var queue = [];
-    demo.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); });
+    demo.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); if (simul()) queue.push({ fire: true }); });   // 【一斉】ターンごとに発動
     app.demo = { queue: queue, i: 0, timer: null, name: demo.name };
     addLog('▶ デモ再生: ' + demo.name, 'system');
     addLog(demo.desc, 'system');
@@ -621,10 +699,11 @@
     setRecipe('off');
     setWindMode('breeze');
     applyCheckSet(c.set);
-    loadScenario(null, { check: c, enemyActs: c.enemyActs });
+    app.demoLoading = true;
+    try { loadScenario(null, { check: c, enemyActs: c.enemyActs }); } finally { app.demoLoading = false; }
     app.check = c;
     var queue = [];
-    c.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); });
+    c.turns.forEach(function (t) { t.forEach(function (a) { queue.push(a); }); if (simul()) queue.push({ fire: true }); });   // 【一斉】ターンごとに発動
     app.demo = { queue: queue, i: 0, timer: null, name: c.name, check: c };
     addLog('▶ 新案プレイ: ' + c.name, 'system');
     showCaption('');
@@ -645,7 +724,20 @@
     }
     var a = d.queue[d.i++];
     if (a.say && d.check) { d.lastSay = a.say; showCaption(a.say); addLog('💬 ' + a.say, 'system'); }
-    if (a.endTurn) { doEndTurn(); d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // ターン終了の項目
+    if (a.fire) {
+      // 【一斉】ターンの終わりの発動。構えていない味方（デモに手がない・ターン終了の項目で終えるターン）は待機にしてから
+      if (app.state.result || !R.controllableOf(app.state).some(function (x) { return x.acted; })) { demoNext(); return; }   // このターンはもう終えた
+      var st = app.state;
+      R.controllableOf(st).forEach(function (x) { if (!x.acted) { var w = R.act(st, x.id, { shoot: false }); if (w.ok) st = w.state; } });
+      app.state = st;
+      doEndTurn();
+      d.timer = setTimeout(demoNext, DEMO_WAIT.after);
+      return;
+    }
+    if (a.endTurn) {   // ターン終了の項目（【一斉】構えていない味方は待機にしてから発動）
+      if (simul()) { var s2 = app.state; R.controllableOf(s2).forEach(function (x) { if (!x.acted) { var w2 = R.act(s2, x.id, { shoot: false }); if (w2.ok) s2 = w2.state; } }); app.state = s2; }
+      doEndTurn(); d.timer = setTimeout(demoNext, CHECK_WAIT.say); return;
+    }
     if (!a.id) { d.timer = setTimeout(demoNext, CHECK_WAIT.say); return; }   // 説明だけの項目
     if (!R.findUnit(app.state, a.id)) { demoNext(); return; }
     var aimWait = d.check ? CHECK_WAIT.aim : DEMO_WAIT.aim;
@@ -764,7 +856,9 @@
       var fw = forecastNow(true);
       if (fw && fw.wagon) info.status.splice(2, 0, 'この手なら ' + (fw.wagon.steps === null ? '道がない' : (fw.wagon.steps + '歩')));
     }
-    var html = '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
+    var stx = stageTexts(app.state.stage);   // チュートリアルの目標（texts.js）
+    var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') +
+      '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
       '<span class="m-rule"><b>勝ち</b> ' + esc(info.win) + '</span>' +
       '<span class="m-rule"><b>負け</b> ' + esc(info.lose) + '</span>' +
       '<span class="m-status">' + info.status.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>';
@@ -779,7 +873,17 @@
     var mode = app.editMode ? 'エディット中' : app.demo ? 'デモ再生中' : app.busy ? '処理中…' : st.result === 'win' ? '勝利' : st.result === 'lose' ? '敗北' : 'プレイ中';
     el.modeLabel.textContent = mode;
     el.modeLabel.className = 'pill mode' + (app.editMode ? ' edit' : app.busy ? ' busy' : '');
-    el.btnEndTurn.disabled = app.editMode || app.busy || !!st.result;
+    // 【一斉】「ターン終了」は「発動」になり、動かせる味方が全員構え終えたら押せる
+    var ready = simul() && !st.result && R.controllableOf(st).length > 0 && R.allAlliesActed(st);
+    el.btnEndTurn.disabled = app.editMode || app.busy || !!st.result || (simul() && !ready && R.controllableOf(st).length > 0);
+    el.btnEndTurn.innerHTML = esc(simul() ? ui('fire', '発動') : ui('endTurn', 'ターン終了')) + ' <kbd>T</kbd>';
+    el.btnEndTurn.classList.toggle('fire-ready', ready && !app.busy && !app.editMode);
+    el.btnEndTurn.classList.toggle('primary', ready && !app.busy && !app.editMode);
+    el.btnShoot.innerHTML = esc(simul() ? ui('stance', '構える') : ui('shoot', '撃つ')) + ' <kbd>Enter</kbd>';
+    el.btnStay.innerHTML = esc(simul() ? ui('stayStance', 'その場で構える') : ui('stayShoot', 'その場で撃つ')) + ' <kbd>Space</kbd>';
+    el.btnWait.innerHTML = esc(ui('wait', '待機')) + ' <kbd>W</kbd>';
+    el.btnRetry.textContent = ui('retry', 'やり直す');
+    if (el.turnModeSelect && el.turnModeSelect.value !== B.turnMode) el.turnModeSelect.value = B.turnMode;
     el.btnUndo.disabled = app.history.length === 0;
     el.btnEdit.classList.toggle('active', app.editMode);
     el.btnEdit.innerHTML = (app.editMode ? 'エディット終了' : 'エディット') + ' <kbd>E</kbd>';
@@ -858,6 +962,7 @@
     if (u.stuck) cls.push('stuck');
     if (R.hidden(st, u)) cls.push('hidden');
     if (view.next) cls.push('next-ready');
+    if (view.order) cls.push('stanced');
     var facing = view.facing || u.facing;
     var name = u.side === 'ally' ? esc(R.magicName(u.magic)) : '敵<small>' + esc(u.letter) + '</small>';
     var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg">' +
@@ -871,6 +976,7 @@
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
     if (view.warn) h += '<span class="u-warn">予告 -' + view.warn + '</span>';
     if (view.dmg) h += '<span class="u-dmg">-' + view.dmg.amount + (view.dmg.dies ? ' 倒れる' : '') + '</span>';
+    if (view.order) h += '<span class="u-order" title="' + view.order + '番目に発動">' + (ORDER_MARK[view.order] || view.order) + '</span>';   // 【一斉】構えの順番
     return h + '</div>';
   }
 
@@ -920,14 +1026,17 @@
 
     // 予測
     var shape = {}, range = {}, strong = {}, change = {}, dmg = {}, growPv = {}, growNo = {};
-    if (pv) {
-      pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
+    if (pv) pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
+    // 【一斉】予測の結果（変わるマス・決め手の範囲・ダメージ）は、構え全部の予告（下の fa）として出す
+    if (pv && !simul()) {
       pv.finishers.forEach(function (f) {
         f.cells.forEach(function (c) { range[key(c[0], c[1])] = true; });
         (f.strong || []).forEach(function (c) { strong[key(c[0], c[1])] = true; });
       });
       pv.tileChanges.forEach(function (c) { change[key(c.x, c.y)] = c.to; });
       pv.damages.forEach(function (d) { dmg[d.id] = d; });
+    }
+    if (pv) {
       // 【育つ】育ったあとの形を薄く重ね、育てないマスに印
       (pv.grows || []).forEach(function (g) {
         g.cells.forEach(function (c, i) { growPv[key(c[0], c[1])] = (g.tiles && g.tiles[i]) || g.tile; });
@@ -937,20 +1046,32 @@
     // 予告
     var fcShot = {}, fcGhost = {}, fcSpread = {}, fcOut = {}, fcChange = {}, fcRange = {}, fcStrong = {}, warn = {};
     // 構える味方の予告（青）: 「予告を表示」を切っていても常に出す。狙うマスの枠と向きの矢印、結果（変わるマス・決め手の範囲・ダメージ）
-    var faShot = {}, faChange = {}, faRange = {}, faStrong = {}, npcIds = {};
+    var faShot = {}, faChange = {}, faRange = {}, faStrong = {}, npcIds = {}, stanceNo = {};
     var fcAll = (app.editMode || app.busy) ? null : forecastNow(true);
     if (fcAll) {
       fcAll.allies.forEach(function (p) {
         var a = R.findUnit(st, p.id);
         if (!a || p.cancelled) return;
         npcIds[p.id] = true;
-        (p.cells || []).forEach(function (c) { faShot[key(c[0], c[1])] = p.dir; });
+        if (p.order) stanceNo[p.id] = p.order;
+        (p.cells || []).forEach(function (c) {
+          var k = key(c[0], c[1]);
+          // 【一斉】構えの印: マスごとに「発動の順番＋魔法」（敵の予告の文字と同じ置き方）
+          if (simul()) (faShot[k] = faShot[k] || []).push({ n: p.order, magic: p.magic, dir: p.dir, npc: !!a.npc });
+          else faShot[k] = p.dir;
+        });
         (p.tileChanges || []).forEach(function (c) { faChange[key(c.x, c.y)] = c.to; });
         (p.finishers || []).forEach(function (f) {
           f.cells.forEach(function (c) { faRange[key(c[0], c[1])] = true; });
           (f.strong || []).forEach(function (c) { faStrong[key(c[0], c[1])] = true; });
         });
-        (p.damages || []).forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; });
+        (p.damages || []).forEach(function (d) {
+          if (simul()) {   // 【一斉】構えで受けるダメージは「-20 倒れる」の形で（合計）
+            var x = dmg[d.id] || (dmg[d.id] = { amount: 0, dies: false });
+            x.amount += d.amount;
+            if (d.dies) x.dies = true;
+          } else warn[d.id] = (warn[d.id] || 0) + d.amount;
+        });
       });
     }
     // 外したときのヒント: 構える味方が狙っているマスを光らせる（文字は出さない）
@@ -1104,6 +1225,7 @@
         if (fcRange[k]) cls.push('fc-range');
         if (fcStrong[k]) cls.push('fc-strong');
         if (faShot[k]) cls.push('fa-shot');
+        if (faShot[k] && simul()) cls.push('st-shot');
         if (faRange[k]) cls.push('fa-range');
         if (faStrong[k]) cls.push('fa-strong');
         if (tutHint[k]) cls.push('tut-hint');
@@ -1162,7 +1284,10 @@
         var badges = '';
         if (fcSpread[k]) badges += '<span class="spread">燃</span>';
         if (fcOut[k]) badges += '<span class="burnout" title="次のターン終了で燃え尽きる">尽</span>';
-        if (faShot[k]) badges += '<span class="ally" title="構える味方が狙っているマス">' + DIR_ARROW[faShot[k]] + '</span>';
+        if (faShot[k] && simul()) badges += faShot[k].map(function (f) {
+          return '<span class="ally stance' + (f.npc ? ' npc' : '') + '" title="' + esc(f.n + '番目に発動: ' + R.magicName(f.magic)) + '">' + (ORDER_MARK[f.n] || f.n) + esc(R.magicName(f.magic)) + '</span>';
+        }).join('');
+        else if (faShot[k]) badges += '<span class="ally" title="構える味方が狙っているマス">' + DIR_ARROW[faShot[k]] + '</span>';
         if (fcShot[k]) badges += '<span class="enemy">' + esc(fcShot[k].join('')) + '</span>';
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
@@ -1178,7 +1303,8 @@
             facing: (u && unit.id === u.id) ? app.plan.dir : null,
             warn: warn[unit.id],
             dmg: dmg[unit.id],
-            next: !!nextReady[unit.id]
+            next: !!nextReady[unit.id],
+            order: stanceNo[unit.id] || 0
           });
         }
 
@@ -1212,7 +1338,7 @@
     var st = app.state;
     var fc = forecastNow();
     var fcAll = forecastNow(true);
-    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion]);
+    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer]);
     if (sig === sideSig) return;
     sideSig = sig;
     if (app.editMode) renderEditPanel(); else renderPlayPanel(fc);
@@ -1250,17 +1376,18 @@
     var npcHtml = R.alliesOf(st).filter(function (a) { return a.npc; }).map(function (a) {
       return '<div class="ally-card npc"><span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
         '<span class="info"><b>' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
-        '<span class="sub">' + (npcPlan[a.id] ? esc(planText(npcPlan[a.id], st)) : '構えていない') +
+        '<span class="sub">' + (npcPlan[a.id] ? (npcPlan[a.id].order ? (ORDER_MARK[npcPlan[a.id].order] || '') + ' ' : '') + esc(planText(npcPlan[a.id], st)) : '構えていない') +
         (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
         '</span></span></div>';
     }).join('');
     var al = R.controllableOf(st);
     el.roster.innerHTML = (al.length ? al.map(function (a, i) {
-      var status = [a.acted ? '行動済み' : '行動前'];
+      var no = simul() ? R.stanceOrder(st, a.id) : 0;
+      var status = [!simul() ? (a.acted ? '行動済み' : '行動前') : a.stance ? (ORDER_MARK[no] || no) + ' 構えている（' + R.magicName(a.magic) + ' ' + DIR_ARROW[a.facing] + '）' : st.result ? '行動済み' : a.acted ? '待機' : 'まだ構えていない'];
       if (a.stuck) status.push('泥沼: 次は移動できない');
       if (a.burn > 0) status.push('火傷: あと' + a.burn + '回（水か氷で治る）');
       if (st.mission && st.mission.carrier === a.id) status.push('宝を持っている（撃てない）');
-      var cls = 'ally-card' + (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '');
+      var cls = 'ally-card' + (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '') + (a.stance ? ' stanced' : '');
       return '<button type="button" class="' + cls + '" data-id="' + a.id + '">' +
         '<span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
         '<span class="info"><b>' + (i + 1) + '. ' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
@@ -1269,6 +1396,8 @@
         (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
         '</span></span></button>';
     }).join('') : '<p class="muted">味方がいません（エディットで置けます）</p>') + npcHtml;
+
+    renderOrderPanel(fa);
 
     var en = R.enemiesOf(st);
     var plans = {};
@@ -1301,6 +1430,36 @@
     renderActPanel();
   }
 
+  // 【一斉】発動の順番の一覧（▲▼で並べ替え。構える味方はいつも最後で動かせない）と、合体の予告
+  function renderOrderPanel(fa) {
+    if (!el.orderPanel) return;
+    var st = app.state;
+    if (!simul() || app.editMode) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
+    // 予告（fa）の並び ＝ 盤面の番号と同じ。選んでいる味方の、まだ確定していない構えも入る
+    var list = (fa ? fa.allies : []).map(function (p) { return { p: p, a: R.findUnit(st, p.id) }; }).filter(function (x) { return x.a; });
+    var mine = R.stanceList(st).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });
+    var can = canControl();
+    var rows = list.map(function (x, i) {
+      var a = x.a, p = x.p, fixed = !!a.npc, k = mine.indexOf(a.id), planned = !fixed && k < 0;
+      var res = p && !p.cancelled ? planText(p, st).replace(/^予告: /, '') : '';
+      return '<li class="order-row' + (fixed ? ' fixed' : '') + (a.id === app.sel ? ' selected' : '') + '">' +
+        '<span class="o-no">' + (ORDER_MARK[i + 1] || (i + 1)) + '</span>' +
+        '<span class="o-name"><b>' + esc(R.unitLabel(st, a)) + (planned ? '（選んでいる構え）' : '') + '</b>' + (res ? '<small>' + esc(res) + '</small>' : '') + '</span>' +
+        (planned ? '' : fixed ? '<span class="o-fixed">' + esc(ui('orderLast', '最後（動かせない）')) + '</span>'
+          : '<span class="o-move"><button type="button" class="o-btn" data-order="' + a.id + '" data-delta="-1" aria-label="1つ前へ"' + (k <= 0 || !can ? ' disabled' : '') + '>▲</button>' +
+            '<button type="button" class="o-btn" data-order="' + a.id + '" data-delta="1" aria-label="1つ後ろへ"' + (k >= mine.length - 1 || !can ? ' disabled' : '') + '>▼</button></span>') +
+        '</li>';
+    }).join('');
+    var combos = [];
+    if (fa) fa.allies.forEach(function (p) { (p.combos || []).forEach(function (c) { combos.push(comboText({ comboMagics: c.magics }) + ' → ' + finName(c.name) + '！'); }); });
+    var waiting = R.controllableOf(st).filter(function (a) { return !a.acted; }).length;
+    el.orderPanel.hidden = false;
+    el.orderPanel.innerHTML = '<h3>' + esc(ui('order', '発動の順番')) + '</h3>' +
+      (rows ? '<ol class="order-list">' + rows + '</ol>' : '<p class="muted">まだ誰も構えていません</p>') +
+      (combos.length ? '<p class="order-combo">' + combos.map(esc).join('<br>') + '</p>' : '') +
+      (waiting ? '<p class="muted">まだ構えていない味方: ' + waiting + '人</p>' : '');
+  }
+
   function renderActPanel() {
     var u = canControl() ? selUnit() : null;
     el.actPanel.classList.toggle('off', !u);
@@ -1313,7 +1472,7 @@
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
     if (!u) {
-      el.actInfo.textContent = app.busy ? '処理中…' : '味方を選ぶと、ここで向きを選んで撃てます';
+      el.actInfo.textContent = app.busy ? '処理中…' : simul() ? ui('actIdleSimul', '味方を選ぶと、ここで向きを選んで構えられます') : ui('actIdleSingle', '味方を選ぶと、ここで向きを選んで撃てます');
       el.dirCenter.textContent = '';
       return;
     }
@@ -1321,7 +1480,7 @@
     el.dirCenter.textContent = R.magicName(u.magic);
     el.actInfo.innerHTML = '<b>' + esc(R.unitLabel(app.state, u)) + '</b>　' +
       (moved ? '移動先 (' + app.plan.to[0] + ',' + app.plan.to[1] + ') <button type="button" id="btnCancelMove">移動を取り消す</button>' :
-        (u.stuck ? '泥沼で移動できない（その場で撃つ）' : 'その場（緑のマスで移動先を選べる）')) +
+        (R.restancing(u) ? '構え直し（移動は戻らない。向きと構えだけ）' : u.stuck ? '泥沼で移動できない（その場で撃つ）' : 'その場（緑のマスで移動先を選べる）')) +
       '　向き ' + DIR_ARROW[app.plan.dir] +
       (shootOk ? '' : '<br><span class="danger">宝を持つので撃てない（「待機」で移動を確定）</span>');
   }
@@ -1398,6 +1557,7 @@
     var st = app.state;
     var h = el.hint;
     h.className = 'hint';
+    h.title = '';
     if (app.message && app.message.until > Date.now()) {
       h.textContent = app.message.text;
       h.classList.add('warn');
@@ -1406,7 +1566,10 @@
     if (app.demo) { h.textContent = '▶ デモ再生中: ' + app.demo.name + '（盤面のクリックかキーで止める）'; h.classList.add('busy'); return; }
     if (app.busy) { h.textContent = '処理中…（盤面のクリックかキーで飛ばせます）'; h.classList.add('busy'); return; }
     if (st.result && !app.editMode) {
-      h.textContent = st.resultText || (st.result === 'win' ? '勝利！ 敵を全員倒しました' : '敗北… 味方が全員倒れました');
+      // チュートリアルのクリア・負けの文（texts.js）があればそれ、なければルールの文
+      var stx = stageTexts(st.stage), own = stx && (st.result === 'win' ? stx.win : stx.lose);
+      h.textContent = own || st.resultText || (st.result === 'win' ? '勝利！ 敵を全員倒しました' : '敗北… 味方が全員倒れました');
+      if (own && st.resultText) h.title = st.resultText;
       h.classList.add('result');
       return;
     }
@@ -1423,8 +1586,12 @@
       return;
     }
     var u = selUnit();
-    if (!u) { h.textContent = '味方をクリック（または 1〜3 キー）で選ぶ'; return; }
-    h.textContent = '緑のマスで移動先 → 矢印で向き → 「撃つ」（Enter）。◆ ＝ そこから決め手が起きる';
+    if (!u) {
+      // 【一斉】全員構えたら発動へ
+      if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。「発動」（T）'); h.classList.add('ready'); return; }
+      h.textContent = ui('pickAlly', '味方をクリック（または 1〜3 キー）で選ぶ'); return;
+    }
+    h.textContent = R.restancing(u) ? ui('guideRestance') : simul() ? ui('guideSimul') : ui('guideSingle');
   }
 
   function renderPreview() {
@@ -1434,10 +1601,11 @@
       var p = previewNow(u);
       var lines = p.events.map(function (e) {
         var cls = e.type === 'finisher' ? 'finisher' : e.type === 'damage' ? 'damage' : e.type === 'death' ? 'death' : '';
-        var text = e.type === 'cast' ? e.text.replace(/^.*?→ /, '') : e.text;
+        var text = e.type === 'cast' && !p.stance ? e.text.replace(/^.*?→ /, '') : (e.combo ? '【' + comboText(e) + '】' : '') + e.text;
         return '<div class="pv-line ' + cls + '">' + esc(text) + '</div>';
       });
       var head = p.waitOnly ? '予測: (' + p.to[0] + ',' + p.to[1] + ') へ移動して待機（宝を持っているので撃てない）'
+        : p.stance ? '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'を構える（' + p.order + '番目に発動）→ 構えた順に全部起きたあと'
         : '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'の魔法（' + R.MAGIC_INFO[u.magic].verb + '）';
       box.innerHTML = '<div class="pv-head">' + head + '</div>' + lines.join('');
       return;
@@ -1559,7 +1727,7 @@
     for (var n = 1; n <= Math.max(TUTORIAL_SLOTS, R.TUTORIALS.length); n++) {
       var t = R.TUTORIALS.filter(function (x) { return x.tutorial === n; })[0];
       html += t
-        ? '<button type="button" role="menuitem" data-id="' + t.id + '"' + (app.scenario === t.id ? ' class="current"' : '') + '>' + esc(t.short || t.name) + '</button>'
+        ? '<button type="button" role="menuitem" data-id="' + t.id + '"' + (app.scenario === t.id ? ' class="current"' : '') + '>' + esc(stageName(t)) + '</button>'
         : '<button type="button" role="menuitem" disabled>' + CIRCLED[n] + ' 準備中</button>';
     }
     el.tutorialMenu.innerHTML = html;
@@ -1584,13 +1752,18 @@
 
   // シナリオはお題ごとに分けて並べる（元の戦闘は「戦闘」）
   var presetOpt = function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; };
+  var tutOpt = function (p) { return '<option value="' + p.id + '">【チュートリアル】' + esc(stageName(p)) + '</option>'; };
   var shown = R.PRESETS.filter(function (p) { return !p.hidden; });
+  function buildScenarioSelect() {
   el.scenarioSelect.innerHTML =
-    '<optgroup label="チュートリアル">' + R.TUTORIALS.map(presetOpt).join('') + '</optgroup>' +
+    '<optgroup label="チュートリアル">' + R.TUTORIALS.map(tutOpt).join('') + '</optgroup>' +
     '<optgroup label="お題（防衛・護衛・奪取）">' + shown.filter(function (p) { return p.mission; }).map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="戦闘（敵の全滅）"><option value="">標準（火・水・風 / 敵1体）</option>' +
     shown.filter(function (p) { return !p.mission; }).map(presetOpt).join('') + '</optgroup>' +
     '<optgroup label="縮尺くらべ"><option value="plaza">広場（見本・調整パネルの盤面の大きさ）</option></optgroup>';
+  el.scenarioSelect.value = app.scenario;
+  }
+  buildScenarioSelect();
   el.scenarioSelect.addEventListener('change', function () { loadScenario(el.scenarioSelect.value); el.scenarioSelect.blur(); });
   el.recipeSelect.value = B.tornadoRecipe;
   el.windModeSelect.value = B.windMode;
@@ -1598,6 +1771,56 @@
   el.sakuraSelect.addEventListener('change', function () { setSakuraFrom(el.sakuraSelect.value); render(); el.sakuraSelect.blur(); });
   el.windModeSelect.addEventListener('change', function () { setWindMode(el.windModeSelect.value); render(); el.windModeSelect.blur(); });
   el.recipeSelect.addEventListener('change', function () { setRecipe(el.recipeSelect.value); render(); el.recipeSelect.blur(); });
+
+  // 【一斉】ターンの形の切り替え（今のシナリオを最初からやり直す）
+  function fillTurnMode() {
+    if (!el.turnModeSelect) return;
+    el.turnModeSelect.innerHTML = '<option value="simul">' + esc(ui('turnModeSimul', '一斉に発動')) + '</option>' +
+      '<option value="single">' + esc(ui('turnModeSingle', '1人ずつ')) + '</option>';
+    el.turnModeSelect.value = B.turnMode;
+    if (el.turnModeLabel) el.turnModeLabel.textContent = ui('turnMode', 'ターンの形');
+  }
+  function setTurnMode(m) {
+    if ((m !== 'simul' && m !== 'single') || m === B.turnMode) return;
+    stopDemo();
+    if (app.busy) skipPlayback();
+    B.turnMode = m;
+    try { window.localStorage.setItem(TURN_KEY, m); } catch (e) { /* 覚えられなくても遊べる */ }
+    app.cache = {};
+    sideSig = '';
+    addLog('ターンの形: ' + (m === 'simul' ? ui('turnModeSimul', '一斉に発動') : ui('turnModeSingle', '1人ずつ')) + '（最初からやり直した）', 'system');
+    renderHowto();
+    app.restart();
+  }
+  fillTurnMode();
+  if (el.turnModeSelect) el.turnModeSelect.addEventListener('change', function () { setTurnMode(el.turnModeSelect.value); el.turnModeSelect.blur(); });
+  if (el.orderPanel) el.orderPanel.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-order]');
+    if (b && !b.disabled) reorder(b.getAttribute('data-order'), Number(b.getAttribute('data-delta')));
+  });
+
+  // 遊び方（texts.js の操作の案内。ターンの形に合う行だけ）
+  function renderHowto() {
+    if (el.howtoTitle) el.howtoTitle.textContent = ui('howtoTitle', '遊び方');
+    if (el.howtoClose) el.howtoClose.textContent = ui('howtoStart', 'はじめる');
+    if (el.howtoList) el.howtoList.innerHTML = ((TX().ui || {}).howto || []).filter(modeOk).map(function (l) { return '<li>' + esc(l.text) + '</li>'; }).join('');
+  }
+  renderHowto();
+
+  // 文章パネル（texts_ui.js）から: 文を書き換えたら、画面に出ている文をすぐ入れ替える
+  app.textsVer = 0;
+  app.refreshTexts = function () {
+    app.textsVer++;
+    sideSig = '';
+    missionSig = '';
+    fillTurnMode();
+    renderHowto();
+    buildScenarioSelect();
+    if (!el.tutorialMenu.hidden) renderTutorialMenu();
+    render();
+  };
+  app.simul = simul;
+  app.modeOk = modeOk;
 
   function onToolClick(e) {
     var b = e.target.closest('[data-tool]');

@@ -182,7 +182,15 @@
     ],
 
     // 画面: ターン終了処理などを1つずつ見せる間隔（ミリ秒）
-    stepDelayMs: 400
+    stepDelayMs: 400,
+
+    // 【一斉】ターンの形（IMPROVE_simul）
+    //   'single' 1人ずつ撃つ（今までの形）／'simul' 移動して構え、ターンの終わりに構えた順に一斉に発動
+    //   画面では上のバーで切り替える（画面の初期値は一斉。選んだ形は覚える）。node のテスト・探索は 'single' のまま
+    turnMode: 'single',
+    simul: {
+      fireDelayMs: 900   // 【仮】一斉の発動を1人ずつ見せる間隔（ミリ秒）
+    }
   };
 
   if (typeof module !== 'undefined' && module.exports) {
