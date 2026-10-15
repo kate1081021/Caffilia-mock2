@@ -24,7 +24,8 @@ function show(s, title) {
     var line = (y < 10 ? ' ' : '') + y + ' ';
     for (var x2 = 0; x2 < s.size; x2++) {
       var u = R.unitAt(s, x2, y);
-      var t = LETTER[R.getTile(s, x2, y)] || '?';
+      var aw = R.LX.awkTile && R.LX.awkTile(s, x2, y);   // ラボ N: 覚醒先の自然
+      var t = aw ? aw.label : LETTER[R.getTile(s, x2, y)] || '?';
       if (u) {
         var c = u.side === 'enemy' ? u.letter : u.side === 'object' ? '村' : R.magicName(u.magic);
         line += '[' + c + ']';

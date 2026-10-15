@@ -1446,7 +1446,10 @@
         var unit = unitByCell[k];
         if (app.editMode && app.editPick && unit && unit.id === app.editPick) cls.push('picked');
 
-        var inner = '<span class="tile-label">' + esc(R.TILE_INFO[tile].label) + '</span>';
+        var awk = R.LX && R.LX.awkTile ? R.LX.awkTile(st, x, y) : null;   // ラボ N: 覚醒先の自然（大樹・岩山・業火・湖・氷・竜巻）は、元の自然のマスに金の縁と印
+        if (awk) cls.push('nawk', 'nawk-' + awk.kind);
+        var inner = '<span class="tile-label">' + esc(awk ? awk.label : R.TILE_INFO[tile].label) + '</span>' +
+          (awk ? '<span class="b-nawk" title="' + esc(awk.name + '（' + R.TILE_INFO[tile].name + 'として振る舞う。覚醒先の新しい組み合わせを持つ）') + '">' + esc(awk.label) + '</span>' : '');
         if (tile === 'river') {
           var arms = '';
           [['up', x, y - 1], ['right', x + 1, y], ['down', x, y + 1], ['left', x - 1, y]].forEach(function (a) { if (isRiver(a[1], a[2])) arms += '<span class="stream ' + a[0] + '"></span>'; });

@@ -17,19 +17,20 @@
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
   // ---- 道の持ち越し（魔法ごと。M のときは別の入れ物 cafilia-lab-power） ----
-  var STORE = 'cafilia-lab-paths', STORE_M = 'cafilia-lab-power';
-  var paths = {}, pathsM = {}, storeOk = true;
+  var STORE = 'cafilia-lab-paths', STORE_M = 'cafilia-lab-power', STORE_N = 'cafilia-lab-change';
+  var paths = {}, pathsM = {}, pathsN = {}, storeOk = true;
   function loadBag(k) { var raw = localStorage.getItem(k), o = raw ? JSON.parse(raw) : {}; return o && typeof o === 'object' ? o : {}; }
-  try { paths = loadBag(STORE); pathsM = loadBag(STORE_M); } catch (e) { storeOk = false; paths = {}; pathsM = {}; }
-  function isM() { return !!(LXL.M && LXL.M.on()); }   // M 強化の方向（3つ）
-  function bag() { return isM() ? pathsM : paths; }
-  function savePaths() { try { localStorage.setItem(STORE, JSON.stringify(paths)); localStorage.setItem(STORE_M, JSON.stringify(pathsM)); storeOk = true; } catch (e) { storeOk = false; } }
+  try { paths = loadBag(STORE); pathsM = loadBag(STORE_M); pathsN = loadBag(STORE_N); } catch (e) { storeOk = false; paths = {}; pathsM = {}; pathsN = {}; }
+  function isN() { return !!(LXL.N && LXL.N.on()); }   // N 強化と変化（M の土台の上。N のときは M の描き分けはしない）
+  function isM() { return !!(LXL.M && LXL.M.on()) && !isN(); }   // M 強化の方向（3つ）
+  function bag() { return isN() ? pathsN : isM() ? pathsM : paths; }
+  function savePaths() { try { localStorage.setItem(STORE, JSON.stringify(paths)); localStorage.setItem(STORE_M, JSON.stringify(pathsM)); localStorage.setItem(STORE_N, JSON.stringify(pathsN)); storeOk = true; } catch (e) { storeOk = false; } }
   function pathFor(m) { return LXL.normPath(m, bag()[m] || null); }
   function setPath(m, p) { bag()[m] = LXL.normPath(m, p); savePaths(); }
-  function resetPaths() { if (isM()) pathsM = {}; else paths = {}; savePaths(); }
+  function resetPaths() { if (isN()) pathsN = {}; else if (isM()) pathsM = {}; else paths = {}; savePaths(); }
 
   var SIMPLE = { name: '単純強化', mark: '＋', desc: '形が1マス増える（方向は進まない）' };
-  function dirInfo(d) { if (d === 'simple') return SIMPLE; var T = LXL.dirTable ? LXL.dirTable() : LXL.DIRS; return T[d] || { name: d, mark: '？', desc: '' }; }
+  function dirInfo(d) { if (d === 'simple') return SIMPLE; var T = LXL.dirTable ? LXL.dirTable() : LXL.DIRS; return T[d] || (LXL.M && LXL.M.DIRS[d]) || { name: d, mark: '？', desc: '' }; }
   function dcls(d) { return isM() && (d === 'make' || d === 'simple') ? 'mmake' : d; }   // M の作る系・単純強化は灰色
   function mark(d) { var i = dirInfo(d); return '<span class="lt-mark d-' + esc(dcls(d)) + '" title="' + esc(i.name + '（' + i.desc + '）') + '">' + esc(i.mark) + '</span>'; }
   // 方向が閉じているか（作るは閉じない。M は変化した方向以外）
@@ -68,6 +69,7 @@
   }
   function marksHtml(m, p) { return marksHtmlBase(m, p) + darkHtml(p); }
   function marksHtmlBase(m, p) {
+    if (isN()) return marksHtmlN(m, p);
     if (isM()) return marksHtmlM(m, p);
     var d = LXL.pathDef(m);
     if (!d) return '';
@@ -83,15 +85,21 @@
     }).join('');
   }
   function magicLabel(m, p) {
+    if (isN()) { var nf = nFormAfter(m, p); return nf ? nf.name + '（' + R.magicName(m) + '）' : R.magicName(m); }
     if (isM()) { var md = LXL.M.def(m), q = md ? LXL.M.norm(m, p) : null, mf = q && q.form ? md.forms[q.form] : null; return mf ? (q.awake ? mf.lv2.name : mf.name) + '（' + R.magicName(m) + '）' : R.magicName(m); }
     var d = LXL.pathDef(m), f = p && p.awake && d ? d.awaken[p.awake] : null;
     return f ? f.name + '（' + R.magicName(m) + '）' : R.magicName(m);
   }
   // 得意な方向の一言（草: 止める ／ 土: 止める・動かす）
-  function goodText(m) { var d = LXL.pathDef(m); return d ? d.dirs.map(function (k) { return dirInfo(k).name; }).join('・') : ''; }
+  function goodText(m) { var d = LXL.pathDef(m); if (isN()) return d ? 'やりたいこと「' + dirInfo(d.want).name + '」' : '今回の育ちの対象ではない'; return d ? d.dirs.map(function (k) { return dirInfo(k).name; }).join('・') : ''; }
   var DEST = { make: '作るが進む', nothing: '何も起きない', remain: '取れずに残る' };
   var DEST_M = { simple: '単純強化', nothing: '何も起きない', remain: '取れずに残る' };
   function modesText() {
+    if (isN()) {
+      var N = LXL.N, ODD = { all: '全部融合方面', partner: '融合の相手と合うものだけ', step: '方面に数えない' };
+      return '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') + '／負けたら: ' + (LXL.loseMode() === 'keep' ? '残る' : 'なくなる') +
+        '／変化 ' + N.changeAt() + '・覚醒 +' + N.awakeAt() + '／合わないミッション: ' + ODD[N.odd()] + '／土: ' + dirInfo(N.earth()).name + '／融合: ' + (N.weak() ? '控えめ' : '仲間と同じ') + '／間の強化: ' + (N.keep() ? '引き継ぐ' : '変化で0から');
+    }
     if (isM()) {
       var M = LXL.M;
       return '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') + '／敵の手: ' + (LXL.enemyMode() === 'preparer' ? '材料を作った味方' : '取れない') +
@@ -154,7 +162,7 @@
     var pre = app.scenario && R.findPreset(app.scenario);
     var html = '<div class="lt-head"><b>ターゲット</b>' + (pre && pre.labSeries ? ' <span class="lt-series">連戦 ' + esc(pre.labSeries) + '</span>' : '') +
       (st.labQuest ? ' <span class="lt-quest d-' + esc(dcls(st.labQuest.dir)) + '">' + mark(st.labQuest.dir) + 'クエスト「' + esc(st.labQuest.name) + '」</span>' : '') +
-      ' <small>' + (isM() ? '1つ1回。取った魔法は、戦闘の終わりに強化（形が1マス）。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒' : '1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）') + '</small></div>' +
+      ' <small>' + (isN() ? '1つ1回。取った魔法に印が1つ（やりたいことと合えば覚醒方面、合わなければ融合方面）。印1つで間の強化が1つ。どちらかの方面が' + LXL.N.changeAt() + 'つで変化' : isM() ? '1つ1回。取った魔法は、戦闘の終わりに強化（形が1マス）。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒' : '1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）') + '</small></div>' +
       (ts.length ? '<ul class="lt-list">' + ts.map(function (t) {
         return '<li class="lt-row d-' + esc(dcls(t.dir)) + (t.got ? ' got' : '') + (flash[t.id] ? ' flash' : '') + '" data-tid="' + esc(t.id) + '">' + mark(t.dir) +
           '<span class="lt-name">' + esc(t.name) + '<small>' + esc(t.text + takerHtml(t)) + '</small></span>' + whoHtml(st, t) + '</li>';
@@ -164,7 +172,7 @@
       }).join('') + '</div>' : '') +
       '<div class="lt-foot"><small>' + esc(modesText()) + '</small>' +
       '<span class="lt-btns">' + (st.result && ts.length ? '<button type="button" class="primary" data-lt="growth">育ちを見る</button>' : '') +
-      (st.labQuest && !st.result ? '<button type="button" data-lt="quest">クエストを選び直す</button>' : '') + (isM() ? '<button type="button" data-lt="sort" title="41のミッションを、どの方向に入れるか（ラボの中だけ）">ミッションの仕分け</button>' : '') + '<button type="button" data-lt="paths">道を見る</button><button type="button" data-lt="reset" title="魔法ごとの道を全部0に戻す（持ち越しも消える）">道を0に戻す</button></span></div>' +
+      (st.labQuest && !st.result ? '<button type="button" data-lt="quest">クエストを選び直す</button>' : '') + (isN() ? '<button type="button" data-lt="sort" title="44のミッションを、どのやりたいことに入れるか（ラボの中だけ）">ミッションの仕分け</button>' : isM() ? '<button type="button" data-lt="sort" title="41のミッションを、どの方向に入れるか（ラボの中だけ）">ミッションの仕分け</button>' : '') + '<button type="button" data-lt="paths">道を見る</button><button type="button" data-lt="reset" title="魔法ごとの道を全部0に戻す（持ち越しも消える）">道を0に戻す</button></span></div>' +
       (storeOk ? '' : '<p class="note danger">この環境では道を持ち越せません（localStorage が使えない）。</p>');
     if (html === boxSig) return;
     boxSig = html;
@@ -178,7 +186,7 @@
     if (a === 'growth') openGrowth(true);
     if (a === 'paths') openPaths();
     if (a === 'quest') openQuest();
-    if (a === 'sort') openSort();
+    if (a === 'sort') { if (isN()) openSortN(); else openSort(); }
     if (a === 'reset') {
       if (!window.confirm('魔法ごとの道を全部0に戻します（持ち越しも消える）。よいですか？')) return;
       resetPaths();
@@ -214,20 +222,23 @@
     var list = (p && p.labState && p.labState.labTargetList) || [];
     if (!list.length) return '';
     var n = LXL.targetCount();
-    var mScen = (p.lab || []).indexOf('M0') >= 0 && LXL.M;   // M のシナリオは、いまの切り替えに関係なく M のミッションと方向で見せる
+    var nScen = (p.lab || []).indexOf('N0') >= 0 && LXL.N;   // N のシナリオは、N のミッションとやりたいことで見せる
+    var mScen = !nScen && (p.lab || []).indexOf('M0') >= 0 && LXL.M;   // M のシナリオは、いまの切り替えに関係なく M のミッションと方向で見せる
     var defs = list.map(function (x) {
+      if (nScen) { var nd = typeof x === 'string' ? (LXL.N.mission(x) || LXL.targetDef(x)) : x; if (nd) { nd = clone(nd); nd.dir = LXL.N.missionWant(nd); } return nd; }
       if (!mScen || typeof x !== 'string') return LXL.targetDef(x);
       var d = LXL.M.mission(x) || LXL.targetDef(x);
       if (d) { d = clone(d); d.dir = LXL.M.missionDir(d); }
       return d;
     }).filter(Boolean);
     var mk = function (d) {
+      if (nScen) { var ni = LXL.N.WANTS[d] || { name: d, mark: '？', desc: '' }; return '<span class="lt-mark d-' + esc(d) + '" title="' + esc(ni.name + '（' + ni.desc + '）') + '">' + esc(ni.mark) + '</span>'; }
       if (!mScen) return mark(d);
       var i = LXL.M.DIRS[d] || { name: d, mark: '？', desc: '' };
       return '<span class="lt-mark d-' + esc(d === 'make' ? 'mmake' : d) + '" title="' + esc(i.name + '（' + i.desc + '）') + '">' + esc(i.mark) + '</span>';
     };
-    var takerOf = function (t) { var T = mScen ? LXL.M.TAKERS : LXL.TAKERS; return t.taker && t.taker !== 'hand' && T[t.taker] ? '（取る: ' + T[t.taker] + '）' : ''; };
-    return '<div class="lt-card"><b>このシナリオの' + (mScen ? 'ミッション' : 'ターゲット') + '</b> <small>（今の数 ' + n + '。上から' + n + 'つ）</small><ul>' + defs.map(function (t, i) {
+    var takerOf = function (t) { var T = (mScen || nScen) ? LXL.M.TAKERS : LXL.TAKERS; return t.taker && t.taker !== 'hand' && T[t.taker] ? '（取る: ' + T[t.taker] + '）' : ''; };
+    return '<div class="lt-card"><b>このシナリオの' + (mScen || nScen ? 'ミッション' : 'ターゲット') + '</b> <small>（今の数 ' + n + '。上から' + n + 'つ）</small><ul>' + defs.map(function (t, i) {
       return '<li class="' + (i >= n ? 'off' : '') + '">' + mk(t.dir) + ' ' + esc(t.name) + ' <small>' + esc(t.text + takerOf(t)) + (t.needsGrow ? '（育つが入のときだけ）' : '') + (t.check && t.check.end ? '（勝ったときに決まる）' : '') + '</small></li>';
     }).join('') + '</ul></div>';
   }
@@ -242,6 +253,7 @@
   }
   app.labPathEditHtml = function (u) { return pathEditHtmlBase(u) + darkEditHtml(u); };
   function pathEditHtmlBase(u) {
+    if (isN()) return pathEditHtmlN(u);
     if (isM()) return pathEditHtmlM(u);
     if (!R.lab('L0') || u.side === 'object' || !LXL.pathDef(u.magic)) return '';
     var d = LXL.pathDef(u.magic), p = LXL.normPath(u.magic, u.labPath);
@@ -289,7 +301,9 @@
       var u = R.findUnit(app.state, id);
       if (!u) return;
       var p = LXL.normPath(u.magic, u.labPath);
-      p[k] = v;
+      if (isN() && k === 'nform') { p.form = sel.value || null; if (!p.form) delete p.form; }
+      else if (isN() && (k === 'aw' || k === 'fu')) { var sync = (p.steps || 0) === (p.aw || 0) + (p.fu || 0); p[k] = v; if (sync) p.steps = (p.aw || 0) + (p.fu || 0); if (p.form && (p[p.form === 'awake' ? 'aw' : 'fu'] || 0) < LXL.N.changeAt()) delete p.form; }   // N: 間の強化は印と一緒に動かす（別にいじったときは、そのまま）
+      else p[k] = v;
       if (isM() && k !== 'simple' && k !== 'dark') { if (v >= LXL.M.changeAt()) p.form = k; else if (p.form === k) p.form = null; }   // M: change に届いた方向で変化（闇の力は方向ではない）
       // 3 にした方向が覚醒（作るは、作るが得意な魔法だけ）。ほかの得意な方向は2まで。作るはほかに覚醒しても3まで残る
       if (!isM() && LXL.awakeDirs(u.magic).indexOf(k) >= 0) {
@@ -373,8 +387,8 @@
     if (!growth) return;
     var st = app.state, pl = plan(), lost = !growth.won && !growth.keep;
     var allChosen = pl.rows.every(function (r) { return !r.need; });
-    var h = '<div class="lab-run-card lt-gcard"><h2>戦闘の終わり — 育ち <small>試作ラボ ' + (isM() ? 'M（強化の方向は3つ）' : 'L') + '</small></h2>' +
-      '<p>' + (growth.won ? '<b>勝った！</b> 取ったターゲットを1つずつ、取った魔法の道に進める。' + (isM() ? '強化1回で形が1マス。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒。持っていない方向は「' + esc(DEST_M[LXL.M.dest()]) + '」（M2）。' : '得意でない方向は「' + esc(DEST[LXL.destMode()]) + '」（L5）。') : '<b>負けた…</b> ' + (lost ? 'この戦闘で取ったターゲットは全部なくなる（L4: なくなる）。' : 'L4 が「残る」なので、取ったターゲットは道に進める。')) + '</p>';
+    var h = '<div class="lab-run-card lt-gcard"><h2>戦闘の終わり — 育ち <small>試作ラボ ' + (isN() ? 'N（強化と変化）' : isM() ? 'M（強化の方向は3つ）' : 'L') + '</small></h2>' +
+      '<p>' + (growth.won ? '<b>勝った！</b> 取ったターゲットを1つずつ、取った魔法の道に進める。' + (isN() ? '取った魔法に印が1つ（やりたいことと合えば覚醒方面、合わなければ融合方面）。印1つで間の強化が1つ。どちらかの方面が' + LXL.N.changeAt() + 'つで変化（もう片方は閉じる）、覚醒方面はさらに' + LXL.N.awakeAt() + 'つで覚醒。' : isM() ? '強化1回で形が1マス。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒。持っていない方向は「' + esc(DEST_M[LXL.M.dest()]) + '」（M2）。' : '得意でない方向は「' + esc(DEST[LXL.destMode()]) + '」（L5）。') : '<b>負けた…</b> ' + (lost ? 'この戦闘で取ったターゲットは全部なくなる（L4: なくなる）。' : 'L4 が「残る」なので、取ったターゲットは道に進める。')) + '</p>';
     if (!growth.rows.length) h += '<p class="muted">この戦闘で取ったターゲットはない。</p>';
     h += '<ol class="lt-steps">' + growth.rows.map(function (r, i) {
       var p = pl.rows[i], cls = 'lt-step d-' + (p.g && p.g.via ? dcls(isM() ? 'simple' : 'make') : dcls(r.t.dir)) + (i < growth.shown ? ' show' : '') + (lost ? ' lost' : '');
@@ -429,6 +443,7 @@
     return base.replace(/<\/div>$/, line + '</div>');
   }
   function pathCardHtmlBase(m, b, a, applied) {
+    if (isN()) return pathCardHtmlN(m, b, a, applied);
     if (isM()) return pathCardHtmlM(m, b, a, applied);
     var d = LXL.pathDef(m), awoke = a.awake && !b.awake, cur = applied ? a : b;
     return '<div class="lt-pathcard' + (awoke && applied ? ' awoke' : '') + '"><div class="lt-pc-head"><b>' + esc(magicLabel(m, cur)) + '</b> <small>得意: ' + esc(goodText(m)) + '</small>' +
@@ -456,7 +471,9 @@
       app.state.units.forEach(function (u) { if (u.side === 'ally' && pl.work[u.magic]) u.labPath = clone(pl.work[u.magic]); });
       pl.rows.forEach(function (r) {
         if (!r.g || !r.g.res.ok) return;
-        if (isM()) app.addLog('【ラボ M】' + R.magicName(r.magic) + ': ' + (r.g.dir === 'simple' ? '単純強化' : dirInfo(r.g.dir).name + 'が1つ進んだ') + (r.g.via ? '（持っていない・閉じた' + dirInfo(r.dir).name + 'で取った）' : '') +
+        if (isN()) app.addLog('【ラボ N】' + R.magicName(r.magic) + ': ' + (r.g.res.kind === 'awake' ? '覚醒方面の印' : r.g.res.kind === 'fuse' ? '融合方面の印' : '間の強化だけ') + (r.g.res.step ? '・間の強化「' + r.g.res.step.name + '」' : '') +
+          (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
+        else if (isM()) app.addLog('【ラボ M】' + R.magicName(r.magic) + ': ' + (r.g.dir === 'simple' ? '単純強化' : dirInfo(r.g.dir).name + 'が1つ進んだ') + (r.g.via ? '（持っていない・閉じた' + dirInfo(r.dir).name + 'で取った）' : '') +
           (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
         else app.addLog('【ラボ L】' + R.magicName(r.magic) + 'の' + dirInfo(r.g.dir).name + 'が1マス進んだ' + (r.g.via ? '（得意でない' + dirInfo(r.dir).name + 'で取った）' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
       });
@@ -575,6 +592,7 @@
     if (e.target.closest('[data-sortretry]')) { gbox.hidden = true; if (app.scenario) app.loadScenario(app.scenario); }
   });
   function openPaths() {
+    if (isN()) { openPathsN(); return; }
     if (isM()) { openPathsM(); return; }
     var mags = Object.keys(LXL.PATHS);
     var h = '<div class="lab-run-card lt-gcard"><h2>魔法の道 <small>試作ラボ L（作るは全魔法共通。草の止めるは本物、ほかの決める・止める・動かすは共通の処理）</small></h2>' +
@@ -592,6 +610,136 @@
     gbox.hidden = false;
   }
 
+  // ---- N 強化と変化（やりたいこと・覚醒方面と融合方面・間の強化） ----
+  // 進めたあとの変化先（なければ null）
+  function nFormAfter(m, p0) { var N = LXL.N, d = N.def(m); if (!d) return null; var p = N.norm(m, p0); if (!p.form) return null; return p.form === 'awake' ? (p.awake ? d.awake.lv2 : d.awake) : d.fuse; }
+  function dotsHtml(n, max) { var t = ''; for (var i = 0; i < max; i++) t += '<i class="' + (i < n ? 'on' : '') + '"></i>'; return t; }
+  // 進み具合: 覚（覚醒方面の印）●○ ・融（融合方面の印）●○ ・間の強化の印（威形効 …）
+  function marksHtmlN(m, p0) {
+    var N = LXL.N, d = N.def(m);
+    if (!d) return '';
+    var p = N.norm(m, p0), C = N.changeAt(), A = N.awakeAt(), h = '';
+    var awT = '覚醒方面（やりたいこと「' + dirInfo(d.want).name + '」と合うミッション）: ' + (p.form === 'awake' ? (p.awake ? '覚醒「' + d.awake.lv2.name + '」した' : '変化「' + d.awake.name + '」した。あと' + (C + A - p.aw) + 'つで覚醒「' + d.awake.lv2.name + '」') : p.form ? '閉じた' : 'あと' + (C - p.aw) + 'つで変化「' + d.awake.name + '」');
+    var fuT = '融合方面（合わないミッション）: ' + (p.form === 'fuse' ? '融合「' + d.fuse.name + '」した' : p.form ? '閉じた' : 'あと' + (C - p.fu) + 'つで融合「' + d.fuse.name + '」');
+    if (p.form === 'awake') h += '<span class="lt-path d-awk awake" title="' + esc(awT) + '"><span class="lt-mark">' + (p.awake ? '醒' : '覚') + '</span><span class="dots">' + dotsHtml(p.awake ? A : p.aw - C, A) + '</span></span>';
+    else h += '<span class="lt-path d-awk' + (p.form ? ' closed' : '') + '" title="' + esc(awT) + '"><span class="lt-mark">覚</span><span class="dots">' + dotsHtml(Math.min(C, p.aw), C) + '</span></span>';
+    h += '<span class="lt-path d-fuse' + (p.form === 'fuse' ? ' awake' : p.form ? ' closed' : '') + '" title="' + esc(fuT) + '"><span class="lt-mark">融</span>' + (p.form === 'fuse' ? '' : '<span class="dots">' + dotsHtml(Math.min(C, p.fu), C) + '</span>') + '</span>';
+    var st = N.stepsOf(m, p);
+    if (st.length) h += '<span class="lt-nsteps" title="' + esc('間の強化: ' + st.map(function (x) { return x.name; }).join('・')) + '">' + st.map(function (x) { return '<b>' + esc(x.mark) + '</b>'; }).join('') + '</span>';
+    return h;
+  }
+  // 2つの方面の中身（選ぶ前に違いが見えるように、何ができる魔法になるかを書く）
+  function nDirsHtml(m, p) {
+    var N = LXL.N, d = N.def(m), C = N.changeAt(), A = N.awakeAt();
+    var aw = p.form === 'awake', fu = p.form === 'fuse';
+    var awNote = aw ? (p.awake ? '覚醒した' : '変化した（あと' + (C + A - p.aw) + 'つで覚醒）') : fu ? '閉じた' : 'あと' + (C - p.aw) + 'つで変化';
+    var fuNote = fu ? '融合した' : aw ? '閉じた' : 'あと' + (C - p.fu) + 'つで融合';
+    return '<ul class="lt-pc-dirs">' +
+      '<li class="d-awk' + (fu ? ' closed' : '') + '"><span class="lt-mark">覚</span> 覚醒方面 変化「' + esc(d.awake.name) + '」→ 覚醒「' + esc(d.awake.lv2.name) + '」' +
+        '<small>' + esc(awNote) + '</small><small>変化「' + esc(d.awake.name) + '」: ' + esc(d.awake.text) + '</small><small>覚醒「' + esc(d.awake.lv2.name) + '」: ' + esc(d.awake.lv2.text) + '</small><small class="lt-ncombo">新しい組み合わせ: ' + esc(d.awake.lv2.combo) + '</small></li>' +
+      '<li class="d-fuse' + (aw ? ' closed' : '') + '"><span class="lt-mark">融</span> 融合方面「' + esc(d.fuse.name) + '」（' + esc(R.magicName(d.fuse.with)) + 'と混ざる）' +
+        '<small>' + esc(fuNote) + '</small><small>' + esc(d.fuse.text) + '（' + esc(N.weak() ? d.fuse.weak : d.fuse.same) + '）</small></li></ul>';
+  }
+  // 間の強化の並び（付いたものは太字）
+  function nStepsHtml(m, p) {
+    var N = LXL.N, d = N.def(m), have = N.stepsOf(m, p).length, out = [];
+    for (var i = 0; i <= d.steps.length; i++) {
+      var st = N.stepAt(d, i);
+      if (!st) break;
+      out.push('<li class="' + (i < have ? 'on' : '') + '" title="' + esc(st.text) + '">' + esc(st.name) + (i >= d.steps.length ? '（並びのあと、印1つで形が1マス' + (have > i ? '・いま' + (have - i) + 'つ' : '') + '）' : '') + '</li>');
+    }
+    return '<div class="lt-nstepbox">間の強化（' + esc(dirInfo(d.want).name) + 'の並び）<ol>' + out.join('') + '</ol></div>';
+  }
+  function pathCardHtmlN(m, b0, a0, applied) {
+    var N = LXL.N, d = N.def(m);
+    if (!d) return '';
+    var b = N.norm(m, b0), a = N.norm(m, a0), cur = applied ? a : b;
+    var changed = a.form && !b.form, awoke = a.awake && !b.awake, to = a.form === 'fuse' ? d.fuse.name : d.awake.name;
+    var head = '<b>' + esc(magicLabel(m, cur)) + '</b> <small>やりたいこと「' + esc(dirInfo(d.want).name) + '」</small>';
+    if (changed) head += applied ? ' <span class="lt-awake">' + (a.form === 'fuse' ? '融合！ ' : '変化！ ') + esc(R.magicName(m)) + ' → ' + esc(to) + '</span>' : ' <small>（進めると' + (a.form === 'fuse' ? '融合' : '変化') + '「' + esc(to) + '」）</small>';
+    if (awoke) head += applied ? ' <span class="lt-awake">覚醒！ ' + esc(d.awake.name) + ' → ' + esc(d.awake.lv2.name) + '</span>' : ' <small>（進めると覚醒「' + esc(d.awake.lv2.name) + '」）</small>';
+    return '<div class="lt-pathcard' + ((changed || awoke) && applied ? ' awoke' : '') + '"><div class="lt-pc-head">' + head + '</div>' +
+      '<div class="lt-pc-row"><span class="lt-pc-l">' + (applied ? '前' : 'いま') + '</span>' + marksHtml(m, b) + '</div>' +
+      (JSON.stringify(a) !== JSON.stringify(b) ? '<div class="lt-pc-row"><span class="lt-pc-l">' + (applied ? '今' : 'あと') + '</span>' + marksHtml(m, a) + '</div>' : '') +
+      nDirsHtml(m, a) + nStepsHtml(m, a) + '</div>';
+  }
+  // エディット: 覚醒方面の印・融合方面の印・間の強化の数・どちらに変化したか
+  function pathEditHtmlN(u) {
+    var N = LXL.N, d = u.side === 'object' ? null : N.def(u.magic);
+    if (!d) return '';
+    var p = N.norm(u.magic, u.labPath), C = N.changeAt(), A = N.awakeAt();
+    var sel = function (k, max, label, tail) {
+      var o = '';
+      for (var n = 0; n <= max; n++) o += '<option value="' + n + '"' + ((p[k] || 0) === n ? ' selected' : '') + '>' + n + (tail ? tail(n) : '') + '</option>';
+      return '<label>' + esc(label) + ' <select data-id="' + u.id + '" data-field="lpath:' + k + '">' + o + '</select></label>';
+    };
+    return '<span class="persona-edit lt-edit">道' +
+      sel('aw', C + A + 1, '覚醒方面', function (n) { return n === C ? '（変化「' + esc(d.awake.name) + '」）' : n === C + A ? '（覚醒「' + esc(d.awake.lv2.name) + '」）' : ''; }) +
+      sel('fu', C + 2, '融合方面', function (n) { return n === C ? '（融合「' + esc(d.fuse.name) + '」）' : ''; }) +
+      sel('steps', d.steps.length + 3, '間の強化', function (n) { var st = n ? N.stepAt(d, n - 1) : null; return st ? '（' + esc(st.name) + 'まで）' : ''; }) +
+      '<label>変化 <select data-id="' + u.id + '" data-field="lpath:nform"><option value=""' + (!p.form ? ' selected' : '') + '>数のとおり</option>' +
+      '<option value="awake"' + (p.form === 'awake' ? ' selected' : '') + '>覚醒方面「' + esc(d.awake.name) + '」</option><option value="fuse"' + (p.form === 'fuse' ? ' selected' : '') + '>融合方面「' + esc(d.fuse.name) + '」</option></select></label>' +
+      '<button type="button" data-lt="pathzero" data-id="' + u.id + '">0に</button></span>';
+  }
+  // 道を見る（属性ごとに、やりたいこと・2つの方面・間の強化の並び）
+  function openPathsN() {
+    var N = LXL.N, mags = N.CH.ATTR_ORDER.filter(function (m) { return N.def(m); });
+    var ODD = { all: '合わないミッションは全部融合方面', partner: '融合の相手の属性のやりたいことと合うものだけ融合方面', step: '合わないミッションは方面に数えない' };
+    var h = '<div class="lab-run-card lt-gcard"><h2>魔法の道 <small>試作ラボ N（強化と変化）</small></h2>' +
+      '<p class="note">道は魔法ごとに持ち越す（L・M の道とは別）。ミッションを取ると印が1つ: 属性のやりたいことと合えば覚醒方面、合わなければ融合方面（N2: ' + esc(ODD[N.odd()]) + '）。' +
+      '印1つで、やりたいことの並びから間の強化が1つ付く（N5: ' + (N.keep() ? '変化しても引き継ぐ' : '変化したら0から') + '）。どちらかの方面が' + N.changeAt() + 'つで<b>変化</b>（名前も姿も変わった別の魔法。もう片方は閉じる。戻れない）。' +
+      '覚醒方面だけ、さらに覚醒方面の印' + N.awakeAt() + 'つで<b>覚醒</b>（覚醒先は元の自然として振る舞い、新しい組み合わせを1つだけ持つ）。融合は' + (N.weak() ? '仲間と組むより控えめ' : '仲間と組むのと同じ大きさ') + '（N4）。' +
+      '環境の変え方は、同じ魔法なら常に同じ（変化した魔法は別の魔法）。雷・氷・闇は今回の育ちの対象にしない。</p><div class="lt-pathcards lt-npaths">' +
+      mags.map(function (m) {
+        var p = N.norm(m, pathFor(m));
+        return '<div class="lt-pathcard"><div class="lt-pc-head"><b>' + esc(magicLabel(m, p)) + '</b> <small>やりたいこと「' + esc(dirInfo(N.def(m).want).name) + '」</small><br>' + marksHtml(m, p) + '</div>' + nDirsHtml(m, p) + nStepsHtml(m, p) + '</div>';
+      }).join('') + '</div><div class="lab-run-buttons"><button type="button" data-g="close">閉じる</button></div></div>';
+    gbox.innerHTML = h;
+    growth = null;
+    gbox.hidden = false;
+  }
+  // ミッションの仕分け（44 → やりたいこと。ラボの中だけ・localStorage）
+  var SORT_STORE_N = 'cafilia-lab-mission-sort-n', sortMapN = {};
+  try { sortMapN = loadBag(SORT_STORE_N); } catch (e) { sortMapN = {}; }
+  if (LXL.N) LXL.N.setSort(sortMapN);
+  function openSortN() {
+    var N = LXL.N;
+    if (!N) return;
+    var list = N.MISSIONS().slice().sort(function (a, b) { return a.no - b.no; });
+    var opts = N.SORT_ORDER.map(function (k) { return [k, N.WANTS[k].name]; }).concat([['off', '使わない']]);
+    var count = {};
+    list.forEach(function (t) { var d = N.missionWant(t); count[d] = (count[d] || 0) + 1; });
+    var attrs = N.CH.ATTR_ORDER.map(function (m) { var d = N.def(m); return d ? R.magicName(m) + '＝' + dirInfo(d.want).name : ''; }).filter(Boolean).join('・');
+    var h = '<div class="lab-run-card lt-gcard lt-sortcard"><h2>ミッションの仕分け <small>試作ラボ N（44を、やりたいことに入れる）</small></h2>' +
+      '<p class="note">取った魔法のやりたいこと（' + esc(attrs) + '）と合えば覚醒方面の印、合わなければ融合方面の印。「どれでも」はどの属性にも合う（覚醒方面）。変えた仕分けは、次にシナリオを読んだときから効く（「このシナリオで試す」でやり直す）。この画面の中だけ。</p>' +
+      '<p class="lt-sortcount">' + opts.map(function (o) { return (o[0] === 'off' ? '' : mark(o[0]) + ' ') + esc(o[1]) + ' ' + (count[o[0]] || 0); }).join('　') + '</p>' +
+      '<table class="lt-sorttable"><tr><th>番号</th><th>ミッション</th><th>やりたいこと</th></tr>' + list.map(function (t) {
+        var d = N.missionWant(t), T = LXL.M.TAKERS[t.taker], def = N.CH.SORT[t.id] || 'free';
+        return '<tr class="d-' + esc(d) + (sortMapN[t.id] ? ' changed' : '') + '"><td>' + t.no + '</td><td><b>' + esc(t.name) + '</b><small>' + esc(t.text + (T && t.taker !== 'hand' ? '（取る: ' + T + '）' : '') + (t.check.end ? '（勝ったときに決まる）' : '')) + '</small></td>' +
+          '<td><select data-sortn="' + esc(t.id) + '">' + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === d ? ' selected' : '') + '>' + esc(o[1]) + (o[0] === def ? '（初め）' : '') + '</option>'; }).join('') + '</select></td></tr>';
+      }).join('') + '</table>' +
+      '<div class="lab-run-buttons"><button type="button" data-sortnreset="1">初めの仕分けに戻す</button><button type="button" class="primary" data-sortretry="1">このシナリオで試す</button><button type="button" data-g="close">閉じる</button></div></div>';
+    gbox.innerHTML = h;
+    growth = null;
+    gbox.hidden = false;
+  }
+  gbox.addEventListener('change', function (e) {
+    var sel = e.target.closest('[data-sortn]');
+    if (!sel || !LXL.N) return;
+    var id = sel.getAttribute('data-sortn'), def = LXL.N.CH.SORT[id] || 'free';
+    if (sel.value === def) delete sortMapN[id]; else sortMapN[id] = sel.value;
+    try { localStorage.setItem(SORT_STORE_N, JSON.stringify(sortMapN)); } catch (err) { /* 残せないときも、この画面の間は効く */ }
+    LXL.N.setSort(sortMapN);
+    openSortN();
+  });
+  gbox.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-sortnreset]') || !LXL.N) return;
+    sortMapN = {};
+    try { localStorage.setItem(SORT_STORE_N, '{}'); } catch (err) { /* なし */ }
+    LXL.N.setSort(sortMapN);
+    openSortN();
+  });
+
   // ---- 毎回の描画のあと ----
   var prev = app.onRender;
   app.onRender = function () {
@@ -605,6 +753,6 @@
     }
   };
 
-  window.LabTargetUI = { cardHtml: cardHtml, openQuest: openQuest, openSort: openSort, paths: function () { return clone(paths); }, setPath: setPath, resetPaths: resetPaths, openGrowth: openGrowth, openPaths: openPaths, render: renderBox };
+  window.LabTargetUI = { cardHtml: cardHtml, openQuest: openQuest, openSort: openSort, openSortN: openSortN, paths: function () { return clone(paths); }, setPath: setPath, resetPaths: resetPaths, openGrowth: openGrowth, openPaths: openPaths, render: renderBox };
   renderBox();
 })();

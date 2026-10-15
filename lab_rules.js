@@ -34,7 +34,7 @@
     // ---------------------------------------------------------------
     // 水としてつながるマス（B14 葦原・I4 飛び石も水のまま）
     function waterTile(t) {
-      return t === 'river' || t === 'puddle' || (t === 'reeds' && (on('B14') || on('L0'))) || (t === 'stepstone' && on('I4'));   // L0: 草の起点1 の葦原
+      return t === 'river' || t === 'puddle' || (t === 'reeds' && (on('B14') || on('L0'))) || (t === 'stepstone' && (on('I4') || non()));   // N: 岩（土の変化）   // L0: 草の起点1 の葦原
     }
     // ユニットが占めるマス（D3 大きい敵は size×size）
     function unitCells(u) {
@@ -425,7 +425,7 @@
       var see = !!viewer && on('A8') && HIGH[getTile(s, viewer.x, viewer.y)];
       if (t === 'mirage') return !see;
       if (forTarget) return false;   // お題の的は森の中でも的のまま
-      if ((on('A3') && t === 'forest') || (on('B21') && t === 'deepforest') || (on('B17') && t === 'sandstorm') || (on('B20') && t === 'gloom')) return !see;
+      if ((on('A3') && t === 'forest') || (on('B21') && t === 'deepforest') || ((on('B17') || non()) && t === 'sandstorm') || (on('B20') && t === 'gloom')) return !see;
       return false;
     }
 
@@ -1834,19 +1834,19 @@
         if (on('B5') && t === 'firewhirl' && onceIn(ctx, 'B5')) { bigMountain(s, u, x, y, facing, ctx, ev); return true; }
         if (on('B5') && t === 'firewhirl') return true;
         if (on('B9') && t === 'volcano') { coolVolcano(s, x, y, ctx, '土でふさがれて'); return true; }
-        if (on('B17') && I.isWind(t)) { var sand = I.connected(s, x, y, t).concat(t === 'breeze' ? connected(s, x, y, 'gale') : connected(s, x, y, 'breeze')); var n = 0;
+        if ((on('B17') || non()) && I.isWind(t)) { var sand = I.connected(s, x, y, t).concat(t === 'breeze' ? connected(s, x, y, 'gale') : connected(s, x, y, 'breeze')); var n = 0;
           sand.forEach(function (c) { if (I.isWind(getTile(s, c[0], c[1]))) { setTile(s, c[0], c[1], 'sandstorm'); n++; } });
           ctx.phrases.push('【ラボ】風が土を巻き上げて砂嵐になった（' + n + 'マス。中の者は見えない。ターン終了でおさまる）'); return true; }
       } else if (m === 'fire') {
         if (on('B10') && t === 'mud') { setTile(s, x, y, low); ctx.phrases.push('【ラボ】泥沼が焼き固まって' + tileName(low) + 'になった'); return true; }
         if (on('B15') && t === 'mirage' && onceIn(ctx, 'B15')) { steamBlast(s, x, y, ctx, ev); return true; }
-        if (on('B17') && t === 'sandstorm' && onceIn(ctx, 'B17')) { dustBlast(s, x, y, ctx, ev); return true; }
+        if ((on('B17') || non()) && t === 'sandstorm' && onceIn(ctx, 'B17')) { ctx.phrases.push('砂嵐に火が入った'); dustBlast(s, x, y, ctx, ev); return true; }
       }
       return false;
     });
     // ラボで足した自然に「火が当たった」（C6・G4 の連鎖でも同じ）
     touchFireExtra = function (s, x, y, t, dir, ctx, ev, tag) {
-      if (t === 'sandstorm' && on('B17') && onceIn(ctx, 'B17')) { dustBlast(s, x, y, ctx, ev); return true; }
+      if (t === 'sandstorm' && (on('B17') || non()) && onceIn(ctx, 'B17')) { dustBlast(s, x, y, ctx, ev); return true; }
       if (t === 'mirage' && on('B15') && onceIn(ctx, 'B15')) { steamBlast(s, x, y, ctx, ev); return true; }
       if (t === 'mud' && on('B10')) { setTile(s, x, y, B.grow.enabled ? 'hill' : 'mountain'); return true; }
       if (t === 'deepforest') { setTile(s, x, y, 'fire'); return true; }
@@ -1905,7 +1905,8 @@
     function flowCell(s, u, x, y, t, facing, ctx, ev, o) {
       if (on('B12') && t === 'mud' && onceIn(ctx, 'B12')) { debrisFlow(s, x, y, facing, ctx, ev); return '泥沼に水が流れこんだ'; }
       if (o) return null;   // 人がいるマスは今どおり（直撃して止まる）
-      if (on('I4') && t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return '岩に水が当たった'; }   // I4: 水で岩が転がる
+      var nf = nFlowCell(s, u, x, y, t, facing, ctx, ev); if (nf) return nf;   // N: 大樹・業火・竜巻に水（覚醒先の新しい組み合わせ）
+      if ((on('I4') || non()) && t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return '岩に水が当たった'; }   // I4: 水で岩が転がる（N: 土の変化「岩」も）
       if (on('B2') && t === 'thicket' && B.grow.enabled) { setTile(s, x, y, 'forest'); ctx.cells.push([x, y]); return '【ラボ】草むらが水を吸って森に育った'; }
       if (on('B9') && t === 'volcano') { coolVolcano(s, x, y, ctx, '水で'); return '火山に水がかかった'; }
       if (on('B7') && (t === 'sakura' || t === 'hillsakura') && onceIn(ctx, 'B7')) { hanaikada(s, x, y, x, y, facing, ctx, ev); return '桜に水が当たった'; }
@@ -1949,7 +1950,8 @@
 
     // 吹き抜ける（風）の1マス。止まるなら true
     function blowCell(s, u, x, y, t, facing, ctx, ev) {
-      if (t === 'rock' && on('I4')) { ctx.cells.push([x, y]); rollRock(s, x, y, facing, ctx, ev); return true; }   // I4: 風で岩が転がる
+      if (nBlowCell(s, u, x, y, t, facing, ctx, ev)) return true;   // N: 岩山・氷に風（覚醒先の新しい組み合わせ）
+      if (t === 'rock' && (on('I4') || non())) { ctx.cells.push([x, y]); rollRock(s, x, y, facing, ctx, ev); return true; }   // I4: 風で岩が転がる（N: 土の変化「岩」も）
       if (t === 'snowmt' && on('B8')) { ctx.cells.push([x, y]); if (onceIn(ctx, 'B8')) avalanche(s, x, y, facing, ctx, ev); return true; }
       if (t === 'icewall' || t === 'snowmt' || t === 'bog') { ctx.phrases.push(tileName(t) + 'で風が止まった'); return true; }
       if (on('B6') && t === 'volcano' && B.sakura.from !== 'fire' && onceIn(ctx, 'B6')) { ctx.cells.push([x, y]); sparks(s, x, y, facing, ctx, ev); return true; }
@@ -2072,14 +2074,17 @@
     });
     // ターンの終わり: 砂嵐・霜・暗がりは消え、底なし沼は泥沼に戻る
     function sweepLab(s, ev) {
-      var gone = 0, back = 0;
+      var gone = 0, back = 0, hills = [];
       for (var i = 0; i < s.tiles.length; i++) {
         var t = s.tiles[i];
+        if (t === 'sandstorm' && keepTile(s, i % s.size, Math.floor(i / s.size), t)) continue;   // N 広げる2: もう1ターン残る
+        if (t === 'sandstorm' && non()) { I.setTile(s, i % s.size, Math.floor(i / s.size), 'hill'); hills.push([i % s.size, Math.floor(i / s.size)]); continue; }   // N: 砂嵐はおさまると丘が残る（風に土でも、融合の砂嵐でも）
         if (t === 'sandstorm' || t === 'frost' || t === 'gloom') { I.setTile(s, i % s.size, Math.floor(i / s.size), 'empty'); gone++; }
         else if (t === 'bog') { I.setTile(s, i % s.size, Math.floor(i / s.size), 'mud'); back++; }
       }
       if (gone) ev.push({ type: 'smallfireOut', text: '【ラボ】砂嵐・霜・暗がりが消えた（' + gone + 'マス）' });
       if (back) ev.push({ type: 'info', text: '【ラボ】底なし沼が泥沼に戻った（' + back + 'マス）' });
+      if (hills.length) ev.push({ type: 'kindle', cells: hills, text: '【ラボ N】砂嵐がおさまって、丘が残った（' + hills.length + 'マス）' });
     }
 
 
@@ -2214,7 +2219,7 @@
       else setTile(s, x, y, 'rock');
       finish(ctx, ev, '岩落とし', path, B.fire.strongDamage, [x, y], '【ラボ】岩落とし！ 岩が' + DIRS[dir].name + 'へ転がった（' + path.length + 'マス。通り道の者に威力' + B.fire.strongDamage + '）' + (end === 'water' ? '。川に落ちて飛び石になった' : ''), { dir: dir });
     }
-    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) { if (on('I4') && u.magic === 'earth' && t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return true; } return false; });
+    placeMore.push(function (s, u, x, y, t, o, facing, ctx, ev) { if ((on('I4') || non()) && u.magic === 'earth' && t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return true; } return false; });
     // I5: からめる（森の隣の者は足を取られる。川には、森からつながる蔓の橋）
     function vine(s, u, facing, ctx, ev) {
       var cells = I.castCells(s, u, facing), bridge = 0;
@@ -2402,23 +2407,24 @@
     var FOREST_LIKE = { forest: true, deepforest: true, bigtree: true };
     var GROWN = { thicket: 'forest', hill: 'mountain', puddle: 'river', breeze: 'gale', smallfire: 'fire' };   // 一段 → 二段
     var INTO = { mud: true, bog: true, forest: true, deepforest: true, river: true, puddle: true, reeds: true };   // 動かす「泥沼・森・川へ」（川は立てる水も）
-    function dirName(d) { var T = mon() ? LPW.DIRS : LT.DIRS; return T[d] ? T[d].name : d; }
+    function dirName(d) { if (non()) return nWantName(d); var T = mon() ? LPW.DIRS : LT.DIRS; return T[d] ? T[d].name : d; }
 
     // ---- 魔法の道 ----
-    function pathDef(m) { if (mon()) return mDef(m); return LP.PATHS[m] || null; }   // M: 3つの方向の道
+    function pathDef(m) { if (non()) return nDef(m); if (mon()) return mDef(m); return LP.PATHS[m] || null; }   // M: 3つの方向の道。N: やりたいことと2つの方面
     // その魔法の道の方向（作る ＋ 得意な方向）
-    function dirsOf(m) { var d = pathDef(m); if (mon()) return d ? d.dirs.slice() : []; return d ? ['make'].concat(d.dirs) : []; }
-    function isGood(m, dir) { var d = pathDef(m); return !!d && (dir === 'make' ? !!d.makeGood && !mon() : d.dirs.indexOf(dir) >= 0); }
+    function dirsOf(m) { var d = pathDef(m); if (non()) return d ? [d.want] : []; if (mon()) return d ? d.dirs.slice() : []; return d ? ['make'].concat(d.dirs) : []; }
+    function isGood(m, dir) { var d = pathDef(m); if (non()) return !!d && (dir === d.want || dir === 'free'); return !!d && (dir === 'make' ? !!d.makeGood && !mon() : d.dirs.indexOf(dir) >= 0); }
     // 作るが得意（草・土・水。作るの3マス目で覚醒する）
     function makeGood(m) { if (mon()) return false; var d = pathDef(m); return !!(d && d.makeGood && d.awaken.make); }
     // 覚醒できる方向（作るが得意なら作るも）
-    function awakeDirs(m) { var d = pathDef(m); if (mon()) return d ? d.dirs.slice() : []; return d ? (makeGood(m) ? ['make'] : []).concat(d.dirs) : []; }
-    function newPath(m) { var d = pathDef(m); if (!d) return null; if (mon()) return mNew(); var p = { make: 0 }; d.dirs.forEach(function (k) { p[k] = 0; }); p.awake = null; return p; }
+    function awakeDirs(m) { var d = pathDef(m); if (non()) return []; if (mon()) return d ? d.dirs.slice() : []; return d ? (makeGood(m) ? ['make'] : []).concat(d.dirs) : []; }
+    function newPath(m) { var d = pathDef(m); if (!d) return null; if (non()) return nNew(); if (mon()) return mNew(); var p = { make: 0 }; d.dirs.forEach(function (k) { p[k] = 0; }); p.awake = null; return p; }
     function clamp3(v) { return Math.max(0, Math.min(3, Math.round(Number(v) || 0))); }
     // 道の形をそろえる（各方向 0〜3。覚醒は1つだけ。得意な方向は3に届いた1つが覚醒で、ほかは2まで。
     //   作るは3まで進める。作るが得意なら、ほかに覚醒がないとき3で覚醒。ほかに先に覚醒していれば、3でも覚醒しない）
     function normPath(m, p0) { return withDark(normPathBase(m, p0), p0); }
     function normPathBase(m, p0) {
+      if (non()) return nNorm(m, p0);
       if (mon()) return mNorm(m, p0);
       var d = pathDef(m);
       if (!d) return null;
@@ -2438,7 +2444,7 @@
     function lpathOf(u) { return lon() && u && u.labPath && pathDef(u.magic) ? u.labPath : null; }
     function stepOf(u, dir) { var p = lpathOf(u); return p ? (p[dir] || 0) : 0; }
     function awakeOf(u) { var p = lpathOf(u); if (mon()) return p && p.form ? p.form : null; return p && p.awake ? p.awake : null; }
-    function formOf(u) { if (mon()) return mFormOf(u); var a = awakeOf(u), d = a ? pathDef(u.magic) : null; return d && d.awaken[a] ? d.awaken[a] : null; }
+    function formOf(u) { if (non()) return nFormOf(u); if (mon()) return mFormOf(u); var a = awakeOf(u), d = a ? pathDef(u.magic) : null; return d && d.awaken[a] ? d.awaken[a] : null; }
     function formName(u) { var f = formOf(u); return f ? f.name : null; }
     // 作るの覚醒（森・山・川）。育つ（X1）が入のときだけ一発で育った姿を作る（切なら名前と駒が変わるだけ）
     function makeForm(u) { return !!u && !mon() && awakeOf(u) === 'make' && makeGood(u.magic); }
@@ -2456,6 +2462,7 @@
     function fxOn(u, fx) { return fxCount(u, fx) > 0; }
     // 作る: 形が1マス増えるマスの数（上限3）。作るが得意でも、先にほかの方向に覚醒していれば、3マス目は形が1マス
     function shapeSteps(u) {
+      if (non()) return nCount(u, 'shape');   // N: 間の強化の「形が1マス」の数
       if (mon()) { var mp = lpathOf(u); return mp ? Math.min(mShapeMax(), mTotal(mp)) : 0; }   // M: 強化1回で形が1マス（上限まで）
       var n = fxCount(u, 'shape'), p = lpathOf(u);
       if (p && makeGood(u.magic) && (p.make || 0) >= 3 && p.awake !== 'make') n++;
@@ -2463,6 +2470,7 @@
     }
     // i マス目（0〜2）の中身の一言（作るが得意でも、ほかに覚醒したあとの3マス目は形が1マス）
     function stepText(m, p, k, i) {
+      if (non()) return '';
       if (mon()) return mStepText(m, k);
       var d = pathDef(m), st = d && d.steps[k] && d.steps[k][i];
       if (!st) return '';
@@ -2474,6 +2482,7 @@
     // 道を1マス進める（p を書き換える）。{ ok, step, awake } ／{ none }（その方向を持たない）／{ closed }（覚醒で閉じた）／{ full }（もう覚醒した方向）／{ makeFull }（作るは3マスで上限）
     function advance(p, m, dir) {
       if (dir === 'dark') return darkAdvance(p, m);   // L7: 闇の力（方向ではない）
+      if (non()) return nAdvance(p, m, dir);
       if (mon()) return mAdvance(p, m, dir);
       var d = pathDef(m);
       if (!d || !p) return { none: true };
@@ -2495,6 +2504,7 @@
     // 達成したときの行き先（L5）。p を書き換える。{ dir: 進んだ方向, res, via: 得意でなかったときの元の結果, dest: L5 の値, after: 進めたあとの道 }
     function gain(p, m, dir) {
       if (dir === 'dark') { var dg = { dir: 'dark', res: darkAdvance(p, m) }; if (p) dg.after = lclone(p); return dg; }   // L7
+      if (non()) return nGain(p, m, dir);
       if (mon()) return mGain(p, m, dir);
       var g, r = advance(p, m, dir);
       if (r.ok || dir === 'make' || !pathDef(m) || !p) g = { dir: dir, res: r };
@@ -2508,6 +2518,7 @@
     // 進み具合の印（作●○○ 止●●○ …。閉じた方向は × を足す）
     function pathMarks(m, p) { var dk = p && p.dark > 0 && pathDef(m) ? ' 闇' + darkDots(p.dark) : ''; return pathMarksBase(m, p) + dk; }   // L7: 闇の力
     function pathMarksBase(m, p) {
+      if (non()) return nMarks(m, p);
       if (mon()) return mMarks(m, p);
       var d = pathDef(m);
       if (!d) return '';
@@ -2547,6 +2558,7 @@
     // gain の結果の一言（dir は達成したターゲットの方向）
     function gainText(m, dir, g, before) {
       if (dir === 'dark') return darkText(m, g);   // L7
+      if (non()) return nGainText(m, dir, g, before);
       if (mon()) return mGainText(m, dir, g, before);
       var nm = I.magicName(m), r = g.res;
       if (!pathDef(m)) return nm + 'には道がない（育たない）';
@@ -2559,6 +2571,7 @@
     // 取ったら道がどうなるか（一言）。p はその魔法の今の道（なければ 0 から）
     function outlook(m, p, dir) {
       if (dir === 'dark') return pathDef(m) ? darkText(m, gain(lclone(p || newPath(m)), m, 'dark')) : '達成するが、' + I.magicName(m) + 'には道がない（闇の力も持てない）';   // L7
+      if (non()) return nOutlook(m, p, dir);
       if (mon()) return mOutlook(m, p, dir);
       if (!pathDef(m)) return '達成するが、' + I.magicName(m) + 'には道がない（育たない）';
       p = p || newPath(m);
@@ -2611,10 +2624,11 @@
 
     // ---- ターゲット ----
     function targetDef(x) {
-      var t = typeof x === 'string' ? (mon() && mMission(x)) || LT.TARGETS.filter(function (d) { return d.id === x; })[0] || (LT.DARK || []).filter(function (d) { return d.id === x; })[0] : x;
+      var t = typeof x === 'string' ? (non() && nMission(x)) || (mon() && mMission(x)) || LT.TARGETS.filter(function (d) { return d.id === x; })[0] || (LT.DARK || []).filter(function (d) { return d.id === x; })[0] : x;
       if (!t || !t.check) return null;
       t = JSON.parse(JSON.stringify(t));
-      if (mon() && !t.stage && t.dir !== 'dark') t.dir = missionDir(t);   // M: 画面の「ミッションの仕分け」で変えた方向（闇は仕分けない）
+      if (non() && !t.stage && t.dir !== 'dark') t.dir = nMissionWant(t);   // N: やりたいことの仕分け（画面で変えられる）
+      else if (mon() && !t.stage && t.dir !== 'dark') t.dir = missionDir(t);   // M: 画面の「ミッションの仕分け」で変えた方向（闇は仕分けない）
       return t;
     }
     // 戦闘の始まり: シナリオの labState.labTargetList から、この戦闘のターゲットを決める（数は L3。育つが切なら「二段」は出さない）
@@ -2743,6 +2757,7 @@
       grassAfter(s, u, facing, ctx, ev);   // 草の道（蔓。LAB_L の起点・育てるの処理も fx で残してある）。作った自然は、この1発のもの
       pathAfter(s, u, facing, ctx, ev);    // 止める・動かすの道（共通の処理）
       mAfterShot(s, u, facing, ctx, ev);   // M: 変化先の性質・強化の候補（判定より先に起こす）
+      nAfterShot(s, u, facing, ctx, ev);   // N: 間の強化（止める・効き目・押す）と、変化した魔法の名前
       if (ctx.labPrevShot) s.labShot = ctx.labPrevShot; else delete s.labShot;
       thornIntent(s, ev);
       if (!s.labTargets) return;
@@ -3284,7 +3299,8 @@
       var base = (p && p.labState && p.labState.labTargetList) || [];
       if (!base.length) return [];
       var lean = (LT.QUEST_LEAN || {})[p.mission || 'annihilate'] || 'decide';
-      var MQ = mon(), ORDER = MQ ? LPW.QUEST_ORDER : LT.DIR_ORDER, POOL = (MQ ? LPW.QUEST_POOL : LT.QUEST_POOL) || {}, QNAME = (MQ ? LPW.QUEST_NAME : LT.QUEST_NAME) || {};   // M: 討伐・守り・誘導・開拓
+      var MQ = mon(), ORDER = MQ ? LPW.QUEST_ORDER : LT.DIR_ORDER, POOL = (MQ ? LPW.QUEST_POOL : LT.QUEST_POOL) || {}, QNAME = (MQ ? LPW.QUEST_NAME : LT.QUEST_NAME) || {};
+      if (non()) { ORDER = LCH.QUEST_ORDER; POOL = LCH.QUEST_POOL; QNAME = LCH.QUEST_NAME; lean = LCH.QUEST_LEAN[p.mission || 'annihilate'] || 'defeat'; }   // N: 討伐・開拓・誘導・守り   // M: 討伐・守り・誘導・開拓
       var order = [lean].concat(ORDER.filter(function (d) { return d !== lean; }));
       return order.map(function (dir) {
         var pool = POOL[dir] || [];
@@ -3329,7 +3345,10 @@
     function mShapeMax() { return clampN(lopt('M3', 'shapeMax', 3), 0, 7, 3); }
     function mMakeMode() { return lopt('M4', 'make', 'simple') === 'marker' ? 'marker' : 'simple'; }
     function mName(d) { return LPW.DIRS[d] ? LPW.DIRS[d].name : d; }
-    function mCand(u, id) { return mon() && on('M5') && !!u && !!u.labCand && !!u.labCand[id]; }
+    function mCand(u, id) {
+      if (non()) return !!u && N_CANDS[id] === true && nHas(u, id);   // N: 間の強化（もう1ターン残る・足場で形が増える・撃った先へ移る）
+      return mon() && on('M5') && !!u && !!u.labCand && !!u.labCand[id];
+    }
     var HIGH = { hill: true, hillsakura: true };   // 立てる高い所（山は立てない）
 
     // ---- ミッションの仕分け（画面から。id → decide／stop／move／make／off 使わない） ----
@@ -3404,6 +3423,7 @@
       return g;
     }
     function mCanTake(p, m, dir) {
+      if (non()) return true;   // N: 印にならないミッション（N2 partner）も、達成にはなる
       if (mDest() !== 'remain' || !mDef(m)) return true;
       var r = mAdvance(lclone(p || mNew()), m, dir);
       return !!(r.ok || r.marker);
@@ -3475,6 +3495,7 @@
     function mProps(u) {
       var out = {};
       if (!mon() || !u) return out;
+      if (non()) { if (nHas(u, 'moveAfter')) out.moveAfter = 1; return out; }   // N: 間の強化「撃ったあと動ける」（ほかの間の強化は nAfterShot）
       var f = mFormOf(u);
       if (f) out[f.prop] = f.stage;
       if (on('M5') && u.labCand) {
@@ -3561,7 +3582,7 @@
       if (mCand(u, 'leap')) mLeap(s, u, ctx, ev);
     }
     // M5 もう1ターン残る: この1発で生まれた、1ターンで消える自然
-    var LINGER = { breeze: true, gale: true, smallfire: true, petals: true };
+    var LINGER = { breeze: true, gale: true, smallfire: true, petals: true, sandstorm: true };   // N: 砂嵐も
     function mLinger(s, u, ctx) {
       for (var i = 0; i < s.tiles.length; i++) {
         if (s.tiles[i] !== ctx.labPre.tiles[i] && LINGER[s.tiles[i]]) { s.labLinger = s.labLinger || {}; s.labLinger[i] = 1; }
@@ -3626,7 +3647,7 @@
     var M_MORE = { grass: [[-1, 2], [0, 4], [1, 4], [-1, 4]] };   // 草は EXTRA_CELLS が3つなので、大きくするときの続き
     function mBonus(s, u) {
       var n = shapeSteps(u) + (u.labBoost || 0);
-      var st = (LPW.STAND_ON || {})[u.magic];
+      var st = ((non() ? LCH.STAND_ON : LPW.STAND_ON) || {})[u.magic];
       if (mCand(u, 'standOn') && st && st.indexOf(getTile(s, u.x, u.y)) >= 0) n += 2;
       return n;
     }
@@ -3653,7 +3674,7 @@
     function mLength(s, u, len) {
       var P = mProps(u);
       len += (u.labBoost || 0);
-      var st = (LPW.STAND_ON || {})[u.magic];
+      var st = ((non() ? LCH.STAND_ON : LPW.STAND_ON) || {})[u.magic];
       if (mCand(u, 'standOn') && st && st.indexOf(getTile(s, u.x, u.y)) >= 0) len += 2;
       if (u.magic === 'water' && P.untilHit) len = 99;   // 何かに当たるまで流れる
       if (u.labShrink) len = 1;
@@ -3811,6 +3832,8 @@
         return s.labFinTurn.n >= (t.check.n || 2) ? res(E.finCells, E.finCells) : null;
       }
       if (k === 'fin3') { var f3 = fins.filter(function (f) { return LPW.STAGE3.indexOf(f.name) >= 0; })[0]; return f3 ? res(f3.cells, f3.cells) : null; }
+      if (k === 'shot') return ally ? res((ctx.cells || []).slice(0, 1), []) : null;   // N 42: 魔法を1発撃つ
+      if (k === 'finName') { var fnm = fins.filter(function (f) { return (t.check.names || []).indexOf(f.name) >= 0; })[0]; return fnm ? res(fnm.cells, fnm.cells) : null; }   // N 44: 決められたシナジー
       if (k === 'lastFin') return E.deadEnemies.some(function (d) { return E.byFin(d.id); }) && !I.enemiesOf(s).length ? res(E.finCells, E.finCells) : null;
       if (k === 'farFin') {
         if (!fins.length) return null;
@@ -3946,6 +3969,548 @@
       setSort: setSort, sortOf: function () { return lclone(mSort); }, missionDir: missionDir, mission: mMission
     };
 
+    // ---------------------------------------------------------------
+    // N 強化と変化（10/16 オーナーの「強化と変化のまとめ」）。データは lab_change.js、画面は lab_target_ui.js（N のときの描き分け）
+    //   M の土台（ミッションと判定・取った記録・育ちの画面・持ち越し・L6 クエスト）の上で、道を N の形に替える。N0 は L0・M0 が要る
+    //   道 u.labPath = { aw, fu, steps, form, awake }
+    //     aw 覚醒方面の印・fu 融合方面の印・steps 間の強化の数・form 変化した方面（'awake'／'fuse'）・awake 覚醒した
+    //     印の種類は、ミッションのやりたいこと（仕分け）と、取った魔法の属性のやりたいことで決まる（nKind）
+    //   変化した魔法は、u.magic はそのまま（属性）。撃つと変化先の魔法になる（castMore の先頭）。名前と駒は formOf
+    //   覚醒先の自然（大樹・岩山・業火・湖・氷・竜巻）は、元の自然のマスに印を付けたもの s.labAwk = { マスの番号: 種類 }。
+    //     元の自然として振る舞い（法則のまま）、覚醒先の新しい組み合わせだけ N の差し込み口で起きる。マスの自然が変わると印は消える（onSetTile）
+    //   N0 がオンのときだけ、盤面に s.labAwk、人に u.labDelay・u.labShrink（M と同じ項目）を足す
+    // ---------------------------------------------------------------
+    var LCH = (IS_NODE_L ? require('./lab_change.js') : root.LAB_CHANGE) || { WANTS: {}, WANT_ORDER: [], SORT_ORDER: [], ATTR: {}, ATTR_ORDER: [], STEPS: {}, MORE: {}, MORE_MAX: 3,
+      STAND_ON: {}, FORMS: {}, MISSIONS_ADD: [], SORT: {}, QUEST_POOL: {}, QUEST_NAME: {}, QUEST_ORDER: [], QUEST_LEAN: {} };
+    function non() { return mon() && on('N0'); }
+    function nChangeAt() { return clampN(lopt('N1', 'change', 2), 1, 6, 2); }
+    function nAwakeAt() { return clampN(lopt('N1', 'awake', 3), 1, 9, 3); }
+    // N2 合わないミッションの数え方: all 全部融合方面 ／partner 融合の相手のやりたいことと合うものだけ ／step 方面に数えない（間の強化だけ）
+    function nOdd() { var v = lopt('N2', 'odd', 'all'); return v === 'partner' || v === 'step' ? v : 'all'; }
+    function nEarth() { return lopt('N3', 'earth', 'defeat') === 'stop' ? 'stop' : 'defeat'; }   // N3 土のやりたいこと
+    function nWeak() { return lopt('N4', 'fuse', 'weak') !== 'same'; }                            // N4 融合を控えめに
+    function nKeep() { return lopt('N5', 'steps', 'keep') !== 'reset'; }                           // N5 間の強化を変化した魔法に引き継ぐ
+    var N_CANDS = { linger: true, standOn: true, leap: true };   // M の仕組み（mCand）で起こす間の強化
+
+    // ---- やりたいことと道 ----
+    function nWantOf(m) { if (!LCH.ATTR[m]) return null; return m === 'earth' ? nEarth() : LCH.ATTR[m]; }
+    function nWantName(w) { return LCH.WANTS[w] ? LCH.WANTS[w].name : w === 'dark' ? '闇' : w; }
+    function nDef(m) {
+      var F = LCH.FORMS[m], w = nWantOf(m);
+      if (!F || !w) return null;
+      return { m: m, want: w, awake: F.awake, fuse: F.fuse, partner: F.fuse.with, steps: LCH.STEPS[w] || [], n: true, dirs: [w] };
+    }
+    function nNew() { return { aw: 0, fu: 0, steps: 0, form: null, awake: false }; }
+    // 道の形をそろえる（steps を省いたら、印の数だけ。変化は先に届いた方面。両方届いていたら多いほう、同じなら覚醒方面）
+    function nNorm(m, p0) {
+      var d = nDef(m);
+      if (!d) return null;
+      var src = p0 || {}, p = nNew(), C = nChangeAt(), A = nAwakeAt();
+      p.aw = clampN(src.aw, 0, 20, 0); p.fu = clampN(src.fu, 0, 20, 0);
+      p.steps = clampN(src.steps === undefined ? p.aw + p.fu : src.steps, 0, d.steps.length + LCH.MORE_MAX, 0);
+      var f = src.form === 'awake' && p.aw >= C ? 'awake' : src.form === 'fuse' && p.fu >= C ? 'fuse' : null;
+      if (!f && (p.aw >= C || p.fu >= C)) f = p.aw >= p.fu ? 'awake' : 'fuse';
+      p.form = f;
+      p.awake = f === 'awake' && p.aw >= C + A;
+      return p;
+    }
+    // 印の種類: 'awake' 覚醒方面 ／'fuse' 融合方面 ／'step' 間の強化だけ（N2 step）／null 印にならない（N2 partner）
+    function nKind(m, w) {
+      var mine = nWantOf(m);
+      if (!mine) return null;
+      if (w === 'free' || w === mine) return 'awake';
+      var odd = nOdd();
+      if (odd === 'step') return 'step';
+      if (odd === 'partner') { var d = nDef(m); return d && nWantOf(d.partner) === w ? 'fuse' : null; }
+      return 'fuse';
+    }
+    function nStepAt(d, i) { return i < d.steps.length ? d.steps[i] : (i < d.steps.length + LCH.MORE_MAX ? LCH.MORE : null); }
+    function nStepsOf(d, p) { var out = []; for (var i = 0; i < (p.steps || 0); i++) { var st = nStepAt(d, i); if (st) out.push(st); } return out; }
+    // 強化を1回入れる（p を書き換える）。w はミッションのやりたいこと
+    //   { ok, kind, step?, change?, awake?, closed?, reset? } ／{ none }（道がない）／{ none, partner }（印にならない）
+    function nAdvance(p, m, w) {
+      var d = nDef(m);
+      if (!d || !p) return { none: true };
+      var kind = nKind(m, w);
+      if (!kind) return { none: true, partner: true };
+      var C = nChangeAt(), A = nAwakeAt(), out = { ok: true, kind: kind };
+      if (kind === 'awake') p.aw = (p.aw || 0) + 1;
+      if (kind === 'fuse') p.fu = (p.fu || 0) + 1;
+      if (p.form && kind !== 'step' && kind !== p.form) out.closed = true;   // 閉じた方面の印（間の強化だけ付く）
+      if (!p.form && kind === 'awake' && p.aw >= C) { p.form = 'awake'; out.change = d.awake; }
+      if (!p.form && kind === 'fuse' && p.fu >= C) { p.form = 'fuse'; out.change = d.fuse; }
+      if (out.change && !nKeep()) { p.steps = 0; out.reset = true; }   // N5 reset: 変化した魔法は、間の強化を0から
+      else { var st = nStepAt(d, p.steps || 0); if (st) { p.steps = (p.steps || 0) + 1; out.step = st; } }
+      if (p.form === 'awake' && !p.awake && p.aw >= C + A) { p.awake = true; out.awake = d.awake.lv2; }
+      return out;
+    }
+    function nGain(p, m, w) {
+      var r = nAdvance(p, m, w), g = { dir: w, res: r };
+      if (p) g.after = lclone(p);
+      return g;
+    }
+    // ---- 言葉 ----
+    function nHint(m, p, r) {
+      var d = nDef(m), C = nChangeAt(), A = nAwakeAt();
+      if (!d || !p || r.change || r.awake) return '';
+      if (!p.form) {
+        var out = ['あと' + (C - p.aw) + 'つで変化「' + d.awake.name + '」'];
+        if (nOdd() !== 'step') out.push('あと' + (C - p.fu) + 'つで融合「' + d.fuse.name + '」');
+        return out.join('・');
+      }
+      if (p.form === 'awake' && !p.awake) return 'あと' + (C + A - p.aw) + 'つで覚醒「' + d.awake.lv2.name + '」';
+      return '';
+    }
+    function nGainText(m, w, g, before) {
+      var nm = I.magicName(m), d = nDef(m), r = g.res;
+      if (!d) return nm + 'には道がない（今回の育ちの対象ではない）';
+      var mine = nWantName(d.want), wn = w === 'free' ? 'どれでも' : nWantName(w);
+      if (r.none && r.partner) return nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）。融合の相手（' + I.magicName(d.partner) + '「' + nWantName(nWantOf(d.partner)) + '」）とも合わないので、印にならない（N2）';
+      if (r.none) return nm + 'には道がない';
+      var head = r.kind === 'awake' ? (w === 'free' ? 'どの属性にも合うミッション' : nm + 'のやりたいこと「' + mine + '」と合う') + ' → 覚醒方面の印'
+        : r.kind === 'fuse' ? nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）→ 融合方面の印'
+        : nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）→ 方面には数えない（N2）';
+      var parts = [];
+      if (r.closed) parts.push((r.kind === 'awake' ? '覚醒方面' : '融合方面') + 'は閉じている');
+      if (r.change) parts.push('変化「' + r.change.name + '」！ ' + (r.change === d.awake ? '融合方面（' + d.fuse.name + '）' : '覚醒方面（' + d.awake.name + '）') + 'は閉じる');
+      if (r.awake) parts.push('覚醒「' + r.awake.name + '」！');
+      if (r.reset) parts.push('間の強化は0から（N5）');
+      else parts.push(r.step ? '間の強化「' + r.step.name + '」' : '間の強化はもう上限');
+      var hint = nHint(m, g.after, r);
+      if (hint) parts.push(hint);
+      return head + '（' + parts.join('。') + '）';
+    }
+    function nOutlook(m, p, w) {
+      if (!nDef(m)) return '達成するが、' + I.magicName(m) + 'は今回の育ちの対象ではない（道がない）';
+      var before = nNorm(m, p || nNew());
+      return nGainText(m, w, nGain(lclone(before), m, w), before);
+    }
+    function nDots(n, max) { var t = ''; for (var i = 0; i < max; i++) t += i < n ? '●' : '○'; return t; }
+    // 進み具合の印（覚●○ 融○○ 強威形 ／ 覚●○○ 融× ／ 覚醒 融× ／ 融合 覚×）
+    function nMarks(m, p0) {
+      var d = nDef(m);
+      if (!d) return '';
+      var p = nNorm(m, p0), C = nChangeAt(), A = nAwakeAt();
+      var st = nStepsOf(d, p).map(function (x) { return x.mark; }).join('');
+      var h = !p.form ? '覚' + nDots(p.aw, C) + ' 融' + nDots(p.fu, C)
+        : p.form === 'awake' ? (p.awake ? '覚醒' : '覚' + nDots(Math.max(0, p.aw - C), A)) + ' 融×'
+        : '融合 覚×';
+      return h + (st ? ' 強' + st : '');
+    }
+    // ---- 人の道・間の強化・変化先 ----
+    function nPathOf(u) { return non() && u && u.labPath && u.side !== 'object' && nDef(u.magic) ? nNorm(u.magic, u.labPath) : null; }
+    function nCount(u, id) { var p = nPathOf(u); return p ? nStepsOf(nDef(u.magic), p).filter(function (x) { return x.id === id; }).length : 0; }
+    function nHas(u, id) { return nCount(u, id) > 0; }
+    // 変化先 { id, name, mark, verb, stage, kind, def（その段の定義）, base（覚醒方面の1段目か融合）}
+    function nForm(u) {
+      var p = nPathOf(u);
+      if (!p || !p.form) return null;
+      var d = nDef(u.magic), base = p.form === 'awake' ? d.awake : d.fuse, f = p.form === 'awake' && p.awake ? d.awake.lv2 : base;
+      return { id: f.id, name: f.name, mark: f.mark, verb: f.verb, stage: p.awake ? 2 : 1, kind: p.form, def: f, base: base };
+    }
+    function nFormOf(u) { var f = nForm(u); return f ? { name: f.name, mark: f.mark, stage: f.stage, dir: f.kind, id: f.id } : null; }
+    function nLabel(u) { return '【強化】' + (formName(u) || I.magicName(u.magic)); }
+    // ミッションの仕分け（画面から。id → defeat／spread／move／stop／free／off）
+    var nSort = {};
+    function nSetSort(map) { nSort = {}; Object.keys(map || {}).forEach(function (k) { if (LCH.WANTS[map[k]] || map[k] === 'off') nSort[k] = map[k]; }); }
+    function nMissionWant(t) { return (t && nSort[t.id]) || (t && t.want) || (t && LCH.SORT[t.id]) || 'free'; }
+    function nMissionList() { return LPW.MISSIONS.concat(LCH.MISSIONS_ADD); }
+    function nMission(id) { return nMissionList().filter(function (d) { return d.id === id; })[0] || null; }
+
+    // ---- 覚醒先の自然の印 ----
+    var N_AWK = { tree: { label: '樹', name: '大樹' }, rockmt: { label: '岳', name: '岩山' }, inferno: { label: '業', name: '業火' },
+      lake: { label: '湖', name: '湖' }, icelake: { label: '氷', name: '氷（凍った湖）' }, twister: { label: '竜', name: '竜巻の風' } };
+    function nMark(s, x, y, k) { s.labAwk = s.labAwk || {}; s.labAwk[idx(s, x, y)] = k; }
+    function nUnmark(s, x, y) { if (!s.labAwk) return; delete s.labAwk[idx(s, x, y)]; if (!Object.keys(s.labAwk).length) delete s.labAwk; }
+    function nAwkAt(s, x, y) { return s.labAwk && inBounds(s, x, y) ? s.labAwk[idx(s, x, y)] : undefined; }
+    // 画面用: そのマスの覚醒先の自然 { kind, label, name } か null
+    function nAwkTile(s, x, y) { var k = non() ? nAwkAt(s, x, y) : null; return k && N_AWK[k] ? { kind: k, label: N_AWK[k].label, name: N_AWK[k].name } : null; }
+    function nBody(s, x, y, tile, kind) { return connected(s, x, y, tile).filter(function (c) { return nAwkAt(s, c[0], c[1]) === kind; }); }
+    // 風下の斜面（body のうち、風下の隣が body でないマス）
+    function nLee(body, dir) { var F = DIRS[dir]; return body.filter(function (c) { return !has(body, c[0] + F.dx, c[1] + F.dy); }); }
+
+    // ---- 変化した魔法の形 ----
+    function nShapeOf(f, u) {
+      var sh = f.def.shape !== undefined ? f.def.shape : f.base.shape;
+      if (sh && !Array.isArray(sh)) sh = nWeak() ? sh.weak : sh.same;
+      return sh || B.shapes[u.magic] || null;
+    }
+    function nExtraOf(f, u, base) {
+      var ex = f.def.extra !== undefined ? f.def.extra : f.base.extra;
+      ex = (ex || LP.EXTRA_CELLS[u.magic] || []).concat(u.magic === 'grass' ? M_MORE.grass : []);
+      return ex.filter(function (c) { return !base.some(function (b) { return b[0] === c[0] && b[1] === c[1]; }); });
+    }
+    function nStand(s, u) { var st = LCH.STAND_ON[u.magic]; return nHas(u, 'standOn') && !!st && st.indexOf(getTile(s, u.x, u.y)) >= 0; }
+    cellsMore.unshift(function (s, u, o, facing) {
+      if (!non()) return null;
+      var f = nForm(u), base = f ? nShapeOf(f, u) : null;
+      if (!base) return null;   // 変化していなければ M の形（間の強化の「形が1マス」の数）
+      var n = shapeSteps(u) + (u.labBoost || 0) + (nStand(s, u) ? 2 : 0);
+      var cells = shapeAt(s, base.concat(nExtraOf(f, u, base).slice(0, n)), o, facing);
+      return u.labShrink ? cells.slice(0, 1) : cells;
+    });
+
+    // ---- 変化した魔法を撃つ（castMore の先頭） ----
+    castMore.unshift(function (s, u, facing, ctx, ev) {
+      if (!non()) return false;
+      ctx.labNPre = {};   // 撃つ前の人（効き目・押す の比べる元）
+      s.units.forEach(function (q) { ctx.labNPre[q.id] = { x: q.x, y: q.y, stuck: q.stuck, burn: q.burn || 0, facing: q.facing }; });
+      var f = nForm(u);
+      if (!f || s.labTrapFiring || !N_CAST[f.id]) return false;
+      ctx.labN = f;
+      N_CAST[f.id](s, u, facing, ctx, ev, f);
+      return true;
+    });
+    function nPlace(s, u, facing, ctx, ev, f) {
+      var cells = I.castCells(s, u, facing);
+      I.placeOrIgnite(s, u, facing, ctx, ev);
+      if (f.id === 'ntree' && cells[0] && getTile(s, cells[0][0], cells[0][1]) === 'forest') {
+        nMark(s, cells[0][0], cells[0][1], 'tree');
+        ctx.phrases.push('【覚醒】大樹が根を張った');
+      }
+      if (f.id === 'ninferno') {
+        var n = 0;
+        cells.forEach(function (c) { if (getTile(s, c[0], c[1]) === 'fire') { nMark(s, c[0], c[1], 'inferno'); n++; } });
+        if (n) ctx.phrases.push('【覚醒】業火が燃え上がった（' + n + 'マス）');
+      }
+    }
+    var N_CAST = {
+      nforest: nPlace, ntree: nPlace, nsakura: nPlace, nmud: nPlace, nblaze: nPlace, ninferno: nPlace, nrockmt: nPlace,
+      nrock: nRockCast, nwhirl: nWhirlCast, nlake: nLakeCast, nice: nLakeCast, nsource: nSourceCast, ngust: nGustCast, ntwister: nGustCast, nsand: nSandCast
+    };
+    // 置く・点ける変化先の1マス（ほかの作用より先。ここで扱わないマスは、元の魔法の作用のまま）
+    placeMore.unshift(function (s, u, x, y, t, o, facing, ctx, ev) {
+      if (!non()) return false;
+      // 氷（凍った湖）に火が来れば、湖に戻る（覚醒先の氷。元の魔法の火でも、炎・業火でも）
+      if (u.magic === 'fire' && t === 'ice' && nAwkAt(s, x, y) === 'icelake') { setTile(s, x, y, 'puddle'); nMark(s, x, y, 'lake'); ctx.phrases.push('氷が溶けて湖に戻った'); return true; }
+      var f = ctx && ctx.labN;
+      if (!f) return false;
+      var under = function (to) { return !o || (B.ideas.natureUnderUnits && !on('C1') && I.isPassable(to)); };
+      var foot = o ? '（' + unitLabel(s, o) + 'の足元）' : '';
+      if (f.id === 'nforest' || f.id === 'ntree') {
+        if (t === 'empty' && under('forest')) { setTile(s, x, y, 'forest'); ctx.phrases.push('【変化】森ができた' + foot); return true; }
+        return false;   // 草むら（森が茂る）・山・丘（桜）は草と同じ
+      }
+      if (f.id === 'nsakura') {
+        var sk = nWeak() ? 'hillsakura' : 'sakura';
+        if (t === 'empty') { if (under(sk)) { setTile(s, x, y, sk); ctx.phrases.push('【融合】' + tileName(sk) + 'が咲いた' + foot); } return true; }   // 山の桜は人の足元には咲かない
+        return false;
+      }
+      if (f.id === 'nblaze' || f.id === 'ninferno') {
+        if ((t === 'empty' || t === 'smallfire') && !(o && on('C1'))) { setTile(s, x, y, 'fire'); ctx.phrases.push('【変化】炎が燃え上がった' + foot); return true; }
+        return false;
+      }
+      if (f.id === 'nmud') {
+        if (t === 'empty' && under('mud')) { setTile(s, x, y, 'mud'); ctx.phrases.push('【融合】泥沼ができた' + foot); if (o) I.enterMud(s, o, ev); return true; }
+        return false;
+      }
+      if (f.id === 'nrockmt') {
+        if (t === 'rock') { rollRock(s, x, y, facing, ctx, ev); return true; }   // 岩の動詞（転がす）は残る
+        if ((t === 'empty' || t === 'hill' || t === 'mountain') && !o) { setTile(s, x, y, 'mountain'); nMark(s, x, y, 'rockmt'); ctx.phrases.push('【覚醒】岩山を盛った'); return true; }
+        if (t === 'empty' && o) return true;   // 人のいるマスには盛れない（直撃だけ）
+        return false;
+      }
+      return false;
+    });
+    // 岩: 空きに岩を置く。岩に撃つと転がる（ラボ I4 の岩。形が増えると、置く岩も増える）
+    function nRockCast(s, u, facing, ctx, ev) {
+      var placed = 0;
+      I.castCells(s, u, facing).forEach(function (c) {
+        ctx.cells.push(c);
+        var t = getTile(s, c[0], c[1]), q = unitAt(s, c[0], c[1]);
+        if (t === 'rock') { rollRock(s, c[0], c[1], facing, ctx, ev); return; }
+        if (q) { addHit(ctx, q, u.power, 'direct'); return; }
+        if (t === 'empty') { setTile(s, c[0], c[1], 'rock'); placed++; }
+      });
+      if (placed) ctx.phrases.push('【変化】岩を置いた（' + placed + 'つ）');
+    }
+    // 火の渦（融合）: 空き・炎・風・森に、いきなり火の渦。森の上は20、ほかは弱い5＋火傷（仲間と組んだ火の渦と同じ）
+    function nWhirlCast(s, u, facing, ctx, ev) {
+      var made = [], strong = [];
+      I.castCells(s, u, facing).forEach(function (c) {
+        ctx.cells.push(c);
+        var t = getTile(s, c[0], c[1]), q = unitAt(s, c[0], c[1]);
+        if (!I.WHIRL_OK[t]) return;
+        var big = I.burnsStrong(t);
+        if (q) addHit(ctx, q, big ? B.fire.strongDamage : B.fire.weakDamage, big ? 'finisher' : 'weakfire', c);
+        if (big) strong.push(c);
+        setTile(s, c[0], c[1], 'firewhirl');
+        made.push(c);
+      });
+      if (!made.length) { ctx.phrases.push('火の渦になる場所がなかった'); return; }
+      ctx.phrases.push('【融合】火の渦が立ち上がった（' + made.length + 'マス）');
+      afterWhirl(s, made, ev);
+      var amount = strong.length ? B.fire.strongDamage : B.fire.weakDamage;
+      finish(ctx, ev, '火の渦', made, amount, made[0], '【融合】火の渦！ 火を巻いて' + made.length + 'マスの渦が立ち上がった' +
+        (strong.length ? '（森' + strong.length + 'マスを巻きこんだ。森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）' : '（森がないので弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
+        (nWeak() ? '【控えめ: 1人で出す火の渦は正面1マス】' : ''));
+    }
+    // 湖・氷: 正面の面に、留まる水（湖）か凍った湖（氷）
+    function nLakeCast(s, u, facing, ctx, ev, f) {
+      var frozen = f.id === 'nice', made = 0, spin = false, stuck = 0;
+      I.castCells(s, u, facing).forEach(function (c) {
+        var x = c[0], y = c[1], t = getTile(s, x, y), o = unitAt(s, x, y);
+        ctx.cells.push(c);
+        if (!frozen) { var lf = flowCell(s, u, x, y, t, facing, ctx, ev, o); if (lf) { ctx.phrases.push(lf); return; } }   // 水の法則（大樹・業火・竜巻・岩 …）
+        if (o) { addHit(ctx, o, u.power, 'direct'); I.cureBurn(s, o, ctx); }
+        var under = !o || (B.ideas.natureUnderUnits && !on('C1'));
+        if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); ctx.phrases.push(tileName(t) + 'が消えた'); }
+        else if (t === 'lava') { setTile(s, x, y, 'mountain'); ctx.phrases.push('溶岩が冷えて山になった'); }
+        else if (!frozen && (t === 'firewhirl' || t === 'tornado') && !spin) { spin = true; ctx.phrases.push(tileName(t) + 'に水が入った'); I.doSentakuki(s, x, y, ctx, ev, facing); }
+        else if (frozen && ((t === 'empty' && under) || t === 'puddle' || t === 'river' || t === 'mirage' || t === 'thicket' || t === 'ice')) { setTile(s, x, y, 'ice'); nMark(s, x, y, 'icelake'); made++; }
+        else if (!frozen && ((t === 'empty' && under) || t === 'puddle' || t === 'mirage' || t === 'thicket')) { setTile(s, x, y, 'puddle'); nMark(s, x, y, 'lake'); made++; }
+        var q = unitAt(s, x, y);
+        if (frozen && q && getTile(s, x, y) === 'ice' && q.side !== 'object') {
+          var cur = q.stuck === true ? 1 : (Number(q.stuck) || 0);
+          if (!cur) { q.stuck = true; stuck++; ev.push({ type: 'mud', id: q.id, cells: [c], text: '【覚醒】' + unitLabel(s, q) + 'の足が氷に閉じこめられた（次の移動は1回休み）' }); }
+        }
+      });
+      if (made) ctx.phrases.push(frozen ? '【覚醒】湖が凍った（氷' + made + 'マス）' : '【変化】湖ができた（' + made + 'マス。水たまりとして振る舞う）');
+    }
+    // 源流（融合）: 撃った所から正面へ川が走る。人・山・森の手前で止まり、炎は消して止まる（N4: 控えめなら3マスまで）
+    function nSourceLen(s, u, f) { return (nWeak() ? f.def.len.weak : f.def.len.same) + shapeSteps(u) + (nStand(s, u) ? 2 : 0); }
+    function nSourceCast(s, u, facing, ctx, ev, f) {
+      var F = DIRS[facing], o0 = I.castOrigin(s, u, facing), lim = u.labShrink ? 1 : nSourceLen(s, u, f), made = 0, stop = null;
+      var g = { origin: null, tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] };
+      for (var i = 1; i < 40; i++) {
+        if (made >= lim) { stop = nWeak() ? '川はここまで（1人で出す源流は' + lim + 'マス）' : null; break; }
+        var x = o0.x + F.dx * i, y = o0.y + F.dy * i;
+        if (!inBounds(s, x, y)) { stop = '盤の端まで流れた'; break; }
+        ctx.cells.push([x, y]);
+        var o = unitAt(s, x, y), t = getTile(s, x, y);
+        var lf = flowCell(s, u, x, y, t, facing, ctx, ev, o);
+        if (lf) { stop = lf; break; }
+        if (o) { addHit(ctx, o, u.power, 'direct'); I.cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった'; g.blocked.push([x, y]); break; }
+        if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
+          setTile(s, x, y, 'river'); made++;
+          if (!g.origin) g.origin = [x, y];
+          g.cells.push([x, y]); g.tiles.push('river'); g.wave.push(g.cells.length - 1);
+          continue;
+        }
+        if (t === 'river' || t === 'ice') continue;
+        if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); stop = tileName(t) + 'を消して止まった'; break; }
+        if (t === 'firewhirl' || t === 'tornado') { ctx.phrases.push(tileName(t) + 'に水が入った'); I.doSentakuki(s, x, y, ctx, ev, facing); stop = null; break; }
+        stop = tileName(t) + 'で止まった';
+        break;
+      }
+      if (g.cells.length) ctx.grows.push(g);
+      ctx.phrases.push(made ? '【融合】源流から川が走った（' + made + 'マス）' : '川が走る場所がなかった');
+      if (stop) ctx.phrases.push(stop);
+    }
+    // 旋風・竜巻: 正面の面に円く巻く。当たった者は向きが右回りに変わる（竜巻はとらわれる）。空きには風（竜巻の風）
+    var N_CW = { up: 'right', right: 'down', down: 'left', left: 'up' }, N_BACK = { up: 'down', right: 'left', down: 'up', left: 'right' };
+    function nGustCast(s, u, facing, ctx, ev, f) {
+      var tw = f.id === 'ntwister', more = nHas(u, 'pushMore'), done = {}, left = 0;
+      I.castCells(s, u, facing).forEach(function (c) {
+        var x = c[0], y = c[1];
+        if (!inBounds(s, x, y)) return;
+        var t = getTile(s, x, y), o = unitAt(s, x, y);
+        ctx.cells.push(c);
+        if (o && o.id !== u.id) {
+          addHit(ctx, o, u.power, 'direct');
+          if (o.side !== 'object') {
+            var to = more ? N_BACK[o.facing] : N_CW[o.facing];
+            if (to && o.facing !== to) {
+              o.facing = to;
+              ev.push({ type: 'info', id: o.id, cells: [c], text: '【変化】' + unitLabel(s, o) + 'は' + f.name + 'に巻かれて' + DIRS[to].name + 'を向いた' + (more ? '（後ろを向かされた）' : '') + (o.intent ? '（予告の向きも変わった）' : '') });
+            }
+            if (tw && !o.stuck) { o.stuck = true; ev.push({ type: 'mud', id: o.id, cells: [c], text: '【覚醒】' + unitLabel(s, o) + 'は竜巻にとらわれた（次の移動は1回休み）' }); }
+          }
+        }
+        if (blowCell(s, u, x, y, t, facing, ctx, ev)) return;   // 風の法則（岩・岩山・氷・雪山 …）
+        if ((t === 'fire' || t === 'smallfire' || t === 'firewhirl') && !done.spread) { done.spread = true; ctx.phrases.push(tileName(t) + 'に風が当たった'); I.doSpread(s, x, y, facing, ctx, ev, 0); return; }
+        if ((t === 'sakura' || t === 'hillsakura') && !done.erupt) { done.erupt = true; ctx.phrases.push(tileName(t) + 'に風が当たった'); I.doEruption(s, x, y, facing, ctx, ev); return; }
+        if (t === 'mirage' && B.ideas.windClearsMirage) { setTile(s, x, y, 'empty'); ctx.phrases.push('風で蜃気楼が晴れた'); }
+        var nt = getTile(s, x, y);
+        if (nt === 'empty' && !(unitAt(s, x, y) && on('C1'))) { setTile(s, x, y, 'breeze'); left++; if (tw) nMark(s, x, y, 'twister'); }
+        else if (tw && I.isWind(nt)) nMark(s, x, y, 'twister');
+      });
+      if (left) ctx.phrases.push(tw ? '【覚醒】竜巻の風が' + left + 'マス巻いている（ターン終了まで）' : '【変化】風が' + left + 'マス巻いている（ターン終了まで）');
+    }
+    // 砂嵐（融合）: 円く巻いて砂嵐（中の者は見えない）。ターン終了でおさまると丘
+    function nSandCast(s, u, facing, ctx, ev) {
+      var n = 0;
+      I.castCells(s, u, facing).forEach(function (c) {
+        var x = c[0], y = c[1], t = getTile(s, x, y), o = unitAt(s, x, y);
+        ctx.cells.push(c);
+        if (o && o.id !== u.id) addHit(ctx, o, u.power, 'direct');
+        if (t === 'empty' || I.isWind(t)) { setTile(s, x, y, 'sandstorm'); n++; }
+      });
+      if (n) ctx.phrases.push('【融合】砂嵐が巻き起こった（' + n + 'マス。中の者は見えない。ターン終了でおさまると丘が残る）');
+    }
+
+    // ---- 覚醒先の新しい組み合わせ（1つずつ） ----
+    // 水が来た（流れる・湖・源流の1マス）: 大樹 → 森が一気に広がる ／業火 → 水蒸気爆発 ／竜巻 → まわりに雨
+    function nFlowCell(s, u, x, y, t, facing, ctx, ev) {
+      if (!non()) return null;
+      var k = nAwkAt(s, x, y);
+      if (k === 'tree' && t === 'forest') { nTreeBloom(s, x, y, ctx, ev); return '大樹が水を吸い上げた'; }
+      if (k === 'inferno' && t === 'fire') { if (onceIn(ctx, 'nSteam')) nSteam(s, x, y, ctx, ev); return '業火に水がかかった'; }
+      if (k === 'twister' && I.isWind(t)) { if (onceIn(ctx, 'nRain')) nRain(s, x, y, ctx, ev); return '竜巻が水を巻き上げた'; }
+      return null;
+    }
+    // 風が来た（吹く・旋風・竜巻の1マス）: 岩山 → 岩なだれ ／氷 → 吹雪。true なら風はそこで止まる
+    function nBlowCell(s, u, x, y, t, facing, ctx, ev) {
+      if (!non()) return false;
+      var k = nAwkAt(s, x, y);
+      if (k === 'rockmt' && t === 'mountain') { if (!has(ctx.cells, x, y)) ctx.cells.push([x, y]); if (onceIn(ctx, 'nRockfall')) { ctx.phrases.push('岩山に風が当たった'); nRockfall(s, x, y, facing, ctx, ev); } return true; }
+      if (k === 'icelake' && t === 'ice') { if (!has(ctx.cells, x, y)) ctx.cells.push([x, y]); if (onceIn(ctx, 'nBlizzard')) { ctx.phrases.push('氷に風が当たった'); nBlizzard(s, x, y, facing, ctx, ev); } return true; }
+      return false;
+    }
+    // 大樹に水: 大樹のまわり2マス（縦横の歩数）の空き・草むらが、一気に森になる（人の足元にも）
+    function nTreeBloom(s, x, y, ctx, ev) {
+      var trees = nBody(s, x, y, 'forest', 'tree'), out = [], seen = {};
+      trees.forEach(function (tc) {
+        for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) {
+          var cx = tc[0] + dx, cy = tc[1] + dy, k = key(cx, cy);
+          if (Math.abs(dx) + Math.abs(dy) > 2 || seen[k] || !inBounds(s, cx, cy)) continue;
+          seen[k] = true;
+          var t = getTile(s, cx, cy), o = unitAt(s, cx, cy);
+          if ((t === 'empty' || t === 'thicket') && (!o || (B.ideas.natureUnderUnits && !on('C1')))) { setTile(s, cx, cy, 'forest'); out.push([cx, cy]); }
+        }
+      });
+      out.forEach(function (c) { if (!has(ctx.cells, c[0], c[1])) ctx.cells.push(c); });
+      ev.push({ type: 'kindle', isNew: true, cells: out, text: '【覚醒】大樹が水を吸い上げ、まわりに森が一気に広がった（' + out.length + 'マス）' });
+    }
+    // 業火に水: 消えずに爆ぜる（水蒸気爆発。業火とまわり1マスの者に20）。業火はただの炎として残る
+    function nSteam(s, x, y, ctx, ev) {
+      var core = nBody(s, x, y, 'fire', 'inferno');
+      var cells = around8(s, core);
+      hitAll(s, ctx, cells, B.fire.strongDamage);
+      core.forEach(function (c) { nUnmark(s, c[0], c[1]); });
+      finish(ctx, ev, '水蒸気爆発', cells, B.fire.strongDamage, [x, y], '【覚醒】水蒸気爆発！ 業火は水で消えずに爆ぜた（業火' + core.length + 'マスとまわり1マスに威力' + B.fire.strongDamage + '）', { awk: true });
+    }
+    // 竜巻に水: 水を巻き上げて、竜巻とまわり1マスに雨（空きは水たまり、炎は消える。業火なら爆ぜる）
+    function nRain(s, x, y, ctx, ev) {
+      var body = connected(s, x, y, getTile(s, x, y)).filter(function (c) { return nAwkAt(s, c[0], c[1]) === 'twister'; });
+      var area = around8(s, body), pud = [], out = 0;
+      area.forEach(function (c) {
+        var t = getTile(s, c[0], c[1]), o = unitAt(s, c[0], c[1]);
+        if (o) I.cureBurn(s, o, ctx);
+        if (t === 'fire' && nAwkAt(s, c[0], c[1]) === 'inferno') { if (onceIn(ctx, 'nSteam')) nSteam(s, c[0], c[1], ctx, ev); return; }
+        if (t === 'fire' || t === 'smallfire') { setTile(s, c[0], c[1], 'empty'); out++; return; }
+        if (t === 'empty' && (!o || (B.ideas.natureUnderUnits && !on('C1')))) { setTile(s, c[0], c[1], 'puddle'); pud.push(c); }
+      });
+      pud.forEach(function (c) { if (!has(ctx.cells, c[0], c[1])) ctx.cells.push(c); });
+      ev.push({ type: 'kindle', isNew: true, cells: area, text: '【覚醒】竜巻が水を巻き上げ、まわりに雨を降らせた（水たまり' + pud.length + 'マス' + (out ? '・炎が' + out + 'マス消えた' : '') + '）' });
+    }
+    // 岩山に風: 岩が風下の斜面を転がり落ちる（岩なだれ。通り道の者に20。水に落ちれば飛び石、止まった所に岩）。岩山はただの山に戻る
+    function nRollPath(s, x, y, dir) {
+      var F = DIRS[dir], cx = x, cy = y, cells = [], water = false;
+      for (var i = 0; i < 20; i++) {
+        var nx = cx + F.dx, ny = cy + F.dy;
+        if (!inBounds(s, nx, ny)) break;
+        var t = getTile(s, nx, ny);
+        if (t === 'river' || t === 'puddle' || t === 'reeds') { cells.push([nx, ny]); water = true; break; }
+        if (!I.isPassable(t)) break;
+        cells.push([nx, ny]); cx = nx; cy = ny;
+      }
+      return { cells: cells, water: water };
+    }
+    function nRockfall(s, x, y, dir, ctx, ev) {
+      var body = nBody(s, x, y, 'mountain', 'rockmt'), lanes = nLee(body, dir), path = [], ends = [];
+      lanes.forEach(function (c) {
+        var r = nRollPath(s, c[0], c[1], dir);
+        r.cells.forEach(function (p) { if (!has(path, p[0], p[1])) path.push(p); });
+        if (r.cells.length) ends.push({ at: r.cells[r.cells.length - 1], water: r.water });
+      });
+      body.forEach(function (c) { nUnmark(s, c[0], c[1]); });
+      if (!path.length) { ctx.phrases.push('岩山の風下に、岩の転がる斜面がなかった'); return; }
+      hitAll(s, ctx, path, B.fire.strongDamage);
+      ends.forEach(function (e) {
+        var t = getTile(s, e.at[0], e.at[1]);
+        if (e.water) setTile(s, e.at[0], e.at[1], 'stepstone');
+        else if (t === 'empty' && !unitAt(s, e.at[0], e.at[1])) setTile(s, e.at[0], e.at[1], 'rock');
+      });
+      finish(ctx, ev, '岩なだれ', path, B.fire.strongDamage, [x, y], '【覚醒】岩なだれ！ 岩山の岩が' + DIRS[dir].name + 'の斜面を転がり落ちた（' + lanes.length + '筋・通り道の者に威力' + B.fire.strongDamage + '。岩山はただの山に）', { dir: dir, awk: true });
+    }
+    // 氷に風: 吹雪。氷の風下の一直線が凍る（空き・水・炎は氷に、そこにいる者は足が凍る）。氷はそのまま
+    var N_FREEZE = { empty: true, puddle: true, river: true, mirage: true, smallfire: true, fire: true, reeds: true, breeze: true, gale: true };
+    function nBlizzard(s, x, y, dir, ctx, ev) {
+      var body = nBody(s, x, y, 'ice', 'icelake'), cells = [], frozen = 0;
+      nLee(body, dir).forEach(function (c) { lineFrom(s, c[0], c[1], dir, HARD).forEach(function (p) { if (!has(cells, p[0], p[1])) cells.push(p); }); });
+      cells.forEach(function (c) {
+        var t = getTile(s, c[0], c[1]), q = unitAt(s, c[0], c[1]);
+        if (N_FREEZE[t]) setTile(s, c[0], c[1], 'ice');
+        if (q && q.side !== 'object') {
+          I.cureBurn(s, q, ctx);
+          if (!q.stuck) { q.stuck = true; frozen++; ev.push({ type: 'mud', id: q.id, cells: [c], text: '【覚醒】' + unitLabel(s, q) + 'は吹雪で足が凍りついた（次の移動は1回休み）' }); }
+        }
+      });
+      finish(ctx, ev, '吹雪', cells, 0, [x, y], '【覚醒】吹雪！ 氷の上を風が吹き抜け、' + DIRS[dir].name + 'の一直線が凍った（' + cells.length + 'マス・足が凍った者' + frozen + '人）', { dir: dir, awk: true });
+    }
+
+    // ---- 間の強化（撃ったあと。判定より先） ----
+    function nAfterShot(s, u, facing, ctx, ev) {
+      if (!non()) return;
+      if (ctx.labN) {   // 撃った言葉を、変化先の名前と動詞に
+        var from = I.magicName(u.magic) + 'の魔法（' + I.MAGIC_INFO[u.magic].verb + '）', to = ctx.labN.name + 'の魔法（' + ctx.labN.verb + '）';
+        for (var i = ev.length - 1; i >= 0; i--) if (ev[i].type === 'cast' && ev[i].id === u.id) { ev[i].text = ev[i].text.replace(from, to); ev[i].labForm = ctx.labN.id; break; }
+      }
+      if (!nPathOf(u)) return;
+      var hits = ctx.order.filter(function (id) { var h = ctx.hits[id]; return h && h.src === 'direct' && id !== u.id; })
+        .map(function (id) { return I.findUnit(s, id); }).filter(function (q) { return q && q.side !== 'object' && q.hp > 0; });
+      // 止める: 当たった敵（術者の相手）の予告が遅れる・次の移動を止める・次の魔法の形が小さくなる
+      var foes = hits.filter(function (q) { return q.side !== u.side; });
+      if (nHas(u, 'delay')) foes.forEach(function (q) {
+        if (!q.intent) return;
+        q.intent = false; q.labDelay = { n: 1 };
+        ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: nLabel(u) + ': ' + unitLabel(s, q) + 'の予告が1ターン遅れた（その場で構えたまま、次のターンに撃つ）' });
+      });
+      if (nHas(u, 'hold')) foes.forEach(function (q) {
+        var cur = q.stuck === true ? 1 : (Number(q.stuck) || 0);
+        if (cur >= 1) return;
+        q.stuck = true;
+        ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: nLabel(u) + ': ' + unitLabel(s, q) + 'は足が止まった（次の移動は1回休み）' });
+      });
+      if (nHas(u, 'shrink')) foes.forEach(function (q) {
+        q.labShrink = true;
+        ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: nLabel(u) + ': ' + unitLabel(s, q) + 'の次の魔法は1マスだけ' });
+      });
+      if (nHas(u, 'effect')) nEffect(s, u, ctx, ev);
+      if (nHas(u, 'pushMore')) nPushMore(s, u, ctx, ev);
+    }
+    // 倒す3: 当たった者への効き目が1段強く・長く（この1発で付いた足止め・火傷が1回長い。火の直撃は火傷を負わせる）
+    function nEffect(s, u, ctx, ev) {
+      var pre = ctx.labNPre || {};
+      s.units.forEach(function (q) {
+        var b = pre[q.id];
+        if (!b || q.id === u.id || q.side === 'object' || q.hp <= 0) return;
+        var direct = ctx.hits[q.id] && ctx.hits[q.id].src === 'direct', parts = [];
+        var st0 = b.stuck === true ? 1 : (Number(b.stuck) || 0), st1 = q.stuck === true ? 1 : (Number(q.stuck) || 0);
+        if (st1 > st0) { q.stuck = st1 + 1; parts.push('足止めが' + (st1 + 1) + '回に'); }
+        if (u.magic === 'fire' && direct && (q.burn || 0) < B.fire.burnTurns) { q.burn = B.fire.burnTurns; parts.push('直撃で火傷'); }
+        if ((q.burn || 0) > b.burn) { q.burn += 1; parts.push('火傷が' + q.burn + '回に'); }
+        if (parts.length) ev.push({ type: 'burnStatus', id: q.id, cells: [[q.x, q.y]], text: nLabel(u) + ': ' + unitLabel(s, q) + 'への効き目が1段強い（' + parts.join('・') + '）' });
+      });
+    }
+    // 動かす1: この1発で動いた者を、動いた向きへもう1マス（押す・運ぶ・引き寄せる。向きを変えるは旋風の中で後ろを向かせる）
+    function nPushMore(s, u, ctx, ev) {
+      var pre = ctx.labNPre || {};
+      s.units.forEach(function (q) {
+        var b = pre[q.id];
+        if (!b || q.id === u.id || q.hp <= 0 || I.isFixed(q)) return;
+        var dx = q.x - b.x, dy = q.y - b.y;
+        if (!dx && !dy) return;
+        if (q.stuck && getTile(s, q.x, q.y) === 'mud') return;   // 泥沼にはまったら、そこで止まる
+        var dir = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        I.pushOne(s, q, dir, ev, nLabel(u) + ': ' + unitLabel(s, q) + 'をさらに' + DIRS[dir].name + 'へ1マス');
+      });
+    }
+    // 倒す1: 直撃の威力 +2
+    hitMore.push(function (ctx, u, amount, src) {
+      if (src !== 'direct' || !ctx.caster || !ctx.s || !non()) return amount;
+      var c = I.findUnit(ctx.s, ctx.caster);
+      return c && nHas(c, 'power') ? amount + 2 : amount;
+    });
+    // エディット: N の道をいじる（labSetPath と同じ。form は数から決まる）
+    var NAPI = {
+      on: non, CH: LCH, WANTS: LCH.WANTS, WANT_ORDER: LCH.WANT_ORDER, SORT_ORDER: LCH.SORT_ORDER, FORMS: LCH.FORMS, STEPS: LCH.STEPS, MORE: LCH.MORE,
+      MISSIONS: function () { return nMissionList(); }, def: nDef, norm: nNorm, wantOf: nWantOf, wantName: nWantName, kind: nKind, stepsOf: function (m, p) { var d = nDef(m); return d ? nStepsOf(d, nNorm(m, p)) : []; },
+      stepAt: nStepAt, formOf: nFormOf, changeAt: nChangeAt, awakeAt: nAwakeAt, odd: nOdd, earth: nEarth, weak: nWeak, keep: nKeep,
+      setSort: nSetSort, sortOf: function () { return lclone(nSort); }, missionWant: nMissionWant, mission: nMission, awkTile: nAwkTile, AWK: N_AWK
+    };
+
     var LAPI = {
       DIRS: LT.DIRS, DIR_ORDER: LT.DIR_ORDER, TARGETS: LT.TARGETS, TAKERS: LT.TAKERS || {}, PATHS: LP.PATHS, EXTRA_CELLS: LP.EXTRA_CELLS, LEGACY: LP.LEGACY,
       pathDef: pathDef, dirsOf: dirsOf, isGood: isGood, makeGood: makeGood, awakeDirs: awakeDirs, makeForm: makeForm, stepText: stepText, closeText: closeText, gotOrder: gotOrder, newPath: newPath, normPath: normPath, advance: advance, gain: gain, gainText: gainText,
@@ -3954,7 +4519,7 @@
       questsOf: questsOf, questOf: questOf, DARK: LT.DARK || [], darkOf: darkOf, darkMax: darkMax, darkPower: darkPower, darkDots: darkDots,
       targetDef: targetDef, openT: openT, handName: handName, foilPreview: foilPreview, redirectPreview: redirectPreview, thornCaged: thornCaged,
       whoMode: whoMode, enemyMode: enemyMode, targetCount: targetCount, loseMode: loseMode, destMode: destMode,
-      M: MAPI, dirTable: function () { return mon() ? LPW.DIRS : LT.DIRS; }, takerTable: function () { return mon() ? LPW.TAKERS : (LT.TAKERS || {}); }   // M のときは3つの方向（＋作る系）
+      M: MAPI, N: NAPI, dirTable: function () { return non() ? LCH.WANTS : mon() ? LPW.DIRS : LT.DIRS; }, takerTable: function () { return mon() ? LPW.TAKERS : (LT.TAKERS || {}); }   // M のときは3つの方向（＋作る系）
     };
 
     // ---------------------------------------------------------------
@@ -3966,6 +4531,7 @@
       if (s.labWind && old !== t && s.labWind[i] !== undefined) delete s.labWind[i];
       if (s.labAge && old !== t && s.labAge[i] !== undefined) delete s.labAge[i];
       if (s.labLinger && old !== t && s.labLinger[i] !== undefined) delete s.labLinger[i];   // M5: もう1ターン残すマス
+      if (s.labAwk && old !== t && s.labAwk[i] !== undefined) { delete s.labAwk[i]; if (!Object.keys(s.labAwk).length) delete s.labAwk; }   // N: 覚醒先の自然の印（自然が変わると消える）
       if (lon()) makerSet(s, i, t);   // L: その自然を作った手
       return t;
     }
@@ -4008,6 +4574,7 @@
       boostText: boostText, boostShape: boostShape, FORMS: FORMS, WEAPONS: WEAPONS, BOOST_INFO: BOOST_INFO, GROW_LIST: GROW_LIST, GROW_DIR: GROW_DIR,
       api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic, labSetPath: editSetPath, labSetCand: editSetCand },
       keepTile: keepTile, onResult: onResult, passUnit: passUnit,   // M
+      awkTile: nAwkTile,   // N: 覚醒先の自然の印（画面）
       formName: formName, planStart: planStart, afterPlan: afterPlan, afterAct: afterAct, spreadBonus: spreadBonus, plantLike: plantLike, L: LAPI,
       crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
       on: on, opt: opt, edge: edge, CH: I.CH,
