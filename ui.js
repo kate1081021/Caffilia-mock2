@@ -1102,7 +1102,9 @@
     var fo = form && R.LX.L ? R.LX.L.formOf(u) : null;   // 覚醒先の印（1文字）を駒に大きく、名前を小さく
     if (fo && fo.stage === 2) cls.push('awake2');   // ラボ M: 2段目の覚醒はもっと光る
     var name = u.side === 'ally' ? (fo ? '<b class="u-mark">' + esc(fo.mark) + '</b>' + (fo.mark !== form ? '<small class="u-form">' + esc(form) + '</small>' : '') : esc(R.magicName(u.magic)))
-      : '敵<small>' + esc(u.letter) + '</small>' + (form ? '<small class="u-form">' + esc((fo ? fo.mark + ' ' : '') + form) + '</small>' : '');
+      : (u.labWizard ? '人<small>' + esc(u.letter) + '</small><small class="u-form">魔法使い</small>' : '敵<small>' + esc(u.letter) + '</small>') + (form ? '<small class="u-form">' + esc((fo ? fo.mark + ' ' : '') + form) + '</small>' : '');   // ラボ L7: 魔法使い（人）
+    if (u.labWizard) cls.push('wizard');
+    if (R.LX && R.LX.L && R.LX.L.darkOf && R.LX.L.darkOf(u) > 0) cls.push('darkpow');   // ラボ L7: 闇の力を持っている
     // ラボ: 大きい敵（D3）・体（D6・D7）・欲（D1）・めちゃ強い敵（D5）の見た目
     if (u.size > 1) cls.push('big');
     if (u.body) cls.push('body-' + u.body);

@@ -2220,6 +2220,89 @@ test('M オフ: M の切り替えがオフなら、性質も候補も何も起�
   ok(!r.state.labFinTurn && !r.state.labLastHand);
 });
 
+console.log('\n■ L7 闇クエスト');
+(function () {
+  var LL = R.LX.L;
+  function gotBy(s, id) { var t = (s.labTargets || []).filter(function (x) { return x.id === id; })[0]; return t && t.got ? (t.got.by ? t.got.by.magic : 'choose') : null; }
+  function darkBoard(withTargets) {
+    var s = board(['.......', '.......', '.......', '.FFFFF.', '.......', '.......', '.......']);
+    R.addAlly(s, 'grass', 3, 6, 'up'); var f = R.addAlly(s, 'fire', 2, 4, 'up'); var w = R.addAlly(s, 'wind', 0, 3, 'right');
+    var wz = R.addEnemy(s, 'water', 4, 3); wz.labWizard = true; wz.stand = 'still'; wz.name = '魔法使い';
+    R.addObject(s, 'village', 2, 3); R.addObject(s, 'wagon', 3, 3);
+    if (withTargets) s.labTargetList = ['darkVillage', 'darkCart', 'darkWizard'];
+    return { s: R.startBattle(s).state, f: f, w: w, wz: wz };
+  }
+  test('L7 オフ: 闇のミッションは出ない（シナリオにあっても）', function () {
+    R.labApply(['L0']);
+    var b = darkBoard(true);
+    eq((b.s.labTargets || []).length, 0);
+  });
+  test('L7: 村・トロッコ（馬車）・魔法使い（人）を、味方の魔法で壊す・倒すと、撃った魔法が取る', function () {
+    R.labApply(['L0', 'L7']);
+    var b = darkBoard(true);
+    eq(R.findUnit(b.s, b.wz.id).hp, B.ally.hp, '魔法使いの HP は人（味方）と同じ');
+    var r1 = act(b.s, b.f, 'up');
+    eq(gotBy(r1.state, 'darkVillage'), 'fire');
+    ok(/火の闇の力が1つ増える（直撃 \+7/.test(texts(r1.events)), texts(r1.events));
+    var r2 = act(r1.state, b.w, 'right');
+    eq([gotBy(r2.state, 'darkCart'), gotBy(r2.state, 'darkWizard'), r2.state.result], ['wind', 'wind', 'win']);
+    ok(/風の闇の力が1つ増える（直撃 \+14。闇の力 ●●○）/.test(texts(r2.events)), '同じ戦闘で2つ目');
+  });
+  test('L7 闇の力: 方向の道は進まず、魔法ごとに数で持つ（上限3）。L も M も同じ。印は「闇●●○」', function () {
+    R.labApply(['L0', 'L7']);
+    var p = LL.newPath('fire');
+    LL.gain(p, 'fire', 'dark'); LL.gain(p, 'fire', 'dark'); LL.gain(p, 'fire', 'dark');
+    var g = LL.gain(p, 'fire', 'dark');
+    eq([p.dark, !!g.res.darkFull, p.decide, p.make], [3, true, 0, 0]);
+    ok(/闇●●●$/.test(LL.pathMarks('fire', p)), LL.pathMarks('fire', p));
+    eq(LL.normPath('fire', { decide: 1, dark: 9 }).dark, 3, '上限まで');
+    R.labApply(['L0', 'M0', 'L7']);
+    var q = LL.newPath('wind');
+    LL.gain(q, 'wind', 'dark');
+    eq([q.dark, q.simple, q.decide], [1, 0, 0], 'M: 単純強化にも方向にもならない');
+    eq(LL.normPath('wind', { stop: 2, dark: 2 }).dark, 2);
+  });
+  test('L7 闇の力: 直撃が1つで +7（決め手のダメージは変えない）。敵が持っても同じ。L7 がオフなら効かない', function () {
+    R.labApply(['L0', 'L7']);
+    var s = board(['.....', '.....', '.....', '.....', '.....']);
+    var f = R.addAlly(s, 'fire', 2, 4, 'up'); var e = R.addEnemy(s, 'fire', 2, 3); tough(s, e, 99);
+    R.findUnit(s, f.id).labPath = LL.normPath('fire', { dark: 2 });
+    eq(dealt(act(s, f, 'up'), e.id), 15, '1＋7×2');
+    R.findUnit(s, f.id).labPath = LL.normPath('fire', { dark: 3 });
+    var s1 = R.clone(s); R.findUnit(s1, e.id).hp = 20; R.findUnit(s1, e.id).maxHp = 20;
+    ok(!R.findUnit(act(s1, R.findUnit(s1, f.id), 'up').state, e.id), '3つで直撃 22 → HP20 の敵を一撃');
+    // 敵も同じ
+    var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+    var a = R.addAlly(s2, 'fire', 2, 3, 'up'); tough(s2, a, 99);
+    var en = R.addEnemy(s2, 'fire', 2, 2, 'down'); R.findUnit(s2, en.id).labPath = { dark: 1 };
+    var rr = R.act(s2, a.id, { dir: 'left', shoot: false }).state;
+    var en2 = R.findUnit(rr, en.id); en2.intent = true; en2.facing = 'down'; rr.enemyActs = true;
+    ok(R.endTurn(rr).events.some(function (x) { return x.type === 'damage' && x.id === a.id && x.amount === B.enemy.power + 7; }), '敵の直撃も +7');
+    R.labApply(['L0']);
+    R.findUnit(s, f.id).labPath = LL.normPath('fire', { dark: 2 });
+    eq(dealt(act(s, f, 'up'), e.id), 1, 'L7 オフなら今のまま');
+  });
+  test('L7: ターン終了の炎で村が壊れたときは「ターン終了」の手（L2 に従う。初期は取れない）', function () {
+    R.labApply(['L0', 'L7']);
+    var s = board(['.....', '.....', '..X..', '.....', '.....']);
+    R.addAlly(s, 'fire', 0, 4, 'up');
+    R.addObject(s, 'village', 2, 2);
+    s.labTargetList = ['darkVillage'];
+    var t = R.startBattle(s).state;
+    t.units.forEach(function (u) { if (u.side === 'ally') u.acted = true; });
+    var r = R.endTurn(t);
+    ok(!r.state.units.some(function (u) { return u.kind === 'village'; }), '炎の上の村が壊れた');
+    eq(gotBy(r.state, 'darkVillage'), null);
+    ok(/ターン終了で起きたので、取れない/.test(texts(r.events)), texts(r.events));
+  });
+  test('L7 闇クエスト連戦: 2戦目（守る）に闇クエストがあり、受けると闇クエストの盤面のあと3戦目へ続く', function () {
+    var p2 = R.findPreset('labMk2'), d = R.findPreset('labMkD');
+    eq([p2.labDark, d.labDarkBoard, d.labDarkFrom, d.labNext, d.labSeries], ['labMkD', true, 'labMk2', 'labMk3', '2/4']);
+    ok(p2.lab.indexOf('L7') >= 0 && d.lab.indexOf('L7') >= 0);
+    eq(d.labState.labTargetList, ['darkVillage', 'darkCart', 'darkWizard']);
+  });
+})();
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

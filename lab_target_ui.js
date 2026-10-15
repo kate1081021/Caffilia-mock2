@@ -58,7 +58,16 @@
     var tip2 = '強化の数（1回で形が1マス、上限' + M.shapeMax() + '）。' + (fo ? (p.awake ? '覚醒「' + fo.lv2.name + '」した' : 'あと' + (A - M.total(p)) + 'つで覚醒「' + fo.lv2.name + '」') : '変化してから、合計' + A + 'で覚醒');
     return h + '<span class="lt-path lt-pow' + (p.awake ? ' awake' : '') + '" title="' + esc(tip2) + '"><span class="lt-mark">強</span><span class="dots">' + dots2 + '</span></span>';
   }
-  function marksHtml(m, p) {
+  // L7 闇の力の印（持っているときだけ）
+  function darkHtml(p) {
+    var n = p && p.dark > 0 ? Math.min(p.dark, LXL.darkMax()) : 0;
+    if (!n) return '';
+    var dots = '';
+    for (var i = 0; i < LXL.darkMax(); i++) dots += '<i class="' + (i < n ? 'on' : '') + '"></i>';
+    return '<span class="lt-path d-dark" title="' + esc('闇の力（闇クエストで取った）: 直撃 +' + (n * LXL.darkPower()) + (R.lab('L7') ? '' : '（L7 がオフなので、いまは効かない）')) + '">' + mark('dark') + '<span class="dots">' + dots + '</span></span>';
+  }
+  function marksHtml(m, p) { return marksHtmlBase(m, p) + darkHtml(p); }
+  function marksHtmlBase(m, p) {
     if (isM()) return marksHtmlM(m, p);
     var d = LXL.pathDef(m);
     if (!d) return '';
@@ -110,6 +119,7 @@
     });
     // L6 クエストで方向を選ぶ: 選んだクエスト（なければお題に合うクエスト）のミッションにする。選んでいなければ、読んだあとに選ぶ画面を出す
     questPending = null;
+    if (preset && preset.labDarkBoard) { s.labQuest = { dir: 'dark', name: '闇クエスト', fit: false }; return s; }   // L7: 闇クエストの盤面
     if (R.lab('L6') && preset && !opts.demo && LXL.questsOf(preset).length) {
       var q = LXL.questOf(preset, opts.labQuest);
       s.labTargetList = q.list.slice();
@@ -223,7 +233,15 @@
   }
 
   // ---- エディット: 道を直接いじる ----
-  app.labPathEditHtml = function (u) {
+  // L7 闇の力の数（エディット。0〜上限）
+  function darkEditHtml(u) {
+    if (!R.lab('L7') || u.side === 'object' || !LXL.pathDef(u.magic)) return '';
+    var n = u.labPath && u.labPath.dark ? u.labPath.dark : 0, opts = '';
+    for (var i = 0; i <= LXL.darkMax(); i++) opts += '<option value="' + i + '"' + (n === i ? ' selected' : '') + '>' + i + (i ? '（直撃 +' + (i * LXL.darkPower()) + '）' : '') + '</option>';
+    return '<span class="persona-edit lt-edit lt-darkedit"><label>闇の力 <select data-id="' + u.id + '" data-field="lpath:dark">' + opts + '</select></label></span>';
+  }
+  app.labPathEditHtml = function (u) { return pathEditHtmlBase(u) + darkEditHtml(u); };
+  function pathEditHtmlBase(u) {
     if (isM()) return pathEditHtmlM(u);
     if (!R.lab('L0') || u.side === 'object' || !LXL.pathDef(u.magic)) return '';
     var d = LXL.pathDef(u.magic), p = LXL.normPath(u.magic, u.labPath);
@@ -233,7 +251,7 @@
         return '<option value="' + n + '"' + (p[k] === n ? ' selected' : '') + '>' + n + tail + '</option>';
       }).join('') + '</select></label>';
     }).join('') + '<button type="button" data-lt="pathzero" data-id="' + u.id + '">0に</button></span>';
-  };
+  }
   // M: 方向ごとの数（change で変化）・単純強化の数・M5 の候補
   function pathEditHtmlM(u) {
     var M = LXL.M, d = u.side === 'object' ? null : M.def(u.magic);
@@ -272,7 +290,7 @@
       if (!u) return;
       var p = LXL.normPath(u.magic, u.labPath);
       p[k] = v;
-      if (isM() && k !== 'simple') { if (v >= LXL.M.changeAt()) p.form = k; else if (p.form === k) p.form = null; }   // M: change に届いた方向で変化
+      if (isM() && k !== 'simple' && k !== 'dark') { if (v >= LXL.M.changeAt()) p.form = k; else if (p.form === k) p.form = null; }   // M: change に届いた方向で変化（闇の力は方向ではない）
       // 3 にした方向が覚醒（作るは、作るが得意な魔法だけ）。ほかの得意な方向は2まで。作るはほかに覚醒しても3まで残る
       if (!isM() && LXL.awakeDirs(u.magic).indexOf(k) >= 0) {
         if (v >= 3) { p.awake = k; LXL.pathDef(u.magic).dirs.forEach(function (o) { if (o !== k && p[o] > 2) p[o] = 2; }); }
@@ -405,6 +423,12 @@
       }).join('') + '</ul></div>';
   }
   function pathCardHtml(m, b, a, applied) {
+    var base = pathCardHtmlBase(m, b, a, applied), cur = applied ? a : b, n = cur && cur.dark ? cur.dark : 0, nb = b && b.dark ? b.dark : 0, na = a && a.dark ? a.dark : 0;
+    if (!n && !na) return base;
+    var line = '<div class="lt-pc-dark">' + mark('dark') + ' 闇の力 ' + LXL.darkDots(applied ? na : nb) + (na !== nb && !applied ? ' → ' + LXL.darkDots(na) : '') + '<small>直撃 +' + ((applied ? na : Math.max(na, nb)) * LXL.darkPower()) + '</small></div>';
+    return base.replace(/<\/div>$/, line + '</div>');
+  }
+  function pathCardHtmlBase(m, b, a, applied) {
     if (isM()) return pathCardHtmlM(m, b, a, applied);
     var d = LXL.pathDef(m), awoke = a.awake && !b.awake, cur = applied ? a : b;
     return '<div class="lt-pathcard' + (awoke && applied ? ' awoke' : '') + '"><div class="lt-pc-head"><b>' + esc(magicLabel(m, cur)) + '</b> <small>得意: ' + esc(goodText(m)) + '</small>' +
@@ -445,8 +469,11 @@
   });
 
   // ---- L6 クエストを選ぶ（戦闘の前に。同じ盤面で、どの方向のミッションが出るか） ----
+  var questFor = null;   // クエストを選ぶ盤面（闇クエストの盤面にいるときは、もとの盤面）
   function openQuest() {
     var pre = app.scenario && R.findPreset(app.scenario), st = app.state;
+    if (pre && pre.labDarkFrom) pre = R.findPreset(pre.labDarkFrom);
+    questFor = pre ? pre.id : null;
     var qs = pre ? LXL.questsOf(pre) : [];
     if (!qs.length) return;
     var n = LXL.targetCount();
@@ -459,18 +486,31 @@
         return '<div class="lt-questcard d-' + esc(dcls(q.dir)) + (st.labQuest && st.labQuest.dir === q.dir ? ' now' : '') + '"><div class="lt-pc-head">' + mark(q.dir) + ' <b>' + esc(q.name) + '</b> <small>（' + esc(dirInfo(q.dir).name) + '寄り）' + (q.fit ? ' お題に合う' : '') + '</small></div>' +
           '<ul>' + defs.map(function (t, i) { return '<li class="' + (i >= n ? 'off' : '') + '">' + mark(t.dir) + ' ' + esc(t.name) + '</li>'; }).join('') + '</ul>' +
           '<button type="button" class="primary" data-quest="' + esc(q.dir) + '">このクエストで戦う</button></div>';
-      }).join('') + '</div><div class="lab-run-buttons"><button type="button" data-g="close">閉じる（いまのクエストのまま）</button></div></div>';
+      }).join('') + darkQuestCard(pre, st, n) + '</div><div class="lab-run-buttons"><button type="button" data-g="close">閉じる（いまのクエストのまま）</button></div></div>';
     gbox.innerHTML = h;
     growth = null;
     gbox.hidden = false;
   }
+  // L7 闇クエストの札（もとの盤面の labDark が、闇クエストの盤面）
+  function darkQuestCard(pre, st, n) {
+    var dp = R.lab('L7') && pre && pre.labDark ? R.findPreset(pre.labDark) : null;
+    if (!dp) return '';
+    var defs = ((dp.labState && dp.labState.labTargetList) || []).map(LXL.targetDef).filter(Boolean);
+    var max = LXL.darkMax(), pw = LXL.darkPower();
+    return '<div class="lt-questcard lt-darkq d-dark' + (st.labQuest && st.labQuest.dir === 'dark' ? ' now' : '') + '"><div class="lt-pc-head">' + mark('dark') + ' <b>闇クエスト</b> <small>' + esc(dp.labDarkName || dp.name) + '</small></div>' +
+      '<ul>' + defs.map(function (t, i) { return '<li class="' + (i >= n ? 'off' : '') + '">' + mark(t.dir) + ' ' + esc(t.name) + '</li>'; }).join('') + '</ul>' +
+      '<p class="lt-darknote">報酬: 闇の力（1つで直撃 +' + pw + '、' + max + 'つで +' + (pw * max) + '）。方向の道は進まない</p>' +
+      '<button type="button" class="primary" data-darkq="' + esc(dp.id) + '">闇クエストを受ける</button></div>';
+  }
   gbox.addEventListener('click', function (e) {
+    var dk = e.target.closest('[data-darkq]');
+    if (dk) { gbox.hidden = true; app.loadScenario(dk.getAttribute('data-darkq'), { labQuest: 'dark' }); app.addLog('【ラボ L7】闇クエストを受けた'); return; }
     var b = e.target.closest('[data-quest]');
     if (!b) return;
-    var dir = b.getAttribute('data-quest');
+    var dir = b.getAttribute('data-quest'), id = questFor || app.scenario;
     gbox.hidden = true;
-    app.loadScenario(app.scenario, { labQuest: dir });
-    app.addLog('【ラボ L6】クエスト「' + ((LXL.questOf(R.findPreset(app.scenario), dir) || {}).name || dir) + '」を受けた');
+    app.loadScenario(id, { labQuest: dir });
+    app.addLog('【ラボ L6】クエスト「' + ((LXL.questOf(R.findPreset(id), dir) || {}).name || dir) + '」を受けた');
   });
 
   // ---- 道を見る（戦闘の外でも） ----

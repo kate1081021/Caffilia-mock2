@@ -83,8 +83,18 @@
   var QUEST_NAME = { make: '開拓', decide: '討伐', stop: '足止め', move: '誘導' };
   var QUEST_LEAN = { annihilate: 'decide', defense: 'stop', escort: 'move', retrieve: 'move' };   // 戦闘は決める・防衛は止める・護衛と奪取は動かす
 
+  // L7 闇クエスト【仮】: 守るはずのものを壊す・倒すはずでない相手を倒す。取ると「闇の力」（直撃の威力が大きく上がる）。
+  //   方向ではない（道は進まない）。闇の力は魔法ごとに数で持つ（labPath.dark。上限と1つあたりの威力は balance.js の L7）
+  var DARK_DIR = { name: '闇', mark: '闇', color: '#3f3550', desc: '守るはずのものを壊す・倒すはずでない相手を倒す。取ると闇の力（直撃の威力が大きく上がる）' };
+  LAB_DIRS.dark = DARK_DIR;   // DIR_ORDER には入れない（方向ではない）
+  var DARK = [
+    { id: 'darkVillage', dir: 'dark', name: '村を壊す', text: '守るはずの村を、自分たちの魔法で壊す', check: { kind: 'breakObj', obj: 'village' } },
+    { id: 'darkCart', dir: 'dark', name: 'トロッコを壊す', text: '運ぶはずのトロッコ（馬車）を、自分たちの魔法で壊す', check: { kind: 'breakObj', obj: 'wagon' } },
+    { id: 'darkWizard', dir: 'dark', name: '魔法使いを倒す', text: 'こちらに手を出してこない魔法使い（人）を倒す', check: { kind: 'killWizard' } }
+  ];
+
   var api = { DIRS: LAB_DIRS, DIR_ORDER: LAB_DIR_ORDER, TARGETS: LAB_TARGETS, TAKERS: LAB_TAKERS,
-    QUEST_POOL: QUEST_POOL, QUEST_NAME: QUEST_NAME, QUEST_LEAN: QUEST_LEAN };
+    QUEST_POOL: QUEST_POOL, QUEST_NAME: QUEST_NAME, QUEST_LEAN: QUEST_LEAN, DARK: DARK, DARK_DIR: DARK_DIR };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LAB_TARGETS = api;
 })(this);

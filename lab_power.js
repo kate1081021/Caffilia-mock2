@@ -19,7 +19,8 @@
     decide: { name: '決める', mark: '決', color: '#d24a3c', power: '攻', desc: '敵を倒す力（決め手・倒す）' },
     stop:   { name: '止める', mark: '止', color: '#3d73c9', power: '守', desc: '敵の手を止める・守る力（足止め・予告を潰す・守る）' },
     move:   { name: '動かす', mark: '動', color: '#8b5cf6', power: '走', desc: '位置と向きを変える力（押す・引く・向きを変える・自分が動く）' },
-    make:   { name: '作る系', mark: '作', color: '#8a8f86', power: '', desc: '方向を持たないミッション（作ることは最初から全部できる）。取ると単純強化か、目印だけ（M4）' }
+    make:   { name: '作る系', mark: '作', color: '#8a8f86', power: '', desc: '方向を持たないミッション（作ることは最初から全部できる）。取ると単純強化か、目印だけ（M4）' },
+    dark:   { name: '闇', mark: '闇', color: '#3f3550', power: '', desc: '闇クエスト（L7）のミッション。方向ではない。取ると闇の力（直撃の威力が大きく上がる）' }   // DIR_ORDER・LIST_ORDER には入れない
   };
   var DIR_ORDER = ['decide', 'stop', 'move'];   // 方向（作る系は入らない）
   var LIST_ORDER = ['decide', 'stop', 'move', 'make'];

@@ -1337,6 +1337,17 @@ body.lab-tidy .cell:not(:hover) .u-boost, body.lab-tidy .cell:not(:hover) .u-ord
 .lt-questcard li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
 .lt-questcard li.off { opacity: .4; }
 .lt-questcard button { margin-top: auto; }
+/* ラボ L7: 闇クエスト（守るはずのものを壊す。報酬は闇の力＝直撃の威力） */
+.d-dark { --ld: #3f3550; }
+.lt-questcard.lt-darkq { background: linear-gradient(160deg, #2b2438, #1c1726); color: #e9e3f5; border-color: #4c3f63; border-left-color: #a78bfa; }
+.lt-questcard.lt-darkq small, .lt-questcard.lt-darkq .lt-darknote { color: #c4b5fd; }
+.lt-questcard.lt-darkq .lt-darknote { margin: 0; font-size: 11px; }
+.lt-questcard.lt-darkq button.primary { background: #6d28d9; border-color: #4c1d95; }
+.lt-pc-dark { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: #4c1d95; }
+.lt-pc-dark small { margin-left: auto; color: var(--muted); }
+.lt-path.d-dark .dots i.on { background: #6d28d9; border-color: #6d28d9; }
+.unit.darkpow { box-shadow: 0 0 0 2px #6d28d9, 0 0 10px 3px rgba(109, 40, 217, .55); }
+.unit.wizard { background: #f5f3ff; border-style: dashed; }
 .lt-awake { color: #b45309; font-weight: bold; }
 .lt-pc-row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
 .lt-pc-l { color: var(--muted); width: 2.2em; }

@@ -2124,6 +2124,69 @@
       MS.push(p);
     });
 
+    // L7 闇クエスト: 守るはずのものを壊す・倒すはずでない相手を倒す。報酬は闇の力（直撃の威力が大きく上がる）
+    var DARK_DESC = '闇のミッション3つ: 村を壊す・トロッコ（馬車）を壊す・魔法使い（人。こちらに手を出してこない）を倒す。取った魔法は、勝ったときに「闇の力」を1つ得る（1つで直撃 +7。3つで直撃 22 になり、敵を直撃だけで一撃で倒せる）。方向の道は進まない。';
+    MS.push({
+      id: 'labMD', labCat: 'M', lab: ['L0', 'M0', 'L7'], name: 'ラボ: 闇クエスト 守るはずの村', labDarkName: '守るはずの村',
+      labState: { labTargetList: ['darkVillage', 'darkCart', 'darkWizard'] },
+      desc: '【ラボ L7・闇クエスト】7×7。味方 草・火・風。森の列に、村・トロッコ（馬車）・魔法使い（人）が並ぶ。' + DARK_DESC +
+        '火で村を直撃すると村が壊れて、足元の森に火が点く。左から風を吹くと燃え広がりで、トロッコと魔法使いがまとめて焼ける。誰に闇の力を持たせるかは、誰に壊させるかで決まる。',
+      rows: ['.......', '.......', '.......', '.FFFFF.', '.......', '.......', '.......'],
+      allies: [['grass', 3, 6], ['fire', 2, 5], ['wind', 0, 5]],
+      enemies: [['water', 4, 3, { stand: 'still', lab: { labWizard: true, name: '魔法使い' } }]],
+      villages: [[2, 3]],
+      wagon: [3, 3],
+      demo: {
+        desc: '守るはずの村を火で壊し、トロッコと魔法使いを風の燃え広がりで焼く。勝つと、火に闇の力1つ、風に闇の力2つ。',
+        turns: [[
+          { say: '見るところ: 闇クエストのミッションは、守るはずの村・運ぶはずのトロッコを壊す、手を出してこない魔法使いを倒す。取った魔法は、勝ったときに闇の力（直撃の威力）を得る。' },
+          { id: 'P2', to: [2, 4], dir: 'up', say: '火で村を直撃 → 村が壊れた。「村を壊す」は火。足元の森に火が点いた。' },
+          { id: 'P3', to: [0, 3], dir: 'right', say: '左から風 → 燃え広がり。トロッコと魔法使いがまとめて焼けた。「トロッコを壊す」「魔法使いを倒す」は風。勝つと、風は闇の力2つ（直撃 +14）。' }
+        ]],
+        expect: { result: 'win', targets: { darkVillage: 'fire', darkCart: 'wind', darkWizard: 'wind' } }
+      }
+    });
+    MS.push({
+      id: 'labMDp', labCat: 'M', lab: ['L0', 'M0', 'L7'], name: 'ラボ: 闇の力を試す',
+      labState: { labTargetList: ['finKill', 'killBefore', 'nextTo'] },
+      desc: '【ラボ L7・闇の力】7×7。火は闇の力3つ（直撃 1＋7×3＝22）、草と風は闇の力なし。火の直撃だけで、敵（HP20）を一撃で倒せる。シナジーを組まなくても勝てる強さが、闇の報酬。闇の力はエディットで変えられる（0〜3）。',
+      rows: ['.......', '.......', '.......', '.......', '.......', '.......', '.......'],
+      allies: [['grass', 1, 6], ['fire', 3, 6, { lab: { labPath: { dark: 3 } } }], ['wind', 5, 6]],
+      enemies: [['fire', 3, 2, { aim: 'near' }], ['fire', 5, 1, { aim: 'count' }]],
+      overrides: { 'enemy.move': 1 },
+      demo: {
+        desc: '闇の力3つの火が、直撃だけで敵Aを一撃で倒す。',
+        turns: [[
+          { say: '見るところ: 火は闇の力3つ（駒が紫に光る）。直撃は 1＋7×3＝22。' },
+          { id: 'P2', to: [3, 4], dir: 'up', say: '火の直撃で、敵Aに22 → 一撃で倒れた。決め手（シナジー）を使わずに倒せる。' }
+        ]],
+        expect: { gone: ['E4'] }
+      }
+    });
+    // 闇クエスト連戦: M クエスト連戦に L7 を足したもの。2戦目（守る）のクエストを選ぶ画面に、闇クエスト「守るはずの村」が出る
+    (function () {
+      var ids = ['labMq1', 'labMq2', 'labMq3', 'labMq4'];
+      ids.forEach(function (id, i) {
+        var base = MS.filter(function (p) { return p.id === id; })[0];
+        var p = JSON.parse(JSON.stringify(base));
+        p.id = 'labMk' + (i + 1);
+        p.lab = p.lab.concat(['L7']);
+        p.name = 'ラボ: M 闇クエスト連戦 ' + (i + 1) + '/4（' + base.name.replace(/^.*（/, '').replace(/）$/, '') + '）';
+        p.desc = '【ラボ M・闇クエスト連戦 ' + (i + 1) + '/4】M クエスト連戦に闇クエスト（L7）を足した。2戦目（守る）のクエストを選ぶ画面に、闇クエスト「守るはずの村」が出る。闇クエストを受けると、守るはずの村を壊す戦いになり、勝つと闇の力（直撃の威力）を得る。 ' + base.desc;
+        if (i < ids.length - 1) p.labNext = 'labMk' + (i + 2);
+        if (i === 1) p.labDark = 'labMkD';
+        MS.push(p);
+      });
+      var d = JSON.parse(JSON.stringify(MS.filter(function (p) { return p.id === 'labMD'; })[0]));
+      delete d.demo;
+      d.id = 'labMkD';
+      d.lab = ['L0', 'M0', 'L6', 'L7'];
+      d.name = 'ラボ: M 闇クエスト連戦 2/4（闇クエスト 守るはずの村）';
+      d.desc = '【ラボ M・闇クエスト連戦 2/4・闇クエスト】' + d.desc;
+      d.labDarkBoard = true; d.labDarkFrom = 'labMk2'; d.labSeries = '2/4'; d.labNext = 'labMk3'; d.hidden = true;
+      MS.push(d);
+    })();
+
     LAB_PRESETS.push.apply(LAB_PRESETS, MS);
   })();
 

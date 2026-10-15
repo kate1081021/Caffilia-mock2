@@ -2417,7 +2417,8 @@
     function clamp3(v) { return Math.max(0, Math.min(3, Math.round(Number(v) || 0))); }
     // 道の形をそろえる（各方向 0〜3。覚醒は1つだけ。得意な方向は3に届いた1つが覚醒で、ほかは2まで。
     //   作るは3まで進める。作るが得意なら、ほかに覚醒がないとき3で覚醒。ほかに先に覚醒していれば、3でも覚醒しない）
-    function normPath(m, p0) {
+    function normPath(m, p0) { return withDark(normPathBase(m, p0), p0); }
+    function normPathBase(m, p0) {
       if (mon()) return mNorm(m, p0);
       var d = pathDef(m);
       if (!d) return null;
@@ -2472,6 +2473,7 @@
     }
     // 道を1マス進める（p を書き換える）。{ ok, step, awake } ／{ none }（その方向を持たない）／{ closed }（覚醒で閉じた）／{ full }（もう覚醒した方向）／{ makeFull }（作るは3マスで上限）
     function advance(p, m, dir) {
+      if (dir === 'dark') return darkAdvance(p, m);   // L7: 闇の力（方向ではない）
       if (mon()) return mAdvance(p, m, dir);
       var d = pathDef(m);
       if (!d || !p) return { none: true };
@@ -2492,6 +2494,7 @@
     }
     // 達成したときの行き先（L5）。p を書き換える。{ dir: 進んだ方向, res, via: 得意でなかったときの元の結果, dest: L5 の値, after: 進めたあとの道 }
     function gain(p, m, dir) {
+      if (dir === 'dark') { var dg = { dir: 'dark', res: darkAdvance(p, m) }; if (p) dg.after = lclone(p); return dg; }   // L7
       if (mon()) return mGain(p, m, dir);
       var g, r = advance(p, m, dir);
       if (r.ok || dir === 'make' || !pathDef(m) || !p) g = { dir: dir, res: r };
@@ -2503,7 +2506,8 @@
     // 取ったら、その方向の道がそのまま進むか（L5 remain: 進まない手では達成にならない）
     function advances(p, m, dir) { return !!(p && pathDef(m) && advance(lclone(p), m, dir).ok); }
     // 進み具合の印（作●○○ 止●●○ …。閉じた方向は × を足す）
-    function pathMarks(m, p) {
+    function pathMarks(m, p) { var dk = p && p.dark > 0 && pathDef(m) ? ' 闇' + darkDots(p.dark) : ''; return pathMarksBase(m, p) + dk; }   // L7: 闇の力
+    function pathMarksBase(m, p) {
       if (mon()) return mMarks(m, p);
       var d = pathDef(m);
       if (!d) return '';
@@ -2542,6 +2546,7 @@
     }
     // gain の結果の一言（dir は達成したターゲットの方向）
     function gainText(m, dir, g, before) {
+      if (dir === 'dark') return darkText(m, g);   // L7
       if (mon()) return mGainText(m, dir, g, before);
       var nm = I.magicName(m), r = g.res;
       if (!pathDef(m)) return nm + 'には道がない（育たない）';
@@ -2553,31 +2558,77 @@
     }
     // 取ったら道がどうなるか（一言）。p はその魔法の今の道（なければ 0 から）
     function outlook(m, p, dir) {
+      if (dir === 'dark') return pathDef(m) ? darkText(m, gain(lclone(p || newPath(m)), m, 'dark')) : '達成するが、' + I.magicName(m) + 'には道がない（闇の力も持てない）';   // L7
       if (mon()) return mOutlook(m, p, dir);
       if (!pathDef(m)) return '達成するが、' + I.magicName(m) + 'には道がない（育たない）';
       p = p || newPath(m);
       return gainText(m, dir, gain(lclone(p), m, dir), p);
     }
 
+    // ---- L7 闇クエスト: 闇の力（方向ではない。道は進まない。取るたびに直撃の威力が大きく上がる） ----
+    //   道 labPath.dark ＝ 闇の力の数（0〜max）。1つで直撃 +power（balance.js の L7）。L も M も同じ。L7 がオフなら威力は上がらない
+    function darkMax() { return clampN(lopt('L7', 'max', 3), 1, 9, 3); }
+    function darkPower() { return clampN(lopt('L7', 'power', 7), 0, 99, 7); }
+    function darkDots(n) { var t = ''; for (var i = 0; i < darkMax(); i++) t += i < n ? '●' : '○'; return t; }
+    function withDark(p, src) {
+      if (p && src && Number(src.dark) > 0) p.dark = clampN(src.dark, 0, darkMax(), 0);
+      return p;
+    }
+    function darkAdvance(p, m) {
+      if (!p || !pathDef(m)) return { none: true };
+      if ((p.dark || 0) >= darkMax()) return { darkFull: true };
+      p.dark = (p.dark || 0) + 1;
+      return { ok: true, kind: 'dark', step: p.dark };
+    }
+    function darkText(m, g) {
+      var nm = I.magicName(m), r = g.res, n = g.after ? (g.after.dark || 0) : 0;
+      if (r.none) return nm + 'には道がない（闇の力も持てない）';
+      if (r.darkFull) return nm + 'の闇の力はもう上限（直撃 +' + (darkMax() * darkPower()) + '）';
+      return nm + 'の闇の力が1つ増える（直撃 +' + (n * darkPower()) + '。闇の力 ' + darkDots(n) + '）';
+    }
+    // 人の闇の力の数（L7 がオンのときだけ効く）
+    function darkOf(u) { var p = on('L7') ? lpathOf(u) : null; return p ? clampN(p.dark, 0, darkMax(), 0) : 0; }
+    // 直撃の威力: 闇の力1つで +power（術者の魔法が直接当たったとき。決め手のダメージは変えない）。敵が闇の力を持っても同じ
+    hitMore.push(function (ctx, u, amount, src, cell) {
+      if (src !== 'direct' || !ctx.caster || !ctx.s || !on('L7')) return amount;
+      var c = I.findUnit(ctx.s, ctx.caster), n = darkOf(c);
+      return n ? amount + n * darkPower() : amount;
+    });
+    // 魔法使い（人）: 闇クエストの盤面の敵。HP は人と同じ（味方の HP）
+    confMore.push(function (u, c) { return on('L7') && u.labWizard ? { hp: B.ally.hp, power: c.power, move: c.move } : null; });
+    // ターン終了で、村・馬車・魔法使いが倒れた（炎・火傷）。手は「ターン終了」（L2 に従う）
+    function darkTurnEnd(s, e, c, ev) {
+      if (!on('L7')) return;
+      var wiz = e.side === 'enemy' && (s.labWizardIds || []).indexOf(e.id) >= 0;
+      (s.labTargets || []).forEach(function (t) {
+        if (t.got || !t.check) return;
+        var k = t.check.kind;
+        if ((k === 'breakObj' && e.side === 'object' && e.kind === t.check.obj) || (k === 'killWizard' && wiz)) {
+          achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []);
+        }
+      });
+    }
+
     // ---- ターゲット ----
     function targetDef(x) {
-      var t = typeof x === 'string' ? (mon() && mMission(x)) || LT.TARGETS.filter(function (d) { return d.id === x; })[0] : x;
+      var t = typeof x === 'string' ? (mon() && mMission(x)) || LT.TARGETS.filter(function (d) { return d.id === x; })[0] || (LT.DARK || []).filter(function (d) { return d.id === x; })[0] : x;
       if (!t || !t.check) return null;
       t = JSON.parse(JSON.stringify(t));
-      if (mon() && !t.stage) t.dir = missionDir(t);   // M: 画面の「ミッションの仕分け」で変えた方向
+      if (mon() && !t.stage && t.dir !== 'dark') t.dir = missionDir(t);   // M: 画面の「ミッションの仕分け」で変えた方向（闇は仕分けない）
       return t;
     }
     // 戦闘の始まり: シナリオの labState.labTargetList から、この戦闘のターゲットを決める（数は L3。育つが切なら「二段」は出さない）
     function setupTargets(s) {
       if (!lon()) return;
       if (!s.labTargets && s.labTargetList) {
-        var list = s.labTargetList.map(targetDef).filter(function (t) { return t && (!t.needsGrow || B.grow.enabled) && mOffer(s, t); });
+        var list = s.labTargetList.map(targetDef).filter(function (t) { return t && (!t.needsGrow || B.grow.enabled) && mOffer(s, t) && (t.dir !== 'dark' || on('L7')); });   // L7: 闇のミッションは L7 のときだけ
         s.labTargets = list.slice(0, targetCount());
       }
       (s.labTargets || []).forEach(function (t) { t.got = null; delete t.missed; delete t.remainSeen; });
       delete s.labPlanFin; delete s.labFoil; delete s.labShot;
       if (mon()) mSetup(s);   // M: 戦闘ごとの記録
       s.units.forEach(function (u) { delete u.labHeldBy; delete u.labHeldRun; delete u.labMovedBy; delete u.labBind; });
+      if (on('L7')) { var wz = s.units.filter(function (u) { return u.labWizard; }).map(function (u) { return u.id; }); if (wz.length) s.labWizardIds = wz; else delete s.labWizardIds; }   // L7
     }
     function openT(s, kind) { return (s.labTargets || []).filter(function (t) { return !t.got && t.check && t.check.kind === kind; }); }
     function uniqHands(list) { var out = []; list.forEach(function (h) { out = out.filter(function (x) { return x.id !== h.id; }); out.push(h); }); return out; }
@@ -2627,7 +2678,10 @@
     function achieve(s, t, hand, preps, ev, cells) {
       var who = whoMode(), taker = t.taker || 'hand', got;
       preps = uniqHands(preps || []);
-      var canTake = function (h) { return mon() ? mCanTake(projected(s, h), h.magic, t.dir) : destMode() !== 'remain' || advances(projected(s, h), h.magic, t.dir); };
+      var canTake = function (h) {
+        if (t.dir === 'dark') return true;   // L7: 闇の力は上限を越えても達成にはなる（道は変わらない）
+        return mon() ? mCanTake(projected(s, h), h.magic, t.dir) : destMode() !== 'remain' || advances(projected(s, h), h.magic, t.dir);
+      };
       if (hand.side === 'ally') {
         if (taker === 'hand' && who === 'choose') {
           var all = uniqHands(preps.concat([hand])), cands = all.filter(canTake);
@@ -2669,7 +2723,7 @@
       var track = s.labTargets && stopOpen(s);
       ctx.labPre = { tiles: s.tiles.slice(), maker: lclone(s.labMaker || {}),
         units: s.units.map(function (x) {
-          return { id: x.id, side: x.side, magic: x.magic, x: x.x, y: x.y, size: x.size || 1,
+          return { id: x.id, side: x.side, magic: x.magic, x: x.x, y: x.y, size: x.size || 1, kind: x.kind, wiz: !!x.labWizard,
             held: track && x.side === 'enemy' ? heldNow(s, x) : false, heldBy: x.labHeldBy || null,
             intent: !!x.intent, facing: x.facing, tile: getTile(s, x.x, x.y), shots: x.labShots || 0 };   // M: 予告の前に倒す・向きを変える・高い所から下ろす・撃たせずに倒す
         }) };
@@ -2785,6 +2839,10 @@
             return has(ctx.cells, q[0], q[1]) && (!t.check.tile || pre.tiles[idx(s, q[0], q[1])] === t.check.tile);
           });
           if (hit) r = { cells: cc, mat: [] };
+        } else if (k === 'breakObj' || k === 'killWizard') {
+          // L7 闇: この1発で、守るはずの置きもの（村・馬車）が壊れた／魔法使い（人）が倒れた
+          var gone = pre.units.filter(function (p) { return (k === 'killWizard' ? p.wiz : p.side === 'object' && p.kind === t.check.obj) && !I.findUnit(s, p.id); });
+          if (gone.length) r = { cells: gone.map(function (p) { return [p.x, p.y]; }), mat: finCells };
         } else if (mon()) {
           var mr = mJudge(s, u, ctx, ev, t, E);   // M: 41のミッションのうち、L にない判定
           if (mr) { r = mr.r; taker = mr.taker || null; }
@@ -2920,8 +2978,10 @@
       var mark = -1;
       for (var i = ev.length - 1; i >= 0; i--) if (ev[i].type === 'turnEnd') { mark = i; break; }
       if (mark >= 0) ev.slice(mark).forEach(function (e) {
-        if (e.type !== 'death' || e.side !== 'enemy') return;
+        if (e.type !== 'death') return;
         var c = (e.cells || [])[0];
+        darkTurnEnd(s, e, c, ev);   // L7: 村・馬車・魔法使いがターン終了で倒れた
+        if (e.side !== 'enemy') return;
         openT(s, 'kill').forEach(function (t) { achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []); });
         if (mon() && mNeverShot(s, e.id)) openT(s, 'neverShot').forEach(function (t) { achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []); });
       });
@@ -3891,7 +3951,7 @@
       pathDef: pathDef, dirsOf: dirsOf, isGood: isGood, makeGood: makeGood, awakeDirs: awakeDirs, makeForm: makeForm, stepText: stepText, closeText: closeText, gotOrder: gotOrder, newPath: newPath, normPath: normPath, advance: advance, gain: gain, gainText: gainText,
       pathMarks: pathMarks, outlook: outlook, projected: projected, fxOn: fxOn,
       stepOf: stepOf, awakeOf: awakeOf, formOf: formOf, formName: formName, shapeSteps: shapeSteps, dirName: dirName,
-      questsOf: questsOf, questOf: questOf,
+      questsOf: questsOf, questOf: questOf, DARK: LT.DARK || [], darkOf: darkOf, darkMax: darkMax, darkPower: darkPower, darkDots: darkDots,
       targetDef: targetDef, openT: openT, handName: handName, foilPreview: foilPreview, redirectPreview: redirectPreview, thornCaged: thornCaged,
       whoMode: whoMode, enemyMode: enemyMode, targetCount: targetCount, loseMode: loseMode, destMode: destMode,
       M: MAPI, dirTable: function () { return mon() ? LPW.DIRS : LT.DIRS; }, takerTable: function () { return mon() ? LPW.TAKERS : (LT.TAKERS || {}); }   // M のときは3つの方向（＋作る系）
