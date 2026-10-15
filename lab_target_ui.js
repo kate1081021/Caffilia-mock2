@@ -638,7 +638,7 @@
       '<li class="d-awk' + (fu ? ' closed' : '') + '"><span class="lt-mark">覚</span> 覚醒方面 変化「' + esc(d.awake.name) + '」→ 覚醒「' + esc(d.awake.lv2.name) + '」' +
         '<small>' + esc(awNote) + '</small><small>変化「' + esc(d.awake.name) + '」: ' + esc(d.awake.text) + '</small><small>覚醒「' + esc(d.awake.lv2.name) + '」: ' + esc(d.awake.lv2.text) + '</small><small class="lt-ncombo">新しい組み合わせ: ' + esc(d.awake.lv2.combo) + '</small></li>' +
       '<li class="d-fuse' + (aw ? ' closed' : '') + '"><span class="lt-mark">融</span> 融合方面「' + esc(d.fuse.name) + '」（' + esc(R.magicName(d.fuse.with)) + 'と混ざる）' +
-        '<small>' + esc(fuNote) + '</small><small>' + esc(d.fuse.text) + '（' + esc(N.weak() ? d.fuse.weak : d.fuse.same) + '）</small></li></ul>';
+        '<small>' + esc(fuNote) + '</small><small>' + esc(d.fuse.text) + '</small><small>' + (N.weak() ? '1人で出すと控えめ（N4）: ' + esc(d.fuse.weak) : '仲間と組むのと同じ大きさ（N4）: ' + esc(d.fuse.same)) + '</small></li></ul>';
   }
   // 間の強化の並び（付いたものは太字）
   function nStepsHtml(m, p) {

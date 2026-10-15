@@ -2303,6 +2303,321 @@ console.log('\n■ L7 闇クエスト');
   });
 })();
 
+console.log('\n■ N 強化と変化（やりたいこと・印・間の強化・変化・覚醒・融合）');
+(function () {
+  var LL = R.LX.L, N = LL.N;
+  function withGrow(fn) { var g = B.grow.enabled; B.grow.enabled = true; try { fn(); } finally { B.grow.enabled = g; } }
+  function path(s, u, p) { R.findUnit(s, u.id).labPath = p; return u; }
+  function E7() { return board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']); }
+  function awk(s, x, y) { var a = R.LX.awkTile(s, x, y); return a ? a.kind : null; }
+  function gotBy(s, id) { var t = (s.labTargets || []).filter(function (x) { return x.id === id; })[0]; return t && t.got ? (t.got.by ? t.got.by.magic : 'choose') : null; }
+
+  test('N0 オフ: M の道のまま（方向は3つ）。N0 オン: 属性ごとのやりたいこと。雷・氷・闇は道がない', function () {
+    R.labApply(['M0']);
+    eq(LL.pathDef('fire').dirs, ['decide', 'stop', 'move']);
+    ok(!N.on());
+    R.labApply(['N0']);
+    ok(R.lab('L0') && R.lab('M0') && N.on(), 'N0 は L0・M0 が要る');
+    eq(['fire', 'grass', 'water', 'wind', 'earth'].map(function (m) { return LL.pathDef(m).want; }), ['defeat', 'spread', 'stop', 'move', 'defeat']);
+    eq([LL.pathDef('thunder'), LL.pathDef('ice'), LL.pathDef('dark')], [null, null, null]);
+    ok(/今回の育ちの対象ではない/.test(LL.outlook('thunder', null, 'defeat')));
+  });
+  test('N 印の種類: やりたいことと合えば覚醒方面、合わなければ融合方面。「どれでも」は覚醒方面', function () {
+    R.labApply(['N0']);
+    eq([N.kind('fire', 'defeat'), N.kind('fire', 'spread'), N.kind('fire', 'free'), N.kind('grass', 'spread'), N.kind('water', 'defeat')], ['awake', 'fuse', 'awake', 'awake', 'fuse']);
+    R.labApply(['N0', 'N2'], { N2: { odd: 'partner' } });
+    eq([N.kind('fire', 'move'), N.kind('fire', 'stop'), N.kind('earth', 'stop'), N.kind('grass', 'defeat')], ['fuse', null, 'fuse', 'fuse'], '融合の相手（火→風「動かす」、土→水「止める」、草→土「倒す」）');
+    ok(/融合の相手（風「動かす」）とも合わないので、印にならない/.test(LL.outlook('fire', null, 'stop')));
+    R.labApply(['N0', 'N2'], { N2: { odd: 'step' } });
+    var p = LL.newPath('fire'), g = LL.gain(p, 'fire', 'spread');
+    eq([g.res.kind, p.aw, p.fu, p.steps], ['step', 0, 0, 1], 'step: 方面に数えず、間の強化だけ');
+  });
+  test('N 変化: 先に2つたまった方面へ（もう片方は閉じる）。覚醒方面はさらに3つで覚醒。間の強化は並びの順、使い切ったら形が1マス（上限3）', function () {
+    R.labApply(['N0']);
+    var p = LL.newPath('fire');
+    var g1 = LL.gain(p, 'fire', 'defeat'), g2 = LL.gain(p, 'fire', 'spread'), g3 = LL.gain(p, 'fire', 'defeat');
+    eq([g1.res.step.id, g2.res.step.id, g3.res.step.id], ['power', 'shape', 'effect']);
+    eq([p.form, g3.res.change.name], ['awake', '炎']);
+    var g4 = LL.gain(p, 'fire', 'spread');
+    ok(g4.res.closed && g4.res.step && g4.res.step.id === 'shape', '閉じた融合方面の印は間の強化だけ');
+    eq(p.fu, 2, '閉じた方面でも数は数える');
+    eq(p.form, 'awake', '融合方面が2つになっても、変化は戻らない');
+    LL.gain(p, 'fire', 'defeat'); LL.gain(p, 'fire', 'defeat');
+    var g7 = LL.gain(p, 'fire', 'defeat');
+    eq([p.awake, g7.res.awake && g7.res.awake.name, g7.res.step || null, p.steps], [true, '業火', null, 6], '並び3つ＋形3つで上限（4つ目の閉じた印も形を1つ取った）');
+    eq(LL.pathMarks('fire', p), '覚醒 融× 強威形効形形形');
+    var q = LL.newPath('wind');
+    LL.gain(q, 'wind', 'defeat'); var gq = LL.gain(q, 'wind', 'spread');
+    eq([q.form, gq.res.change.name], ['fuse', '砂嵐']);
+    var gq2 = LL.gain(q, 'wind', 'move'); LL.gain(q, 'wind', 'move'); LL.gain(q, 'wind', 'move'); LL.gain(q, 'wind', 'move');
+    ok(gq2.res.closed && !q.awake, '融合したら覚醒方面は閉じる（覚醒しない）');
+    ok(/変化「炎」！ 融合方面（火の渦）は閉じる/.test(LL.outlook('fire', { aw: 1, fu: 1 }, 'defeat')), LL.outlook('fire', { aw: 1, fu: 1 }, 'defeat'));
+  });
+  test('N 切り替え: N1 回数・N3 土は止める・N5 変化したら間の強化は0から', function () {
+    R.labApply(['N0', 'N1'], { N1: { change: 3, awake: 4 } });
+    eq([LL.normPath('fire', { aw: 2 }).form, LL.normPath('fire', { aw: 3 }).form, LL.normPath('fire', { aw: 6 }).awake, LL.normPath('fire', { aw: 7 }).awake], [null, 'awake', false, true]);
+    R.labApply(['N0', 'N3'], { N3: { earth: 'stop' } });
+    eq([LL.pathDef('earth').want, N.kind('earth', 'stop'), N.kind('earth', 'defeat')], ['stop', 'awake', 'fuse']);
+    var pe = LL.newPath('earth'), ge = LL.gain(pe, 'earth', 'stop');
+    eq(ge.res.step.id, 'delay', '土も止めるの並び');
+    R.labApply(['N0', 'N5'], { N5: { steps: 'reset' } });
+    var p = LL.newPath('grass');
+    LL.gain(p, 'grass', 'spread'); var g = LL.gain(p, 'grass', 'spread');
+    eq([p.form, p.steps, !!g.res.reset], ['awake', 0, true]);
+    eq(LL.gain(p, 'grass', 'spread').res.step.id, 'shape', '変化した魔法は並びの1つ目から');
+  });
+
+  // ---- 変化した魔法（覚醒方面・融合） ----
+  test('N 森・炎・岩山: 空きにいきなり森（二段）／横3マスにいきなり炎／一発で岩山（山＋印）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), g = path(s, R.addAlly(s, 'grass', 3, 6, 'up'), { aw: 2, steps: 0 });
+      var r = act(s, g, 'up');
+      eq([tile(r.state, 3, 4), tile(r.state, 2, 3), tile(r.state, 3, 3), tile(r.state, 4, 3)], ['forest', 'forest', 'forest', 'forest']);
+      ok(/森の魔法（植える）/.test(texts(r.events)) && R.LX.formName(R.findUnit(r.state, g.id)) === '森');
+      var s2 = E7(), f = path(s2, R.addAlly(s2, 'fire', 3, 6, 'up'), { aw: 2, steps: 0 });
+      var r2 = act(s2, f, 'up');
+      eq([tile(r2.state, 2, 5), tile(r2.state, 3, 5), tile(r2.state, 4, 5)], ['fire', 'fire', 'fire']);
+      var s3 = E7(), e = path(s3, R.addAlly(s3, 'earth', 3, 6, 'up'), { aw: 5, steps: 0 });
+      var r3 = act(s3, e, 'up');
+      eq([tile(r3.state, 2, 4), tile(r3.state, 3, 4), tile(r3.state, 2, 3), awk(r3.state, 3, 4)], ['mountain', 'mountain', 'mountain', 'rockmt'], '岩山は土の形（盛る）');
+    });
+  });
+  test('N 湖: 正面の2×2に湖（水たまり＋印）。水たまりとして振る舞う（雷で感電）。氷: 凍った湖で、中の者の足が凍る', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = path(s, R.addAlly(s, 'water', 3, 6, 'up'), { aw: 2, steps: 0 }), e = R.addEnemy(s, 'fire', 4, 4); tough(s, e);
+      var r = act(s, w, 'up');
+      eq([tile(r.state, 3, 5), tile(r.state, 4, 5), tile(r.state, 3, 4), tile(r.state, 4, 4), awk(r.state, 4, 4)], ['puddle', 'puddle', 'puddle', 'puddle', 'lake']);
+      var t = R.addAlly(r.state, 'thunder', 1, 4, 'right');
+      ok(names(act(r.state, t, 'right').events).indexOf('感電') >= 0, '湖も感電');
+      var s2 = E7(), w2 = path(s2, R.addAlly(s2, 'water', 3, 6, 'up'), { aw: 5, steps: 0 }), e2 = R.addEnemy(s2, 'fire', 3, 5); tough(s2, e2);
+      var r2 = act(s2, w2, 'up');
+      eq([tile(r2.state, 3, 5), awk(r2.state, 3, 5), !!R.findUnit(r2.state, e2.id).stuck], ['ice', 'icelake', true]);
+    });
+  });
+  test('N 岩: 空きに岩。風が当たると転がる（岩落とし）。泥: 空きに泥沼（足元の者ははまる。控えめで2マス）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), e = path(s, R.addAlly(s, 'earth', 3, 6, 'up'), { aw: 2, steps: 0 }), w = R.addAlly(s, 'wind', 1, 5, 'right'), en = R.addEnemy(s, 'fire', 6, 5); tough(s, en);
+      var r = act(s, e, 'up');
+      eq(tile(r.state, 3, 5), 'rock');
+      var r2 = act(r.state, w, 'right');
+      ok(names(r2.events).indexOf('岩落とし') >= 0 && dealt(r2, en.id) === 20);
+      var s3 = E7(), m = path(s3, R.addAlly(s3, 'earth', 3, 6, 'up'), { fu: 2, steps: 0 }), en3 = R.addEnemy(s3, 'fire', 3, 4); tough(s3, en3);
+      var r3 = act(s3, m, 'up');
+      eq([tile(r3.state, 2, 4), tile(r3.state, 3, 4), tile(r3.state, 2, 3), !!R.findUnit(r3.state, en3.id).stuck], ['mud', 'mud', 'empty', true]);
+      R.labApply(['N0', 'N4'], { N4: { fuse: 'same' } });
+      eq(tile(act(s3, m, 'up').state, 2, 3), 'mud', 'N4 same: 土と同じ3マス');
+    });
+  });
+  test('N 桜・火の渦・源流（融合）: 控えめ（丘の桜・正面1マス・川3マス）。N4 same で仲間と組むのと同じ大きさ', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), g = path(s, R.addAlly(s, 'grass', 3, 6, 'up'), { fu: 2, steps: 0 });
+      eq(tile(act(s, g, 'up').state, 3, 4), 'hillsakura');
+      var s2 = board(['.......', '.......', '.......', '...F...', '.......', '.......', '.......']), f = path(s2, R.addAlly(s2, 'fire', 3, 4, 'up'), { fu: 2, steps: 0 }), en = R.addEnemy(s2, 'fire', 3, 3); tough(s2, en);
+      var r2 = act(s2, f, 'up');
+      eq([tile(r2.state, 3, 3), names(r2.events), dealt(r2, en.id)], ['firewhirl', ['火の渦'], 20], '森の上の火の渦は1マスでも20');
+      var s3 = E7(), w = path(s3, R.addAlly(s3, 'water', 3, 6, 'up'), { fu: 2, steps: 0 });
+      var r3 = act(s3, w, 'up');
+      eq([tile(r3.state, 3, 5), tile(r3.state, 3, 3), tile(r3.state, 3, 2)], ['river', 'river', 'empty']);
+      R.labApply(['N0', 'N4'], { N4: { fuse: 'same' } });
+      eq(tile(act(s, g, 'up').state, 3, 4), 'sakura');
+      eq(tile(act(s3, w, 'up').state, 3, 0), 'river', '盤の端まで');
+      var s4 = E7(), f4 = path(s4, R.addAlly(s4, 'fire', 3, 6, 'up'), { fu: 2, steps: 0 });
+      eq([tile(act(s4, f4, 'up').state, 4, 4), tile(act(s4, f4, 'up').state, 3, 4)], ['firewhirl', 'firewhirl'], '2×2');
+    });
+  });
+  test('N 旋風: 当たった者の向きが右回り（予告の向きも）。竜巻: とらえる＋竜巻の風（印）。砂嵐: ターン終了でおさまると丘', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = path(s, R.addAlly(s, 'wind', 3, 6, 'up'), { aw: 2, steps: 0 }), en = R.addEnemy(s, 'fire', 3, 5, 'left'); tough(s, en);
+      var r = act(s, w, 'up');
+      eq([R.findUnit(r.state, en.id).facing, tile(r.state, 4, 4)], ['up', 'breeze']);
+      var s2 = E7(), w2 = path(s2, R.addAlly(s2, 'wind', 3, 6, 'up'), { aw: 5, steps: 0 }), en2 = R.addEnemy(s2, 'fire', 3, 5, 'down'); tough(s2, en2);
+      var r2 = act(s2, w2, 'up');
+      eq([R.findUnit(r2.state, en2.id).facing, !!R.findUnit(r2.state, en2.id).stuck, awk(r2.state, 4, 4)], ['left', true, 'twister']);
+      var s3 = E7(), w3 = path(s3, R.addAlly(s3, 'wind', 3, 6, 'up'), { fu: 2, steps: 0 });
+      var r3 = act(s3, w3, 'up');
+      eq([tile(r3.state, 3, 5), tile(r3.state, 3, 4), tile(r3.state, 4, 5)], ['sandstorm', 'sandstorm', 'empty'], '控えめ: 正面2マス');
+      r3.state.units.forEach(function (u) { if (u.side === 'ally') u.acted = true; });
+      var t3 = R.endTurn(r3.state);
+      eq([tile(t3.state, 3, 5), tile(t3.state, 3, 4)], ['hill', 'hill']);
+      R.labApply(['B17']);
+      var r4 = act(s3, R.addAlly(s3, 'earth', 0, 0, 'down'), 'down');
+      ok(r4.ok);
+    });
+  });
+  test('N 風に土で砂嵐（N0 のとき表に足す）。砂嵐に火で粉塵爆発（敵の砂嵐でも同じ）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = R.addAlly(s, 'wind', 3, 6, 'up'), e = R.addAlly(s, 'earth', 3, 3, 'down');
+      var r = act(s, w, 'up');
+      var r2 = act(r.state, e, 'down');
+      ok(tile(r2.state, 3, 5) === 'sandstorm' || tile(r2.state, 3, 4) === 'sandstorm', '風に土で砂嵐');
+    });
+  });
+
+  // ---- 覚醒先の新しい組み合わせ（1つずつ。仲間の魔法が来て起きる） ----
+  test('N 大樹に水: まわり2マスの空き・草むらが一気に森（人の足元にも）。大樹は森として燃える（印は消える）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), g = path(s, R.addAlly(s, 'grass', 3, 6, 'up'), { aw: 5, steps: 0 }), w = R.addAlly(s, 'water', 1, 4, 'right'), en = R.addEnemy(s, 'fire', 5, 4); tough(s, en);
+      var r = act(s, g, 'up');
+      eq(awk(r.state, 3, 4), 'tree');
+      var r2 = act(r.state, w, 'right');
+      ok(/大樹が水を吸い上げ/.test(texts(r2.events)), texts(r2.events));
+      eq([tile(r2.state, 4, 4), tile(r2.state, 5, 4), tile(r2.state, 3, 6), tile(r2.state, 3, 5), tile(r2.state, 6, 4)], ['forest', 'forest', 'forest', 'forest', 'empty'], '敵・術者の足元も森（まわり2マスまで）');
+      var f = R.addAlly(r.state, 'fire', 3, 5, 'up');
+      var r3 = act(r.state, f, 'up');
+      eq([tile(r3.state, 3, 4), awk(r3.state, 3, 4)], ['fire', null], '大樹は森として燃える');
+    });
+  });
+  test('N 業火に水: 水蒸気爆発（業火とまわり1マスに20）。業火はただの炎として残る。業火は炎として燃え広がる', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = board(['.......', '.......', '.......', '.......', '.......', '...h...', '.......']);
+      var f = path(s, R.addAlly(s, 'fire', 3, 5, 'up'), { aw: 5, steps: 0 }), w = R.addAlly(s, 'water', 0, 3, 'right');
+      var a = R.addEnemy(s, 'fire', 2, 2), b = R.addEnemy(s, 'fire', 4, 2); tough(s, a); tough(s, b);
+      var r = act(s, f, 'up');
+      eq([awk(r.state, 2, 3), awk(r.state, 3, 3), awk(r.state, 4, 3)], ['inferno', 'inferno', 'inferno']);
+      var r2 = act(r.state, w, 'right');
+      eq([names(r2.events), dealt(r2, a.id), dealt(r2, b.id), dealt(r2, f.id)], [['水蒸気爆発'], 20, 20, 0], '丘の上の術者は巻き込まれない');
+      eq([tile(r2.state, 3, 3), awk(r2.state, 3, 3)], ['fire', null]);
+      var wi = R.addAlly(r.state, 'wind', 3, 4, 'up');
+      ok(names(act(r.state, wi, 'up').events).indexOf('燃え広がり') >= 0, '業火に風で燃え広がり');
+    });
+  });
+  test('N 岩山に風: 岩なだれ（風下の斜面を岩が転がり落ちる。20）。岩山はただの山に。岩山に火で火山', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), e = path(s, R.addAlly(s, 'earth', 2, 6, 'up'), { aw: 5, steps: 0 }), w = R.addAlly(s, 'wind', 0, 3, 'right');
+      var a = R.addEnemy(s, 'fire', 4, 3), b = R.addEnemy(s, 'fire', 5, 4); tough(s, a); tough(s, b);
+      var r = act(s, e, 'up');
+      var r2 = act(r.state, w, 'right');
+      eq([names(r2.events), dealt(r2, a.id), dealt(r2, b.id), awk(r2.state, 1, 3), tile(r2.state, 1, 3)], [['岩なだれ'], 20, 20, null, 'mountain']);
+      var f = R.addAlly(r.state, 'fire', 1, 2, 'down');
+      eq(tile(act(r.state, f, 'down').state, 1, 3), 'volcano', '岩山は山として火山になる');
+    });
+  });
+  test('N 氷に風: 吹雪（風下の一直線が凍り、そこの者は足が凍る）。氷に火で湖に戻る', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = path(s, R.addAlly(s, 'water', 3, 6, 'up'), { aw: 5, steps: 0 }), wi = R.addAlly(s, 'wind', 1, 4, 'right'), en = R.addEnemy(s, 'fire', 6, 4); tough(s, en);
+      var r = act(s, w, 'up');
+      var r2 = act(r.state, wi, 'right');
+      eq([names(r2.events), tile(r2.state, 5, 4), !!R.findUnit(r2.state, en.id).stuck], [['吹雪'], 'ice', true]);
+      var f = R.addAlly(r.state, 'fire', 2, 4, 'right');
+      var r3 = act(r.state, f, 'right');
+      eq([tile(r3.state, 3, 4), awk(r3.state, 3, 4)], ['puddle', 'lake']);
+    });
+  });
+  test('N 竜巻に水: まわりに雨（空きは水たまり、炎は消える）。竜巻の風に火で火の渦（風として振る舞う）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = board(['.......', '.......', '.......', '.....X.', '.......', '.......', '.......']);
+      var w = path(s, R.addAlly(s, 'wind', 3, 6, 'up'), { aw: 5, steps: 0 }), wa = R.addAlly(s, 'water', 6, 4, 'left');
+      var r = act(s, w, 'up');
+      var r2 = act(r.state, wa, 'left');
+      ok(/まわりに雨/.test(texts(r2.events)), texts(r2.events));
+      eq([tile(r2.state, 5, 3), tile(r2.state, 2, 3), tile(r2.state, 4, 4)], ['empty', 'puddle', 'breeze'], '炎は消え、空きは水たまり。竜巻の風は残る');
+      var f = R.addAlly(r.state, 'fire', 2, 4, 'right');
+      ok(names(act(r.state, f, 'right').events).indexOf('火の渦') >= 0);
+    });
+  });
+  test('N 覚醒は敵にも同じ: 敵の業火（敵の番に点ける）に、味方の水が来ると爆ぜる（そばの敵に20）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = R.addAlly(s, 'water', 0, 6, 'up'), a = R.addEnemy(s, 'fire', 3, 1, 'down'), b = R.addEnemy(s, 'fire', 3, 3, 'up');
+      tough(s, a); tough(s, b); tough(s, w);
+      R.findUnit(s, a.id).labPath = { aw: 5, steps: 0 }; R.findUnit(s, b.id).stand = 'still';
+      ok(R.LX.formName(R.findUnit(s, a.id)) === '業火', '敵も覚醒した姿');
+      var t = R.act(s, w.id, { dir: 'up', shoot: false }).state;
+      var ea = R.findUnit(t, a.id); ea.intent = true; ea.facing = 'down'; t.enemyActs = true;
+      var e1 = R.endTurn(t).state;
+      eq([awk(e1, 2, 2), awk(e1, 3, 2), awk(e1, 4, 2)], ['inferno', 'inferno', 'inferno'], '敵の業火');
+      R.findUnit(e1, w.id).x = 0; R.findUnit(e1, w.id).y = 2;
+      var r = R.act(e1, w.id, { dir: 'right' });
+      ok(r.ok && names(r.events).indexOf('水蒸気爆発') >= 0 && dealt(r, b.id) === 20, texts(r.events));
+    });
+  });
+
+  // ---- 間の強化 ----
+  test('N 倒す: 直撃の威力+2・形が1マス・効き目が1段（火の直撃で火傷3回）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), f = path(s, R.addAlly(s, 'fire', 3, 5, 'up'), { steps: 3 }), en = R.addEnemy(s, 'fire', 3, 4); tough(s, en);
+      var r = act(s, f, 'up');
+      eq([dealt(r, en.id), R.findUnit(r.state, en.id).burn], [3, 3]);
+      eq(tile(r.state, 4, 3), 'smallfire', '形が1マス（斜め前）');
+    });
+  });
+  test('N 止める: 当たった敵の予告が1ターン遅れる・次の移動を止める・次の魔法の形が小さくなる（味方には付かない）', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = path(s, R.addAlly(s, 'water', 3, 6, 'up'), { steps: 3 }), en = R.addEnemy(s, 'fire', 3, 4, 'down'); tough(s, en);
+      R.findUnit(s, en.id).intent = true;
+      var r = act(s, w, 'up');
+      var e = R.findUnit(r.state, en.id);
+      eq([e.intent, !!e.labDelay, !!e.stuck, !!e.labShrink], [false, true, true, true]);
+      var s2 = E7(), w2 = path(s2, R.addAlly(s2, 'water', 3, 6, 'up'), { steps: 3 }), al = R.addAlly(s2, 'fire', 3, 4, 'down');
+      var r2 = act(s2, w2, 'up');
+      var a = R.findUnit(r2.state, al.id);
+      eq([!!a.stuck, !!a.labShrink], [false, false], '味方撃ちには付かない（当たった敵だけ）');
+    });
+  });
+  test('N 動かす: 押す・運ぶが1マス多い・撃ったあと1マス動ける・撃った先へ移る', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = E7(), w = path(s, R.addAlly(s, 'wind', 3, 6, 'up'), { steps: 3 }), en = R.addEnemy(s, 'fire', 3, 5); tough(s, en);
+      var r = act(s, w, 'up');
+      var u = R.findUnit(r.state, w.id);
+      eq([pos(r.state, en.id), pos(r.state, w.id), !!u.labAfter, u.acted], [[3, 3], [3, 5], true, false], '敵は2マス運ばれ、術者は風の通った先（3,5）へ移った');
+    });
+  });
+  test('N 広げる: 形が1マス・森の上に立つと形が2マス増える', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '...F...']);
+      var g = path(s, R.addAlly(s, 'grass', 3, 6, 'up'), { steps: 3 });
+      var cnt = function (st) { return st.tiles.filter(function (t) { return t === 'thicket'; }).length; };
+      eq(cnt(act(s, g, 'up').state), 7, '4＋形1＋足場2');
+      R.setTile(s, 3, 6, 'empty');
+      eq(cnt(act(s, g, 'up').state), 5);
+    });
+  });
+
+  // ---- ミッション ----
+  test('N ミッション: 44（41＋魔法を1発撃つ・決められたマスに撃つ・決められたシナジー）。方向はやりたいこと。仕分けで変えられる', function () {
+    withGrow(function () {
+      R.labApply(['N0']);
+      eq(N.MISSIONS().length, 44);
+      eq([LL.targetDef('finKill').dir, LL.targetDef('nextTo').dir, LL.targetDef('redirect').dir, LL.targetDef('held').dir, LL.targetDef('shot1').dir], ['defeat', 'spread', 'move', 'stop', 'free']);
+      N.setSort({ farFin: 'defeat' });
+      eq(LL.targetDef('farFin').dir, 'defeat');
+      N.setSort({});
+      var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+      var g = R.addAlly(s, 'grass', 3, 6, 'up'), f = R.addAlly(s, 'fire', 1, 4, 'right'), w = R.addAlly(s, 'wind', 0, 4, 'right');
+      R.addEnemy(s, 'fire', 6, 0);
+      s.labTargetList = ['shot1', { id: 'hitCell', no: 43, name: '光るマスに撃つ', text: '(3,4)に撃つ', check: { kind: 'hitTile', cells: [[3, 4]] } }, { id: 'synergy', no: 44, name: '燃え広がり', text: '燃え広がりを起こす', check: { kind: 'finName', names: ['燃え広がり'] } }];
+      R.labApply(['N0', 'L3'], { L3: { count: 4 } });
+      var st = R.startBattle(s).state;
+      var r = act(st, g, 'up');
+      eq([gotBy(r.state, 'shot1'), gotBy(r.state, 'hitCell')], ['grass', 'grass']);
+      ok(/どの属性にも合うミッション → 覚醒方面の印/.test(texts(r.events)), texts(r.events));
+    });
+  });
+  test('N シナリオ: 変化した姿・覚醒・融合の盤面は道の形が N（aw・fu・steps）', function () {
+    ['labNa', 'labNw1', 'labNf1', 'labNi'].forEach(function (id) {
+      var p = R.findPreset(id);
+      R.labApply(p.lab, p.labOpts);
+      var st = R.startBattle(R.loadPreset(id)).state;
+      ok(R.alliesOf(st).some(function (u) { return u.labPath && u.labPath.steps !== undefined; }), id);
+    });
+  });
+})();
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {
