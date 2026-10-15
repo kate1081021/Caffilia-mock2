@@ -2,7 +2,7 @@
  * ラボ N: ミッションの仕分けを確かめる（どの属性が、どのミッションを取りやすいか）。  node tests/lab_nsort.js [盤面の id …] [--pairs]
  *   盤面ごとに、44のミッションを全部ねらいにして、1ターン目の手を全部ためす（道は0から。変化していない魔法で）。
  *     1手: 味方1人の 移動先 × 向き（撃つ）→ ターン終了（敵の番に決まるミッションも見る）
- *     2手（--pairs）: 味方2人の手を続けて → ターン終了
+ *     2手（--pairs）: 味方2人の手を続けて → ターン終了（盤面の id のうしろに :1 を付けると、その盤面だけ1手。敵の行き先 D2 の盤面は重いので）
  *   ミッションを取った魔法（属性）を数え、仕分け（lab_change.js の SORT）のやりたいことと合う属性が取った割合を出す。
  *   勝ったときに決まるミッション（誰も倒されずに・村を守り切る …）は1ターンでは決まらないので、数えない。
  */
@@ -41,7 +41,8 @@ function finish(st) {
   return st;
 }
 
-ids.forEach(function (id) {
+ids.forEach(function (id0) {
+  var id = id0.split(':')[0], single = id0.split(':')[1] === '1';
   var p = R.findPreset(id);
   if (!p) { console.log('盤面がない: ' + id); return; }
   R.labApply(['N0'].concat((p.lab || []).filter(function (x) { return x !== 'M0' && x !== 'L0'; })), p.labOpts);
@@ -63,7 +64,7 @@ ids.forEach(function (id) {
       if (!r.ok) return;
       n++;
       record(finish(r.state), id);
-      if (!pairs || r.state.result) return;
+      if (!pairs || single || r.state.result) return;
       allies.forEach(function (b) {
         if (b === a) return;
         allActions(r.state, b).forEach(function (y) {
