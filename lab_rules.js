@@ -4072,6 +4072,8 @@
         : nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）→ 方面には数えない（N2）';
       var parts = [];
       if (r.closed) parts.push((r.kind === 'awake' ? '覚醒方面' : '融合方面') + 'は閉じている');
+      else if (before && before.form === 'fuse' && r.kind === 'fuse') parts.push('融合「' + d.fuse.name + '」に変化ずみ');
+      else if (before && before.awake && r.kind === 'awake') parts.push('覚醒「' + d.awake.lv2.name + '」ずみ');
       if (r.change) parts.push('変化「' + r.change.name + '」！ ' + (r.change === d.awake ? '融合方面（' + d.fuse.name + '）' : '覚醒方面（' + d.awake.name + '）') + 'は閉じる');
       if (r.awake) parts.push('覚醒「' + r.awake.name + '」！');
       if (r.reset) parts.push('間の強化は0から（N5）');
