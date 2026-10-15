@@ -16,19 +16,24 @@
   function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
-  // ---- 道の持ち越し（魔法ごと） ----
-  var STORE = 'cafilia-lab-paths';
-  var paths = {}, storeOk = true;
-  try { var raw = localStorage.getItem(STORE); paths = raw ? JSON.parse(raw) : {}; if (!paths || typeof paths !== 'object') paths = {}; } catch (e) { storeOk = false; paths = {}; }
-  function savePaths() { try { localStorage.setItem(STORE, JSON.stringify(paths)); storeOk = true; } catch (e) { storeOk = false; } }
-  function pathFor(m) { return LXL.normPath(m, paths[m] || null); }
-  function setPath(m, p) { paths[m] = LXL.normPath(m, p); savePaths(); }
-  function resetPaths() { paths = {}; savePaths(); }
+  // ---- 道の持ち越し（魔法ごと。M のときは別の入れ物 cafilia-lab-power） ----
+  var STORE = 'cafilia-lab-paths', STORE_M = 'cafilia-lab-power';
+  var paths = {}, pathsM = {}, storeOk = true;
+  function loadBag(k) { var raw = localStorage.getItem(k), o = raw ? JSON.parse(raw) : {}; return o && typeof o === 'object' ? o : {}; }
+  try { paths = loadBag(STORE); pathsM = loadBag(STORE_M); } catch (e) { storeOk = false; paths = {}; pathsM = {}; }
+  function isM() { return !!(LXL.M && LXL.M.on()); }   // M 強化の方向（3つ）
+  function bag() { return isM() ? pathsM : paths; }
+  function savePaths() { try { localStorage.setItem(STORE, JSON.stringify(paths)); localStorage.setItem(STORE_M, JSON.stringify(pathsM)); storeOk = true; } catch (e) { storeOk = false; } }
+  function pathFor(m) { return LXL.normPath(m, bag()[m] || null); }
+  function setPath(m, p) { bag()[m] = LXL.normPath(m, p); savePaths(); }
+  function resetPaths() { if (isM()) pathsM = {}; else paths = {}; savePaths(); }
 
-  function dirInfo(d) { return LXL.DIRS[d] || { name: d, mark: '？', desc: '' }; }
-  function mark(d) { var i = dirInfo(d); return '<span class="lt-mark d-' + esc(d) + '" title="' + esc(i.name + '（' + i.desc + '）') + '">' + esc(i.mark) + '</span>'; }
-  // 方向が閉じているか（作るは閉じない）
-  function closedDir(p, k) { return k !== 'make' && !!p.awake && p.awake !== k; }
+  var SIMPLE = { name: '単純強化', mark: '＋', desc: '形が1マス増える（方向は進まない）' };
+  function dirInfo(d) { if (d === 'simple') return SIMPLE; var T = LXL.dirTable ? LXL.dirTable() : LXL.DIRS; return T[d] || { name: d, mark: '？', desc: '' }; }
+  function dcls(d) { return isM() && (d === 'make' || d === 'simple') ? 'mmake' : d; }   // M の作る系・単純強化は灰色
+  function mark(d) { var i = dirInfo(d); return '<span class="lt-mark d-' + esc(dcls(d)) + '" title="' + esc(i.name + '（' + i.desc + '）') + '">' + esc(i.mark) + '</span>'; }
+  // 方向が閉じているか（作るは閉じない。M は変化した方向以外）
+  function closedDir(p, k) { if (isM()) return !!p.form && p.form !== k; return k !== 'make' && !!p.awake && p.awake !== k; }
   function awakenName(d, k) { return d.awaken[k] && (k !== 'make' || d.makeGood) ? d.awaken[k].name : ''; }
   // 作るは全魔法共通。作るが得意（草・土・水）なら3マス目で覚醒（森・山・川）
   function dirLabel(d, k) {
@@ -36,7 +41,25 @@
     return dirInfo(k).name + ' → 覚醒「' + awakenName(d, k) + '」';
   }
   // 道の進み具合（方向の印＋●●○。覚醒した方向は光り、閉じた方向は薄い）
+  // M: 方向ごとに変化までの ●○、最後に強化の数（覚醒まで）
+  function marksHtmlM(m, p0) {
+    var M = LXL.M, d = M.def(m);
+    if (!d) return '';
+    var p = M.norm(m, p0), C = M.changeAt(), A = M.awakeAt();
+    var h = d.dirs.map(function (k) {
+      var n = Math.min(C, p[k] || 0), dots = '', f = d.forms[k];
+      for (var i = 0; i < C; i++) dots += '<i class="' + (i < n ? 'on' : '') + '"></i>';
+      var cls = 'lt-path d-' + k + (p.form === k ? ' awake' : '') + (closedDir(p, k) ? ' closed' : '');
+      var tip = dirInfo(k).name + ' → 変化「' + f.name + '」: ' + M.propText(f.prop, 1) + (closedDir(p, k) ? '（閉じた）' : p.form === k ? '（変化した）' : '');
+      return '<span class="' + cls + '" title="' + esc(tip) + '">' + mark(k) + '<span class="dots">' + dots + '</span></span>';
+    }).join('');
+    var tot = Math.min(A, M.total(p)), dots2 = '', fo = p.form ? d.forms[p.form] : null;
+    for (var j = 0; j < A; j++) dots2 += '<i class="' + (j < tot ? 'on' : '') + '"></i>';
+    var tip2 = '強化の数（1回で形が1マス、上限' + M.shapeMax() + '）。' + (fo ? (p.awake ? '覚醒「' + fo.lv2.name + '」した' : 'あと' + (A - M.total(p)) + 'つで覚醒「' + fo.lv2.name + '」') : '変化してから、合計' + A + 'で覚醒');
+    return h + '<span class="lt-path lt-pow' + (p.awake ? ' awake' : '') + '" title="' + esc(tip2) + '"><span class="lt-mark">強</span><span class="dots">' + dots2 + '</span></span>';
+  }
   function marksHtml(m, p) {
+    if (isM()) return marksHtmlM(m, p);
     var d = LXL.pathDef(m);
     if (!d) return '';
     p = p || LXL.newPath(m);
@@ -51,13 +74,21 @@
     }).join('');
   }
   function magicLabel(m, p) {
+    if (isM()) { var md = LXL.M.def(m), q = md ? LXL.M.norm(m, p) : null, mf = q && q.form ? md.forms[q.form] : null; return mf ? (q.awake ? mf.lv2.name : mf.name) + '（' + R.magicName(m) + '）' : R.magicName(m); }
     var d = LXL.pathDef(m), f = p && p.awake && d ? d.awaken[p.awake] : null;
     return f ? f.name + '（' + R.magicName(m) + '）' : R.magicName(m);
   }
   // 得意な方向の一言（草: 止める ／ 土: 止める・動かす）
   function goodText(m) { var d = LXL.pathDef(m); return d ? d.dirs.map(function (k) { return dirInfo(k).name; }).join('・') : ''; }
   var DEST = { make: '作るが進む', nothing: '何も起きない', remain: '取れずに残る' };
+  var DEST_M = { simple: '単純強化', nothing: '何も起きない', remain: '取れずに残る' };
   function modesText() {
+    if (isM()) {
+      var M = LXL.M;
+      return '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') + '／敵の手: ' + (LXL.enemyMode() === 'preparer' ? '材料を作った味方' : '取れない') +
+        '／負けたら: ' + (LXL.loseMode() === 'keep' ? '残る' : 'なくなる') + '／方向: ' + (M.dirsMode() === 'two' ? '属性ごとに2つ' : '3つとも') + '／持っていない方向: ' + DEST_M[M.dest()] +
+        '／作る系: ' + (M.makeMode() === 'marker' ? '目印だけ' : '単純強化') + '／変化 ' + M.changeAt() + '・覚醒 ' + M.awakeAt() + '・形の上限 ' + M.shapeMax();
+    }
     return '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') +
       '／敵の手: ' + (LXL.enemyMode() === 'preparer' ? '材料を作った味方' : '取れない') +
       '／負けたら: ' + (LXL.loseMode() === 'keep' ? '残る' : 'なくなる') +
@@ -95,13 +126,13 @@
   box.id = 'labTargetBox'; box.className = 'lt-box'; box.hidden = true;
   if (playPanel) playPanel.insertBefore(box, playPanel.firstChild);
   var seenGot = {}, seenKey = null, boxSig = '';
-  var HOW = { preparer: '材料', maker: '作った', stopper: '止めた', mover: '動かした' };
+  var HOW = { preparer: '材料', maker: '作った', stopper: '止めた', mover: '動かした', helper: '手を貸した', last: '決着', still: '歩かなかった', carrier: '運んだ', blocker: 'ふさいだ' };
   function whoHtml(st, t) {
     if (!t.got) return '<span class="lt-who none">まだ</span>';
     if (t.got.by) return '<span class="lt-who">' + esc(LXL.handName(st, t.got.by)) + (HOW[t.got.how] ? '<small>（' + HOW[t.got.how] + '）</small>' : '') + '</span>';
     return '<span class="lt-who choose">' + esc(t.got.cands.map(function (h) { return LXL.handName(st, h); }).join('・')) + '<small>から選ぶ</small></span>';
   }
-  function takerHtml(t) { return t.taker && t.taker !== 'hand' && LXL.TAKERS[t.taker] ? '（取る: ' + LXL.TAKERS[t.taker] + '）' : ''; }
+  function takerHtml(t) { var T = LXL.takerTable ? LXL.takerTable() : LXL.TAKERS; return t.taker && t.taker !== 'hand' && T[t.taker] ? '（取る: ' + T[t.taker] + '）' : ''; }
   function renderBox() {
     var st = app.state;
     if (!box || !R.lab('L0') || app.editMode) { if (box) box.hidden = true; boxSig = ''; return; }
@@ -112,10 +143,10 @@
     var allies = R.alliesOf(st).filter(function (a) { return LXL.pathDef(a.magic) && a.labPath; });
     var pre = app.scenario && R.findPreset(app.scenario);
     var html = '<div class="lt-head"><b>ターゲット</b>' + (pre && pre.labSeries ? ' <span class="lt-series">連戦 ' + esc(pre.labSeries) + '</span>' : '') +
-      (st.labQuest ? ' <span class="lt-quest d-' + esc(st.labQuest.dir) + '">' + mark(st.labQuest.dir) + 'クエスト「' + esc(st.labQuest.name) + '」</span>' : '') +
-      ' <small>1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）</small></div>' +
+      (st.labQuest ? ' <span class="lt-quest d-' + esc(dcls(st.labQuest.dir)) + '">' + mark(st.labQuest.dir) + 'クエスト「' + esc(st.labQuest.name) + '」</span>' : '') +
+      ' <small>' + (isM() ? '1つ1回。取った魔法は、戦闘の終わりに強化（形が1マス）。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒' : '1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）') + '</small></div>' +
       (ts.length ? '<ul class="lt-list">' + ts.map(function (t) {
-        return '<li class="lt-row d-' + esc(t.dir) + (t.got ? ' got' : '') + (flash[t.id] ? ' flash' : '') + '" data-tid="' + esc(t.id) + '">' + mark(t.dir) +
+        return '<li class="lt-row d-' + esc(dcls(t.dir)) + (t.got ? ' got' : '') + (flash[t.id] ? ' flash' : '') + '" data-tid="' + esc(t.id) + '">' + mark(t.dir) +
           '<span class="lt-name">' + esc(t.name) + '<small>' + esc(t.text + takerHtml(t)) + '</small></span>' + whoHtml(st, t) + '</li>';
       }).join('') + '</ul>' : '<p class="muted">このシナリオにはターゲットがない（道の効果だけ）</p>') +
       (allies.length ? '<div class="lt-party">' + allies.map(function (a) {
@@ -123,7 +154,7 @@
       }).join('') + '</div>' : '') +
       '<div class="lt-foot"><small>' + esc(modesText()) + '</small>' +
       '<span class="lt-btns">' + (st.result && ts.length ? '<button type="button" class="primary" data-lt="growth">育ちを見る</button>' : '') +
-      (st.labQuest && !st.result ? '<button type="button" data-lt="quest">クエストを選び直す</button>' : '') + '<button type="button" data-lt="paths">道を見る</button><button type="button" data-lt="reset" title="魔法ごとの道を全部0に戻す（持ち越しも消える）">道を0に戻す</button></span></div>' +
+      (st.labQuest && !st.result ? '<button type="button" data-lt="quest">クエストを選び直す</button>' : '') + (isM() ? '<button type="button" data-lt="sort" title="41のミッションを、どの方向に入れるか（ラボの中だけ）">ミッションの仕分け</button>' : '') + '<button type="button" data-lt="paths">道を見る</button><button type="button" data-lt="reset" title="魔法ごとの道を全部0に戻す（持ち越しも消える）">道を0に戻す</button></span></div>' +
       (storeOk ? '' : '<p class="note danger">この環境では道を持ち越せません（localStorage が使えない）。</p>');
     if (html === boxSig) return;
     boxSig = html;
@@ -137,6 +168,7 @@
     if (a === 'growth') openGrowth(true);
     if (a === 'paths') openPaths();
     if (a === 'quest') openQuest();
+    if (a === 'sort') openSort();
     if (a === 'reset') {
       if (!window.confirm('魔法ごとの道を全部0に戻します（持ち越しも消える）。よいですか？')) return;
       resetPaths();
@@ -172,14 +204,27 @@
     var list = (p && p.labState && p.labState.labTargetList) || [];
     if (!list.length) return '';
     var n = LXL.targetCount();
-    var defs = list.map(LXL.targetDef).filter(Boolean);
-    return '<div class="lt-card"><b>このシナリオのターゲット</b> <small>（今の数 ' + n + '。上から' + n + 'つ）</small><ul>' + defs.map(function (t, i) {
-      return '<li class="' + (i >= n ? 'off' : '') + '">' + mark(t.dir) + ' ' + esc(t.name) + ' <small>' + esc(t.text + takerHtml(t)) + (t.needsGrow ? '（育つが入のときだけ）' : '') + '</small></li>';
+    var mScen = (p.lab || []).indexOf('M0') >= 0 && LXL.M;   // M のシナリオは、いまの切り替えに関係なく M のミッションと方向で見せる
+    var defs = list.map(function (x) {
+      if (!mScen || typeof x !== 'string') return LXL.targetDef(x);
+      var d = LXL.M.mission(x) || LXL.targetDef(x);
+      if (d) { d = clone(d); d.dir = LXL.M.missionDir(d); }
+      return d;
+    }).filter(Boolean);
+    var mk = function (d) {
+      if (!mScen) return mark(d);
+      var i = LXL.M.DIRS[d] || { name: d, mark: '？', desc: '' };
+      return '<span class="lt-mark d-' + esc(d === 'make' ? 'mmake' : d) + '" title="' + esc(i.name + '（' + i.desc + '）') + '">' + esc(i.mark) + '</span>';
+    };
+    var takerOf = function (t) { var T = mScen ? LXL.M.TAKERS : LXL.TAKERS; return t.taker && t.taker !== 'hand' && T[t.taker] ? '（取る: ' + T[t.taker] + '）' : ''; };
+    return '<div class="lt-card"><b>このシナリオの' + (mScen ? 'ミッション' : 'ターゲット') + '</b> <small>（今の数 ' + n + '。上から' + n + 'つ）</small><ul>' + defs.map(function (t, i) {
+      return '<li class="' + (i >= n ? 'off' : '') + '">' + mk(t.dir) + ' ' + esc(t.name) + ' <small>' + esc(t.text + takerOf(t)) + (t.needsGrow ? '（育つが入のときだけ）' : '') + (t.check && t.check.end ? '（勝ったときに決まる）' : '') + '</small></li>';
     }).join('') + '</ul></div>';
   }
 
   // ---- エディット: 道を直接いじる ----
   app.labPathEditHtml = function (u) {
+    if (isM()) return pathEditHtmlM(u);
     if (!R.lab('L0') || u.side === 'object' || !LXL.pathDef(u.magic)) return '';
     var d = LXL.pathDef(u.magic), p = LXL.normPath(u.magic, u.labPath);
     return '<span class="persona-edit lt-edit">道' + LXL.dirsOf(u.magic).map(function (k) {
@@ -189,19 +234,47 @@
       }).join('') + '</select></label>';
     }).join('') + '<button type="button" data-lt="pathzero" data-id="' + u.id + '">0に</button></span>';
   };
+  // M: 方向ごとの数（change で変化）・単純強化の数・M5 の候補
+  function pathEditHtmlM(u) {
+    var M = LXL.M, d = u.side === 'object' ? null : M.def(u.magic);
+    if (!d) return '';
+    var p = M.norm(u.magic, u.labPath), C = M.changeAt();
+    var h = '<span class="persona-edit lt-edit">道' + d.dirs.concat(['simple']).map(function (k) {
+      var max = k === 'simple' ? 6 : C + 3, opts = '';
+      for (var n = 0; n <= max; n++) opts += '<option value="' + n + '"' + ((p[k] || 0) === n ? ' selected' : '') + '>' + n + (k !== 'simple' && n === C ? '（変化「' + esc(d.forms[k].name) + '」）' : '') + '</option>';
+      return '<label>' + esc(k === 'simple' ? '単純' : dirInfo(k).name) + ' <select data-id="' + u.id + '" data-field="lpath:' + k + '">' + opts + '</select></label>';
+    }).join('') + '<button type="button" data-lt="pathzero" data-id="' + u.id + '">0に</button>';
+    if (R.lab('M5')) h += '<span class="lt-cands">候補' + M.CANDS.map(function (c) {
+      return '<label title="' + esc(c.text) + '"><input type="checkbox" data-id="' + u.id + '" data-field="lcand:' + c.id + '"' + (u.labCand && u.labCand[c.id] ? ' checked' : '') + '>' + esc(c.name) + '</label>';
+    }).join('') + '</span>';
+    return h + '</span>';
+  }
   var unitList = document.getElementById('unitList');
   if (unitList) {
     unitList.addEventListener('change', function (e) {
-      var sel = e.target.closest('select');
+      var sel = e.target.closest('select, input');
       var f = sel ? sel.getAttribute('data-field') || '' : '';
+      if (f.indexOf('lcand:') === 0) {   // M5 の候補を付け外し
+        var cu = R.findUnit(app.state, sel.getAttribute('data-id'));
+        if (!cu) return;
+        var cand = clone(cu.labCand || {});
+        cand[f.slice(6)] = sel.checked;
+        var cr = R.labSetCand(app.state, cu.id, cand);
+        if (!cr.ok) { app.say(cr.error); return; }
+        app.state = cr.state;
+        app.addLog('【ラボ M5】' + R.unitLabel(cr.state, cu) + 'の候補: ' + (Object.keys(cand).filter(function (k) { return cand[k]; }).map(function (k) { return (LXL.M.CANDS.filter(function (c) { return c.id === k; })[0] || {}).name || k; }).join('・') || 'なし'));
+        app.clearCache(); app.render();
+        return;
+      }
       if (f.indexOf('lpath:') !== 0) return;
       var id = sel.getAttribute('data-id'), k = f.slice(6), v = Number(sel.value);
       var u = R.findUnit(app.state, id);
       if (!u) return;
       var p = LXL.normPath(u.magic, u.labPath);
       p[k] = v;
+      if (isM() && k !== 'simple') { if (v >= LXL.M.changeAt()) p.form = k; else if (p.form === k) p.form = null; }   // M: change に届いた方向で変化
       // 3 にした方向が覚醒（作るは、作るが得意な魔法だけ）。ほかの得意な方向は2まで。作るはほかに覚醒しても3まで残る
-      if (LXL.awakeDirs(u.magic).indexOf(k) >= 0) {
+      if (!isM() && LXL.awakeDirs(u.magic).indexOf(k) >= 0) {
         if (v >= 3) { p.awake = k; LXL.pathDef(u.magic).dirs.forEach(function (o) { if (o !== k && p[o] > 2) p[o] = 2; }); }
         else if (p.awake === k) p.awake = null;
       }
@@ -282,11 +355,11 @@
     if (!growth) return;
     var st = app.state, pl = plan(), lost = !growth.won && !growth.keep;
     var allChosen = pl.rows.every(function (r) { return !r.need; });
-    var h = '<div class="lab-run-card lt-gcard"><h2>戦闘の終わり — 育ち <small>試作ラボ L</small></h2>' +
-      '<p>' + (growth.won ? '<b>勝った！</b> 取ったターゲットを1つずつ、取った魔法の道に進める。得意でない方向は「' + esc(DEST[LXL.destMode()]) + '」（L5）。' : '<b>負けた…</b> ' + (lost ? 'この戦闘で取ったターゲットは全部なくなる（L4: なくなる）。' : 'L4 が「残る」なので、取ったターゲットは道に進める。')) + '</p>';
+    var h = '<div class="lab-run-card lt-gcard"><h2>戦闘の終わり — 育ち <small>試作ラボ ' + (isM() ? 'M（強化の方向は3つ）' : 'L') + '</small></h2>' +
+      '<p>' + (growth.won ? '<b>勝った！</b> 取ったターゲットを1つずつ、取った魔法の道に進める。' + (isM() ? '強化1回で形が1マス。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒。持っていない方向は「' + esc(DEST_M[LXL.M.dest()]) + '」（M2）。' : '得意でない方向は「' + esc(DEST[LXL.destMode()]) + '」（L5）。') : '<b>負けた…</b> ' + (lost ? 'この戦闘で取ったターゲットは全部なくなる（L4: なくなる）。' : 'L4 が「残る」なので、取ったターゲットは道に進める。')) + '</p>';
     if (!growth.rows.length) h += '<p class="muted">この戦闘で取ったターゲットはない。</p>';
     h += '<ol class="lt-steps">' + growth.rows.map(function (r, i) {
-      var p = pl.rows[i], cls = 'lt-step d-' + (p.g && p.g.via ? 'make' : r.t.dir) + (i < growth.shown ? ' show' : '') + (lost ? ' lost' : '');
+      var p = pl.rows[i], cls = 'lt-step d-' + (p.g && p.g.via ? dcls(isM() ? 'simple' : 'make') : dcls(r.t.dir)) + (i < growth.shown ? ' show' : '') + (lost ? ' lost' : '');
       var who = r.by ? esc(LXL.handName(st, r.by)) : '';
       var line = mark(r.t.dir) + ' 「' + esc(r.t.name) + '」 ';
       if (p.need === 'who') {
@@ -295,7 +368,7 @@
         }).join('') + '</span>';
       } else {
         line += '<b>' + who + '</b>が達成' + (HOW[r.t.got.how] ? '（' + HOW[r.t.got.how] + '）' : '') + ' → ' +
-          (p.g.via ? mark('make') + ' ' : '') + esc(resText(p)) + (p.after ? ' <span class="lt-inline">' + marksHtml(p.magic, p.after) + '</span>' : '');
+          (p.g.via ? mark(isM() ? 'simple' : 'make') + ' ' : '') + esc(resText(p)) + (p.after ? ' <span class="lt-inline">' + marksHtml(p.magic, p.after) + '</span>' : '');
       }
       return '<li class="' + cls + '">' + line + '</li>';
     }).join('') + '</ol>';
@@ -313,7 +386,26 @@
     gbox.innerHTML = h;
   }
   // 魔法1つの道のカード（b: 前、a: あと）
+  // M: 魔法1つの道のカード（変化・覚醒を見せる）
+  function pathCardHtmlM(m, b0, a0, applied) {
+    var M = LXL.M, d = M.def(m);
+    if (!d) return '';
+    var b = M.norm(m, b0), a = M.norm(m, a0), cur = applied ? a : b, fo = a.form ? d.forms[a.form] : null;
+    var changed = a.form && !b.form, awoke = a.awake && !b.awake;
+    var head = '<b>' + esc(magicLabel(m, cur)) + '</b> <small>' + esc(M.dirsMode() === 'two' ? '方向: ' + goodText(m) : '方向は3つとも') + '</small>';
+    if (changed) head += applied ? ' <span class="lt-awake">変化！ ' + esc(R.magicName(m)) + ' → ' + esc(fo.name) + '</span>' : ' <small>（進めると変化「' + esc(fo.name) + '」）</small>';
+    if (awoke) head += applied ? ' <span class="lt-awake">覚醒！ ' + esc(fo.name) + ' → ' + esc(fo.lv2.name) + '</span>' : ' <small>（進めると覚醒「' + esc(fo.lv2.name) + '」）</small>';
+    return '<div class="lt-pathcard' + ((changed || awoke) && applied ? ' awoke' : '') + '"><div class="lt-pc-head">' + head + '</div>' +
+      '<div class="lt-pc-row"><span class="lt-pc-l">' + (applied ? '前' : 'いま') + '</span>' + marksHtml(m, b) + '</div>' +
+      (JSON.stringify(a) !== JSON.stringify(b) ? '<div class="lt-pc-row"><span class="lt-pc-l">' + (applied ? '今' : 'あと') + '</span>' + marksHtml(m, a) + '</div>' : '') +
+      '<ul class="lt-pc-dirs">' + d.dirs.map(function (k) {
+        var f = d.forms[k], closed = closedDir(a, k), left = M.changeAt() - (a[k] || 0);   // 進めたあとの道で
+        var note = closed ? '閉じた' : a.form === k ? (a.awake ? '覚醒した' : '変化した（あと' + (M.awakeAt() - M.total(a)) + 'つで覚醒）') : 'あと' + left + 'つで変化';
+        return '<li class="d-' + k + (closed ? ' closed' : '') + '">' + mark(k) + ' 変化「' + esc(f.name) + '」→ 覚醒「' + esc(f.lv2.name) + '」<small>' + esc(note + '。' + M.propText(f.prop, 1) + ' → ' + (M.PROPS[f.prop] || {}).t2) + '</small></li>';
+      }).join('') + '</ul></div>';
+  }
   function pathCardHtml(m, b, a, applied) {
+    if (isM()) return pathCardHtmlM(m, b, a, applied);
     var d = LXL.pathDef(m), awoke = a.awake && !b.awake, cur = applied ? a : b;
     return '<div class="lt-pathcard' + (awoke && applied ? ' awoke' : '') + '"><div class="lt-pc-head"><b>' + esc(magicLabel(m, cur)) + '</b> <small>得意: ' + esc(goodText(m)) + '</small>' +
       (awoke ? (applied ? ' <span class="lt-awake">覚醒！ ' + esc(R.magicName(m)) + ' → ' + esc(d.awaken[a.awake].name) + '</span>' : ' <small>（進めると覚醒「' + esc(d.awaken[a.awake].name) + '」）</small>') : '') + '</div>' +
@@ -338,7 +430,12 @@
       growth.applied = true; growth.after = pl.work; appliedKey = growth.key;
       // 盤面の味方にも入れる（戦闘は終わっているので、見た目だけ）
       app.state.units.forEach(function (u) { if (u.side === 'ally' && pl.work[u.magic]) u.labPath = clone(pl.work[u.magic]); });
-      pl.rows.forEach(function (r) { if (r.g && r.g.res.ok) app.addLog('【ラボ L】' + R.magicName(r.magic) + 'の' + dirInfo(r.g.dir).name + 'が1マス進んだ' + (r.g.via ? '（得意でない' + dirInfo(r.dir).name + 'で取った）' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : '')); });
+      pl.rows.forEach(function (r) {
+        if (!r.g || !r.g.res.ok) return;
+        if (isM()) app.addLog('【ラボ M】' + R.magicName(r.magic) + ': ' + (r.g.dir === 'simple' ? '単純強化' : dirInfo(r.g.dir).name + 'が1つ進んだ') + (r.g.via ? '（持っていない・閉じた' + dirInfo(r.dir).name + 'で取った）' : '') +
+          (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
+        else app.addLog('【ラボ L】' + R.magicName(r.magic) + 'の' + dirInfo(r.g.dir).name + 'が1マス進んだ' + (r.g.via ? '（得意でない' + dirInfo(r.dir).name + 'で取った）' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
+      });
       app.clearCache(); app.render();
       renderGrowth();
       return;
@@ -359,7 +456,7 @@
       (allies.length ? '<div class="lt-party">' + allies.map(function (a) { return '<span class="lt-ally" title="' + esc('得意: ' + goodText(a.magic)) + '"><b>' + esc(magicLabel(a.magic, a.labPath)) + '</b>' + marksHtml(a.magic, a.labPath) + '</span>'; }).join('') + '</div>' : '') +
       '<div class="lt-quests">' + qs.map(function (q) {
         var defs = q.list.map(LXL.targetDef).filter(Boolean).filter(function (t) { return !t.needsGrow || R.BALANCE.grow.enabled || (pre.overrides && pre.overrides['grow.enabled']); });
-        return '<div class="lt-questcard d-' + esc(q.dir) + (st.labQuest && st.labQuest.dir === q.dir ? ' now' : '') + '"><div class="lt-pc-head">' + mark(q.dir) + ' <b>' + esc(q.name) + '</b> <small>（' + esc(dirInfo(q.dir).name) + '寄り）' + (q.fit ? ' お題に合う' : '') + '</small></div>' +
+        return '<div class="lt-questcard d-' + esc(dcls(q.dir)) + (st.labQuest && st.labQuest.dir === q.dir ? ' now' : '') + '"><div class="lt-pc-head">' + mark(q.dir) + ' <b>' + esc(q.name) + '</b> <small>（' + esc(dirInfo(q.dir).name) + '寄り）' + (q.fit ? ' お題に合う' : '') + '</small></div>' +
           '<ul>' + defs.map(function (t, i) { return '<li class="' + (i >= n ? 'off' : '') + '">' + mark(t.dir) + ' ' + esc(t.name) + '</li>'; }).join('') + '</ul>' +
           '<button type="button" class="primary" data-quest="' + esc(q.dir) + '">このクエストで戦う</button></div>';
       }).join('') + '</div><div class="lab-run-buttons"><button type="button" data-g="close">閉じる（いまのクエストのまま）</button></div></div>';
@@ -377,7 +474,68 @@
   });
 
   // ---- 道を見る（戦闘の外でも） ----
+  function openPathsM() {
+    var M = LXL.M, mags = Object.keys(M.PW.FORMS);
+    var h = '<div class="lab-run-card lt-gcard"><h2>魔法の道 <small>試作ラボ M（方向は 決める・止める・動かす の3つ。作るの方向はない）</small></h2>' +
+      '<p class="note">道は魔法ごとに持ち越す（L の道とは別）。ミッションを取ると強化1回（形が1マス、上限' + M.shapeMax() + '）。同じ方向が' + M.changeAt() + 'つで<b>変化</b>（名前・駒の印・性質が変わる。ほかの方向は閉じる。戻れない）。' +
+      '変化のあと、強化が合計' + M.awakeAt() + 'で<b>覚醒</b>（性質が1段強く・長く）。持っていない・閉じた方向は「' + esc(DEST_M[M.dest()]) + '」（M2）。作る系は「' + (M.makeMode() === 'marker' ? '目印だけ' : '単純強化') + '」（M4）。環境の変え方とシナジーは変わらない。性質は敵にも味方にも同じ。</p><div class="lt-pathcards">' +
+      mags.map(function (m) {
+        var d = M.def(m), p = pathFor(m);
+        return '<div class="lt-pathcard"><div class="lt-pc-head"><b>' + esc(magicLabel(m, p)) + '</b> ' + marksHtml(m, p) + '</div><ul class="lt-pc-dirs">' + d.dirs.map(function (k) {
+          var f = d.forms[k], P = M.PROPS[f.prop] || {};
+          return '<li class="d-' + k + (closedDir(p, k) ? ' closed' : '') + '">' + mark(k) + ' ' + esc(dirInfo(k).name) + '<ol>' +
+            '<li class="' + (p.form === k ? 'on' : '') + '">変化「' + esc(f.name) + '」: ' + esc(P.t1 || f.prop) + '</li>' +
+            '<li class="' + (p.form === k && p.awake ? 'on' : '') + '">覚醒「' + esc(f.lv2.name) + '」: ' + esc(P.t2 || '') + '</li></ol></li>';
+        }).join('') + '</ul></div>';
+      }).join('') + '</div><div class="lab-run-buttons"><button type="button" data-g="close">閉じる</button></div></div>';
+    gbox.innerHTML = h;
+    growth = null;
+    gbox.hidden = false;
+  }
+  // ---- M: ミッションの仕分け（41のミッションを、どの方向に入れるか。ラボの中だけ・localStorage） ----
+  var SORT_STORE = 'cafilia-lab-mission-sort', sortMap = {};
+  try { sortMap = loadBag(SORT_STORE); } catch (e) { sortMap = {}; }
+  if (LXL.M) LXL.M.setSort(sortMap);
+  var SORT_OPTS = [['decide', '決める'], ['stop', '止める'], ['move', '動かす'], ['make', '作る系（方向なし）'], ['off', '使わない']];
+  function openSort() {
+    var M = LXL.M;
+    if (!M) return;
+    var list = M.MISSIONS.slice().sort(function (a, b) { return a.no - b.no; });
+    var count = {};
+    list.forEach(function (t) { var d = M.missionDir(t); count[d] = (count[d] || 0) + 1; });
+    var h = '<div class="lab-run-card lt-gcard lt-sortcard"><h2>ミッションの仕分け <small>試作ラボ M（材料まとめの41）</small></h2>' +
+      '<p class="note">どのミッションを、どの方向に入れるか。変えた仕分けは、次にシナリオを読んだときから効く（「このシナリオで試す」でやり直す）。この画面の中だけで、ほかの人の画面には残らない。</p>' +
+      '<p class="lt-sortcount">' + SORT_OPTS.map(function (o) { return (o[0] === 'off' ? '' : mark(o[0]) + ' ') + esc(o[1]) + ' ' + (count[o[0]] || 0); }).join('　') + '</p>' +
+      '<table class="lt-sorttable"><tr><th>番号</th><th>ミッション</th><th>方向</th></tr>' + list.map(function (t) {
+        var d = M.missionDir(t), T = M.TAKERS[t.taker];
+        return '<tr class="d-' + esc(dcls(d)) + (sortMap[t.id] ? ' changed' : '') + '"><td>' + t.no + '</td><td><b>' + esc(t.name) + '</b><small>' + esc(t.text + (T && t.taker !== 'hand' ? '（取る: ' + T + '）' : '') + (t.check.end ? '（勝ったときに決まる）' : '')) + '</small></td>' +
+          '<td><select data-sort="' + esc(t.id) + '">' + SORT_OPTS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === d ? ' selected' : '') + '>' + esc(o[1]) + (o[0] === t.dir ? '（初め）' : '') + '</option>'; }).join('') + '</select></td></tr>';
+      }).join('') + '</table>' +
+      '<div class="lab-run-buttons"><button type="button" data-sortreset="1">初めの仕分けに戻す</button><button type="button" class="primary" data-sortretry="1">このシナリオで試す</button><button type="button" data-g="close">閉じる</button></div></div>';
+    gbox.innerHTML = h;
+    growth = null;
+    gbox.hidden = false;
+  }
+  gbox.addEventListener('change', function (e) {
+    var sel = e.target.closest('[data-sort]');
+    if (!sel || !LXL.M) return;
+    var id = sel.getAttribute('data-sort'), def = LXL.M.mission(id);
+    if (def && sel.value === def.dir) delete sortMap[id]; else sortMap[id] = sel.value;
+    try { localStorage.setItem(SORT_STORE, JSON.stringify(sortMap)); } catch (err) { /* 残せないときも、この画面の間は効く */ }
+    LXL.M.setSort(sortMap);
+    openSort();
+  });
+  gbox.addEventListener('click', function (e) {
+    if (e.target.closest('[data-sortreset]')) {
+      sortMap = {};
+      try { localStorage.setItem(SORT_STORE, '{}'); } catch (err) { /* なし */ }
+      LXL.M.setSort(sortMap);
+      openSort();
+    }
+    if (e.target.closest('[data-sortretry]')) { gbox.hidden = true; if (app.scenario) app.loadScenario(app.scenario); }
+  });
   function openPaths() {
+    if (isM()) { openPathsM(); return; }
     var mags = Object.keys(LXL.PATHS);
     var h = '<div class="lab-run-card lt-gcard"><h2>魔法の道 <small>試作ラボ L（作るは全魔法共通。草の止めるは本物、ほかの決める・止める・動かすは共通の処理）</small></h2>' +
       '<p class="note">道は魔法ごとに持ち越す。ターゲットを取ると、その方向に1マス。得意でない方向で取ったら「' + esc(DEST[LXL.destMode()]) + '」（L5）。' +
@@ -407,6 +565,6 @@
     }
   };
 
-  window.LabTargetUI = { cardHtml: cardHtml, openQuest: openQuest, paths: function () { return clone(paths); }, setPath: setPath, resetPaths: resetPaths, openGrowth: openGrowth, openPaths: openPaths, render: renderBox };
+  window.LabTargetUI = { cardHtml: cardHtml, openQuest: openQuest, openSort: openSort, paths: function () { return clone(paths); }, setPath: setPath, resetPaths: resetPaths, openGrowth: openGrowth, openPaths: openPaths, render: renderBox };
   renderBox();
 })();

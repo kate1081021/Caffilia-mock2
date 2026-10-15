@@ -318,7 +318,7 @@
 
     // 移動の探し方をラボのものにするか（今の BFS と同じ結果になる場面でも、案がオンなら使う）
     function useLabReach(s, u) {
-      return on('A2') || on('A5') || on('A6') || on('F2') || on('B20') || on('B21') || on('D4') || on('D7') || (u.size || 1) > 1 || thornActive(s);   // L: 茨の牢
+      return on('A2') || on('A5') || on('A6') || on('F2') || on('B20') || on('B21') || on('D4') || on('D7') || (u.size || 1) > 1 || thornActive(s) || (on('M0') && !!u.labAfter);   // L: 茨の牢・M: 撃ったあとに動く
     }
     // 入ると止まる自然（泥沼・丘。A5: 森、B21: 深い森）
     function moveStops(t) { return t === 'mud' || t === 'hill' || (on('A5') && t === 'forest') || (on('B21') && t === 'deepforest'); }
@@ -349,6 +349,7 @@
       var k0 = key(u.x, u.y);
       dist[k0] = 0; order.push([u.x, u.y]); seqOf[k0] = 0;
       if (u.stuck || thornCaged(s, u)) return { dist: dist, order: order, prev: prev, pass: pass };   // L: 茨の牢では動けない
+      var mv = on('M0') && u.labAfter ? u.labAfter.move : u.move;   // M: 撃ったあとに動ける歩数（2回撃てるなら0）
       var open = [{ x: u.x, y: u.y, c: 0, seq: 0 }], seq = 1, done = {};
       while (open.length) {
         var bi = 0;
@@ -356,7 +357,7 @@
         var cur = open.splice(bi, 1)[0], ck = key(cur.x, cur.y);
         if (done[ck] || dist[ck] !== cur.c) continue;
         done[ck] = true;
-        if (cur.c >= u.move) continue;
+        if (cur.c >= mv) continue;
         if (cur.c > 0 && anyTile(s, u, cur.x, cur.y, moveStops)) continue;
         DIR_ORDER.forEach(function (d) {
           var D = DIRS[d], nx = cur.x + D.dx, ny = cur.y + D.dy;
@@ -370,7 +371,7 @@
           var guard = 0;
           while (slides(getTile(s, lx, ly)) && canStandAt(s, u, lx + D.dx, ly + D.dy) && guard++ < 30) { passed.push([lx, ly]); lx += D.dx; ly += D.dy; }   // A2: 滑る
           var nc = cur.c + cost, nk = key(lx, ly);
-          if (nc > u.move) return;
+          if (nc > mv) return;
           if (dist[nk] === undefined || nc < dist[nk]) {
             if (dist[nk] === undefined) { order.push([lx, ly]); seqOf[nk] = seq; }
             dist[nk] = nc; prev[nk] = ck; pass[nk] = passed;
@@ -414,7 +415,7 @@
       heavyOnIce(s, u, ev);
       afterMoveMore.forEach(function (f) { f(s, u, from, to, ev); });
     }
-    function afterPush(s, o, ev) { heavyOnIce(s, o, ev); }
+    function afterPush(s, o, ev) { heavyOnIce(s, o, ev); if (on('M0')) mTrapCheck(s, o, ev); }   // M5: 置いた魔法に押しこまれた
 
     // 隠れているか（A3 森・A8 高台から見える・B17 砂嵐・B20 暗がり・B21 深い森・I1 照らされた）。ラボで変わらないときは undefined
     function hidden(s, u, viewer, forTarget) {
@@ -821,6 +822,7 @@
       return amount;
     });
     function beforeApply(s, ctx, ev) {
+      if (on('M0')) mGuard(s, ctx, ev);   // M: 当たった者は相手の次の攻撃を防ぐ（城壁）
       if (on('L0')) finRing(s, ctx, ev);   // L 決めるの道: 決め手の範囲が広い（D3 の覆い方の前に足す）
       ctx.order.forEach(function (id) {
         var u = I.findUnit(s, id), h = ctx.hits[id];
@@ -888,7 +890,7 @@
     // ---------------------------------------------------------------
     var castMore = [];   // G・I でうしろに足す
     function castMagic(s, u, facing, ctx, ev) {
-      if (on('L0')) shotStart(s, u, ctx);   // L: 撃つ前の盤面を覚える（ターゲットの判定・作り手）
+      if (on('L0')) shotStart(s, u, ctx, ev);   // L: 撃つ前の盤面を覚える（ターゲットの判定・作り手）
       for (var i = 0; i < castMore.length; i++) if (castMore[i](s, u, facing, ctx, ev)) return true;
       if (u.magic === 'revert') { revert(s, u, facing, ctx, ev); return true; }
       return false;
@@ -1164,6 +1166,7 @@
       var w = weaponOn(s, u);
       if (w === 'staff' || w === 'scepter') len += 1;
       if (u.magic === magic) len += shapeSteps(u);   // L 仮の道: 水・風は届く長さが1マスずつ伸びる
+      if (mon() && u.magic === magic) len = mLength(s, u, len);   // M: 大きくする・足場・当たるまで・小さく・2回撃てる
       return footLength(s, u, magic, len);   // F3: 水辺で水は1マス長い
     }
     // G3: 闇の姿は、形のマスを全部吸う（G2 で伸びた闇も）
@@ -1323,6 +1326,7 @@
     function cannotShoot(s, u, to) {
       if (enclosedAt(s, u, to)) return '閉じこめられていて撃てない（待機だけ）';
       if (thornCaged(s, u)) return '茨の牢に囚われていて撃てない（待機だけ）';   // L: 草の足止めの覚醒
+      if (on('M0') && u.labAfter && !u.labAfter.shoot) return '撃ったあとなので、動くだけ（動いて「待機」）';   // M: 疾風
       if (on('H13') && u.labMoveOnly) return 'ごほうびの移動は撃てない（待機だけ）';
       return false;
     }
@@ -1362,6 +1366,7 @@
     var deathMore = [];
     function onDeathAll(s, dead, ev) {
       onDeath(s, dead, ev);
+      if (on('M0')) mOnDeath(s, dead, ev);   // M: 味方が倒れた・撃たせずに倒した敵
       if (on('H10') && opt('H10', 'mode') === 'faint') dead.forEach(function (d) {
         if (d.side !== 'ally' || d.npc) return;
         s.labFaint = (s.labFaint || []).concat([{ unit: I.clone(d), back: s.turn + 2 }]);
@@ -1370,6 +1375,7 @@
     }
     function turnEndAll(s, ev) {
       targetTurnEnd(s, ev);   // L: ターン終了で倒れた敵・撃たれずに終わった予告の決め手
+      if (on('M0')) mTurnEnd(s, ev);   // M: 撃ったあとのもう1回は、ターンの終わりで消える
       turnEnd(s, ev);
       if (!timeFrozen()) sweepLab(s, ev);   // B: 砂嵐・霜・暗がり・底なし沼（K1 時間なしなら消えない）
       flourishTurn(s, ev);   // K2: 灰がよみがえる・水辺の草むらが育つ・氷が溶ける
@@ -2396,22 +2402,23 @@
     var FOREST_LIKE = { forest: true, deepforest: true, bigtree: true };
     var GROWN = { thicket: 'forest', hill: 'mountain', puddle: 'river', breeze: 'gale', smallfire: 'fire' };   // 一段 → 二段
     var INTO = { mud: true, bog: true, forest: true, deepforest: true, river: true, puddle: true, reeds: true };   // 動かす「泥沼・森・川へ」（川は立てる水も）
-    function dirName(d) { return LT.DIRS[d] ? LT.DIRS[d].name : d; }
+    function dirName(d) { var T = mon() ? LPW.DIRS : LT.DIRS; return T[d] ? T[d].name : d; }
 
     // ---- 魔法の道 ----
-    function pathDef(m) { return LP.PATHS[m] || null; }
+    function pathDef(m) { if (mon()) return mDef(m); return LP.PATHS[m] || null; }   // M: 3つの方向の道
     // その魔法の道の方向（作る ＋ 得意な方向）
-    function dirsOf(m) { var d = pathDef(m); return d ? ['make'].concat(d.dirs) : []; }
-    function isGood(m, dir) { var d = pathDef(m); return !!d && (dir === 'make' ? !!d.makeGood : d.dirs.indexOf(dir) >= 0); }
+    function dirsOf(m) { var d = pathDef(m); if (mon()) return d ? d.dirs.slice() : []; return d ? ['make'].concat(d.dirs) : []; }
+    function isGood(m, dir) { var d = pathDef(m); return !!d && (dir === 'make' ? !!d.makeGood && !mon() : d.dirs.indexOf(dir) >= 0); }
     // 作るが得意（草・土・水。作るの3マス目で覚醒する）
-    function makeGood(m) { var d = pathDef(m); return !!(d && d.makeGood && d.awaken.make); }
+    function makeGood(m) { if (mon()) return false; var d = pathDef(m); return !!(d && d.makeGood && d.awaken.make); }
     // 覚醒できる方向（作るが得意なら作るも）
-    function awakeDirs(m) { var d = pathDef(m); return d ? (makeGood(m) ? ['make'] : []).concat(d.dirs) : []; }
-    function newPath(m) { var d = pathDef(m); if (!d) return null; var p = { make: 0 }; d.dirs.forEach(function (k) { p[k] = 0; }); p.awake = null; return p; }
+    function awakeDirs(m) { var d = pathDef(m); if (mon()) return d ? d.dirs.slice() : []; return d ? (makeGood(m) ? ['make'] : []).concat(d.dirs) : []; }
+    function newPath(m) { var d = pathDef(m); if (!d) return null; if (mon()) return mNew(); var p = { make: 0 }; d.dirs.forEach(function (k) { p[k] = 0; }); p.awake = null; return p; }
     function clamp3(v) { return Math.max(0, Math.min(3, Math.round(Number(v) || 0))); }
     // 道の形をそろえる（各方向 0〜3。覚醒は1つだけ。得意な方向は3に届いた1つが覚醒で、ほかは2まで。
     //   作るは3まで進める。作るが得意なら、ほかに覚醒がないとき3で覚醒。ほかに先に覚醒していれば、3でも覚醒しない）
     function normPath(m, p0) {
+      if (mon()) return mNorm(m, p0);
       var d = pathDef(m);
       if (!d) return null;
       var p = newPath(m), src = p0 || {};
@@ -2429,16 +2436,16 @@
     }
     function lpathOf(u) { return lon() && u && u.labPath && pathDef(u.magic) ? u.labPath : null; }
     function stepOf(u, dir) { var p = lpathOf(u); return p ? (p[dir] || 0) : 0; }
-    function awakeOf(u) { var p = lpathOf(u); return p && p.awake ? p.awake : null; }
-    function formOf(u) { var a = awakeOf(u), d = a ? pathDef(u.magic) : null; return d && d.awaken[a] ? d.awaken[a] : null; }
+    function awakeOf(u) { var p = lpathOf(u); if (mon()) return p && p.form ? p.form : null; return p && p.awake ? p.awake : null; }
+    function formOf(u) { if (mon()) return mFormOf(u); var a = awakeOf(u), d = a ? pathDef(u.magic) : null; return d && d.awaken[a] ? d.awaken[a] : null; }
     function formName(u) { var f = formOf(u); return f ? f.name : null; }
     // 作るの覚醒（森・山・川）。育つ（X1）が入のときだけ一発で育った姿を作る（切なら名前と駒が変わるだけ）
-    function makeForm(u) { return !!u && awakeOf(u) === 'make' && makeGood(u.magic); }
+    function makeForm(u) { return !!u && !mon() && awakeOf(u) === 'make' && makeGood(u.magic); }
     function makeFormOn(u) { return makeForm(u) && B.grow.enabled; }
     // 道で手に入れた効果。進んだマスの効果は、覚醒でほかの方向が閉じても残る
     function fxCount(u, fx) {
       var p = lpathOf(u), d = p ? pathDef(u.magic) : null, n = 0;
-      if (!d) return 0;
+      if (!d || mon()) return 0;   // M: 道の効果（fx）はない。性質は mProps
       Object.keys(d.steps).forEach(function (k) {
         var st = d.steps[k] || [];
         for (var i = 0; i < Math.min(3, p[k] || 0); i++) if (st[i] && st[i].fx === fx) n++;
@@ -2448,12 +2455,14 @@
     function fxOn(u, fx) { return fxCount(u, fx) > 0; }
     // 作る: 形が1マス増えるマスの数（上限3）。作るが得意でも、先にほかの方向に覚醒していれば、3マス目は形が1マス
     function shapeSteps(u) {
+      if (mon()) { var mp = lpathOf(u); return mp ? Math.min(mShapeMax(), mTotal(mp)) : 0; }   // M: 強化1回で形が1マス（上限まで）
       var n = fxCount(u, 'shape'), p = lpathOf(u);
       if (p && makeGood(u.magic) && (p.make || 0) >= 3 && p.awake !== 'make') n++;
       return Math.min(3, n);
     }
     // i マス目（0〜2）の中身の一言（作るが得意でも、ほかに覚醒したあとの3マス目は形が1マス）
     function stepText(m, p, k, i) {
+      if (mon()) return mStepText(m, k);
       var d = pathDef(m), st = d && d.steps[k] && d.steps[k][i];
       if (!st) return '';
       if (k === 'make' && i === 2 && makeGood(m) && p && p.awake && p.awake !== 'make') {
@@ -2463,6 +2472,7 @@
     }
     // 道を1マス進める（p を書き換える）。{ ok, step, awake } ／{ none }（その方向を持たない）／{ closed }（覚醒で閉じた）／{ full }（もう覚醒した方向）／{ makeFull }（作るは3マスで上限）
     function advance(p, m, dir) {
+      if (mon()) return mAdvance(p, m, dir);
       var d = pathDef(m);
       if (!d || !p) return { none: true };
       if (dir === 'make') {
@@ -2482,6 +2492,7 @@
     }
     // 達成したときの行き先（L5）。p を書き換える。{ dir: 進んだ方向, res, via: 得意でなかったときの元の結果, dest: L5 の値, after: 進めたあとの道 }
     function gain(p, m, dir) {
+      if (mon()) return mGain(p, m, dir);
       var g, r = advance(p, m, dir);
       if (r.ok || dir === 'make' || !pathDef(m) || !p) g = { dir: dir, res: r };
       else if (destMode() !== 'make') g = { dir: dir, res: r, dest: destMode() };
@@ -2493,6 +2504,7 @@
     function advances(p, m, dir) { return !!(p && pathDef(m) && advance(lclone(p), m, dir).ok); }
     // 進み具合の印（作●○○ 止●●○ …。閉じた方向は × を足す）
     function pathMarks(m, p) {
+      if (mon()) return mMarks(m, p);
       var d = pathDef(m);
       if (!d) return '';
       p = p || newPath(m);
@@ -2530,6 +2542,7 @@
     }
     // gain の結果の一言（dir は達成したターゲットの方向）
     function gainText(m, dir, g, before) {
+      if (mon()) return mGainText(m, dir, g, before);
       var nm = I.magicName(m), r = g.res;
       if (!pathDef(m)) return nm + 'には道がない（育たない）';
       if (g.via) return notWhy(m, dir, g.via, before) + 'ので、' + (r.ok ? '作るが1マス進む' + awakeHint(m, 'make', r, g.after) : '作るに入るが、作るはもう伸びない');
@@ -2540,6 +2553,7 @@
     }
     // 取ったら道がどうなるか（一言）。p はその魔法の今の道（なければ 0 から）
     function outlook(m, p, dir) {
+      if (mon()) return mOutlook(m, p, dir);
       if (!pathDef(m)) return '達成するが、' + I.magicName(m) + 'には道がない（育たない）';
       p = p || newPath(m);
       return gainText(m, dir, gain(lclone(p), m, dir), p);
@@ -2547,18 +2561,22 @@
 
     // ---- ターゲット ----
     function targetDef(x) {
-      var t = typeof x === 'string' ? LT.TARGETS.filter(function (d) { return d.id === x; })[0] : x;
-      return t && t.check ? JSON.parse(JSON.stringify(t)) : null;
+      var t = typeof x === 'string' ? (mon() && mMission(x)) || LT.TARGETS.filter(function (d) { return d.id === x; })[0] : x;
+      if (!t || !t.check) return null;
+      t = JSON.parse(JSON.stringify(t));
+      if (mon() && !t.stage) t.dir = missionDir(t);   // M: 画面の「ミッションの仕分け」で変えた方向
+      return t;
     }
     // 戦闘の始まり: シナリオの labState.labTargetList から、この戦闘のターゲットを決める（数は L3。育つが切なら「二段」は出さない）
     function setupTargets(s) {
       if (!lon()) return;
       if (!s.labTargets && s.labTargetList) {
-        var list = s.labTargetList.map(targetDef).filter(function (t) { return t && (!t.needsGrow || B.grow.enabled); });
+        var list = s.labTargetList.map(targetDef).filter(function (t) { return t && (!t.needsGrow || B.grow.enabled) && mOffer(s, t); });
         s.labTargets = list.slice(0, targetCount());
       }
       (s.labTargets || []).forEach(function (t) { t.got = null; delete t.missed; delete t.remainSeen; });
       delete s.labPlanFin; delete s.labFoil; delete s.labShot;
+      if (mon()) mSetup(s);   // M: 戦闘ごとの記録
       s.units.forEach(function (u) { delete u.labHeldBy; delete u.labHeldRun; delete u.labMovedBy; delete u.labBind; });
     }
     function openT(s, kind) { return (s.labTargets || []).filter(function (t) { return !t.got && t.check && t.check.kind === kind; }); }
@@ -2609,7 +2627,7 @@
     function achieve(s, t, hand, preps, ev, cells) {
       var who = whoMode(), taker = t.taker || 'hand', got;
       preps = uniqHands(preps || []);
-      var canTake = function (h) { return destMode() !== 'remain' || advances(projected(s, h), h.magic, t.dir); };
+      var canTake = function (h) { return mon() ? mCanTake(projected(s, h), h.magic, t.dir) : destMode() !== 'remain' || advances(projected(s, h), h.magic, t.dir); };
       if (hand.side === 'ally') {
         if (taker === 'hand' && who === 'choose') {
           var all = uniqHands(preps.concat([hand])), cands = all.filter(canTake);
@@ -2636,7 +2654,7 @@
       got.turn = s.turn;
       s.labGotSeq = (s.labGotSeq || 0) + 1;
       got.seq = s.labGotSeq;   // 取った順（道はこの順に進む。作るの覚醒と得意な方向の覚醒の、どちらが先かが決まる）
-      var HOW = { preparer: '材料を作った', maker: '自然を作った', stopper: '止めた', mover: '動かした' };
+      var HOW = { preparer: '材料を作った', maker: '自然を作った', stopper: '止めた', mover: '動かした', helper: '手を貸した', last: '決着の一手の', still: '歩かなかった', carrier: '運んだ', blocker: '道をふさいだ' };
       var whoText = got.by ? (HOW[got.how] || '') + handName(s, got.by) + 'が取った → ' + outlook(got.by.magic, projected(s, got.by), t.dir)
         : (HOW[got.how] ? HOW[got.how] + ' ' : '') + got.cands.map(function (h) { return handName(s, h); }).join('・') + ' から、戦闘の終わりに1人選ぶ';
       t.got = got;
@@ -2646,16 +2664,18 @@
 
     // ---- 撃つ前と後（1発の中で変わったマスを、撃った手のものとして覚える） ----
     function stopOpen(s) { return openT(s, 'held').length + openT(s, 'heldFin').length > 0; }
-    function shotStart(s, u, ctx) {
+    function shotStart(s, u, ctx, ev) {
       if (!lon()) return;
       var track = s.labTargets && stopOpen(s);
       ctx.labPre = { tiles: s.tiles.slice(), maker: lclone(s.labMaker || {}),
         units: s.units.map(function (x) {
           return { id: x.id, side: x.side, magic: x.magic, x: x.x, y: x.y, size: x.size || 1,
-            held: track && x.side === 'enemy' ? heldNow(s, x) : false, heldBy: x.labHeldBy || null };
+            held: track && x.side === 'enemy' ? heldNow(s, x) : false, heldBy: x.labHeldBy || null,
+            intent: !!x.intent, facing: x.facing, tile: getTile(s, x.x, x.y), shots: x.labShots || 0 };   // M: 予告の前に倒す・向きを変える・高い所から下ろす・撃たせずに倒す
         }) };
       ctx.labPrevShot = s.labShot;
       s.labShot = { by: u.id, side: u.side, magic: u.magic };
+      if (mon()) mShotStart(s, u, ctx, ev);
     }
     function makerSet(s, i, t) {
       if (t === 'empty') { if (s.labMaker) delete s.labMaker[i]; return; }
@@ -2668,6 +2688,7 @@
       if (!lon() || !ctx.labPre) return;
       grassAfter(s, u, facing, ctx, ev);   // 草の道（蔓。LAB_L の起点・育てるの処理も fx で残してある）。作った自然は、この1発のもの
       pathAfter(s, u, facing, ctx, ev);    // 止める・動かすの道（共通の処理）
+      mAfterShot(s, u, facing, ctx, ev);   // M: 変化先の性質・強化の候補（判定より先に起こす）
       if (ctx.labPrevShot) s.labShot = ctx.labPrevShot; else delete s.labShot;
       thornIntent(s, ev);
       if (!s.labTargets) return;
@@ -2692,6 +2713,7 @@
         var e = I.findUnit(s, p.id);
         if (e && (e.x !== p.x || e.y !== p.y)) moved.push({ id: p.id, from: [p.x, p.y], to: [e.x, e.y], d: Math.abs(e.x - p.x) + Math.abs(e.y - p.y) });
       });
+      var E = { pre: pre, changed: changed, deadEnemies: deadEnemies, finCells: finCells, moved: moved, byFin: byFin, at: at };   // M の判定に渡す
       (s.labTargets || []).forEach(function (t) {
         if (t.got) return;
         var k = t.check.kind, r = null, taker = null;
@@ -2763,14 +2785,22 @@
             return has(ctx.cells, q[0], q[1]) && (!t.check.tile || pre.tiles[idx(s, q[0], q[1])] === t.check.tile);
           });
           if (hit) r = { cells: cc, mat: [] };
+        } else if (mon()) {
+          var mr = mJudge(s, u, ctx, ev, t, E);   // M: 41のミッションのうち、L にない判定
+          if (mr) { r = mr.r; taker = mr.taker || null; }
         }
         if (r) achieve(s, t, taker || hand, preparersAt(s, pre.maker, r.mat), ev, r.cells);
       });
       // 動かす「予告を別の敵に」: 味方が動かした敵を覚える（その敵が撃つまで）。敵の手で動いたら忘れる
-      if (openT(s, 'redirect').length) moved.forEach(function (m) {
+      if (openT(s, 'redirect').length || (mon() && openT(s, 'enemyFinKill').length)) moved.forEach(function (m) {   // M: 敵の決め手で倒す（動かした味方が手を貸した）
         var e = I.findUnit(s, m.id);
         if (!e || e.id === u.id) return;
         if (u.side === 'ally') e.labMovedBy = hand; else delete e.labMovedBy;
+      });
+      // M: 向きを変えた（早瀬・狐火）敵も、動かした敵と同じに覚える（「予告を別の敵に」）
+      if (mon() && u.side === 'ally' && (openT(s, 'redirect').length || openT(s, 'enemyFinKill').length)) pre.units.forEach(function (p) {
+        var e = I.findUnit(s, p.id);
+        if (e && p.side === 'enemy' && e.id !== u.id && e.facing !== p.facing) e.labMovedBy = hand;
       });
       if (u.side === 'enemy') delete u.labMovedBy;
       // 止める「予告の決め手を潰す」: 予告で決め手が起きるはずだった敵が撃って、決め手が起きなかった
@@ -2808,6 +2838,7 @@
     });
     // 敵の番の始め（移動と予告の前）。rules.js の enemyPlanPhase から
     function planStart(s, e, plan, ev) {
+      if (mon()) mPlanStart(s, e, plan, ev);   // M: 予告が遅れる・予定の道をふさぐ
       if (!lon() || !s.labTargets) return;
       delete e.labMovedBy;   // 自分の番が来たら、動かされた手は忘れる
       var open = openT(s, 'held');
@@ -2823,6 +2854,7 @@
     // 敵の予告が出そろったあと: 予告どおりなら決め手が起きる敵を覚える
     function afterPlan(s, ev) {
       if (!lon()) return;
+      if (mon()) mAfterPlan(s, ev);   // M: 敵の予定の行き先（予定の道をふさぐ）
       delete s.labPlanFin; delete s.labFoil;
       if (s.result || !s.labTargets || !openT(s, 'foiled').length) return;
       var fin = {}, any = false;
@@ -2834,6 +2866,7 @@
     }
     // 味方が1人動いたあと: その手で、予告の決め手が起きなくなった敵を覚える（また起きるようになったら消す）
     function afterAct(s, u, ev) {
+      if (mon()) mAfterAct(s, u, ev);   // M: 撃ったあと動ける・2回撃てる・予定の道をふさぐ
       if (!lon() || s.result || !s.labPlanFin || !openT(s, 'foiled').length) return;
       var still = {};
       I.forecast(s).enemies.forEach(function (p) { if (!p.cancelled && p.finishers && p.finishers.length) still[p.id] = true; });
@@ -2890,6 +2923,7 @@
         if (e.type !== 'death' || e.side !== 'enemy') return;
         var c = (e.cells || [])[0];
         openT(s, 'kill').forEach(function (t) { achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []); });
+        if (mon() && mNeverShot(s, e.id)) openT(s, 'neverShot').forEach(function (t) { achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []); });
       });
       if (s.labPlanFin) Object.keys(s.labPlanFin).forEach(function (id) { foiled(s, id, s.labPlanFin[id], ev); });
       delete s.labPlanFin; delete s.labFoil;
@@ -3177,7 +3211,7 @@
 
     // ---- 作る（全魔法に共通）: 形が1マス増える（水・風は届く長さが伸びる。lengthFor） ----
     cellsMore.push(function (s, u, o, facing) {
-      if (!lon() || !lpathOf(u)) return null;
+      if (!lon() || mon() || !lpathOf(u)) return null;   // M は mCells
       var n = shapeSteps(u), extra = LP.EXTRA_CELLS[u.magic];
       if (!n || !extra || !B.shapes[u.magic]) return null;
       return shapeAt(s, B.shapes[u.magic].concat(extra.slice(0, n)), o, facing);
@@ -3190,14 +3224,15 @@
       var base = (p && p.labState && p.labState.labTargetList) || [];
       if (!base.length) return [];
       var lean = (LT.QUEST_LEAN || {})[p.mission || 'annihilate'] || 'decide';
-      var order = [lean].concat(LT.DIR_ORDER.filter(function (d) { return d !== lean; }));
+      var MQ = mon(), ORDER = MQ ? LPW.QUEST_ORDER : LT.DIR_ORDER, POOL = (MQ ? LPW.QUEST_POOL : LT.QUEST_POOL) || {}, QNAME = (MQ ? LPW.QUEST_NAME : LT.QUEST_NAME) || {};   // M: 討伐・守り・誘導・開拓
+      var order = [lean].concat(ORDER.filter(function (d) { return d !== lean; }));
       return order.map(function (dir) {
-        var pool = (LT.QUEST_POOL || {})[dir] || [];
+        var pool = POOL[dir] || [];
         var other = base.map(targetDef).filter(function (q) { return q && q.dir !== dir; })[0];
         var list = (p.labQuests && p.labQuests[dir]) || pool.slice(0, 2).concat(other ? [other.id] : []).concat(pool.slice(2, 3));
         var seen = {};
         list = list.filter(function (id) { var k = typeof id === 'string' ? id : id.id; if (seen[k]) return false; seen[k] = true; return true; });
-        return { dir: dir, name: (LT.QUEST_NAME || {})[dir] || dir, list: list, fit: dir === lean };
+        return { dir: dir, name: QNAME[dir] || dir, list: list, fit: dir === lean };
       });
     }
     function questOf(p, dir) { var qs = questsOf(p); return qs.filter(function (q) { return q.dir === dir; })[0] || qs[0] || null; }
@@ -3210,6 +3245,647 @@
       if (p) u.labPath = normPath(u.magic, p); else delete u.labPath;
       return { ok: true, state: s, events: [], steps: [] };
     }
+    // ---------------------------------------------------------------
+    // M 強化の方向（3つ）とミッション（.claude/lab/LAB_M_power.md）。データは lab_power.js、画面は lab_target_ui.js（M のときの描き分け）
+    //   L0 の土台（ミッション・取った記録・育ちの画面・持ち越し・L6 クエスト）をそのまま使い、道の形と方向だけを M のものに替える。
+    //   M0 がオフなら何もしない（L は 作る・決める・止める・動かす のまま）。作るの方向はない（作る系のミッションは単純強化か目印。M4）
+    //   道 u.labPath = { decide, stop, move, simple, form, awake }。強化1回で形が1マス（上限 shapeMax）。
+    //     最初に change に届いた方向へ変化（1段目。ほかの方向は閉じる）。変化のあと、強化の合計が awake に届くと覚醒（2段目）
+    //   M0 がオンのときだけ、当たった者・盤面に次を足す
+    //     u.labGuard 相手の攻撃を防ぐ回数、u.labBoost 次の1発で増えるマス、u.labShrink 次の1発は1マス、u.labDelay { n } 予告が遅れる、
+    //     u.labSilence 予告を出せない回数、u.labAfter { move, shoot } 撃ったあとのもう1回、u.labCand M5 の候補 { id: true }（シナリオかエディットで）
+    //     u.labWalked 歩いた（味方）、u.labShots 撃った回数（敵）、u.labShotSeq 最後に撃った順（味方）
+    //     s.labFinTurn このターンの決め手の数、s.labLastHand 最後に撃った味方の手、s.labAllyLost 味方が倒れた、s.labDeadShots 倒れた敵の撃った回数、
+    //     s.labPlanTo / s.labBlocker 敵の予定の行き先とふさいだ手、s.labTraps 置いた魔法、s.labLinger もう1ターン残すマス、s.labEndDone 勝ったときの判定を済ませた
+    // ---------------------------------------------------------------
+    var LPW = (IS_NODE_L ? require('./lab_power.js') : root.LAB_POWER) || { DIRS: {}, DIR_ORDER: [], LIST_ORDER: [], MISSIONS: [], FORMS: {}, PROPS: {}, TWO: {}, CANDS: [],
+      STAGE3: [], TAKERS: {}, QUEST_POOL: {}, QUEST_NAME: {}, QUEST_ORDER: [], FLAVOR: {}, STAND_ON: {} };
+    function mon() { return lon() && on('M0'); }
+    function clampN(v, lo, hi, d) { var n = Math.round(Number(v)); if (!isFinite(n)) n = d; return Math.max(lo, Math.min(hi, n)); }
+    function mDirsMode() { return lopt('M1', 'dirs', 'three') === 'two' ? 'two' : 'three'; }
+    function mDest() { var v = lopt('M2', 'dest', 'simple'); return v === 'nothing' || v === 'remain' ? v : 'simple'; }
+    function mChangeAt() { return clampN(lopt('M3', 'change', 2), 1, 6, 2); }
+    function mAwakeAt() { return Math.max(mChangeAt() + 1, clampN(lopt('M3', 'awake', 5), 2, 12, 5)); }
+    function mShapeMax() { return clampN(lopt('M3', 'shapeMax', 3), 0, 7, 3); }
+    function mMakeMode() { return lopt('M4', 'make', 'simple') === 'marker' ? 'marker' : 'simple'; }
+    function mName(d) { return LPW.DIRS[d] ? LPW.DIRS[d].name : d; }
+    function mCand(u, id) { return mon() && on('M5') && !!u && !!u.labCand && !!u.labCand[id]; }
+    var HIGH = { hill: true, hillsakura: true };   // 立てる高い所（山は立てない）
+
+    // ---- ミッションの仕分け（画面から。id → decide／stop／move／make／off 使わない） ----
+    var mSort = {};
+    function setSort(map) { mSort = {}; Object.keys(map || {}).forEach(function (k) { if (LPW.DIRS[map[k]] || map[k] === 'off') mSort[k] = map[k]; }); }
+    function missionDir(t) { return (t && mSort[t.id]) || (t && t.dir); }
+    function mMission(id) { return LPW.MISSIONS.filter(function (d) { return d.id === id; })[0] || null; }
+    // この盤面で出せるか（使わない・村がない・運ぶものがない・D2 の行き先がない）
+    function mOffer(s, t) {
+      if (!mon()) return true;
+      if (t.dir === 'off') return false;
+      if (t.needsVillage && !I.objectsOf(s, 'village').length) return false;
+      if (t.needsCarry && ['retrieve', 'escort'].indexOf(I.missionType(s)) < 0) return false;
+      if (t.check.kind === 'blocked' && !on('D2')) return false;
+      return true;
+    }
+    function mSetup(s) {
+      ['labFinTurn', 'labLastHand', 'labAllyLost', 'labDeadShots', 'labPlanTo', 'labBlocker', 'labEndDone', 'labTraps', 'labLinger'].forEach(function (k) { delete s[k]; });
+    }
+
+    // ---- 道（3つの方向・変化・覚醒） ----
+    function mDef(m) {
+      var forms = LPW.FORMS[m];
+      if (!forms) return null;
+      return { dirs: mDirsMode() === 'two' && LPW.TWO[m] ? LPW.TWO[m].slice() : LPW.DIR_ORDER.slice(), forms: forms, m: true, steps: {} };
+    }
+    function mNew() { return { decide: 0, stop: 0, move: 0, simple: 0, form: null, awake: false }; }
+    function mTotal(p) { return p ? (p.decide || 0) + (p.stop || 0) + (p.move || 0) + (p.simple || 0) : 0; }
+    // 道の形をそろえる（持たない方向の数は単純強化へ。変化は change に届いた方向で1つだけ。ほかの方向は change-1 まで）
+    function mNorm(m, p0) {
+      var d = mDef(m);
+      if (!d) return null;
+      var src = p0 || {}, p = mNew(), C = mChangeAt();
+      LPW.DIR_ORDER.forEach(function (k) {
+        var v = clampN(src[k], 0, 12, 0);
+        if (d.dirs.indexOf(k) < 0) p.simple += v; else p[k] = v;
+      });
+      p.simple += clampN(src.simple, 0, 12, 0);
+      var f = src.form && d.dirs.indexOf(src.form) >= 0 && p[src.form] >= C ? src.form : null;
+      if (!f) d.dirs.forEach(function (k) { if (p[k] >= C && (!f || p[k] > p[f])) f = k; });
+      if (f) d.dirs.forEach(function (k) { if (k !== f && p[k] >= C) { p.simple += p[k] - (C - 1); p[k] = C - 1; } });
+      p.form = f;
+      p.awake = !!f && mTotal(p) >= mAwakeAt();
+      return p;
+    }
+    function mAwakeCheck(p, m, out) {
+      var d = mDef(m);
+      if (d && p.form && !p.awake && mTotal(p) >= mAwakeAt()) { p.awake = true; out.awake = d.forms[p.form].lv2; }
+      return out;
+    }
+    function mSimple(p, m) { p.simple = (p.simple || 0) + 1; return mAwakeCheck(p, m, { ok: true, kind: 'simple', step: p.simple }); }
+    // 強化を1回入れる（p を書き換える）。dir は方向か make（作る系）。
+    //   { ok, kind: 方向か simple, change?: 変化先, awake?: 覚醒先 } ／{ none }（持たない方向）／{ closed }（変化で閉じた）／{ marker }（目印だけ）
+    function mAdvance(p, m, dir) {
+      var d = mDef(m);
+      if (!d || !p) return { none: true };
+      if (dir === 'make' || !LPW.DIRS[dir]) return mMakeMode() === 'marker' ? { marker: true } : mSimple(p, m);
+      if (d.dirs.indexOf(dir) < 0) return { none: true };
+      if (p.form && p.form !== dir) return { closed: true };
+      p[dir] = (p[dir] || 0) + 1;
+      var out = { ok: true, kind: dir, step: p[dir] };
+      if (!p.form && p[dir] >= mChangeAt()) { p.form = dir; out.change = d.forms[dir]; }
+      return mAwakeCheck(p, m, out);
+    }
+    // 達成したときの行き先（M2）。持たない・閉じた方向は simple 単純強化 ／nothing ／remain
+    function mGain(p, m, dir) {
+      var r = mAdvance(p, m, dir), g;
+      if (r.ok || r.marker || !p || !mDef(m)) g = { dir: r.kind || dir, res: r };
+      else if (mDest() === 'simple') g = { dir: 'simple', res: mSimple(p, m), via: r };
+      else g = { dir: dir, res: r, dest: mDest() };
+      if (p) g.after = lclone(p);
+      return g;
+    }
+    function mCanTake(p, m, dir) {
+      if (mDest() !== 'remain' || !mDef(m)) return true;
+      var r = mAdvance(lclone(p || mNew()), m, dir);
+      return !!(r.ok || r.marker);
+    }
+    // 変化・覚醒した姿 { name, mark, stage: 1|2, dir, prop }
+    function mFormOf(u) {
+      var raw = lpathOf(u), d = raw ? mDef(u.magic) : null, p = d ? mNorm(u.magic, raw) : null;   // シナリオの道（{ stop: 2 } など）もそろえて読む
+      if (!d || !p.form || !d.forms[p.form]) return null;
+      var f = d.forms[p.form];
+      return p.awake ? { name: f.lv2.name, mark: f.lv2.mark, stage: 2, dir: p.form, prop: f.prop, base: f.name } : { name: f.name, mark: f.mark, stage: 1, dir: p.form, prop: f.prop };
+    }
+
+    // ---- 予測・育ちの言葉 ----
+    function mShapeNote(before) { return before < mShapeMax() ? '形が1マス増える' : '形はもう上限まで増えた'; }
+    function mOthers(m, k) { var d = mDef(m); return d ? d.dirs.filter(function (x) { return x !== k; }).map(mName).join('・') : ''; }
+    function mHint(m, r, after) {
+      var d = mDef(m);
+      if (!d || !after) return '';
+      if (r.change) { var o = mOthers(m, r.kind); return '変化「' + r.change.name + '」！' + (o ? ' ' + o + 'は閉じる' : '') + (r.awake ? '。覚醒「' + r.awake.name + '」！' : ''); }
+      if (r.awake) return '覚醒「' + r.awake.name + '」！';
+      if (after.form) { if (after.awake) return ''; var left = mAwakeAt() - mTotal(after); return left > 0 ? 'あと' + left + 'つで覚醒「' + d.forms[after.form].lv2.name + '」' : ''; }
+      if (r.kind && d.forms[r.kind]) { var l2 = mChangeAt() - (after[r.kind] || 0); return l2 > 0 ? 'あと' + l2 + 'つで変化「' + d.forms[r.kind].name + '」' : ''; }
+      return '';
+    }
+    function mParen(parts) { parts = parts.filter(Boolean); return parts.length ? '（' + parts.join('。') + '）' : ''; }
+    function mNotWhy(m, dir, r, before) {
+      var nm = I.magicName(m), d = mDef(m);
+      if (r.none) return nm + 'は' + mName(dir) + 'を持たない';
+      if (r.closed) return nm + 'は' + (before && before.form && d.forms[before.form] ? d.forms[before.form].name : '別の姿') + 'に変化して、' + mName(dir) + 'は閉じている';
+      return '';
+    }
+    function mGainText(m, dir, g, before) {
+      var nm = I.magicName(m), r = g.res;
+      if (!mDef(m)) return nm + 'には道がない（育たない）';
+      if (r.marker) return '目印のミッション（強化にはならない。M4）';
+      var bt = g.after ? mTotal(g.after) - (r.ok ? 1 : 0) : 0;
+      var tail = mParen([mShapeNote(bt), mHint(m, r, g.after)]);
+      if (g.via) return mNotWhy(m, dir, g.via, before) + 'ので、単純強化' + tail;
+      if (r.ok && r.kind === 'simple') return '作る系なので、' + nm + 'は単純強化' + tail;
+      if (r.ok) return nm + 'の' + mName(r.kind) + 'が1つ進む' + tail;
+      if (g.dest === 'remain') return mNotWhy(m, dir, r, before) + 'ので、達成にならない（M2: 残る）';
+      return mNotWhy(m, dir, r, before) + 'ので、何も起きない';
+    }
+    function mOutlook(m, p, dir) {
+      if (!mDef(m)) return '達成するが、' + I.magicName(m) + 'には道がない（育たない）';
+      var before = mNorm(m, p || mNew());
+      return mGainText(m, dir, mGain(lclone(before), m, dir), before);
+    }
+    function mDots(n, max) { var t = ''; for (var i = 0; i < max; i++) t += i < n ? '●' : '○'; return t; }
+    // 進み具合の印（決●○ 止○○× 動○○× 強●●○○○）。閉じた方向は ×
+    function mMarks(m, p0) {
+      var d = mDef(m);
+      if (!d) return '';
+      var p = mNorm(m, p0), C = mChangeAt(), A = mAwakeAt();
+      return d.dirs.map(function (k) { return LPW.DIRS[k].mark + mDots(Math.min(C, p[k] || 0), C) + (p.form && p.form !== k ? '×' : ''); }).join(' ') + ' 強' + mDots(Math.min(A, mTotal(p)), A);
+    }
+    function mPropText(prop, lv) { var P = LPW.PROPS[prop]; return P ? (lv >= 2 ? P.t1 + '。' + P.t2 : P.t1) : prop; }
+    // 方向 k の中身（変化先と覚醒先）
+    function mStepText(m, k) {
+      var d = mDef(m), f = d && d.forms[k];
+      if (!f) return '';
+      var P = LPW.PROPS[f.prop] || {};
+      return '変化「' + f.name + '」: ' + (P.t1 || f.prop) + ' → 覚醒「' + f.lv2.name + '」: ' + (P.t2 || '');
+    }
+
+    // ---- 性質（変化先が持つもの＋M5 の候補） ----
+    var CAND_PROPS = ['silence', 'guard', 'pierce', 'hold', 'cancel', 'delay', 'moveAfter'];
+    // 人が持つ性質 { 性質: レベル }。効き目が1段強く（M5 effect）で1つ上がる（変化前なら、風の運ぶ・闇の引き寄せ・火の火傷）
+    function mProps(u) {
+      var out = {};
+      if (!mon() || !u) return out;
+      var f = mFormOf(u);
+      if (f) out[f.prop] = f.stage;
+      if (on('M5') && u.labCand) {
+        CAND_PROPS.forEach(function (k) { if (u.labCand[k] && !out[k]) out[k] = 1; });
+        if (u.labCand.effect) {
+          Object.keys(out).forEach(function (k) { out[k] = Math.min(3, out[k] + 1); });
+          var base = { wind: 'push', dark: 'pull', fire: 'wound' }[u.magic];
+          if (!f && base && !out[base]) out[base] = 1;
+        }
+      }
+      return out;
+    }
+    function mLabel(s, u) { return '【強化】' + (formName(u) || I.magicName(u.magic)); }
+    function mFlavor(prop, m, d) { return ((LPW.FLAVOR || {})[prop] || {})[m] || d; }
+    // 撃ったあと: 当たった者（直撃。術者は除く）に性質を起こす
+    function mHitProps(s, u, q, P, facing, ev) {
+      var who = mLabel(s, u) + ': ' + unitLabel(s, q);
+      var stick = function (n) { var cur = q.stuck === true ? 1 : (Number(q.stuck) || 0); if (n > cur) q.stuck = n === 1 ? true : n; return Math.max(n, cur); };
+      if (P.hold) { var n1 = stick(P.hold); ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: who + 'は' + mFlavor('hold', u.magic, '足が止まった') + '（次の移動は' + n1 + '回休み）' }); }
+      if (P.guard) { q.labGuard = Math.max(q.labGuard || 0, P.guard); ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'は守られた（相手の次の攻撃を' + q.labGuard + '回防ぐ）' }); }
+      if (P.boost) { q.labBoost = 2 * P.boost; ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'に追い風（次の魔法の形が' + q.labBoost + 'マス大きい）' }); }
+      if (P.wound) { q.burn = Math.max(q.burn || 0, B.fire.burnTurns + P.wound - 1); ev.push({ type: 'burnStatus', id: q.id, cells: [[q.x, q.y]], text: who + 'は' + mFlavor('wound', u.magic, '傷を負った') + '（傷: ターン終了ごとに' + B.fire.burnDamage + '、あと' + q.burn + '回。火傷と同じく水・氷で治る）' }); }
+      if (q.side === 'enemy' && P.delay && q.intent) {
+        q.intent = false; q.labDelay = { n: P.delay };
+        ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'の予告が' + P.delay + 'ターン遅れた（その場で構えたまま、' + P.delay + 'ターン後に撃つ）' });
+      }
+      if (q.side === 'enemy' && P.cancel && q.intent) {
+        q.intent = false;
+        ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'の予告が消えた' });
+        if (P.cancel >= 2) { var n2 = stick(P.cancel - 1); ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: who + 'は足も止まった（次の移動は' + n2 + '回休み）' }); }
+      }
+      if (q.side === 'enemy' && P.silence) { q.labSilence = Math.max(q.labSilence || 0, P.silence); ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'は次の' + q.labSilence + 'ターン、魔法を撃てない' }); }
+      if (P.turn && q.facing !== facing) {
+        q.facing = facing;
+        ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'は' + DIRS[facing].name + 'を向かされた' + (q.intent ? '（予告の向きも変わった）' : '') });
+        if (P.turn >= 2) { var n3 = stick(P.turn - 1); ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: who + 'は足も止まった（次の移動は' + n3 + '回休み）' }); }
+      }
+      if (P.lure) {
+        var toward = I.faceToward(q.x, q.y, u);
+        if (toward && q.facing !== toward) { q.facing = toward; ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: who + 'は術者のほうを向かされた' + (q.intent ? '（予告も術者のほうへ）' : '') }); }
+        if (P.lure >= 2) { var n4 = stick(P.lure - 1); ev.push({ type: 'mud', id: q.id, cells: [[q.x, q.y]], text: who + 'は足も止まった（次の移動は' + n4 + '回休み）' }); }
+      }
+      if (P.push && !I.isFixed(q)) shove(s, q, facing, 1, P.push >= 2, ev, who + 'を' + DIRS[facing].name + 'へ押した' + (mFlavor('push', u.magic, '') ? '（' + mFlavor('push', u.magic, '') + '）' : ''));
+      if (P.pull && !I.isFixed(q)) {
+        for (var i = 0; i < Math.min(9, P.pull) && I.findUnit(s, q.id); i++) {
+          var d = I.faceToward(q.x, q.y, u);
+          if (!d || Math.abs(q.x - u.x) + Math.abs(q.y - u.y) <= 1) break;
+          if (!I.pushOne(s, q, d, ev, who + 'は術者のほうへ引き寄せられた' + (mFlavor('pull', u.magic, '') ? '（' + mFlavor('pull', u.magic, '') + '）' : ''))) break;
+        }
+      }
+    }
+    // 撃つ前（castMagic の最初）: 最後に撃った味方の手・予告の範囲にいた味方（「予告から味方を出す」）
+    var mBusy = false;   // 予測の中の予測をしない
+    function mForecast(s) { if (mBusy) return null; mBusy = true; try { return I.forecast(s); } finally { mBusy = false; } }
+    function mDangerIds(s) {
+      var fc = mForecast(s), out = [];
+      (fc ? fc.enemyDamage : []).forEach(function (d) {
+        var by = I.findUnit(s, d.by);
+        if (d.side === 'ally' && d.amount > 0 && by && by.side === 'enemy' && out.indexOf(d.id) < 0) out.push(d.id);
+      });
+      return out;
+    }
+    function mShotStart(s, u, ctx, ev) {
+      ctx.labEv0 = ev ? ev.length : 0;
+      ctx.labFacing = u.facing;
+      if (u.side === 'ally' && s.labTargets) {
+        s.labLastHand = { id: u.id, side: 'ally', magic: u.magic };
+        s.labShotN = (s.labShotN || 0) + 1; u.labShotSeq = s.labShotN;
+        if (!mBusy && openT(s, 'rescue').length) ctx.labDanger = mDangerIds(s);
+      }
+    }
+    // 撃ったあと（L の判定より先。L の afterShotMore から呼ぶ）: 当たった者に性質・置く・移る
+    function mAfterShot(s, u, facing, ctx, ev) {
+      if (!mon()) return;
+      if (u.side === 'enemy') u.labShots = (u.labShots || 0) + 1;
+      if (u.labBoost) delete u.labBoost;     // 大きくなるのは次の1発だけ
+      if (u.labShrink) delete u.labShrink;   // 小さくなるのも次の1発だけ
+      var P = mProps(u);
+      var hits = ctx.order.filter(function (id) { var h = ctx.hits[id]; return h && h.src === 'direct' && id !== u.id; })
+        .map(function (id) { return I.findUnit(s, id); }).filter(function (q) { return q && q.side !== 'object'; });
+      if (Object.keys(P).length) hits.forEach(function (q) { if (I.findUnit(s, q.id)) mHitProps(s, u, q, P, facing, ev); });
+      if (mCand(u, 'shrink')) hits.forEach(function (q) { if (I.findUnit(s, q.id)) { q.labShrink = true; ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: mLabel(s, u) + ': ' + unitLabel(s, q) + 'の次の魔法は1マスだけ' }); } });
+      if (mCand(u, 'linger') && ctx.labPre) mLinger(s, u, ctx);
+      if (mCand(u, 'leap')) mLeap(s, u, ctx, ev);
+    }
+    // M5 もう1ターン残る: この1発で生まれた、1ターンで消える自然
+    var LINGER = { breeze: true, gale: true, smallfire: true, petals: true };
+    function mLinger(s, u, ctx) {
+      for (var i = 0; i < s.tiles.length; i++) {
+        if (s.tiles[i] !== ctx.labPre.tiles[i] && LINGER[s.tiles[i]]) { s.labLinger = s.labLinger || {}; s.labLinger[i] = 1; }
+      }
+    }
+    function keepTile(s, x, y, from) {
+      if (!s.labLinger || !LINGER[from]) return false;
+      var i = idx(s, x, y);
+      if (!s.labLinger[i]) return false;
+      delete s.labLinger[i];
+      if (!Object.keys(s.labLinger).length) delete s.labLinger;
+      return true;
+    }
+    // M5 撃った先へ移る: 形の一番奥の、立てて空いているマスへ
+    function mLeap(s, u, ctx, ev) {
+      var best = null;
+      (ctx.cells || []).forEach(function (c) {
+        if (!canStandAt(s, u, c[0], c[1])) return;
+        var d = Math.abs(c[0] - u.x) + Math.abs(c[1] - u.y);
+        if (d > 0 && (!best || d > best.d)) best = { c: c, d: d };
+      });
+      if (!best) return;
+      var from = [u.x, u.y];
+      u.x = best.c[0]; u.y = best.c[1];
+      ev.push({ type: 'push', id: u.id, ok: true, from: from, to: best.c.slice(), text: mLabel(s, u) + ': 撃った先（' + best.c[0] + ',' + best.c[1] + '）へ移った' });
+      if (getTile(s, u.x, u.y) === 'mud') I.enterMud(s, u, ev);
+    }
+    // M5 置いておく: 撃つ代わりに形のマスへ置く。人が入ると、置いたときの場所と向きから発動する
+    castMore.push(function (s, u, facing, ctx, ev) {
+      if (!mCand(u, 'trap') || s.labTrapFiring) return false;
+      var cells = I.castCells(s, u, facing);
+      s.labTraps = (s.labTraps || []).filter(function (t) { return t.by !== u.id; }).concat([{ by: u.id, x: u.x, y: u.y, facing: facing, cells: cells, magic: u.magic }]);
+      ctx.cells = cells.slice();
+      ctx.phrases.push('【強化】' + I.magicName(u.magic) + 'の魔法を形のマスに置いた（人が入ると発動。敵でも味方でも）');
+      return true;
+    });
+    function mTrapCheck(s, q, ev) {
+      if (!s.labTraps || !s.labTraps.length || !q || q.side === 'object' || s.labTrapFiring) return;
+      var cells = unitCells(q);
+      var t = s.labTraps.filter(function (tr) { return tr.by !== q.id && tr.cells.some(function (c) { return has(cells, c[0], c[1]); }); })[0];
+      if (!t) return;
+      s.labTraps = s.labTraps.filter(function (x) { return x !== t; });
+      if (!s.labTraps.length) delete s.labTraps;
+      var c = I.findUnit(s, t.by);
+      if (!c) return;
+      var keep = { x: c.x, y: c.y, facing: c.facing };
+      ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: '【強化】' + unitLabel(s, q) + 'が置いておいた' + I.magicName(t.magic) + 'の魔法に入った → 発動' });
+      s.labTrapFiring = true;
+      c.x = t.x; c.y = t.y; c.facing = t.facing;
+      try { I.shoot(s, c, t.facing, ev); } finally {
+        delete s.labTrapFiring;
+        var still = I.findUnit(s, c.id);
+        if (still) { still.x = keep.x; still.y = keep.y; still.facing = keep.facing; }
+      }
+    }
+    afterMoveMore.push(function (s, u, from, to, ev) {
+      if (!mon()) return;
+      if (u.side === 'ally' && s.labTargets) u.labWalked = true;   // 「歩かずに勝つ」
+      mTrapCheck(s, u, ev);
+    });
+    // 形（置く・点ける・走る魔法）: 強化の数＋大きくする＋足場。小さく・2回撃てる・貫く
+    var M_MORE = { grass: [[-1, 2], [0, 4], [1, 4], [-1, 4]] };   // 草は EXTRA_CELLS が3つなので、大きくするときの続き
+    function mBonus(s, u) {
+      var n = shapeSteps(u) + (u.labBoost || 0);
+      var st = (LPW.STAND_ON || {})[u.magic];
+      if (mCand(u, 'standOn') && st && st.indexOf(getTile(s, u.x, u.y)) >= 0) n += 2;
+      return n;
+    }
+    function mPierce(s, cells, facing, lv) {
+      var F = DIRS[facing], out = cells.slice();
+      cells.forEach(function (c) {
+        if (!unitAt(s, c[0], c[1])) return;
+        for (var i = 1; i <= lv; i++) { var x = c[0] + F.dx * i, y = c[1] + F.dy * i; if (inBounds(s, x, y) && !has(out, x, y)) out.push([x, y]); }
+      });
+      return out;
+    }
+    cellsMore.unshift(function (s, u, o, facing) {
+      if (!mon() || u.magic === 'water' || u.magic === 'wind' || !B.shapes[u.magic]) return null;
+      var n = mBonus(s, u), P = mProps(u), twice = mCand(u, 'twice');
+      if (!n && !u.labShrink && !twice && !P.pierce) return null;   // 今の形のまま
+      var extra = (LP.EXTRA_CELLS[u.magic] || []).concat(M_MORE[u.magic] || []);
+      var cells = shapeAt(s, B.shapes[u.magic].concat(extra.slice(0, n)), o, facing);
+      if (u.labShrink) cells = cells.slice(0, 1);
+      else if (twice) cells = cells.slice(0, Math.max(1, Math.ceil(cells.length / 2)));
+      if (P.pierce) cells = mPierce(s, cells, facing, P.pierce);
+      return cells;
+    });
+    // 流れる・吹く魔法の長さ（lengthFor から。強化の数はもう足してある）
+    function mLength(s, u, len) {
+      var P = mProps(u);
+      len += (u.labBoost || 0);
+      var st = (LPW.STAND_ON || {})[u.magic];
+      if (mCand(u, 'standOn') && st && st.indexOf(getTile(s, u.x, u.y)) >= 0) len += 2;
+      if (u.magic === 'water' && P.untilHit) len = 99;   // 何かに当たるまで流れる
+      if (u.labShrink) len = 1;
+      else if (mCand(u, 'twice')) len = Math.max(1, Math.ceil(len / 2));
+      return len;
+    }
+    // 水が人を貫いて流れ続けるか（rules.js の flow から）。貫く・当たるまでの2段目
+    function passUnit(s, u, o, ctx) {
+      if (!mon()) return false;
+      var P = mProps(u), n = (P.pierce || 0) + (P.untilHit >= 2 ? 9 : 0);
+      ctx.labPassed = ctx.labPassed || 0;
+      if (ctx.labPassed >= n) return false;
+      ctx.labPassed++;
+      ctx.phrases.push(mLabel(ctx.s || {}, u) + ': ' + unitLabel(ctx.s, o) + 'を貫いて流れた');
+      return true;
+    }
+    // M5 手前を飛ばす: 形が1マス先から
+    originMore.push(function (s, u, facing) {
+      if (!mCand(u, 'skip')) return null;
+      var F = DIRS[facing], k = getTile(s, u.x, u.y) === 'hill' ? 2 : 1;
+      return { x: u.x + F.dx * k, y: u.y + F.dy * k };
+    });
+    // M5 直撃の威力
+    hitMore.push(function (ctx, u, amount, src) {
+      if (src !== 'direct' || !ctx.caster || !ctx.s || !on('M5')) return amount;
+      var c = I.findUnit(ctx.s, ctx.caster);
+      return c && mCand(c, 'power') ? amount + 2 : amount;
+    });
+    // 守る（城壁）: 相手の側からの攻撃を、回数だけ防ぐ（その1発のダメージを全部なくす）
+    function mGuard(s, ctx, ev) {
+      if (!mon() || !ctx.caster) return;
+      var c = I.findUnit(s, ctx.caster), side = c ? c.side : null;
+      if (!side) return;
+      ctx.order.slice().forEach(function (id) {
+        var q = I.findUnit(s, id), h = ctx.hits[id];
+        if (!q || !h || !(q.labGuard > 0) || !(h.amount > 0) || q.side === side || q.side === 'object') return;
+        q.labGuard--;
+        if (!q.labGuard) delete q.labGuard;
+        delete ctx.hits[id];
+        ctx.order = ctx.order.filter(function (x) { return x !== id; });
+        ev.push({ type: 'info', id: q.id, cells: [[q.x, q.y]], text: '【強化】' + unitLabel(s, q) + 'は守られていて、攻撃を防いだ' + (q.labGuard ? '（あと' + q.labGuard + '回）' : '') });
+      });
+    }
+    // 予告が遅れている敵は、その場で同じ向きのまま（遅れの残りが1なら予告を出し直す）
+    planMore.push(function (s, e) {
+      if (!mon() || !e.labDelay) return null;
+      return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'attack', noIntent: e.labDelay.n > 1, reason: '予告が遅れている' };
+    });
+    // 撃たせない（雷縛り・M5）: 予告を出せない
+    cannotMore.push(function (s, e, ev) {
+      if (!mon() || !(e.labSilence > 0)) return false;
+      e.labSilence--;
+      if (!e.labSilence) delete e.labSilence;
+      ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: '【強化】' + unitLabel(s, e) + 'は縛られていて、魔法を撃てない（予告なし）' });
+      return true;
+    });
+    // 敵が今の場所から、その行き先へ歩いて行けるか（泥沼にはまっていれば今の場所だけ）
+    function mReachable(s, e, a) { return I.reachInfo(s, e).dist[key(a[0], a[1])] !== undefined; }
+    function mPlanStart(s, e, plan, ev) {
+      if (e.labDelay) { e.labDelay.n -= 1; if (e.labDelay.n <= 0) delete e.labDelay; }
+      // 予定の道をふさぐ: ターンの始めに覚えた行き先（D2 の矢印）へ、歩いて行けなくなっていた
+      if (s.labTargets && s.labPlanTo && s.labPlanTo[e.id]) {
+        var a = s.labPlanTo[e.id];
+        delete s.labPlanTo[e.id];
+        if (!(e.x === a[0] && e.y === a[1]) && !mReachable(s, e, a)) {
+          var hand = (s.labBlocker && s.labBlocker[e.id]) || { id: e.id, side: 'enemy', magic: e.magic };
+          openT(s, 'blocked').forEach(function (t) { achieve(s, t, hand, [], ev, [[e.x, e.y], a.slice()]); });
+        }
+      }
+    }
+    function mAfterPlan(s, ev) {
+      delete s.labPlanTo; delete s.labBlocker;
+      if (s.result || !s.labTargets || !openT(s, 'blocked').length || !on('D2')) return;
+      var fc = mForecast(s), plan = {};
+      ((fc && fc.labPaths) || []).forEach(function (p) { plan[p.id] = p.to.slice(); });
+      s.labPlanTo = plan; s.labBlocker = {};
+    }
+    function mAfterAct(s, u, ev) {
+      if (u.side === 'ally' && !s.result && I.findUnit(s, u.id)) {   // 倒れた味方には、もう1回はない
+        var shot = ev.some(function (e) { return e.type === 'cast' && e.id === u.id; });
+        if (u.labAfter) delete u.labAfter;   // 撃ったあとのもう1回を使った
+        else if (shot) {
+          var P = mProps(u);
+          if (mCand(u, 'twice')) { u.acted = false; u.labAfter = { move: 0, shoot: true }; ev.push({ type: 'info', id: u.id, cells: [[u.x, u.y]], text: mLabel(s, u) + ': もう1回撃てる（動けない。形は半分）' }); }
+          else if (P.moveAfter) { u.acted = false; u.labAfter = { move: P.moveAfter, shoot: false }; ev.push({ type: 'info', id: u.id, cells: [[u.x, u.y]], text: mLabel(s, u) + ': 撃ったあと' + P.moveAfter + 'マス動ける（動いて「待機」。動かないなら、その場で「待機」）' }); }
+        }
+      }
+      // 予定の道をふさぐ: この手で、敵が行き先（D2 の矢印）へ歩いて行けなくなったら、その手を覚える（また行けるようになったら消す）
+      if (!s.labPlanTo || s.result || !openT(s, 'blocked').length) return;
+      Object.keys(s.labPlanTo).forEach(function (id) {
+        var a = s.labPlanTo[id], e = I.findUnit(s, id);
+        if (!e || (e.x === a[0] && e.y === a[1])) return;
+        if (mReachable(s, e, a)) { delete s.labBlocker[id]; return; }
+        if (s.labBlocker[id]) return;
+        s.labBlocker[id] = { id: u.id, side: u.side, magic: u.magic };
+        var t0 = openT(s, 'blocked')[0];
+        ev.push({ type: 'labTargetSoon', dir: t0.dir, id: id, cells: [[e.x, e.y], a.slice()],
+          text: '【ターゲット】' + unitLabel(s, e) + 'の行き先（' + a[0] + ',' + a[1] + '）への道がふさがった → 敵の番にも通れなければ「' + t0.name + '」（' + handName(s, s.labBlocker[id]) + 'の手 → ' + soonOutlook(s, s.labBlocker[id], t0) + '）' });
+      });
+    }
+    function mTurnEnd(s, ev) {
+      if (!mon()) return;
+      s.units.forEach(function (x) { if (x.labAfter) delete x.labAfter; });
+    }
+    function mOnDeath(s, dead, ev) {
+      if (!mon()) return;
+      dead.forEach(function (d) {
+        if (d.side === 'ally' && s.labTargets) s.labAllyLost = true;
+        if (d.side === 'enemy') { s.labDeadShots = s.labDeadShots || {}; s.labDeadShots[d.id] = d.labShots || 0; }
+      });
+    }
+    function mNeverShot(s, id) { return !!s.labDeadShots && s.labDeadShots[id] === 0; }
+    // 勝ったときに決まるミッション（rules.js の setResult から）
+    function onResult(s, ev) {
+      if (!mon() || !s.labTargets || s.result !== 'win' || s.labEndDone) return;
+      s.labEndDone = true;
+      var last = s.labLastHand || null;
+      (s.labTargets || []).forEach(function (t) {
+        if (t.got || !t.check.end) return;
+        var k = t.check.kind, hand = null, cells = [];
+        if (k === 'turnWin' && s.turn <= (t.check.turns || 3)) hand = last;
+        if (k === 'noLoss' && !s.labAllyLost) hand = last;
+        if (k === 'villagesSafe' && I.objectsOf(s, 'village').length && !((s.mission || {}).lost > 0)) hand = last;
+        if (k === 'carry') {
+          var m = s.mission || {}, type = I.missionType(s);
+          if (type === 'retrieve' && m.carrier) { var cu = I.findUnit(s, m.carrier); if (cu) { hand = { id: cu.id, side: 'ally', magic: cu.magic }; cells = [[cu.x, cu.y]]; } }
+          if (type === 'escort') { hand = last; var w = I.objectsOf(s, 'wagon')[0]; if (w) cells = [[w.x, w.y]]; }
+        }
+        if (k === 'noWalk') {
+          var still = I.alliesOf(s).filter(function (a) { return !a.npc && !a.labWalked; }).sort(function (a, b) { return (b.labShotSeq || 0) - (a.labShotSeq || 0); })[0];
+          if (still) { hand = { id: still.id, side: 'ally', magic: still.magic }; cells = [[still.x, still.y]]; }
+        }
+        if (hand) achieve(s, t, hand, [], ev, cells);
+      });
+    }
+
+    // ---- ミッションの判定（judgeShot から。L にない kind） ----
+    function mJudge(s, u, ctx, ev, t, E) {
+      var k = t.check.kind, pre = E.pre, ally = u.side === 'ally';
+      var preU = function (id) { return pre.units.filter(function (q) { return q.id === id; })[0]; };
+      var here = function (list) { return list.map(function (q) { return [q.x, q.y]; }); };
+      var res = function (cells, mat, taker) { return { r: { cells: cells || [], mat: mat || [] }, taker: taker }; };
+      var fins = ctx.finishers;
+      if (k === 'finHitsOne') {
+        var f1 = fins.filter(function (f) {
+          var area = (f.cells || []).concat(f.labRing || []);
+          return pre.units.filter(function (p) { return p.side === 'enemy' && E.byFin(p.id) && cellsAt(p, p.x, p.y).some(function (c) { return has(area, c[0], c[1]); }); }).length >= (t.check.n || 2);
+        })[0];
+        return f1 ? res(f1.cells, f1.cells) : null;
+      }
+      if (k === 'finTurn') {
+        if (!ally || !fins.length) return null;
+        if (!s.labFinTurn || s.labFinTurn.turn !== s.turn) s.labFinTurn = { turn: s.turn, n: 0 };
+        s.labFinTurn.n += fins.length;
+        return s.labFinTurn.n >= (t.check.n || 2) ? res(E.finCells, E.finCells) : null;
+      }
+      if (k === 'fin3') { var f3 = fins.filter(function (f) { return LPW.STAGE3.indexOf(f.name) >= 0; })[0]; return f3 ? res(f3.cells, f3.cells) : null; }
+      if (k === 'lastFin') return E.deadEnemies.some(function (d) { return E.byFin(d.id); }) && !I.enemiesOf(s).length ? res(E.finCells, E.finCells) : null;
+      if (k === 'farFin') {
+        if (!fins.length) return null;
+        var src = ctx.cells && ctx.cells.length ? ctx.cells : [[u.x, u.y]], far = -1, fc = null;
+        E.finCells.forEach(function (c) {
+          var dmin = Math.min.apply(null, src.map(function (q) { return Math.abs(q[0] - c[0]) + Math.abs(q[1] - c[1]); }));
+          if (dmin > far) { far = dmin; fc = c; }
+        });
+        return far >= (t.check.dist || 4) ? res([fc], E.finCells) : null;
+      }
+      if (k === 'bigFin') {
+        var fb = fins.filter(function (f) { return (f.cells || []).filter(function (c) { return inBounds(s, c[0], c[1]) && pre.tiles[idx(s, c[0], c[1])] !== 'empty'; }).length >= (t.check.n || 5); })[0];
+        return fb ? res(fb.cells, fb.cells) : null;
+      }
+      if (k === 'enemyNatFin') {
+        if (!ally || !fins.length) return null;
+        var en = E.finCells.filter(function (c) { var m0 = inBounds(s, c[0], c[1]) && pre.maker[idx(s, c[0], c[1])]; return m0 && m0.side === 'enemy'; });
+        return en.length ? res(en, E.finCells) : null;
+      }
+      if (k === 'enemyFinKill') {
+        if (u.side !== 'enemy' || !fins.length) return null;
+        var victims = E.deadEnemies.filter(function (d) { return d.id !== u.id && E.byFin(d.id); });
+        if (!victims.length) return null;
+        var preps = preparersAt(s, pre.maker, E.finCells);
+        return res(here(victims), E.finCells, preps.length ? preps[preps.length - 1] : (u.labMovedBy || null));
+      }
+      if (k === 'allThree') {
+        if (!fins.length) return null;
+        var ids = {};
+        preparersAt(s, pre.maker, E.finCells).forEach(function (h) { ids[h.id] = true; });
+        if (ally) ids[u.id] = true;
+        return Object.keys(ids).length >= 3 ? res(E.finCells, E.finCells) : null;
+      }
+      if (k === 'killBefore') {
+        if (!ally) return null;
+        var kb = E.deadEnemies.filter(function (d) { return d.intent; });
+        return kb.length ? res(here(kb), E.finCells) : null;
+      }
+      if (k === 'rescue') {
+        if (!ally || !ctx.labDanger || !ctx.labDanger.length || mBusy) return null;
+        var danger = mDangerIds(s);
+        var out = ctx.labDanger.filter(function (id) { var p = preU(id), q = I.findUnit(s, id); return p && q && (p.x !== q.x || p.y !== q.y) && danger.indexOf(id) < 0; });
+        return out.length ? res(out.map(function (id) { var q = I.findUnit(s, id); return [q.x, q.y]; }), []) : null;
+      }
+      if (k === 'neverShot') {
+        var ns = E.deadEnemies.filter(function (d) { return !d.shots; });
+        return ns.length ? res(here(ns), E.finCells) : null;
+      }
+      if (k === 'bump') {
+        if (!ally) return null;
+        var bumped = [], F = DIRS[ctx.labFacing];
+        ev.slice(ctx.labEv0 || 0).forEach(function (e) {
+          if (e.type !== 'push' || e.ok !== false || !F) return;
+          var q = I.findUnit(s, e.id);
+          if (!q || q.side !== 'enemy') return;
+          var o = unitAt(s, q.x + F.dx, q.y + F.dy);
+          if (o && o.side === 'enemy' && o.id !== q.id && !has(bumped, q.x, q.y)) bumped.push([q.x, q.y], [o.x, o.y]);
+        });
+        return bumped.length ? res(bumped, []) : null;
+      }
+      if (k === 'gather') {
+        if (!ally || !E.moved.length) return null;
+        var es = I.enemiesOf(s), pair = null;
+        var adj = function (a, b) { return cellsAt(a, a.x, a.y).some(function (c) { return cellsAt(b, b.x, b.y).some(function (d) { return Math.abs(c[0] - d[0]) + Math.abs(c[1] - d[1]) === 1; }); }); };
+        for (var i = 0; i < es.length && !pair; i++) for (var j = i + 1; j < es.length && !pair; j++) {
+          var a = es[i], b = es[j], pa = preU(a.id), pb = preU(b.id);
+          if (!pa || !pb || !adj(a, b) || adj(pa, pb)) continue;
+          if (E.moved.some(function (m) { return m.id === a.id || m.id === b.id; })) pair = [[a.x, a.y], [b.x, b.y]];
+        }
+        return pair ? res(pair, []) : null;
+      }
+      if (k === 'lower') {
+        if (!ally) return null;
+        var low = pre.units.filter(function (p) { if (p.side !== 'enemy' || !HIGH[p.tile]) return false; var q = I.findUnit(s, p.id); return q && !HIGH[getTile(s, q.x, q.y)]; });
+        return low.length ? res(low.map(function (p) { var q = I.findUnit(s, p.id); return [q.x, q.y]; }), []) : null;
+      }
+      if (k === 'edge') {
+        if (!ally) return null;
+        var R = I.rowsOf(s), onEdge = function (x, y) { return x === 0 || y === 0 || x === s.size - 1 || y === R - 1; };
+        var ed = E.moved.filter(function (m) { return onEdge(m.to[0], m.to[1]) && !onEdge(m.from[0], m.from[1]); });
+        return ed.length ? res(ed.map(function (m) { return m.to; }), []) : null;
+      }
+      if (k === 'turnIntent') {
+        if (!ally) return null;
+        var ti = pre.units.filter(function (p) { if (p.side !== 'enemy' || !p.intent) return false; var q = I.findUnit(s, p.id); return q && q.intent && q.facing !== p.facing; });
+        return ti.length ? res(ti.map(function (p) { var q = I.findUnit(s, p.id); return [q.x, q.y]; }), []) : null;
+      }
+      if (k === 'overwrite') {
+        if (!ally) return null;
+        var ow = E.changed.filter(function (c) { var m0 = pre.maker[idx(s, c.x, c.y)]; return m0 && m0.side === 'enemy' && c.to !== 'empty'; });
+        return ow.length ? res(E.at(ow), []) : null;
+      }
+      if (k === 'kinds') {
+        if (!ally || !E.changed.length) return null;
+        var kinds = {};
+        Object.keys(s.labMaker || {}).forEach(function (i2) { var m0 = s.labMaker[i2], tt = s.tiles[i2]; if (m0 && m0.side === 'ally' && tt && tt !== 'empty') kinds[tt] = true; });
+        return Object.keys(kinds).length >= (t.check.n || 3) ? res(E.at(E.changed.filter(function (c) { return c.to !== 'empty'; })), []) : null;
+      }
+      if (k === 'waterDown') {
+        if (!ally || u.magic !== 'water') return null;
+        var foot = getTile(s, u.x, u.y);
+        var sourced = ctx.phrases.some(function (p) { return /に当たって川になった/.test(p); });
+        return HIGH[foot] || sourced ? res(E.at(E.changed), []) : null;
+      }
+      if (k === 'half') {
+        if (!ally || !E.changed.length) return null;
+        var filled = s.tiles.filter(function (tt) { return tt !== 'empty'; }).length;
+        return filled * 2 >= s.tiles.length ? res(E.at(E.changed), []) : null;
+      }
+      if (k === 'nextTo') {
+        if (!ally) return null;
+        var foes = pre.units.filter(function (p) { return p.side === 'enemy'; });
+        var nt = E.changed.filter(function (c) {
+          return c.from === 'empty' && c.to !== 'empty' && foes.some(function (e) { return cellsAt(e, e.x, e.y).some(function (q) { return Math.abs(q[0] - c.x) + Math.abs(q[1] - c.y) === 1; }); });
+        });
+        return nt.length ? res(E.at(nt), []) : null;
+      }
+      return null;
+    }
+    // エディット: M5 の候補を人に付ける（cand: { id: true }。null で外す）
+    function editSetCand(s0, unitId, cand) {
+      var u0 = I.findUnit(s0, unitId);
+      if (!u0 || u0.side === 'object') return { ok: false, state: s0, events: [], steps: [], error: '人を選んでいない' };
+      var s = I.clone(s0), u = I.findUnit(s, unitId), c = {};
+      Object.keys(cand || {}).forEach(function (k) { if (cand[k] && LPW.CANDS.some(function (x) { return x.id === k; })) c[k] = true; });
+      if (Object.keys(c).length) u.labCand = c; else delete u.labCand;
+      return { ok: true, state: s, events: [], steps: [] };
+    }
+    var MAPI = {
+      on: mon, PW: LPW, DIRS: LPW.DIRS, DIR_ORDER: LPW.DIR_ORDER, LIST_ORDER: LPW.LIST_ORDER, MISSIONS: LPW.MISSIONS, PROPS: LPW.PROPS, CANDS: LPW.CANDS, TAKERS: LPW.TAKERS,
+      def: mDef, total: mTotal, norm: mNorm, formOf: mFormOf, props: mProps, propText: mPropText, stepText: mStepText,
+      changeAt: mChangeAt, awakeAt: mAwakeAt, shapeMax: mShapeMax, dest: mDest, makeMode: mMakeMode, dirsMode: mDirsMode,
+      setSort: setSort, sortOf: function () { return lclone(mSort); }, missionDir: missionDir, mission: mMission
+    };
+
     var LAPI = {
       DIRS: LT.DIRS, DIR_ORDER: LT.DIR_ORDER, TARGETS: LT.TARGETS, TAKERS: LT.TAKERS || {}, PATHS: LP.PATHS, EXTRA_CELLS: LP.EXTRA_CELLS, LEGACY: LP.LEGACY,
       pathDef: pathDef, dirsOf: dirsOf, isGood: isGood, makeGood: makeGood, awakeDirs: awakeDirs, makeForm: makeForm, stepText: stepText, closeText: closeText, gotOrder: gotOrder, newPath: newPath, normPath: normPath, advance: advance, gain: gain, gainText: gainText,
@@ -3217,7 +3893,8 @@
       stepOf: stepOf, awakeOf: awakeOf, formOf: formOf, formName: formName, shapeSteps: shapeSteps, dirName: dirName,
       questsOf: questsOf, questOf: questOf,
       targetDef: targetDef, openT: openT, handName: handName, foilPreview: foilPreview, redirectPreview: redirectPreview, thornCaged: thornCaged,
-      whoMode: whoMode, enemyMode: enemyMode, targetCount: targetCount, loseMode: loseMode, destMode: destMode
+      whoMode: whoMode, enemyMode: enemyMode, targetCount: targetCount, loseMode: loseMode, destMode: destMode,
+      M: MAPI, dirTable: function () { return mon() ? LPW.DIRS : LT.DIRS; }, takerTable: function () { return mon() ? LPW.TAKERS : (LT.TAKERS || {}); }   // M のときは3つの方向（＋作る系）
     };
 
     // ---------------------------------------------------------------
@@ -3228,6 +3905,7 @@
       if (old === 'vinebridge' && t === 'fire' && on('I5')) return 'river';
       if (s.labWind && old !== t && s.labWind[i] !== undefined) delete s.labWind[i];
       if (s.labAge && old !== t && s.labAge[i] !== undefined) delete s.labAge[i];
+      if (s.labLinger && old !== t && s.labLinger[i] !== undefined) delete s.labLinger[i];   // M5: もう1ターン残すマス
       if (lon()) makerSet(s, i, t);   // L: その自然を作った手
       return t;
     }
@@ -3268,7 +3946,8 @@
       newRun: newRun, runPaths: runPaths, pathText: pathText, runPreset: runPreset, runOffers: runOffers, runPick: runPick, runAfterBattle: runAfterBattle,
       RUN_STEPS: RUN_STEPS, REWARD_NAME: REWARD_NAME, flagTaken: flagTaken,
       boostText: boostText, boostShape: boostShape, FORMS: FORMS, WEAPONS: WEAPONS, BOOST_INFO: BOOST_INFO, GROW_LIST: GROW_LIST, GROW_DIR: GROW_DIR,
-      api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic, labSetPath: editSetPath },
+      api: { editSetBoost: editSetBoost, labSwapMagic: swapMagic, labSetPath: editSetPath, labSetCand: editSetCand },
+      keepTile: keepTile, onResult: onResult, passUnit: passUnit,   // M
       formName: formName, planStart: planStart, afterPlan: afterPlan, afterAct: afterAct, spreadBonus: spreadBonus, plantLike: plantLike, L: LAPI,
       crushable: function (u, t) { return !!u && on('D4') && (u.size || 1) > 1 && !!CRUSH[t]; },
       on: on, opt: opt, edge: edge, CH: I.CH,

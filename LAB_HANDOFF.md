@@ -13,6 +13,7 @@
 
 ## 今の状態（10/13 夜）
 
+- **10/15: LAB_M（強化の方向は3つ・41のミッション）を足した。** 元はオーナーの「強化の材料まとめ（2026-10-15）」。指示書は `.claude/lab/LAB_M_power.md`（材料まとめを、仮の仕分けつきで書き起こしたもの）。データ `lab_power.js`、ルールは lab_rules.js の「M」の節（L0 の土台の上で、M0 がオンのあいだ L の道の関数が M の形に替わる）、画面は lab_target_ui.js の M の描き分け（ミッションの仕分けの画面も）。rules.js の差し込み口を3つ足した（`LX.onResult`・`LX.keepTile`・`LX.passUnit`）。状態は `LAB_PROGRESS.md` の「M」、気づきは `LAB_REPORT.md` の「M」、決めたことは `DECISIONS.md` の「ラボ M」。
 - **10/15 夜: オーナー判断（草は決め手でなくてよい・道はクリアで進む・育つが前提）を入れ、L6 クエストで方向を選ぶ（クエスト連戦 labLq1〜4）・LE 覚醒を敵が先に見せる（labLE）・覚醒した駒の印を足した。**
 - **10/15: LAB_L2（方向を 作る・決める・止める・動かす に組み直す。10/15 追記の作るの覚醒 森・山・川 も）を足した。** 指示書はオーナーがチャットで渡した `LAB_L2_direction.md`。状態は `LAB_PROGRESS.md` の「L2」、気づきは `LAB_REPORT.md` の「L2」、決めたことは `DECISIONS.md` の「ラボ L2」。新しいシナリオは「ラボ: ターゲット 動かす」（labLM）と、作り直した「草の道（森か茨の牢か）」（labLP）。連戦は4戦（labLs1〜4）。LAB_L と同じく、まだコミットしていない。
 - **10/14: LAB_L（ターゲットで育つ）を足した。** 指示書は `.claude/lab/LAB_L_target.md`。ターゲット `lab_targets.js`・道 `lab_paths.js`・画面 `lab_target_ui.js`、ルールは lab_rules.js の「L」の節。rules.js の差し込み口は `LX.planStart`（敵の番の始め）・`LX.afterPlan`（予告が出そろったあと）・`LX.afterAct`（味方が1人動いたあと）・`LX.spreadBonus`・`LX.plantLike`（大樹）・`LX.formName`（覚醒した名前）。オーナーの未コミットの作業（見て判定）と同じファイルを触ったので、コミットはしていない。

@@ -1722,6 +1722,504 @@ test('L 草の LAB_L の道（使わない。fx で処理は残してある）: 
   eq(LL.PATHS.grass.dirs, ['stop'], '元に戻した');
 });
 
+// ===================================================================
+console.log('\n■ M 強化の方向（3つ）とミッション');
+var MM = LL.M;
+function mPath(s, u, p) { R.findUnit(s, u.id).labPath = LL.normPath(u.magic, p); }
+function cand(s, u, c) { R.findUnit(s, u.id).labCand = c; }
+function endT(s) { s.enemyActs = true; return R.endTurn(s); }
+// 撃つ前の形のマス（ラボの形 → なければ今の形）
+function shotCells(s, u, dir) {
+  var o = R.LX.castOrigin(s, u, dir) || (R.getTile(s, u.x, u.y) === 'hill' ? { x: u.x + R.DIRS[dir].dx, y: u.y + R.DIRS[dir].dy } : { x: u.x, y: u.y });
+  return R.LX.castCells(s, u, o, dir) || R.shapeCells(s, u.magic, o.x, o.y, dir);
+}
+
+test('M0 オフ: L の方向は4つのまま。M のミッションの id は L に出てこない', function () {
+  R.labApply(['L0']);
+  eq(LL.DIR_ORDER, ['make', 'decide', 'stop', 'move']);
+  eq(LL.dirsOf('grass'), ['make', 'stop']);
+  eq(LL.targetDef('killBefore'), null, 'M だけのミッション');
+  ok(!MM.on());
+});
+test('M 方向は3つ（決める・止める・動かす）。作る系は方向を持たない。41のミッション。どの属性も3つの変化先', function () {
+  R.labApply(['M0']);
+  ok(R.lab('L0'), 'M0 は L0 が要る');
+  eq(MM.DIR_ORDER, ['decide', 'stop', 'move']);
+  eq(LL.dirsOf('grass'), ['decide', 'stop', 'move']);
+  eq(MM.MISSIONS.length, 41);
+  var nos = MM.MISSIONS.map(function (t) { return t.no; }).sort(function (a, b) { return a - b; });
+  eq(nos[0], 1); eq(nos[40], 41);
+  var byDir = {};
+  MM.MISSIONS.forEach(function (t) { byDir[t.dir] = (byDir[t.dir] || 0) + 1; ok(t.check && t.check.kind && t.name && t.text, t.id); });
+  eq(byDir, { decide: 13, stop: 9, move: 11, make: 8 });
+  Object.keys(MM.PW.FORMS).forEach(function (m) {
+    ['decide', 'stop', 'move'].forEach(function (k) { var f = MM.PW.FORMS[m][k]; ok(f && f.name && f.mark && f.lv2.name && MM.PROPS[f.prop], m + ' ' + k); });
+  });
+  // M1 two: どの方向も2つ以上の属性が持つ
+  var cnt = { decide: 0, stop: 0, move: 0 };
+  Object.keys(MM.PW.TWO).forEach(function (m) { eq(MM.PW.TWO[m].length, 2, m); MM.PW.TWO[m].forEach(function (k) { cnt[k]++; }); });
+  ok(cnt.decide >= 2 && cnt.stop >= 2 && cnt.move >= 2, JSON.stringify(cnt));
+});
+test('M 道: 同じ方向2で変化（ほかは閉じる）、強化の合計5で覚醒。単純強化も覚醒までの数に入る', function () {
+  R.labApply(['M0']);
+  var p = LL.newPath('fire');
+  eq(p, { decide: 0, stop: 0, move: 0, simple: 0, form: null, awake: false });
+  ok(LL.gain(p, 'fire', 'stop').res.ok);
+  ok(!LL.gain(p, 'fire', 'decide').res.change, '決めるは1つ目');
+  var g = LL.gain(p, 'fire', 'decide');
+  eq(g.res.change.name, '業火', '同じ方向2つで変化');
+  eq(p.form, 'decide');
+  var g2 = LL.gain(p, 'fire', 'stop');
+  eq([g2.dir, !!g2.via, g2.via.closed], ['simple', true, true], '閉じた方向は単純強化');
+  eq(p.stop, 1, '閉じる前の止めるは残る');
+  var g3 = LL.gain(p, 'fire', 'make');
+  eq([g3.res.kind, g3.res.awake.name], ['simple', '劫火'], '作る系の単純強化で合計5 → 覚醒');
+  eq(LL.pathMarks('fire', p), '決●● 止●○× 動○○× 強●●●●●');
+  eq(LL.formOf({ magic: 'fire', labPath: p }).name, '劫火');
+  eq(LL.normPath('fire', { decide: 3, stop: 4 }), { decide: 1, stop: 4, move: 0, simple: 2, form: 'stop', awake: true }, '変化は1つだけ（多いほう）。ほかは1まで、余りは単純強化へ');
+});
+test('M 予測の言葉: 変化・閉じる・覚醒の見通し', function () {
+  R.labApply(['M0']);
+  eq(LL.outlook('fire', null, 'decide'), '火の決めるが1つ進む（形が1マス増える。あと1つで変化「業火」）');
+  eq(LL.outlook('fire', { decide: 1 }, 'decide'), '火の決めるが1つ進む（形が1マス増える。変化「業火」！ 止める・動かすは閉じる）');
+  eq(LL.outlook('fire', { decide: 2 }, 'stop'), '火は業火に変化して、止めるは閉じているので、単純強化（形が1マス増える。あと2つで覚醒「劫火」）');
+  eq(LL.outlook('grass', { stop: 2, simple: 2 }, 'make'), '作る系なので、草は単純強化（形はもう上限まで増えた。覚醒「茨の牢」！）');
+});
+test('M1 two・M2 nothing／remain・M4 marker・M3 回数', function () {
+  R.labApply(['M0', 'M1'], { M1: { dirs: 'two' } });
+  eq(LL.dirsOf('grass'), ['stop', 'move']);
+  eq(LL.outlook('grass', null, 'decide'), '草は決めるを持たないので、単純強化（形が1マス増える）');
+  R.labApply(['M0', 'M2'], { M2: { dest: 'nothing' } });
+  eq(LL.outlook('fire', { decide: 2 }, 'stop'), '火は業火に変化して、止めるは閉じているので、何も起きない');
+  R.labApply(['M0', 'M2'], { M2: { dest: 'remain' } });
+  eq(LL.outlook('fire', { decide: 2 }, 'stop'), '火は業火に変化して、止めるは閉じているので、達成にならない（M2: 残る）');
+  R.labApply(['M0', 'M4'], { M4: { make: 'marker' } });
+  var p = LL.newPath('wind');
+  eq(LL.gain(p, 'wind', 'make').res.marker, true);
+  eq(LL.pathMarks('wind', p), '決○○ 止○○ 動○○ 強○○○○○', '目印は強化にならない');
+  R.labApply(['M0', 'M3'], { M3: { change: 3, awake: 6, shapeMax: 2 } });
+  var q = LL.newPath('earth');
+  LL.gain(q, 'earth', 'stop'); LL.gain(q, 'earth', 'stop');
+  eq(q.form, null, '3つまで変化しない');
+  eq(LL.gain(q, 'earth', 'stop').res.change.name, '城壁');
+  eq(MM.awakeAt(), 6);
+});
+test('M 強化1回で形が1マス（上限3）。水・風は届く長さ', function () {
+  R.labApply(['M0']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var g = R.addAlly(s, 'grass', 3, 6, 'up'), w = R.addAlly(s, 'wind', 0, 6, 'up');
+  eq(shotCells(s, g, 'up').length, 4);
+  mPath(s, g, { stop: 1, simple: 1 });
+  eq(shotCells(s, R.findUnit(s, g.id), 'up').length, 6);
+  mPath(s, g, { stop: 2, simple: 3 });
+  eq(shotCells(s, R.findUnit(s, g.id), 'up').length, 7, '上限3');
+  mPath(s, w, { move: 2 });
+  var r = act(s, R.findUnit(s, w.id), 'up');
+  eq(cellsOf(r.state, 'breeze').length, 4, '風は2マス＋2');
+});
+
+// ---- ミッション
+test('M ミッション「1つの決め手で2体」「最後の1体を決め手で」「予告の前に倒す」', function () {
+  R.labApply(['M0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 2, 4, 'up'), f = R.addAlly(s, 'fire', 1, 2, 'right'), w = R.addAlly(s, 'wind', 2, 3, 'up');
+  var e1 = R.addEnemy(s, 'fire', 2, 1), e2 = R.addEnemy(s, 'fire', 1, 1);
+  s = withTargets(s, ['finTwo', 'lastFin', 'killBefore']);
+  R.findUnit(s, e1.id).intent = true;
+  var t = act(act(s, g, 'up').state, f, 'right').state;
+  var r = act(t, w, 'up');
+  ok(names(r.events).indexOf('燃え広がり') >= 0, names(r.events).join());
+  eq([gotBy(r.state, 'finTwo'), gotBy(r.state, 'lastFin'), gotBy(r.state, 'killBefore')], ['wind', 'wind', 'wind']);
+});
+test('M ミッション「1ターンに決め手2つ」: 2発目の決め手で取る', function () {
+  R.labApply(['M0']);
+  var s = board(['.......', '.......', '.FF.FF.', '.......', '.......', '.......', '.......']);
+  var f1 = R.addAlly(s, 'fire', 1, 4, 'up'), w1 = R.addAlly(s, 'wind', 1, 5, 'up'), w2 = R.addAlly(s, 'wind', 4, 5, 'up');
+  R.addEnemy(s, 'fire', 6, 0);
+  s = withTargets(s, ['finTurn2']);
+  R.setTile(s, 1, 3, 'fire'); R.setTile(s, 4, 3, 'fire');
+  var a = act(s, w1, 'up', [1, 5]);
+  ok(names(a.events).length, '1つ目');
+  eq(gotBy(a.state, 'finTurn2'), null);
+  var b = act(a.state, w2, 'up', [4, 5]);
+  eq(gotBy(b.state, 'finTurn2'), 'wind');
+});
+test('M ミッション「5マスの自然を決め手に」「離れた所で決め手」「3段のシナジー」', function () {
+  R.labApply(['M0']);
+  var s = board(['......', '..F...', '..F...', '..F...', '..F...', '..F...', '......', '......']);
+  var w = R.addAlly(s, 'wind', 2, 7, 'up'); R.addEnemy(s, 'fire', 5, 0); s.h = 8;
+  s = withTargets(s, ['bigFin', 'farFin']);
+  R.setTile(s, 2, 6, 'fire');
+  var r = act(s, w, 'up');
+  ok(names(r.events).indexOf('燃え広がり') >= 0);
+  eq(gotBy(r.state, 'bigFin'), 'wind', '森5マス');
+  eq(gotBy(r.state, 'farFin'), 'wind', '風のマスから4マス先まで燃える');
+  // 3段: 死の森に火（オバケヤシキ）
+  var s2 = board(['.....', '.....', '..G..', '.....', '.....']);
+  var f2 = R.addAlly(s2, 'fire', 2, 3, 'up'); R.addEnemy(s2, 'fire', 4, 0);
+  s2 = withTargets(s2, ['fin3']);
+  var r2 = act(s2, f2, 'up');
+  ok(names(r2.events).indexOf('オバケヤシキ') >= 0, names(r2.events).join());
+  eq(gotBy(r2.state, 'fin3'), 'fire');
+});
+test('M ミッション「3人の決め手」: 森を作った草・火・風の燃え広がり', function () {
+  R.labApply(['M0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 2, 4, 'up'), f = R.addAlly(s, 'fire', 1, 2, 'right'), w = R.addAlly(s, 'wind', 2, 3, 'up');
+  R.addEnemy(s, 'fire', 2, 1); R.addEnemy(s, 'fire', 4, 0);
+  s = withTargets(s, ['allThree']);
+  var r = act(act(act(s, g, 'up').state, f, 'right').state, w, 'up');
+  eq(gotBy(r.state, 'allThree'), 'wind');
+  // 2人だけ（森を前から置いておく）なら取れない
+  var s2 = board(['.....', '..F..', '..F..', '.....', '.....']);
+  var f2 = R.addAlly(s2, 'fire', 1, 2, 'right'), w2 = R.addAlly(s2, 'wind', 2, 3, 'up');
+  R.addEnemy(s2, 'fire', 2, 1); R.addEnemy(s2, 'fire', 4, 0);
+  s2 = withTargets(s2, ['allThree']);
+  eq(gotBy(act(act(s2, f2, 'right').state, w2, 'up').state, 'allThree'), null);
+});
+test('M ミッション「敵の自然で決め手」「敵の自然を上書き」', function () {
+  R.labApply(['M0']);
+  var p = R.findPreset('labMn');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMn')).state;
+  ['P1', 'P2', 'P3'].forEach(function (id) { var u = R.findUnit(s, id); s = R.act(s, id, { to: [u.x, u.y], dir: 'up', shoot: false }).state; });
+  s = R.endTurn(s).state;
+  var a = R.act(s, 'P1', { to: [2, 5], dir: 'right' });
+  eq(gotBy(a.state, 'overwrite'), 'fire', '敵の草むらに火');
+  var b = R.act(a.state, 'P2', { to: [3, 6], dir: 'up' });
+  eq(gotBy(b.state, 'enemyNatFin'), 'wind', '敵の草むらを伝う燃え広がり');
+});
+test('M ミッション「敵の決め手で倒す」: 材料を作った味方が取る（取る: helper）', function () {
+  R.labApply(['M0']);
+  var p = R.findPreset('labL2e');
+  var s = R.loadPreset('labL2e');
+  s.labTargetList = ['enemyFinKill'];
+  s = R.startBattle(s).state;
+  s = R.act(s, 'P1', { to: [1, 4], dir: 'up' }).state;
+  s = R.act(s, 'P2', { to: [4, 5], dir: 'right' }).state;
+  var r = R.act(s, 'P3', { to: [5, 6], dir: 'up' });
+  var t = r.state.result ? r.state : R.endTurn(r.state).state;
+  ok(!R.findUnit(t, 'E5'), '敵Bが敵Aの燃え広がりで倒れた');
+  eq(gotBy(t, 'enemyFinKill'), 'grass');
+});
+test('M ミッション「予告から味方を出す」: 風で味方を予告の外へ運ぶ', function () {
+  R.labApply(['M0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var a = R.addAlly(s, 'fire', 2, 2, 'up'), w = R.addAlly(s, 'wind', 0, 2, 'right');
+  var e = R.addEnemy(s, 'fire', 2, 0, 'down'); tough(s, e);
+  s = withTargets(s, ['rescue']);
+  s.enemyActs = true;
+  var en = R.findUnit(s, e.id); en.intent = true; en.facing = 'down';
+  R.findUnit(s, e.id).y = 1;   // 敵は (2,1)、予告は下の (2,2) の火の人
+  ok(R.forecast(s).enemyDamage.some(function (d) { return d.id === a.id; }), '火の人は予告の中');
+  var r = act(s, w, 'right');
+  eq(pos(r.state, a.id), [3, 2], '風で右へ運ばれた');
+  eq(gotBy(r.state, 'rescue'), 'wind');
+});
+test('M ミッション「1度も撃たせずに倒す」: 撃つ前に倒すと取れる。1度撃った敵では取れない', function () {
+  R.labApply(['M0']);
+  var mk = function () {
+    var s = board(['.....', '.....', '.....', '.....', '.....']);
+    var g = R.addAlly(s, 'grass', 2, 4, 'up'), f = R.addAlly(s, 'fire', 1, 2, 'right'), w = R.addAlly(s, 'wind', 2, 3, 'up');
+    R.addEnemy(s, 'fire', 2, 1); R.addEnemy(s, 'fire', 4, 0);
+    return { s: withTargets(s, ['neverShot']), g: g, f: f, w: w };
+  };
+  var A = mk();
+  eq(gotBy(act(act(act(A.s, A.g, 'up').state, A.f, 'right').state, A.w, 'up').state, 'neverShot'), 'wind');
+  var B = mk();
+  R.findUnit(B.s, 'E4').labShots = 1;
+  eq(gotBy(act(act(act(B.s, B.g, 'up').state, B.f, 'right').state, B.w, 'up').state, 'neverShot'), null);
+});
+test('M ミッション「敵を敵にぶつける」「2体を隣り合わせに」「端まで追い込む」', function () {
+  R.labApply(['M0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var w = R.addAlly(s, 'wind', 2, 4, 'up');
+  var e1 = R.addEnemy(s, 'fire', 2, 2), e2 = R.addEnemy(s, 'fire', 2, 1); tough(s, e1); tough(s, e2);
+  s = withTargets(s, ['bump', 'gather', 'edge']);
+  var r = act(s, w, 'up');
+  eq(pos(r.state, e1.id), [2, 2], '敵Bにぶつかって動けない');
+  eq([gotBy(r.state, 'bump'), gotBy(r.state, 'gather')], ['wind', null], 'ぶつけた（前から隣なので、集めたではない）');
+  var sg = board(['.....', '.....', '.....', '.....', '.....']);
+  var wg = R.addAlly(sg, 'wind', 2, 4, 'up');
+  var g1 = R.addEnemy(sg, 'fire', 2, 2), g2 = R.addEnemy(sg, 'fire', 2, 0); tough(sg, g1); tough(sg, g2);
+  sg = withTargets(sg, ['bump', 'gather', 'edge']);
+  var rg = act(sg, wg, 'up');
+  eq(pos(rg.state, g1.id), [2, 1]);
+  eq([gotBy(rg.state, 'bump'), gotBy(rg.state, 'gather'), gotBy(rg.state, 'edge')], [null, 'wind', null], '集めた（(2,1) は端ではない）');
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var w2 = R.addAlly(s2, 'wind', 2, 3, 'up'); var e3 = R.addEnemy(s2, 'fire', 2, 1); tough(s2, e3);
+  s2 = withTargets(s2, ['edge']);
+  var r2 = act(s2, w2, 'up');
+  eq(pos(r2.state, e3.id), [2, 0]);
+  eq(gotBy(r2.state, 'edge'), 'wind');
+});
+test('M ミッション「高い所から下ろす」「予定の道をふさぐ」（D2）: 盤面「予定の道と高い所」', function () {
+  var p = R.findPreset('labMd');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMd')).state;
+  ok(s.labPlanTo && s.labPlanTo.E4, '敵の行き先を覚えた');
+  var r = R.act(s, 'P2', { to: [3, 3], dir: 'up' });
+  eq(gotBy(r.state, 'lower'), 'wind');
+  ok(r.state.labBlocker.E4, '行き先を変えた手');
+  var t = R.act(R.act(r.state, 'P1', { to: [2, 6], dir: 'up', shoot: false }).state, 'P3', { to: [5, 6], dir: 'up', shoot: false }).state;
+  t = R.endTurn(t).state;
+  eq(gotBy(t, 'blocked'), 'wind');
+  R.labApply(['M0']);
+  var q = R.loadPreset('labMd'); q.labTargetList = ['blocked', 'lower'];
+  eq(R.startBattle(q).state.labTargets.map(function (x) { return x.id; }), ['lower'], 'D2 がオフなら「予定の道」は出さない');
+});
+test('M ミッション「予告の向きを変える」「予告を別の敵に」（狐火）: 盤面「変化した姿（動かす）」', function () {
+  var p = R.findPreset('labMf2');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMf2')).state;
+  var r = R.act(s, 'P3', { to: [2, 3], dir: 'up' });
+  eq(R.findUnit(r.state, 'E4').facing, 'down', '術者のほうを向いた');
+  eq(gotBy(r.state, 'turnIntent'), 'fire');
+  var t = R.endTurn(R.act(R.act(r.state, 'P1', { to: [5, 6], dir: 'up', shoot: false }).state, 'P2', { to: [4, 6], dir: 'up', shoot: false }).state).state;
+  eq(gotBy(t, 'redirect'), 'fire', '向きを変えた敵の予告が別の敵に');
+});
+test('M 作る系「3種類の自然」「盤面の半分を自然に」「敵の隣に自然」「高い所から水」', function () {
+  R.labApply(['M0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 0, 4, 'up'), e = R.addAlly(s, 'earth', 4, 4, 'up'), wa = R.addAlly(s, 'water', 2, 4, 'up');
+  R.addEnemy(s, 'fire', 1, 0);
+  s = withTargets(s, ['kinds3', 'nextTo', 'half']);
+  var a = act(s, g, 'up');
+  eq(gotBy(a.state, 'nextTo'), 'grass', '敵の隣に森');
+  var b = act(a.state, e, 'up');
+  eq(gotBy(b.state, 'kinds3'), null, 'まだ2種類');
+  var c = act(b.state, wa, 'up');
+  eq(gotBy(c.state, 'kinds3'), 'water', '3種類目');
+  eq(gotBy(c.state, 'half'), null, 'まだ半分ではない');
+  var sh = board(['FFFFF', 'FFFFF', 'F....', '.....', '.....']);
+  var fh = R.addAlly(sh, 'earth', 4, 4, 'up'); R.addEnemy(sh, 'fire', 0, 4);
+  sh = withTargets(sh, ['half']);
+  eq(gotBy(act(sh, fh, 'up').state, 'half'), 'earth', '森11 ＋山2 で25マスの半分');
+  // 丘の上から水
+  var s2 = board(['.....', '.....', '.....', '.....', '..h..']);
+  var w2 = R.addAlly(s2, 'water', 2, 4, 'up'); R.addEnemy(s2, 'fire', 4, 0);
+  s2 = withTargets(s2, ['waterDown']);
+  eq(gotBy(act(s2, w2, 'up').state, 'waterDown'), 'water');
+});
+test('M 勝ったときに決まる「誰も倒されずに」「3ターン以内」「歩かずに勝つ」は決着の一手・歩かなかった仲間が取る', function () {
+  R.labApply(['M0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var g = R.addAlly(s, 'grass', 2, 4, 'up'), f = R.addAlly(s, 'fire', 1, 2, 'right'), w = R.addAlly(s, 'wind', 2, 3, 'up');
+  R.addEnemy(s, 'fire', 2, 1);
+  s = withTargets(s, ['noLoss', 'turnWin', 'noWalk']);
+  var r = act(act(act(s, g, 'up').state, f, 'right').state, w, 'up');
+  eq(r.state.result, 'win');
+  eq([gotBy(r.state, 'noLoss'), gotBy(r.state, 'turnWin')], ['wind', 'wind'], '決着の一手');
+  eq(gotBy(r.state, 'noWalk'), 'wind', '3人とも歩いていない。最後に撃った風');
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var g2 = R.addAlly(s2, 'grass', 2, 4, 'up'), f2 = R.addAlly(s2, 'fire', 0, 2, 'right'), w2 = R.addAlly(s2, 'wind', 2, 3, 'up');
+  R.addEnemy(s2, 'fire', 2, 1);
+  s2 = withTargets(s2, ['noWalk']);
+  var r2 = act(act(act(s2, g2, 'up').state, f2, 'right', [1, 2]).state, w2, 'up');
+  eq(gotBy(r2.state, 'noWalk'), 'wind', '火は歩いた。歩かなかった中で最後に撃った風');
+});
+test('M 勝ったときに決まる「村を守り切る」・「宝・馬車を運ぶ」（奪取は宝を持った仲間）', function () {
+  R.labApply(['M0']);
+  var s = R.loadPreset('labM2');
+  s.labTargetList = ['villagesSafe'];
+  s = R.startBattle(s).state;
+  eq(s.labTargets.map(function (t) { return t.id; }), ['villagesSafe'], '村がある盤面には出る');
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  R.addAlly(s2, 'fire', 0, 4, 'up'); R.addEnemy(s2, 'fire', 4, 0);
+  eq(withTargets(s2, ['villagesSafe', 'carry']).labTargets.length, 0, '村も運ぶものもない盤面には出ない');
+  var s3 = R.loadPreset('mRetrieve');
+  s3.labTargetList = ['carry'];
+  s3 = R.startBattle(s3).state;
+  var m = s3.mission, c = R.alliesOf(s3)[0];
+  m.carrier = c.id; m.treasure = null;
+  var ex = m.exit[0];
+  var far = R.reachableCells(s3, c.id);
+  if (far[ex[0] + ',' + ex[1]] === undefined) { c.x = ex[0]; c.y = ex[1] + (ex[1] > 0 ? -1 : 1); }
+  var r3 = R.act(s3, c.id, { to: ex, dir: 'up', shoot: false });
+  ok(r3.ok, r3.error);
+  eq(r3.state.result, 'win');
+  eq(gotBy(r3.state, 'carry'), c.magic, '宝を持ち帰った仲間');
+});
+test('M 仕分け: 方向を変えると、次に読んだ戦闘から変わる。「使わない」は出さない', function () {
+  R.labApply(['M0']);
+  MM.setSort({ finKill: 'stop', nextTo: 'off' });
+  try {
+    var s = board(['.....', '.....', '.....', '.....', '.....']);
+    R.addAlly(s, 'fire', 0, 4, 'up'); R.addEnemy(s, 'fire', 4, 0);
+    s = withTargets(s, ['finKill', 'nextTo', 'kill']);
+    eq(s.labTargets.map(function (t) { return t.id + ':' + t.dir; }), ['finKill:stop', 'kill:decide']);
+  } finally { MM.setSort({}); }
+});
+
+// ---- 変化先の性質
+test('M 性質「守る」（城壁）: 当たった味方は、敵の次の攻撃を1回防ぐ。敵に当てると敵が守られる', function () {
+  var p = R.findPreset('labMf');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMf')).state;
+  var r = R.act(s, 'P1', { to: [2, 6], dir: 'up' });
+  eq(R.findUnit(r.state, 'P3').labGuard, 1);
+  ok(!R.forecast(r.state).enemyDamage.some(function (d) { return d.id === 'P3' && d.amount > 0; }), '予測でも防ぐ');
+  var t = R.endTurn(r.state);
+  ok(R.findUnit(t.state, 'P3'), '炎の壁の人は無事');
+  ok(/攻撃を防いだ/.test(texts(t.events)));
+  ok(!R.findUnit(t.state, 'P3').labGuard, '1回で使い切る');
+  // 敵に当てると、敵が守られる（こちらの直撃を防ぐ）
+  R.labApply(['M0']);
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var e = R.addAlly(s2, 'earth', 3, 4, 'up'), f = R.addAlly(s2, 'fire', 2, 3, 'up');
+  var en = R.addEnemy(s2, 'fire', 2, 2); tough(s2, en);
+  mPath(s2, e, { stop: 2 });
+  s2 = R.startBattle(s2).state;
+  var a = act(s2, R.findUnit(s2, e.id), 'up');
+  eq(R.findUnit(a.state, en.id).labGuard, 1, '敵も守られる');
+  var b = act(a.state, R.findUnit(a.state, f.id), 'up');
+  eq(dealt(b, en.id), 0, '火の直撃を防いだ');
+});
+test('M 性質「遅らせる」（大波）・「予告を消す」（炎の壁）', function () {
+  var p = R.findPreset('labMf');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMf')).state;
+  var a = R.act(s, 'P2', { to: [5, 5], dir: 'up' });
+  eq(R.findUnit(a.state, 'E5').labDelay, { n: 1 });
+  ok(!R.findUnit(a.state, 'E5').intent);
+  var b = R.act(a.state, 'P3', { to: [3, 4], dir: 'up' });
+  ok(!R.findUnit(b.state, 'E4').intent, '炎の壁で予告が消えた');
+  var t = R.endTurn(R.act(b.state, 'P1', { to: [3, 6], dir: 'up', shoot: false }).state);
+  ok(R.findUnit(t.state, 'P2') && R.findUnit(t.state, 'P3'), 'どちらの攻撃も起きない');
+  var eb = R.findUnit(t.state, 'E5');
+  eq([eb.x, eb.y, eb.intent, !!eb.labDelay], [5, 3, true, false], '次のターン、その場で予告を出し直す');
+});
+test('M 性質「足止め」「引き寄せる」「向きを変える」「押す」「傷」「撃たせない」', function () {
+  R.labApply(['M0']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var g = R.addAlly(s, 'grass', 3, 6, 'up'); var e = R.addEnemy(s, 'fire', 3, 3); tough(s, e);
+  mPath(s, g, { stop: 2 });
+  ok(R.findUnit(act(s, R.findUnit(s, g.id), 'up').state, e.id).stuck, '蔓縛り');
+  mPath(s, g, { move: 2 });
+  eq(pos(act(s, R.findUnit(s, g.id), 'up').state, e.id), [3, 4], '手繰り蔓: 術者のほうへ1マス');
+  mPath(s, g, { decide: 2 });
+  eq(R.findUnit(act(s, R.findUnit(s, g.id), 'up').state, e.id).burn, 2, '茨: 傷2回');
+  mPath(s, g, { decide: 2, simple: 3 });
+  eq(R.findUnit(act(s, R.findUnit(s, g.id), 'up').state, e.id).burn, 3, '千本茨: 3回');
+  var s2 = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var w = R.addAlly(s2, 'water', 3, 6, 'up'), ea = R.addAlly(s2, 'earth', 0, 6, 'up'); var e2 = R.addEnemy(s2, 'fire', 3, 2, 'down'); tough(s2, e2);
+  mPath(s2, w, { move: 2 });
+  eq(R.findUnit(act(s2, R.findUnit(s2, w.id), 'up').state, e2.id).facing, 'up', '早瀬: 水の向きへ');
+  var e3 = R.addEnemy(s2, 'fire', 0, 4); tough(s2, e3);
+  mPath(s2, ea, { move: 2 });
+  eq(pos(act(s2, R.findUnit(s2, ea.id), 'up').state, e3.id), [0, 3], '地鳴り: 押した');
+  R.labApply(['M0']);
+  var s3 = board(['.....', '.....', '.....', '.....', '.....']);
+  var th = R.addAlly(s3, 'thunder', 2, 4, 'up'); var e4 = R.addEnemy(s3, 'fire', 2, 3); tough(s3, e4);
+  mPath(s3, th, { stop: 2 });
+  var r = act(s3, R.findUnit(s3, th.id), 'up');
+  eq(R.findUnit(r.state, e4.id).labSilence, 1, '雷縛り');
+  var t = endT(r.state);
+  ok(!R.findUnit(t.state, e4.id).intent, '次のターン、予告を出せない');
+});
+test('M 性質「大きくする」（追い風）・「撃ったあと動ける」（疾風）', function () {
+  var p = R.findPreset('labMf3');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMf3')).state;
+  var a = R.act(s, 'P3', { to: [3, 7], dir: 'up' });
+  eq(R.findUnit(a.state, 'P1').labBoost, 2);
+  var g = R.findUnit(a.state, 'P1');
+  eq(shotCells(a.state, g, 'up').length, 8, '4 ＋強化2 ＋大きく2');
+  var b = R.act(a.state, 'P1', { to: [g.x, g.y], dir: 'up' });
+  ok(!R.findUnit(b.state, 'P1').labBoost, '1発で使い切る');
+  R.labApply(['M0']);
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var w = R.addAlly(s2, 'wind', 2, 4, 'up'), f = R.addAlly(s2, 'fire', 0, 4, 'up'); R.addEnemy(s2, 'fire', 4, 0);
+  mPath(s2, w, { move: 2 });
+  var c = act(s2, R.findUnit(s2, w.id), 'up');
+  var wu = R.findUnit(c.state, w.id);
+  eq([wu.acted, wu.labAfter], [false, { move: 1, shoot: false }], '撃ったあと1マス動ける');
+  ok(!R.allAlliesActed(c.state));
+  ok(!R.act(c.state, w.id, { to: [2, 4], dir: 'up' }).ok, 'もう撃てない');
+  var d = R.act(c.state, w.id, { to: [3, 4], dir: 'up', shoot: false });
+  ok(d.ok, d.error);
+  ok(!R.act(c.state, w.id, { to: [2, 2], dir: 'up', shoot: false }).ok, '2マスは動けない');
+  var du = R.findUnit(d.state, w.id);
+  eq([du.x, du.acted, !!du.labAfter], [3, true, false]);
+});
+test('M 性質「当たるまで流れる」（奔流）・「貫く」（岩槍・大瀑布）', function () {
+  R.labApply(['M0']);
+  var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
+  var w = R.addAlly(s, 'water', 3, 6, 'up'); R.addEnemy(s, 'fire', 0, 0);
+  mPath(s, w, { decide: 2 });
+  eq(cellsOf(act(s, R.findUnit(s, w.id), 'up').state, 'river').length, 6, '盤の端まで（育つが切なので池＝川）');
+  var e = R.addEnemy(s, 'fire', 3, 3); tough(s, e);
+  var r = act(s, R.findUnit(s, w.id), 'up');
+  eq(tile(r.state, 3, 2), 'empty', '奔流は人で止まる');
+  mPath(s, w, { decide: 2, simple: 3 });
+  var r2 = act(s, R.findUnit(s, w.id), 'up');
+  eq(tile(r2.state, 3, 2), 'river', '大瀑布は人を貫いて流れ続ける');
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var ea = R.addAlly(s2, 'earth', 3, 4, 'up'); var e2 = R.addEnemy(s2, 'fire', 2, 2); tough(s2, e2);
+  var before = shotCells(s2, ea, 'up').length;
+  mPath(s2, ea, { decide: 2 });
+  var cells = shotCells(s2, R.findUnit(s2, ea.id), 'up');
+  ok(cells.some(function (c) { return c[0] === 2 && c[1] === 1; }), '岩槍: 敵の奥のマスにも');
+  ok(cells.length > before);
+});
+
+// ---- M5 強化の候補
+test('M5 候補: 直撃の威力・手前を飛ばす・足場で形が増える・形を小さく', function () {
+  R.labApply(['M0', 'M5']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var f = R.addAlly(s, 'fire', 2, 4, 'up'); var e = R.addEnemy(s, 'fire', 2, 3); tough(s, e);
+  cand(s, f, { power: true });
+  eq(dealt(act(s, R.findUnit(s, f.id), 'up'), e.id), 3, '1 ＋2');
+  cand(s, f, { skip: true });
+  eq(shotCells(s, R.findUnit(s, f.id), 'up'), [[2, 2]], '1マス先から');
+  var s2 = board(['.....', '.....', '.....', '.....', '..F..']);
+  var g = R.addAlly(s2, 'grass', 2, 4, 'up'); R.addEnemy(s2, 'fire', 4, 0);
+  cand(s2, g, { standOn: true });
+  eq(shotCells(s2, R.findUnit(s2, g.id), 'up').length, 6, '森の上で+2');
+  var s3 = board(['.....', '.....', '.....', '.....', '.....']);
+  var g3 = R.addAlly(s3, 'grass', 2, 4, 'up'), f3 = R.addAlly(s3, 'fire', 1, 2, 'right');
+  cand(s3, g3, { shrink: true });
+  var r = act(s3, R.findUnit(s3, g3.id), 'up', [1, 4]);
+  ok(R.findUnit(r.state, f3.id).labShrink, '当たった者の次の1発は1マス');
+  R.labApply(['M0']);
+  eq(shotCells(s, R.findUnit(s, f.id), 'up'), [[2, 3]], 'M5 がオフなら候補は効かない');
+});
+test('M5 候補: もう1ターン残る・置いておく・2回撃てる・撃った先へ移る・効き目が1段強く', function () {
+  var p = R.findPreset('labMc');
+  R.labApply(p.lab, p.labOpts);
+  var s = R.startBattle(R.loadPreset('labMc')).state;
+  var a = R.act(s, 'P3', { to: [2, 4], dir: 'up' });
+  var b = R.act(a.state, 'P1', { to: [3, 6], dir: 'up' });
+  ok(b.state.labTraps && b.state.labTraps.length === 1, '置いた');
+  eq(tile(b.state, 3, 3), 'empty', '置いただけでは何も起きない');
+  var c = R.act(b.state, 'P2', { to: [1, 5], dir: 'up' });
+  eq(R.findUnit(c.state, 'P2').labAfter, { move: 0, shoot: true }, '2回目を撃てる');
+  ok(!R.act(c.state, 'P2', { to: [1, 4], dir: 'up' }).ok, '2回目は動けない');
+  var d = R.act(c.state, 'P2', { to: [1, 5], dir: 'right' });
+  ok(d.ok, d.error);
+  var t = d.state.result ? d.state : R.endTurn(d.state).state;
+  eq(tile(t, 2, 2), 'breeze', '風がもう1ターン残った');
+  ok(/置いておいた草の魔法に入った/.test(texts(R.endTurn(d.state).events)), '敵Aが置いた草に入って発動');
+  R.labApply(['M0', 'M5']);
+  var s2 = board(['.....', '.....', '.....', '.....', '.....']);
+  var w = R.addAlly(s2, 'wind', 2, 4, 'up'); var e = R.addEnemy(s2, 'fire', 2, 2); tough(s2, e);
+  cand(s2, w, { effect: true });
+  eq(pos(act(s2, R.findUnit(s2, w.id), 'up').state, e.id), [2, 0], '効き目が1段強く: 風の運ぶが1マス多い');
+  cand(s2, w, { leap: true });
+  var R2 = act(s2, R.findUnit(s2, w.id), 'up');
+  eq(pos(R2.state, w.id), [2, 2], '撃った先へ移る（形の一番奥の空き）');
+});
+test('M オフ: M の切り替えがオフなら、性質も候補も何も起きない（L のまま）', function () {
+  R.labApply(['L0']);
+  var s = board(['.....', '.....', '.....', '.....', '.....']);
+  var e = R.addAlly(s, 'earth', 3, 4, 'up'), f = R.addAlly(s, 'fire', 2, 2, 'up'); R.addEnemy(s, 'fire', 4, 0);
+  R.findUnit(s, e.id).labPath = { stop: 2 };
+  R.findUnit(s, e.id).labCand = { power: true };
+  var r = act(s, R.findUnit(s, e.id), 'up');
+  ok(!R.findUnit(r.state, f.id).labGuard, '城壁にならない');
+  ok(!r.state.labFinTurn && !r.state.labLastHand);
+});
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

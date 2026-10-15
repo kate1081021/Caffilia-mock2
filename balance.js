@@ -308,7 +308,15 @@
       L3: { on: false, count: 3 },          // 1戦のターゲットの数（2・3・4）
       L4: { on: false, lose: 'lose' },      // 負けたとき。lose: 'lose' 取ったターゲットは全部なくなる ／'keep' 残る
       L5: { on: false, dest: 'make' },      // 得意でない方向・閉じた方向で達成したときの行き先。dest: 'make' 作るが1マス進む ／'nothing' 何も起きない ／'remain' 達成にならず残る
-      L6: { on: false }                     // クエストで方向を選ぶ: 戦闘の前に、どの方向のミッションが出るクエストを受けるかを選ぶ（お題に合う方向を先頭に）
+      L6: { on: false },                    // クエストで方向を選ぶ: 戦闘の前に、どの方向のミッションが出るクエストを受けるかを選ぶ（お題に合う方向を先頭に）
+      // M 強化の方向（3つ）とミッション（lab_power.js。L0 の土台の上で、道を M の形に替える。M1〜M5 は M0 が要る。オフのときは初期の値で動く）
+      //   方向は 決める・止める・動かす の3つ。作る系のミッションは方向なし。強化1回で形が1マス、同じ方向 change 回で変化、合計 awake 回で覚醒
+      M0: { on: false },                    // 土台: 3つの方向・41のミッション・変化（1段目）と覚醒（2段目）
+      M1: { on: false, dirs: 'three' },     // 方向の数。dirs: 'three' 全属性が3つ ／'two' 属性ごとに2つ（lab_power.js の TWO）
+      M2: { on: false, dest: 'simple' },    // 持っていない方向・閉じた方向で取ったとき。dest: 'simple' 単純強化 ／'nothing' 何も起きない ／'remain' 達成にならず残る
+      M3: { on: false, change: 2, awake: 5, shapeMax: 3 },   // 回数。change 変化まで（同じ方向で）・awake 覚醒まで（強化の合計）・shapeMax 形が増える上限
+      M4: { on: false, make: 'simple' },    // 作る系のミッション。make: 'simple' 単純強化 ／'marker' 目印だけ（強化にならない）
+      M5: { on: false }                     // 強化の候補を試す（まだ判定していない候補を、エディットで人に付ける）
     }
   };
 

@@ -38,7 +38,7 @@ function show(s, title) {
   (s.labTargets || []).forEach(function (t) {   // ラボ L: ターゲットと取った手
     console.log('  ターゲット ' + t.id + '（' + t.dir + '）: ' + (t.got ? (t.got.by ? t.got.by.magic : t.got.cands.map(function (h) { return h.magic; }).join('/')) + ' ' + (t.got.how || '') : 'まだ'));
   });
-  s.units.forEach(function (u) { if (u.labPath && R.lab('L0')) console.log('  道 ' + u.id + ' ' + R.LX.L.pathMarks(u.magic, u.labPath) + (u.labPath.awake ? ' 覚醒' + u.labPath.awake : '')); });
+  s.units.forEach(function (u) { if (u.labPath && R.lab('L0')) console.log('  道 ' + u.id + ' ' + R.LX.L.pathMarks(u.magic, u.labPath) + (R.LX.formName(u) ? ' 姿「' + R.LX.formName(u) + '」' : '')); });   // L は覚醒、M は変化・覚醒した姿
   var fc = R.forecast(s);
   fc.enemies.forEach(function (e) {
     console.log('  予告 ' + e.id + ': ' + e.dir + ' ' + e.magic + ' → ' + (e.finishers || []).map(function (f) { return f.name; }).join(',') +

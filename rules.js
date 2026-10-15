@@ -473,6 +473,7 @@
     s.result = result;
     s.resultText = text;
     ev.push({ type: 'result', result: result, text: text });
+    if (LX) LX.onResult(s, ev);   // ラボ M: 勝ったときに決まるミッション（誰も倒されずに・村を守り切る など）
   }
 
   // 勝敗。どのお題でも、味方が全員倒れたら負け。負けを先に見る（同じ1発で村が壊れて敵が全滅しても負け）
@@ -1306,6 +1307,7 @@
         addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
         // 人の足元にも自然ができる: 池が立てる水たまりのとき（育つが入）だけ、当たった人の足元にも水たまり
         if (B.ideas.natureUnderUnits && !lab('C1') && puddleOn && !sourced && !growing && t === 'empty') { setTile(s, x, y, 'puddle'); made++; }
+        if (LX && LX.passUnit(s, u, o, ctx)) { stop = null; continue; }   // ラボ M: 人を貫いて流れ続ける
         break;
       }
       if (growing) {
@@ -2279,7 +2281,7 @@
     function sweep(from, to) {
       var cells = [];
       for (var y = 0; y < rowsOf(s); y++) {
-        for (var x = 0; x < s.size; x++) if (getTile(s, x, y) === from) { setTile(s, x, y, to); cells.push([x, y]); }
+        for (var x = 0; x < s.size; x++) if (getTile(s, x, y) === from && !(LX && LX.keepTile(s, x, y, from))) { setTile(s, x, y, to); cells.push([x, y]); }   // ラボ M5: もう1ターン残る
       }
       return cells;
     }

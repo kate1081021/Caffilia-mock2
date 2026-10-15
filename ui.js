@@ -1100,6 +1100,7 @@
     var form = R.LX && R.LX.formName(u);   // ラボ L: 覚醒した魔法は名前と駒の印が変わる
     if (form) cls.push('awake');
     var fo = form && R.LX.L ? R.LX.L.formOf(u) : null;   // 覚醒先の印（1文字）を駒に大きく、名前を小さく
+    if (fo && fo.stage === 2) cls.push('awake2');   // ラボ M: 2段目の覚醒はもっと光る
     var name = u.side === 'ally' ? (fo ? '<b class="u-mark">' + esc(fo.mark) + '</b>' + (fo.mark !== form ? '<small class="u-form">' + esc(form) + '</small>' : '') : esc(R.magicName(u.magic)))
       : '敵<small>' + esc(u.letter) + '</small>' + (form ? '<small class="u-form">' + esc((fo ? fo.mark + ' ' : '') + form) + '</small>' : '');
     // ラボ: 大きい敵（D3）・体（D6・D7）・欲（D1）・めちゃ強い敵（D5）の見た目
@@ -1333,7 +1334,7 @@
       if (R.lab('E10') && fc) R.LX.intentHints(stE, pv ? st : null, fc).forEach(function (h) { eHint[key(h.cell[0], h.cell[1])] = h; });
     }
     // ラボ H13: 小さな目標の印。H9: 拠点の旗。H6: 逃げ口
-    var hGoal = {}, hFlag = {}, hExit = {}, fWind = {}, fBench = {}, lTarget = {};
+    var hGoal = {}, hFlag = {}, hExit = {}, fWind = {}, fBench = {}, lTarget = {}, mTrap = {};
     if (!app.editMode && R.LX && (R.lab('F2') || R.lab('F3')) && st.labWind) Object.keys(st.labWind).forEach(function (i) { var t = R.getTile(st, i % n, Math.floor(i / n)); if (t === 'breeze' || t === 'gale') fWind[key(i % n, Math.floor(i / n))] = st.labWind[i]; });
     if (!app.editMode && R.lab('F7') && st.labBench) st.labBench.cells.forEach(function (c) { fBench[key(c[0], c[1])] = st.labBench; });
     if (!app.editMode && R.LX) {
@@ -1341,6 +1342,7 @@
       if (R.lab('L0') && st.labTargets) st.labTargets.forEach(function (t) { ((t.check && t.check.cells) || []).forEach(function (c) { lTarget[key(c[0], c[1])] = t; }); });   // ラボ L: ステージだけの目標のマス
       if (R.lab('H9') && st.labFlags) st.labFlags.forEach(function (f) { var tk = R.LX.flagTaken(st, f); f.cells.forEach(function (c) { hFlag[key(c[0], c[1])] = { f: f, taken: tk }; }); });
       if (R.lab('H6') && st.labChase) st.labChase.exits.forEach(function (c) { hExit[key(c[0], c[1])] = true; });
+      if (R.lab('M5') && st.labTraps) st.labTraps.forEach(function (tr) { tr.cells.forEach(function (c) { mTrap[key(c[0], c[1])] = tr; }); });   // ラボ M5: 置いておいた魔法
     }
     // チュートリアル②: 山の頂上と腕（どこが高いか）
     var slopes = st.slopes || {};
@@ -1483,7 +1485,8 @@
         if (eDecoy[k] && !unit) inner += '<div class="ghost decoy" title="偽の姿（ラボ E2）: 敵には本物に見える。当たっても何も起きない">' + esc(R.magicName(eDecoy[k].magic)) + '</div>';
         if (fWind[k]) inner += '<span class="b-wind" title="風の向き（追い風・向かい風）">' + DIR_ARROW[fWind[k]] + '</span>';
         if (fBench[k]) inner += '<span class="b-bench" title="作業台（積まれた材料: ' + esc(fBench[k].mats.map(function (m) { return R.magicName(m.magic); }).join('→') || 'なし') + '）"></span>';
-        if (lTarget[k]) inner += '<span class="b-ltarget d-' + lTarget[k].dir + (lTarget[k].got ? ' got' : '') + '" title="ターゲット: ' + esc(lTarget[k].name) + (lTarget[k].got ? '（取った）' : '') + '">' + esc((R.LX.L.DIRS[lTarget[k].dir] || {}).mark || '的') + '</span>';   // ラボ L
+        if (lTarget[k]) inner += '<span class="b-ltarget d-' + lTarget[k].dir + (lTarget[k].got ? ' got' : '') + '" title="ターゲット: ' + esc(lTarget[k].name) + (lTarget[k].got ? '（取った）' : '') + '">' + esc((R.LX.L.dirTable()[lTarget[k].dir] || {}).mark || '的') + '</span>';   // ラボ L（M のときは3つの方向の印）
+        if (mTrap[k]) inner += '<span class="b-mtrap" title="置いておいた' + esc(R.magicName(mTrap[k].magic)) + 'の魔法（人が入ると発動）">置</span>';   // ラボ M5
         if (hGoal[k]) inner += '<span class="b-goal' + (hGoal[k].done ? ' done' : '') + '" title="目標: ' + esc(hGoal[k].name) + (hGoal[k].done ? '（達成）' : '') + '">目</span>';
         if (hFlag[k]) inner += '<span class="b-flag' + (hFlag[k].taken ? ' taken' : '') + '" title="' + esc(hFlag[k].f.name) + (hFlag[k].taken ? '（取った拠点: 上に立つと形が1マス先から）' : '（全部のマスを別の自然にすると取れる）') + '">' + (hFlag[k].taken ? '拠' : '旗') + '</span>';
         if (hExit[k]) inner += '<span class="b-exit" title="逃げ口（宝を持った敵が着いたら負け）">逃</span>';
@@ -1603,6 +1606,9 @@
     el.roster.innerHTML = (al.length ? al.map(function (a, i) {
       var no = simul() ? R.stanceOrder(st, a.id) : 0;
       var status = [!simul() ? (a.acted ? '行動済み' : '行動前') : a.stance ? (ORDER_MARK[no] || no) + ' 構えている（' + R.magicName(a.magic) + ' ' + DIR_ARROW[a.facing] + '）' : st.result ? '行動済み' : a.acted ? '待機' : 'まだ構えていない'];
+      if (a.labAfter) status[0] = a.labAfter.shoot ? 'もう1回撃てる（動けない）' : '撃ったあと: ' + a.labAfter.move + 'マス動ける（動いて「待機」）';   // ラボ M: 2回撃てる・疾風
+      if (a.labGuard) status.push('守られている: 相手の攻撃を' + a.labGuard + '回防ぐ');   // ラボ M: 城壁
+      if (a.labBoost) status.push('追い風: 次の魔法が' + a.labBoost + 'マス大きい');      // ラボ M: 追い風
       if (a.stuck) status.push('泥沼: 次は移動できない');
       if (a.burn > 0) status.push('火傷: あと' + a.burn + '回（水か氷で治る）');
       if (st.mission && st.mission.carrier === a.id) status.push('宝を持っている（撃てない）');
