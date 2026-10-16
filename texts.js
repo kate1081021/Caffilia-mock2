@@ -14,7 +14,7 @@
  */
 (function (root) {
   var TEXTS = {
-    "savedAt": "2026-10-14 15:00:00",
+    "savedAt": "2026-10-16 18:00:00",
     "ui": {
       "turnMode": "ターンの形",
       "turnModeSimul": "一斉に発動",
@@ -74,7 +74,15 @@
           "mode": "both"
         }
       ],
-      "howtoStart": "はじめる"
+      "howtoStart": "はじめる",
+      "exFire": "魔法の出し方",
+      "exFireStep": "ターンの終わりに1段ずつ",
+      "exFireChain": "ターンの終わりにつながる",
+      "exFireInstant": "撃った瞬間に発動",
+      "exFireNote": "切り替えると頭からやり直す",
+      "exMission": "ミッション",
+      "exMissionDone": "ミッション達成！",
+      "exPreviewNote": "盤面の点線が、魔法の届く形。何が起きるかは、撃ってのお楽しみ"
     },
     "finishers": {
       "燃え広がり": "燃え広がり",
@@ -85,7 +93,8 @@
       "火の渦": "火の渦",
       "センタクキ": "センタクキ",
       "火炎竜巻": "火炎竜巻",
-      "オバケヤシキ": "オバケヤシキ"
+      "オバケヤシキ": "オバケヤシキ",
+      "火山": "火山"
     },
     "stages": {
       "tut1": {
@@ -188,8 +197,94 @@
           ]
         }
       },
+      "ex3": {
+        "name": "③ 3人でつなぐ",
+        "goal": "山 → 火山 → 桜吹雪。3人の魔法をつないで、ボスと取り巻きをまとめて吹き飛ばす【仮】",
+        "hint": {
+          "simul": "",
+          "single": ""
+        },
+        "win": "",
+        "lose": "",
+        "missions": {
+          "volcano": "火山を作る"
+        },
+        "finaleTitle": "一面の桜吹雪",
+        "finaleSub": "クリア！",
+        "scenes": {
+          "start": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            },
+            {
+              "who": "",
+              "text": "山で十字の山を作ろう。敵のいない所でいい【仮】",
+              "mode": "both"
+            }
+          ],
+          "hint:noMountain": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            },
+            {
+              "who": "",
+              "text": "まずは山の魔法で、どこかに大きな山を作ってみよう【仮】",
+              "mode": "both"
+            }
+          ],
+          "mission": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            }
+          ],
+          "hint:noSakura": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            },
+            {
+              "who": "",
+              "text": "火山に、風を当てたら…？【仮】",
+              "mode": "both"
+            }
+          ],
+          "finisher:桜吹雪": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            }
+          ],
+          "retry": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            },
+            {
+              "who": "",
+              "text": "倒れても大丈夫。もう一度、頭から【仮】",
+              "mode": "both"
+            }
+          ],
+          "win": [
+            {
+              "who": "",
+              "text": "（ここに文章）",
+              "mode": "both"
+            }
+          ]
+        }
+      },
       "tut3": {
-        "name": "③ 3人で合わせる",
+        "name": "③ 3人で合わせる（前の版）",
         "goal": "3人の魔法を合わせて、敵を全員倒す【仮】",
         "hint": {
           "simul": "土で山 → 草で桜 → 風で…？【仮】",

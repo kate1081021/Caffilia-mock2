@@ -17,6 +17,31 @@
   // 行の「ターンの形」の指定が今の形に合うか（both / simul / single）
   function modeOk(line) { var m = (line && line.mode) || 'both'; return m === 'both' || m === (simul() ? 'simul' : 'single'); }
 
+  // 展示ステージ③（s.ex）: 画面の見せ方（形だけの予測・光るヒント・ミッション・ため・大きな絵・魔法の出し方）
+  function exOf(st) { st = st || app.state; return (st && st.ex) || null; }
+  function shapeOnly() { var x = exOf(); return !!(x && x.shapeOnly) && !app.editMode; }
+  // 魔法の出し方: step ターンの終わりに1段ずつ（初期）／chain ターンの終わりにつながる／instant 撃った瞬間に発動。選んだ形は覚える
+  var EX_FIRE_KEY = 'caffilia-ex3-fire-mode';
+  var EX_FIRE = [['step', 'exFireStep', 'ターンの終わりに1段ずつ'], ['chain', 'exFireChain', 'ターンの終わりにつながる'], ['instant', 'exFireInstant', '撃った瞬間に発動']];
+  function exFireMode() {
+    var v = null;
+    try { v = window.localStorage.getItem(EX_FIRE_KEY); } catch (e) { v = null; }
+    return EX_FIRE.some(function (x) { return x[0] === v; }) ? v : 'step';
+  }
+  // ステージ③を読むときだけ、ターンの形をその出し方にする（ステージ③を出たら元に戻す）
+  function applyExFire(m) {
+    if (!app.exTurnRestore) app.exTurnRestore = { turnMode: B.turnMode };
+    B.turnMode = m === 'instant' ? 'single' : 'simul';
+    B.simul.stepwise = m === 'step';
+    app.exFire = m;
+    app.cache = {};
+  }
+  function restoreExFire() {
+    if (app.exTurnRestore) { B.turnMode = app.exTurnRestore.turnMode; app.exTurnRestore = null; app.cache = {}; }
+    B.simul.stepwise = false;
+    app.exFire = null;
+  }
+
   // 【一斉】ターンの形。選んだ形は覚える（読み書きは try/catch。使えなければ毎回、一斉から）
   var TURN_KEY = 'caffilia-turn-mode';
   function simul() { return B.turnMode === 'simul'; }
@@ -41,6 +66,7 @@
     deadforest: { cls: 'deadwoods', name: '死の森', mark: '🥀' }
   };
   var J1_BIG = { river: { cls: 'lake', name: '大河', mark: '〜' }, sakura: { cls: 'blossom', name: '桜の山', mark: '🌸' }, fire: { cls: 'blaze', name: '大火', mark: '🔥' } };   // ラボ J1
+  var FINALE_BIG = { petals: { cls: 'blossomfield', name: '一面の桜吹雪', mark: '🌸' } };   // 展示ステージ③: 倒したあとの一枚の大きな絵
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
@@ -110,7 +136,7 @@
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
     'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption',
-    'btnTutorial', 'tutorialMenu', 'btnRetry', 'stageHint',
+    'btnTutorial', 'tutorialMenu', 'btnRetry', 'stageHint', 'exBar',
     'turnModeSelect', 'turnModeLabel', 'orderPanel', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
@@ -327,15 +353,107 @@
     });
   }
 
+  // 展示ステージ③: ミッション達成。大きな札と紙吹雪、ミッションの欄が金色に
+  function exMissionName(id) {
+    var stx = stageTexts(app.state && app.state.stage), m = ((exOf() || {}).missions || []).filter(function (x) { return x.id === id; })[0];
+    return (stx && stx.missions && stx.missions[id]) || (m && m.name) || id;
+  }
+  function exCelebrate(e) {
+    showBanner(exMissionName(e.id), ui('exMissionDone', 'ミッション達成！'));
+    el.banner.classList.add('mission');
+    setTimeout(function () { el.banner.classList.remove('mission'); }, 2600);
+    var w = el.boardWrap.getBoundingClientRect();
+    var colors = ['#fde047', '#f472b6', '#60a5fa', '#34d399', '#fb923c', '#fff'];
+    for (var i = 0; i < 60; i++) {
+      var d = document.createElement('div');
+      d.className = 'confetti';
+      d.style.left = (w.width / 2) + 'px';
+      d.style.top = (w.height * 0.42) + 'px';
+      d.style.background = colors[i % colors.length];
+      var ang = (i * 137.5) % 360 * Math.PI / 180, dist = 90 + (i * 53) % (w.width * 0.45);
+      d.style.setProperty('--dx', Math.round(Math.cos(ang) * dist) + 'px');
+      d.style.setProperty('--dy', Math.round(Math.sin(ang) * dist * 0.7 + 80) + 'px');
+      d.style.setProperty('--rot', ((i * 97) % 720) + 'deg');
+      d.style.animationDelay = (i % 12) * 25 + 'ms';
+      el.fx.appendChild(d);
+      (function (node) { setTimeout(function () { node.remove(); }, 2200); })(d);
+    }
+    app.missionFlash = Date.now();
+    missionSig = '';
+    renderMission();
+  }
+  // 展示ステージ③: 決め手（桜吹雪）の前の「ため」。火山が脈打って光り、まわりが暗くなり、光の粒が火山へ吸いこまれる
+  function fxCharge(source, castCells) {
+    el.boardWrap.classList.add('ex-charging');
+    (castCells || []).forEach(function (c) { app.hl[key(c[0], c[1])] = true; });
+    app.charge = {};
+    (source || []).forEach(function (c) { app.charge[key(c[0], c[1])] = true; });
+    renderBoard(false);
+    var cs = (source || []).map(function (c) { return cellCenter(c[0], c[1]); }).filter(Boolean);
+    if (cs.length) {
+      var cx = 0, cy = 0;
+      cs.forEach(function (p) { cx += p.x; cy += p.y; });
+      cx /= cs.length; cy /= cs.length;
+      for (var i = 0; i < 26; i++) {
+        var d = document.createElement('div');
+        d.className = 'charge-mote';
+        var ang = i * 0.97, r = 120 + (i * 37) % 90;
+        d.style.left = (cx + Math.cos(ang) * r) + 'px';
+        d.style.top = (cy + Math.sin(ang) * r) + 'px';
+        d.style.setProperty('--dx', (-Math.cos(ang) * r) + 'px');
+        d.style.setProperty('--dy', (-Math.sin(ang) * r) + 'px');
+        d.style.animationDelay = (i * 45) + 'ms';
+        el.fx.appendChild(d);
+        (function (node) { setTimeout(function () { node.remove(); }, B.stage3.chargeMs + 300); })(d);
+      }
+    }
+  }
+  function endCharge() {
+    el.boardWrap.classList.remove('ex-charging');
+    app.charge = null;
+  }
+  // 展示ステージ③: 倒したあとの一枚の大きな絵。つながった自然を一枚に描き、花びらが舞い続け、題を出す
+  function startFinale() {
+    app.finale = true;
+    var stx = stageTexts(app.state.stage) || {};
+    var cap = document.createElement('div');
+    cap.className = 'finale-cap';
+    cap.innerHTML = '<span class="finale-title">' + esc(stx.finaleTitle || '一面の桜吹雪') + '</span><span class="finale-sub">' + esc(stx.finaleSub || 'クリア！') + '</span>';
+    el.boardWrap.appendChild(cap);
+    var w = el.boardWrap.getBoundingClientRect();
+    for (var i = 0; i < 40; i++) {
+      var d = document.createElement('div');
+      d.className = 'finale-petal';
+      d.style.left = ((i * 61) % 100) + '%';
+      d.style.setProperty('--sway', (((i * 29) % 60) - 30) + 'px');
+      d.style.setProperty('--fall', (w.height + 40) + 'px');
+      d.style.animationDuration = (4 + (i * 7) % 5) + 's';
+      d.style.animationDelay = ((i * 13) % 40) / 10 + 's';
+      cap.appendChild(d);
+    }
+    render();
+  }
+  function endFinale() {
+    if (!app.finale) return;
+    app.finale = false;
+    Array.prototype.forEach.call(el.boardWrap.querySelectorAll('.finale-cap'), function (n) { n.remove(); });
+  }
+
   // 出来事をログに足し、演出を出す
   function showEvents(events, animate) {
-    var hl = {}, flash = {}, finishers = [], combo = null;
+    var hl = {}, flash = {}, finishers = [], combo = null, mission = null;
+    var exNow = !!exOf();
     events.forEach(function (e) {
       addLog((e.combo ? '【' + comboText(e) + '】' : '') + e.text, logType(e));
-      if (app.onEvent) app.onEvent(e);   // 文章（きっかけ: 決め手・敵の予告など）
-      if (e.type === 'finisher' && app.chain) { app.chain.push(finName(e.name)); if (e.combo) app.chainCombo = comboText(e); }
+      if (app.onEvent) app.onEvent(e);   // 文章（きっかけ: 決め手・敵の予告・展示③のヒントとミッションなど）
+      // 展示ステージ③: 山に火で火山（2段目のシナジー）も、決め手と同じく名前を出す
+      var synergy = e.type === 'finisher' || (exNow && e.type === 'kindle' && e.made === 'volcano');
+      var sName = e.type === 'finisher' ? e.name : '火山';
+      if (synergy && app.chain) { app.chain.push(finName(sName)); if (e.combo) app.chainCombo = comboText(e); }
+      if (e.type === 'mission') mission = e;
       if (e.combo) combo = comboText(e);
       if (!animate) return;
+      if (exNow && e.type === 'kindle' && e.made === 'volcano') { finishers.push('火山'); (e.cells || []).forEach(function (c) { flash[key(c[0], c[1])] = true; }); }
       if (e.type === 'cast' || e.type === 'fireSpread' || e.type === 'smallfireOut' || e.type === 'burnOut' || e.type === 'vortex' || e.type === 'tornado' || e.type === 'kindle') {
         (e.cells || []).forEach(function (c) { hl[key(c[0], c[1])] = true; });
       }
@@ -359,6 +477,8 @@
       clearTimeout(showEvents.timer);
       showEvents.timer = setTimeout(function () { app.flash = {}; renderBoard(false); }, 950);
     }
+    // 展示ステージ③: ミッション達成（シナジーの名前と重なるときは、名前のあとに）
+    if (mission) setTimeout(function () { exCelebrate(mission); }, finishers.length ? 1100 : 0);
     // ダメージ数字は描き直したあとの位置に出す
     setTimeout(function () {
       events.forEach(function (e) {
@@ -428,7 +548,18 @@
     var pb = app.playback;
     if (!pb) return;
     if (pb.i >= pb.steps.length) { finishPlayback(); return; }
-    var st = pb.steps[pb.i++];
+    var st = pb.steps[pb.i];
+    // 展示ステージ③: 決め手（桜吹雪）の前に「ため」を見せてから起こす
+    var ex = exOf(st.state), big = ex && ex.charge && st.events.filter(function (e) { return e.type === 'finisher' && e.name === ex.charge; })[0];
+    if (big && !st.charged) {
+      st.charged = true;
+      var cast = st.events.filter(function (e) { return e.type === 'cast'; })[0];
+      fxCharge(big.source || [big.origin], cast ? cast.cells : []);
+      pb.timer = setTimeout(nextStep, app.demo ? B.stage3.chargeMs * 1.3 : B.stage3.chargeMs);
+      return;
+    }
+    if (big) endCharge();
+    pb.i++;
     app.state = st.state;
     showEvents(st.events, true);
     render(true);
@@ -436,6 +567,8 @@
     var stance = st.events.some(function (e) { return e.type === 'cast' && e.order; });
     var wait = stance ? ((B.simul && B.simul.fireDelayMs) || 900) : B.stepDelayMs;
     if (st.events.every(function (e) { return e.type === 'stance'; })) wait = 120;   // 構えただけ（まだ何も起きない）は、すぐ次へ
+    // 展示ステージ③: シナジー（火山・決め手）が起きたら、少し間を取る
+    if (ex && st.events.some(function (e) { return e.type === 'finisher' || (e.type === 'kindle' && e.made === 'volcano') || e.type === 'mission'; })) wait += B.stage3.synergyPauseMs + (big ? 900 : 0);
     pb.timer = setTimeout(nextStep, app.demo ? wait * 1.6 : wait);
   }
   function finishPlayback() {
@@ -447,9 +580,24 @@
     app.state = pb.final;
     app.hl = {};
     app.chain = null; app.chainCombo = null;
+    endCharge();
     render(true);
     if (pb.done) pb.done();
     if (app.afterPlayback) app.afterPlayback();   // 進行モック: 戦闘の決着を見る
+    exAfterPlayback();
+  }
+  // 展示ステージ③: 決着のあと。味方が倒れたら少し見せてからステージの頭からやり直す。ボスを倒したら一枚の大きな絵
+  function exAfterPlayback() {
+    var ex = exOf(), st = app.state;
+    if (!ex || app.demo || app.editMode || !st.result) return;
+    if (st.result === 'lose') {
+      clearTimeout(exAfterPlayback.timer);
+      exAfterPlayback.timer = setTimeout(function () {
+        if (app.state === st && !app.busy && !app.editMode) retry();
+      }, B.stage3.retryDelayMs);
+    } else if (st.result === 'win' && ex.finale && !app.finale) {
+      setTimeout(function () { if (app.state === st) startFinale(); }, 600);
+    }
   }
   function skipPlayback() {
     var pb = app.playback;
@@ -563,6 +711,7 @@
     if (app.busy) skipPlayback();
     var h = app.history.pop();
     if (!h) { say('これ以上戻せません'); return; }
+    endFinale();
     app.state = h.state;
     app.log.length = h.logLen;
     app.sel = null; app.plan = null; app.editPick = null;
@@ -571,6 +720,7 @@
 
   function setState(s, logText) {
     pushHistory();
+    endFinale();
     app.state = s;
     app.sel = null; app.plan = null; app.editPick = null;
     if (logText) addLog(logText, 'system');
@@ -626,6 +776,9 @@
       R.labApply(labPre.lab, labPre.labOpts);
       if (opts && opts.labOff && B.lab[opts.labOff]) B.lab[opts.labOff].on = false;
     }
+    // 展示ステージ③: 読むときだけ、ターンの形を「魔法の出し方」にする（ステージ③の外では元の形に戻す）
+    if (labPre && labPre.ex && labPre.ex.fireModes) applyExFire(exFireMode());
+    else if (!check) restoreExFire();
     // 試作ラボのシナリオ・デモは「1人ずつ」で作ってある。読むときだけ1人ずつにして（覚えた形は変えない）、ラボ以外を読んだら元の形に戻す。
     //   ラボのシナリオの中で上のバーから形を選んだら、そちらを使う（app.labTurnKeep）
     if (labPre && labPre.lab) {
@@ -989,7 +1142,14 @@
       if (fw && fw.wagon) info.status.splice(2, 0, 'この手なら ' + (fw.wagon.steps === null ? '道がない' : (fw.wagon.steps + '歩')));
     }
     var stx = stageTexts(app.state.stage);   // チュートリアルの目標（texts.js）
-    var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') +
+    renderExBar();
+    // 展示ステージ③: ミッション（最初から出す。達成したら金色）
+    var exm = ((exOf() || {}).missions || []).map(function (m) {
+      var done = !!(app.state.exDone && app.state.exDone[m.id]);
+      return '<span class="m-ex-mission' + (done ? ' done' : '') + (done && app.missionFlash && Date.now() - app.missionFlash < 3000 ? ' fresh' : '') + '">' +
+        '<b>' + esc(ui('exMission', 'ミッション')) + '</b> ' + esc(exMissionName(m.id)) + ' <span class="m-check">' + (done ? '✔ ' + esc(ui('exMissionDone', 'ミッション達成！')) : '□') + '</span></span>';
+    }).join('');
+    var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') + exm +
       '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
       '<span class="m-rule"><b>勝ち</b> ' + esc(info.win) + '</span>' +
       '<span class="m-rule"><b>負け</b> ' + esc(info.lose) + '</span>' +
@@ -997,6 +1157,27 @@
     if (html === missionSig) return;
     missionSig = html;
     el.missionBar.innerHTML = html;
+  }
+
+  // 展示ステージ③: 魔法の出し方の切り替え（押すとステージの頭からやり直す）
+  var exBarSig = '';
+  function renderExBar() {
+    var ex = exOf(), on = !!(ex && ex.fireModes) && !app.editMode;
+    var sig = on ? [app.exFire, app.busy, app.textsVer].join('|') : '';
+    if (sig === exBarSig) return;
+    exBarSig = sig;
+    el.exBar.hidden = !on;
+    if (!on) { el.exBar.innerHTML = ''; return; }
+    el.exBar.innerHTML = '<span class="ex-bar-label">' + esc(ui('exFire', '魔法の出し方')) + '</span>' + EX_FIRE.map(function (m) {
+      return '<button type="button" data-exfire="' + m[0] + '" class="' + (app.exFire === m[0] ? 'active' : '') + '" aria-pressed="' + (app.exFire === m[0]) + '">' + esc(ui(m[1], m[2])) + '</button>';
+    }).join('') + '<span class="ex-bar-note">' + esc(ui('exFireNote', '切り替えると頭からやり直す')) + '</span>';
+  }
+  function setExFire(m) {
+    if (!EX_FIRE.some(function (x) { return x[0] === m; }) || m === app.exFire) return;
+    try { window.localStorage.setItem(EX_FIRE_KEY, m); } catch (e) { /* 覚えられなくても遊べる */ }
+    var label = EX_FIRE.filter(function (x) { return x[0] === m; })[0];
+    addLog('魔法の出し方: ' + ui(label[1], label[2]) + '（ステージの頭からやり直した）', 'system');
+    app.restart();
   }
 
   function renderStatus() {
@@ -1016,6 +1197,9 @@
     el.btnWait.innerHTML = esc(ui('wait', '待機')) + ' <kbd>W</kbd>';
     el.btnRetry.textContent = ui('retry', 'やり直す');
     if (el.turnModeSelect && el.turnModeSelect.value !== B.turnMode) el.turnModeSelect.value = B.turnMode;
+    // 展示ステージ③の中では、ターンの形はステージの「魔法の出し方」で切り替える
+    var exFireOn = !!(exOf() && exOf().fireModes);
+    if (el.turnModeSelect) { el.turnModeSelect.disabled = exFireOn; el.turnModeSelect.title = exFireOn ? 'このステージでは、盤面の上の「魔法の出し方」で切り替える' : ''; }
     el.btnUndo.disabled = app.history.length === 0;
     el.btnEdit.classList.toggle('active', app.editMode);
     el.btnEdit.innerHTML = (app.editMode ? 'エディット終了' : 'エディット') + ' <kbd>E</kbd>';
@@ -1033,15 +1217,16 @@
   function forecastNow(always) {
     if ((!app.showForecast && !always) || app.editMode || app.busy) return null;
     var u = selUnit();
-    if (u && app.plan && !app.state.result) {
+    // 展示ステージ③（形だけの予測）: 敵の予告は今の盤面のまま（撃ったあとの盤面で計算し直すと、何が起きるかが分かってしまうため）
+    if (u && app.plan && !app.state.result && !shapeOnly()) {
       var pv = previewNow(u);
       return memo('fcpv', [pv], function () { return R.forecast(pv.state); });
     }
     return memo('fc', [app.state], function () { return R.forecast(app.state); });
   }
-  // 【新案・仮】あと一手のヒント（エディット中・処理中は出さない）
+  // 【新案・仮】あと一手のヒント（エディット中・処理中は出さない。展示ステージ③では答えになるので出さない）
   function hintsNow() {
-    if (app.editMode || app.busy) return [];
+    if (app.editMode || app.busy || shapeOnly()) return [];
     return memo('next', [app.state], function () { return R.nextHints(app.state); });
   }
   function guideNow(u) {
@@ -1066,11 +1251,15 @@
     if (u.stand === 'still') return '止';
     if (u.stand === 'march') return '進';
     if (u.stand === 'rush') return '突';
+    if (u.stand === 'boss') return '進';
+    if (u.stand === 'float') return '浮';
     return AIM_MARK[u.aim] + (u.avoid === 'danger' ? '避' : '') + (u.cross === 'river' ? '渡' : '');
   }
   function personaText(u) {
     if (u.stand === 'still') return '動き: ' + R.PERSONA.stand.still + '（移動しない・撃たない・予告を出さない）';
     if (u.stand === 'rush') return '動き: ' + R.PERSONA.stand.rush + '（人は無視して一番近い村へ、1ターンに' + B.enemy.rushMove + 'マス。山・川・水たまり・泥沼・ユニットは通らない。魔法は撃たない。走り終えて村の隣なら体当たりで村を壊す）';
+    if (u.stand === 'boss') return '動き: ボス（1ターンに1マス前へ進み、体の前の' + B.stage3.bossReach + '列に一撃を予告する。ふさがれていたら進まない。普通の魔法はほとんど効かない）';
+    if (u.stand === 'float') return '動き: 浮く（地形に関係なく、風の人へまっすぐ1ターンに' + B.stage3.minionMove + 'マス。隣に来たら体当たりを予告する）';
     if (u.stand === 'march') return '動き: ' + R.PERSONA.stand.march + '（敵の番に、向いている方へ1マス進み、構える味方が魔法の真ん中に来たらそのまま撃つ。移動と魔法はセット）';
     return '狙い: ' + R.PERSONA.aim[u.aim] + '／避ける: ' + R.PERSONA.avoid[u.avoid] + '／越える: ' + R.PERSONA.cross[u.cross];
   }
@@ -1109,7 +1298,9 @@
     if (u.size > 1) cls.push('big');
     if (u.body) cls.push('body-' + u.body);
     if (u.side === 'enemy' && AIM_MARK[u.aim] && R.LX && R.LX.DESIRE[u.aim] && R.lab('D1')) cls.push('desire-' + u.aim);
-    if (u.labBoss) cls.push('boss');
+    if (u.labBoss || u.exBoss) cls.push('boss');
+    if (u.side === 'enemy' && u.stand === 'boss') name = 'ボス';            // 展示ステージ③
+    if (u.side === 'enemy' && u.stand === 'float') name = '取り巻き<small>' + esc(u.letter) + '</small>';
     var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg' + (u.size > 1 ? ';--sz:' + u.size : '') + '">' +
       '<span class="facing"></span><span class="u-name">' + name + '</span><span class="u-hp">HP' + u.hp + '</span>';
     if (u.side === 'enemy') {
@@ -1165,8 +1356,10 @@
     }
 
     var u = (!app.editMode && !app.busy) ? selUnit() : null;
+    var so = shapeOnly();   // 展示ステージ③: 予測は魔法が届く形まで（何になるかは見せない）
+    el.boardWrap.classList.toggle('ex-finale', !!app.finale);
     var reach = u ? R.reachableCells(st, u.id) : {};
-    var guide = (u && !st.result) ? guideNow(u) : {};
+    var guide = (u && !st.result && !so) ? guideNow(u) : {};
     var pv = (u && app.plan && !st.result) ? previewNow(u) : null;
     var fc = forecastNow();
 
@@ -1190,9 +1383,9 @@
       f.cells.forEach(function (c, i) { var k2 = key(c[0], c[1]); if (charge[k2] === undefined || w[i] < charge[k2]) charge[k2] = w[i]; });
     });
     if (u && R.lab('J5')) hintsNow().forEach(function (h) { if (h.magic === u.magic) h.cells.forEach(function (c) { j5glow[key(c[0], c[1])] = true; }); });   // ラボ J5
-    if (pv) pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
+    if (pv && !so) pv.cells.forEach(function (c) { shape[key(c[0], c[1])] = true; });
     // 【一斉】予測の結果（変わるマス・決め手の範囲・ダメージ）は、構え全部の予告（下の fa）として出す
-    if (pv && !simul()) {
+    if (pv && !simul() && !so) {
       pv.finishers.forEach(function (f) {
         f.cells.forEach(function (c) { range[key(c[0], c[1])] = true; });
         (f.strong || []).forEach(function (c) { strong[key(c[0], c[1])] = true; });
@@ -1201,7 +1394,7 @@
       pv.tileChanges.forEach(function (c) { change[key(c.x, c.y)] = c.to; });
       pv.damages.forEach(function (d) { dmg[d.id] = d; });
     }
-    if (pv) {
+    if (pv && !so) {
       // 【育つ】育ったあとの形を薄く重ね、育てないマスに印
       (pv.grows || []).forEach(function (g) {
         g.cells.forEach(function (c, i) { growPv[key(c[0], c[1])] = (g.tiles && g.tiles[i]) || g.tile; });
@@ -1220,6 +1413,7 @@
         if (!a || p.cancelled) return;
         npcIds[p.id] = true;
         if (p.order) stanceNo[p.id] = p.order;
+        if (so) return;   // 展示ステージ③: 構えは下の輪郭で描く（何になるか・ダメージは出さない）
         (p.cells || []).forEach(function (c) {
           var k = key(c[0], c[1]);
           // 【一斉】構えの印: マスごとに「発動の順番＋魔法」（敵の予告の文字と同じ置き方）
@@ -1239,6 +1433,29 @@
           } else warn[d.id] = (warn[d.id] || 0) + d.amount;
         });
       });
+    }
+    // 展示ステージ③: 構えと予測は、魔法の形の輪郭と向きで描く（自然のマスとは別の見た目。何になるかは出さない）
+    var soCell = {};
+    if (so) {
+      var groups = [];
+      if (fcAll) fcAll.allies.forEach(function (p) { if (!p.cancelled && !(u && p.id === u.id)) groups.push({ cells: p.cells || [], magic: p.magic, dir: p.dir, n: p.order }); });
+      if (pv && u) groups.push({ cells: pv.cells || [], magic: u.magic, dir: app.plan.dir, n: pv.order || 0, planned: true });
+      groups.forEach(function (g) {
+        var inG = {};
+        g.cells.forEach(function (c) { inG[key(c[0], c[1])] = true; });
+        g.cells.forEach(function (c, i) {
+          var k2 = key(c[0], c[1]);
+          if (soCell[k2]) return;
+          var edges = [];
+          [['t', 0, -1], ['r', 1, 0], ['b', 0, 1], ['l', -1, 0]].forEach(function (d) { if (!inG[key(c[0] + d[1], c[1] + d[2])]) edges.push('e-' + d[0]); });
+          soCell[k2] = { magic: g.magic, edges: edges, first: i === 0, dir: g.dir, n: g.n, planned: !!g.planned };
+        });
+      });
+    }
+    // 展示ステージ③: 光るヒント。選んだ味方の魔法を当てると次の段へ進む自然（すでに自然になっているマスだけ）
+    var exGlow = {}, exg = exOf() && exOf().glow;
+    if (u && exg && exg[u.magic] && !st.result) {
+      for (var gy = 0; gy < rows; gy++) for (var gx = 0; gx < n; gx++) if (exg[u.magic].indexOf(R.getTile(st, gx, gy)) >= 0) exGlow[key(gx, gy)] = true;
     }
     // 外したときのヒント: 構える味方が狙っているマスを光らせる（文字は出さない）
     var tutHint = {};
@@ -1389,7 +1606,8 @@
     var bigComp = {}, bigAt = {};
     var BIGU = BIG;
     if (R.lab('J1')) { BIGU = {}; Object.keys(BIG).forEach(function (t) { BIGU[t] = BIG[t]; }); Object.keys(J1_BIG).forEach(function (t) { BIGU[t] = J1_BIG[t]; }); }   // ラボ J1
-    if (B.fx.bigPicture || R.lab('J1')) {
+    if (app.finale) { var BF = {}; Object.keys(BIGU).forEach(function (t) { BF[t] = BIGU[t]; }); Object.keys(FINALE_BIG).forEach(function (t) { BF[t] = FINALE_BIG[t]; }); BIGU = BF; }   // 展示ステージ③の大きな絵
+    if (B.fx.bigPicture || R.lab('J1') || app.finale) {
       for (var by = 0; by < rows; by++) {
         for (var bx = 0; bx < n; bx++) {
           var bt = R.getTile(st, bx, by);
@@ -1437,6 +1655,9 @@
         if (faRange[k]) cls.push('fa-range');
         if (faStrong[k]) cls.push('fa-strong');
         if (tutHint[k]) cls.push('tut-hint');
+        if (exGlow[k]) cls.push('ex-glow');
+        if (app.charge && app.charge[k]) cls.push('ex-charge');
+        if (soCell[k]) cls.push('so');
         if (app.hl[k]) cls.push('hl');
         if (app.flash[k]) cls.push('flash');
         if (nextAt[k]) cls.push('has-next');
@@ -1520,6 +1741,11 @@
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
         if (planGhost === k && !unit) inner += '<div class="ghost ally"></div>';
+        if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」
+          var sc = soCell[k];
+          inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '"></span>';
+          if (sc.first) inner += '<span class="so-tag so-' + sc.magic + (sc.planned ? ' planned' : '') + '">' + (sc.n ? (ORDER_MARK[sc.n] || sc.n) : '') + esc(R.magicName(sc.magic)) + DIR_ARROW[sc.dir] + '</span>';
+        }
         if (nextAt[k] && !(R.lab('J5') && B.lab.J5.quiet)) {   // ラボ J5 quiet: 札を出さない
           var nx = nextAt[k], ready = nx.h.shooters.length > 0;
           inner += '<span class="b-next' + (ready ? ' ready' : '') + '" style="--ndx:' + nx.dx.toFixed(2) + ';--ndy:' + nx.dy.toFixed(2) + '">' +
@@ -1591,7 +1817,7 @@
   function renderPlayPanel(fc) {
     var st = app.state;
     var warn = {}, fa = forecastNow(true), npcIds = {};
-    if (fa) fa.allies.forEach(function (p) { npcIds[p.id] = true; (p.damages || []).forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; }); });
+    if (fa) fa.allies.forEach(function (p) { npcIds[p.id] = true; if (!shapeOnly()) (p.damages || []).forEach(function (d) { warn[d.id] = (warn[d.id] || 0) + d.amount; }); });   // 展示ステージ③: 構えのダメージは出さない
     if (fc) {
       fc.burn.forEach(function (b) { warn[b.id] = (warn[b.id] || 0) + b.amount; });
       fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });
@@ -1678,6 +1904,7 @@
     var rows = list.map(function (x, i) {
       var a = x.a, p = x.p, fixed = !!a.npc, k = mine.indexOf(a.id), planned = !fixed && k < 0;
       var res = p && !p.cancelled ? planText(p, st).replace(/^予告: /, '') : '';
+      if (shapeOnly() && p) res = DIR_ARROW[p.dir] + ' ' + R.magicName(a.magic);   // 展示ステージ③: 何が起きるかは出さない
       return '<li class="order-row' + (fixed ? ' fixed' : '') + (a.id === app.sel ? ' selected' : '') + '">' +
         '<span class="o-no">' + (ORDER_MARK[i + 1] || (i + 1)) + '</span>' +
         '<span class="o-name"><b>' + esc(R.unitLabel(st, a)) + (planned ? '（選んでいる構え）' : '') + '</b>' + (res ? '<small>' + esc(res) + '</small>' : '') + '</span>' +
@@ -1687,7 +1914,7 @@
         '</li>';
     }).join('');
     var combos = [];
-    if (fa) fa.allies.forEach(function (p) { (p.combos || []).forEach(function (c) { combos.push(comboText({ comboMagics: c.magics }) + ' → ' + finName(c.name) + '！'); }); });
+    if (fa && !shapeOnly()) fa.allies.forEach(function (p) { (p.combos || []).forEach(function (c) { combos.push(comboText({ comboMagics: c.magics }) + ' → ' + finName(c.name) + '！'); }); });
     var waiting = R.controllableOf(st).filter(function (a) { return !a.acted; }).length;
     el.orderPanel.hidden = false;
     el.orderPanel.innerHTML = '<h3>' + esc(ui('order', '発動の順番')) + '</h3>' +
@@ -1837,6 +2064,12 @@
   function renderPreview() {
     var box = el.preview;
     var u = (!app.editMode && !app.busy) ? selUnit() : null;
+    if (u && app.plan && !app.state.result && shapeOnly()) {   // 展示ステージ③: 届く形だけ（何が起きるかは出さない）
+      var sp = previewNow(u);
+      box.innerHTML = '<div class="pv-head">' + esc(R.unitLabel(app.state, u)) + ': (' + sp.to[0] + ',' + sp.to[1] + ') から ' + DIR_ARROW[sp.dir] + ' に' + esc(R.magicName(u.magic)) + 'を' + (simul() ? '構える' + (sp.order ? '（' + sp.order + '番目に発動）' : '') : '撃つ') + '</div>' +
+        '<div class="pv-line note">' + esc(ui('exPreviewNote', '盤面の点線が、魔法の届く形。何が起きるかは、撃ってのお楽しみ')) + '</div>';
+      return;
+    }
     if (u && app.plan && !app.state.result) {
       var p = previewNow(u);
       var lines = p.events.map(function (e) {
@@ -2046,6 +2279,10 @@
   }
   fillTurnMode();
   if (el.turnModeSelect) el.turnModeSelect.addEventListener('change', function () { setTurnMode(el.turnModeSelect.value); el.turnModeSelect.blur(); });
+  el.exBar.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-exfire]');
+    if (b) setExFire(b.getAttribute('data-exfire'));
+  });
   if (el.orderPanel) el.orderPanel.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-order]');
     if (b && !b.disabled) reorder(b.getAttribute('data-order'), Number(b.getAttribute('data-delta')));
@@ -2253,6 +2490,8 @@
   app.startCustom = function (s, label) {
     stopDemo();
     endCheck();
+    restoreExFire();
+    endFinale();
     if (app.busy) skipPlayback();
     if (app.editMode) { app.editMode = false; }
     app.scenario = '';

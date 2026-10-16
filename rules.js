@@ -69,9 +69,13 @@
     ice:     { name: '氷', verb: '凍らせる' },     // 【新案】
     senpu:   { name: '旋風', verb: '巻く' },       // 【新案・試し】風の強化系。正面の2×2につむじ風を巻く
     dark:    { name: '闇', verb: '吸う' },         // 【新案・試し】正面1マス。撃つとまわりの者を引き寄せる
-    mount:   { name: '山', verb: '盛る' }          // チュートリアル①の敵: 2マス先を真ん中に十字5マスへ、一度で山を盛る
+    mount:   { name: '山', verb: '盛る' },         // チュートリアル①の敵: 2マス先を真ん中に十字5マスへ、一度で山を盛る
+    // 展示ステージ③の敵の攻撃（自然は作らない。形のマスにいる者に直撃するだけ。味方は持てない）
+    smash:   { name: '一撃', verb: '打つ' },       // ボス: 体の前の数列に打ち下ろす
+    bite:    { name: '体当たり', verb: '打つ' }    // 取り巻き: 正面1マス
   };
   var MAGICS = Object.keys(MAGIC_INFO);
+  var ENEMY_ATTACK = { smash: true, bite: true };   // 敵だけの攻撃（味方の魔法の選択肢に出さない）
 
   var DIRS = {
     up:    { dx: 0,  dy: -1, name: '上' },
@@ -116,6 +120,7 @@
   // ステージごとの数値の上書き（チュートリアル①〜）
   //   s.overrides = { 'spread.maxLength': 3, ... }（balance.js の項目の道筋 → 値）。
   //   外から呼ばれる関数の間だけ BALANCE に重ね、終わったら必ず元に戻す（ほかのシナリオには漏れない）
+  //   展示ステージ③〜: 魔法の形（'shapes.mount' などの配列）も、配列で上書きできる
   var ovDepth = 0;
   function ovSlot(path) {
     var parts = String(path).split('.'), last = parts.pop(), obj = B;
@@ -123,13 +128,16 @@
       obj = obj[parts[i]];
       if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
     }
-    if (!Object.prototype.hasOwnProperty.call(obj, last) || (obj[last] && typeof obj[last] === 'object')) return null;
+    if (!Object.prototype.hasOwnProperty.call(obj, last) || (obj[last] && typeof obj[last] === 'object' && !Array.isArray(obj[last]))) return null;
     return { obj: obj, key: last };
   }
-  // 上書きできる形か（知っている項目だけ・値の型が同じ）
+  // 上書きできる形か（知っている項目だけ・値の型が同じ。配列は配列でだけ）
   function validOverrides(ov) {
     if (!ov || typeof ov !== 'object' || Array.isArray(ov)) return false;
-    return Object.keys(ov).every(function (p) { var sl = ovSlot(p); return !!sl && typeof ov[p] === typeof sl.obj[sl.key]; });
+    return Object.keys(ov).every(function (p) {
+      var sl = ovSlot(p);
+      return !!sl && typeof ov[p] === typeof sl.obj[sl.key] && Array.isArray(ov[p]) === Array.isArray(sl.obj[sl.key]);
+    });
   }
   function withOverrides(ov, fn) {
     var saved = [];
@@ -263,6 +271,7 @@
   }
   // 術者 u が facing へ撃つ魔法の形のマス
   function castCells(s, u, facing) {
+    if (u.magic === 'smash') return smashCells(s, u, facing);   // 展示ステージ③: ボスの一撃（体の前の数列）
     var o = castOrigin(s, u, facing);
     if (LX) { var lc = LX.castCells(s, u, o, facing); if (lc) return lc; }   // ラボ: めちゃ強い敵の広い形・強化（伸びる・姿）・武器
     return shapeCells(s, u.magic, o.x, o.y, facing);
@@ -301,6 +310,7 @@
   // ---------------------------------------------------------------
   function unitConf(u) {
     var c = u.side === 'ally' ? B.ally : u.side === 'enemy' ? B.enemy : { hp: B.mission[u.kind].hp, power: 0, move: 0 };
+    if (u.hpBase) c = { hp: u.hpBase, power: c.power, move: c.move };   // 展示ステージ③: シナリオで決めたHP（ボスは大きく、取り巻きは1）
     return LX ? LX.unitConf(u, c) : c;   // ラボ: めちゃ強い敵のHP・移動1 など
   }
   function makeUnit(s, side, magic, x, y, facing) {
@@ -339,7 +349,9 @@
     //   進む ＝ 向いている方へ毎ターン1マスずつ進む（敵の発動のあと）。今の位置から向きの方へ撃って構える味方に当たるときだけ予告して撃つ
     //          （構える味方がいないシナリオでは、味方の誰かに当たるとき）
     //   突進 ＝ 人は無視して一番近い村へ走る（1ターンに enemy.rushMove マス）。魔法は撃たない。走り終えて村の隣なら体当たりで村を壊す（チュートリアル②）
-    stand: { move: '動いて撃つ', still: '動かない', march: '1マスずつ進む', rush: '突進（村へ走る）' }
+    //   ボス ＝ 大きい体。1ターンに1マス、向いている方（味方の側）へ進み、体の前の数列に一撃を予告する。ふさがれていたら進まない（展示ステージ③）
+    //   浮く ＝ 地形に関係なく、風の人へまっすぐ進む（1ターンに stage3.minionMove マス。ユニットのいるマスには入らない）。風の人の隣に来たら体当たりを予告する（展示ステージ③）
+    stand: { move: '動いて撃つ', still: '動かない', march: '1マスずつ進む', rush: '突進（村へ走る）', boss: 'ボス（前へ進み、一撃）', float: '浮く（風の人へまっすぐ）' }
   };
   var PERSONA_FIELDS = Object.keys(PERSONA);
   // 「危ない所も避ける」敵が避けるマス
@@ -357,7 +369,7 @@
 
   // 敵だけの魔法（シナリオごとの一覧があればそれ、なければ balance.js）
   function enemyOnlyMagics(s) { return (s && s.enemyOnlyMagics) || B.enemyOnlyMagics || []; }
-  function allyMagics(s) { var only = enemyOnlyMagics(s); return MAGICS.filter(function (m) { return only.indexOf(m) < 0 && !labMagicOff(m, 'ally'); }); }
+  function allyMagics(s) { var only = enemyOnlyMagics(s); return MAGICS.filter(function (m) { return only.indexOf(m) < 0 && !labMagicOff(m, 'ally') && !ENEMY_ATTACK[m]; }); }
   // ラボで足した魔法は、その案がオンのときだけ選べる（戻すは敵だけ）
   var LAB_MAGIC = { revert: 'D8', light: 'I1', forestm: 'I3', rock: 'I4', vine: 'I5', rain: 'I6', sound: 'I7', metal: 'I8' };
   function labMagicOff(m, side) { if (!LAB_MAGIC[m]) return false; if (m === 'revert' && side === 'ally') return true; return !lab(LAB_MAGIC[m]); }
@@ -483,6 +495,11 @@
     var enemyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'enemy'; });
     var allyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'ally'; });
     if (LX) { var lr = LX.resultMore(s, ev); if (lr) { setResult(s, ev, lr.result, lr.text); return; } }   // ラボ H: お題の勝ち負けの足し（追い込み・星 など）
+    // 展示ステージ③: 味方が1人でも倒れたら負け（ステージの頭からやり直し）。ボスを倒したら勝ち（取り巻きは倒しきれないので数えない）
+    if (s.ex) {
+      if (allyDied) { setResult(s, ev, 'lose', '味方が倒れた…（ステージの頭からやり直し）'); return; }
+      if (enemyDied && !enemiesOf(s).some(function (e) { return e.stand === 'boss'; })) { setResult(s, ev, 'win', 'ボスを倒した！（勝利）'); return; }
+    }
     // 構える味方（チュートリアルの相方）が倒れたら失敗（同じ1発で自分も倒れたときも、こちらを出す）
     if (ev.some(function (e) { return e.type === 'death' && e.npc; }) && !(LX && lab('H11'))) { setResult(s, ev, 'lose', '構える味方が倒れた…（失敗）'); return; }   // ラボ H11: 構える仲間が倒れても続ける
     // 動かせる味方が全員倒れたら負け（構える味方しか残っていなくても負け）
@@ -624,6 +641,7 @@
   // 【新案】桜吹雪: 風が火山に当たる（破壊3段目）
   //   火の粉が風下へ扇形に舞い散る。つながった火山が多いほど強い。噴き終えた火山は冷えて山に戻る
   function doEruption(s, vx, vy, dir, ctx, ev) {
+    if (s.ex && getTile(s, vx, vy) === 'volcano') return doSakuraStorm(s, vx, vy, dir, ctx, ev);   // 展示ステージ③: 扇は火山の幅から盤の奥まで
     var kind = getTile(s, vx, vy), pink = kind === 'sakura' || kind === 'hillsakura';   // 【新案・試し】桜（花びら）か火山（火の粉）か
     // 【育つ】桜吹雪の奥行きは、桜が咲いた自然の大きさで決まる（丘は2列、山は3列）
     var depth = kind === 'hillsakura' ? B.grow.sakuraDepthHill : (B.grow.enabled && kind === 'sakura') ? B.grow.sakuraDepthMountain : B.eruption.depth;
@@ -672,9 +690,49 @@
     return fin;
   }
 
+  // 展示ステージ③: 桜吹雪（破壊3段目）。風が火山に当たると、つながった火山がまるごと吹き上がり、風の向きへ扇形に盤の奥まで舞う。
+  //   扇は火山の幅（風の向きと直角の幅）から始まり、stage3.fanSpread マス進むごとに左右へ1マスずつ広がる（山が大きいほど扇も広い）。
+  //   届くのは stage3.fanReach マス（0 は盤の端まで）。扇と火山の上にいる者（浮いている者も）に決め手のダメージ。
+  //   空きには花びらが積もる。吹き終えた火山は山に戻る
+  function doSakuraStorm(s, vx, vy, dir, ctx, ev) {
+    var F = DIRS[dir], Rv = [-F.dy, F.dx];
+    var comp = connected(s, vx, vy, 'volcano');
+    var along = function (c) { return c[0] * F.dx + c[1] * F.dy; }, side = function (c) { return c[0] * Rv[0] + c[1] * Rv[1]; };
+    var front = Math.max.apply(null, comp.map(along));
+    var lo = Math.min.apply(null, comp.map(side)), hi = Math.max.apply(null, comp.map(side));
+    var cells = [], wave = [];
+    for (var d = 1; ; d++) {
+      if (B.stage3.fanReach > 0 && d > B.stage3.fanReach) break;
+      var grow = B.stage3.fanSpread > 0 ? Math.floor(d / B.stage3.fanSpread) : 0, any = false;
+      for (var w = lo - grow; w <= hi + grow; w++) {
+        var x = F.dx * (front + d) + Rv[0] * w, y = F.dy * (front + d) + Rv[1] * w;   // 向きの軸 front+d・横の軸 w のマス
+        if (!inBounds(s, x, y)) continue;
+        any = true;
+        cells.push([x, y]); wave.push(d);
+      }
+      if (!any) break;
+    }
+    var amount = B.eruption.base + comp.length * B.eruption.perVolcano;
+    comp.concat(cells).forEach(function (c) { var u = unitAt(s, c[0], c[1]); if (u) addHit(ctx, u, amount, 'finisher', c); });
+    var petals = 0;
+    cells.forEach(function (c) { if (getTile(s, c[0], c[1]) === 'empty') { setTile(s, c[0], c[1], 'petals'); petals++; } });
+    comp.forEach(function (c) { setTile(s, c[0], c[1], 'mountain'); });
+    var fin = { name: '桜吹雪', cells: cells, damage: amount, volcanoes: comp.length, pink: true, dir: dir, origin: [vx, vy], source: comp };
+    ctx.finishers.push(fin);
+    ev.push({
+      type: 'finisher', name: '桜吹雪', origin: [vx, vy], cells: cells, wave: wave, damage: amount, pink: true, dir: dir, source: comp,
+      text: '桜吹雪！ 火山' + comp.length + 'つがまるごと吹き上がり、' + DIRS[dir].name + 'へ花びらが盤の奥まで舞った（扇' + cells.length + 'マス・威力' + amount + '）'
+    });
+    return fin;
+  }
+
   // ---------------------------------------------------------------
   // 魔法を撃つ（術者の今の位置と向きから）
   // ---------------------------------------------------------------
+
+  // 展示ステージ③「ターンの終わりに1段ずつ」: このターンの発動でできたばかりの自然（s._fresh。発動の間だけある）は、
+  //   同じ発動のあとの構えには反応しない（火を点けても火山にならない、風が当たっても桜吹雪にならない。通れない自然なら、そこで止まる）
+  function isFresh(s, x, y) { return !!(s._fresh && s._fresh[idx(s, x, y)]); }
 
   // 【育つ】育つ範囲（(x,y) が元）。size: 1 そのマスだけ／4 2×2（元を角に、術者から見て奥・右へ）／5 十字／9 3×3
   //   ほかの数は、それ以下で一番近いもの。元に近い順（波の順）に並べ、d は元からの歩数
@@ -778,6 +836,8 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       if (o) addHit(ctx, o, u.power, 'direct');
+      if (ENEMY_ATTACK[u.magic]) { if (o) ctx.phrases.push(unitLabel(s, o) + 'に当たった'); return; }   // 展示ステージ③の敵の攻撃: 自然は作らない
+      if (isFresh(s, x, y)) return;   // 展示ステージ③ 1段ずつ: できたばかりの自然には反応しない（人への直撃はそのまま）
       var t = getTile(s, x, y);
       if (LX && LX.placeCell(s, u, x, y, t, o, facing, ctx, ev)) return;   // ラボ: 置く・点ける魔法の、案ごとの作用（ほかの作用より先に見る）
       // 人の足元にも自然ができる（ideas.natureUnderUnits）: 人がいても、立てる自然なら置く（ラボ C1 がオンなら今どおり置かない）
@@ -916,7 +976,7 @@
       range.push(c);
       neighbors(s, c[0], c[1]).forEach(function (n) {
         var k = key(n.x, n.y);
-        if (seen[k] || getTile(s, n.x, n.y) !== 'mountain') return;
+        if (seen[k] || getTile(s, n.x, n.y) !== 'mountain' || isFresh(s, n.x, n.y)) return;   // 展示ステージ③ 1段ずつ: できたばかりの山は火山にならない
         seen[k] = true; dist[k] = dist[key(c[0], c[1])] + 1;
         queue.push([n.x, n.y]);
       });
@@ -925,7 +985,7 @@
     // 【新案・試し】溶岩なし（funka.lava が false）: 山脈が火山になるだけ。決め手ではない（決め手は風で桜吹雪）
     if (!B.funka.lava) {
       ctx.phrases.push('【新案】山脈' + range.length + 'つが火山になった');
-      ev.push({ type: 'kindle', isNew: true, cells: range, text: '【新案】山脈' + range.length + 'つが一気に火山になった（風を当てると桜吹雪）' });
+      ev.push({ type: 'kindle', isNew: true, made: 'volcano', origin: [sx, sy], cells: range, text: '【新案】山脈' + range.length + 'つが一気に火山になった（風を当てると桜吹雪）' });
       return null;
     }
     var amount = B.funka.base + range.length * B.funka.perMountain;
@@ -1420,6 +1480,11 @@
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
+      if (isFresh(s, x, y)) {   // 展示ステージ③ 1段ずつ: できたばかりの自然には反応しない（通れない自然なら、そこで止まる）
+        if (!isPassable(t)) { ctx.phrases.push('できたばかりの' + tileName(t) + 'で風が止まった'); blocked = true; break; }
+        path.push([x, y]); ctx.cells.push([x, y]);
+        continue;
+      }
       // 【育つ】通り道に風が残っていれば、そこから奥が強風に育つ（術者の向きへ grow.galeLength マス）
       if (B.grow.enabled && breezeMode && galeAt < 0 && isWind(t)) {
         galeAt = path.length;
@@ -1532,6 +1597,7 @@
     applyHits(s, ctx, ev);
     ctx.after.forEach(function (fn) { fn(); });
     if (LX) LX.afterShot(s, u, facing, ctx, ev);   // ラボ: まとう（G7）・照らす（I1）など
+    if (s.ex) exMissions(s, ev);   // 展示ステージ③: ミッション（火山を作る）
     return ctx;
   }
 
@@ -1546,6 +1612,7 @@
     var ctx = shoot(s, a, a.facing, ev);
     var changed = {};
     for (var i = 0; i < before.length; i++) if (before[i] !== s.tiles[i]) changed[i] = true;
+    if (s._fresh) Object.keys(changed).forEach(function (k) { s._fresh[k] = true; });   // 展示ステージ③ 1段ずつ: この発動でできた自然
     var extra = {};   // 決め手で変わったマスには、その決め手に関わった味方も残す（次の決め手へつながるように）
     for (var j = mark; j < ev.length; j++) {
       var e = ev[j];
@@ -1572,6 +1639,7 @@
   function fireStances(s, ev, step) {
     var ids = stanceList(s).map(function (a) { return a.id; });
     var links = newLinks();
+    if (B.simul.stepwise) s._fresh = {};   // 展示ステージ③ 1段ずつ
     ids.forEach(function (id, i) {
       if (s.result) return;
       var a = findUnit(s, id);
@@ -1582,6 +1650,7 @@
       if (ev[mark] && ev[mark].type === 'cast') ev[mark].order = i + 1;
       step();
     });
+    delete s._fresh;
     alliesOf(s).forEach(function (a) { delete a.stance; if (a.npc) a.intent = false; });
   }
 
@@ -1870,6 +1939,17 @@
     if (e.stand === 'march') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'march' };
     // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
     if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.path.length ? rr.path[Math.min(B.enemy.rushMove, rr.path.length) - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
+    // 展示ステージ③: ボスは前へ1マス進んで一撃を予告（ふさがれていたら進まない）。取り巻きは風の人へまっすぐ進み、隣に来たら体当たりを予告
+    if (e.stand === 'boss') {
+      var bs = e.stuck ? null : bossStep(s, e);
+      return { to: bs || [e.x, e.y], dir: e.facing, dist: bs ? 1 : 0, kind: 'boss', blocked: !bs && !e.stuck };
+    }
+    if (e.stand === 'float') {
+      var fr = floatRoute(s, e), ft = fr.target ? findUnit(s, fr.target) : null;
+      var fdir = fr.adjacent && ft ? faceToward(fr.to[0], fr.to[1], ft) : e.facing;
+      if (!fr.adjacent && fr.path.length) { var fl = fr.path.length > 1 ? fr.path[fr.path.length - 2] : [e.x, e.y]; fdir = stepDirOf(fl, fr.to); }
+      return { to: fr.to, dir: fdir, dist: fr.path.length, kind: 'float', noIntent: !fr.adjacent };
+    }
     if (!alliesOf(s).length) return null;
     if (LX) { var lp = LX.planEnemy(s, e); if (lp) return lp; }   // ラボ: 欲（D1）・大技を組む敵（D9）
     var allies = alliesOf(s).filter(function (a) { return !hidden(s, a, e); });
@@ -1960,6 +2040,7 @@
         return;
       }
       if (plan.kind === 'noPath') ev.push({ type: 'info', id: e.id, text: unitLabel(s, e) + 'は' + plan.aimAt + 'への道がないので、' + (plan.dist > 0 ? '近くで' : 'その場で') + '構える' });
+      if (plan.kind === 'boss' && plan.blocked) ev.push({ type: 'info', id: e.id, cells: [[e.x, e.y]], text: unitLabel(s, e) + 'は前をふさがれて進めない' });
       if (plan.dist > 0) { moveUnit(s, e, plan.to[0], plan.to[1], plan.dist, ev); step(); }
       e.facing = plan.dir;
       if (LX && plan.labStage) LX.fireStage(s, e, ev, step);   // ラボ D9: 舞台を作る魔法は、移動のすぐあとに撃つ
@@ -2128,6 +2209,117 @@
     return r;
   }
 
+  // ---------------------------------------------------------------
+  // 展示ステージ③（3人。.claude/IMPROVE_stage3.md）
+  //   s.ex（シナリオの ex を写したもの）があるときだけ動く。
+  //   ボス: 大きい体（size×size）。1ターンに1マス、向いている方へ進み（体の全部が入れるときだけ）、体の前の stage3.bossReach 列に一撃を予告する。
+  //   取り巻き: 浮いている。地形に関係なく、風の人へまっすぐ進む（縦横で差の大きい方から。ユニットのいるマスには入らない）。
+  //            風の人の隣に来たら体当たりを予告する。ボスの後ろから stage3.spawnEvery ターンごとに湧き続ける（上限 stage3.spawnMax）
+  //   火山の熱（timePasses）・桜吹雪の扇（doSakuraStorm）・ミッション（exMissions）・ヒントの数え（exTurnEnd）
+  // ---------------------------------------------------------------
+  function bodyCells(u, x, y) {
+    var n = u.size || 1, out = [];
+    if (x === undefined) { x = u.x; y = u.y; }
+    for (var dy = 0; dy < n; dy++) for (var dx = 0; dx < n; dx++) out.push([x + dx, y + dy]);
+    return out;
+  }
+  function stepDirOf(a, b) { return b[0] > a[0] ? 'right' : b[0] < a[0] ? 'left' : b[1] > a[1] ? 'down' : 'up'; }
+  // ボスの一撃: 体の前の辺から、向いている方へ stage3.bossReach 列（近い列から）
+  function smashCells(s, u, facing) {
+    var F = DIRS[facing], body = bodyCells(u), out = [];
+    var proj = function (c) { return c[0] * F.dx + c[1] * F.dy; };
+    var mx = Math.max.apply(null, body.map(proj));
+    var front = body.filter(function (c) { return proj(c) === mx; });
+    for (var k = 1; k <= B.stage3.bossReach; k++) {
+      front.forEach(function (c) { var x = c[0] + F.dx * k, y = c[1] + F.dy * k; if (inBounds(s, x, y)) out.push([x, y]); });
+    }
+    return out;
+  }
+  // u の体が (x,y) に入れるか（体の全部が盤の中・自分の足で入れる自然・ほかのユニットがいない）
+  function canStandBody(s, u, x, y) {
+    return bodyCells(u, x, y).every(function (c) {
+      if (!inBounds(s, c[0], c[1]) || !canEnter(u, getTile(s, c[0], c[1]))) return false;
+      var o = unitAt(s, c[0], c[1]);
+      return !o || o.id === u.id;
+    });
+  }
+  function bossStep(s, e) {
+    var F = DIRS[e.facing];
+    return canStandBody(s, e, e.x + F.dx, e.y + F.dy) ? [e.x + F.dx, e.y + F.dy] : null;
+  }
+  // 風の人（取り巻きが狙う味方）
+  function windOf(s) { return alliesOf(s).filter(function (a) { return a.magic === 'wind'; })[0] || null; }
+  // 取り巻きの道: { path（進むマス）, to（止まるマス）, adjacent（止まったら風の人の隣）, target（風の人の id） }
+  function floatRoute(s, e) {
+    var w = windOf(s), path = [], x = e.x, y = e.y;
+    if (!w) return { path: path, to: [x, y], adjacent: false, target: null };
+    var near = function (px, py) { return Math.abs(px - w.x) + Math.abs(py - w.y) === 1; };
+    for (var k = 0; k < B.stage3.minionMove && !near(x, y); k++) {
+      var dx = w.x - x, dy = w.y - y, sx = dx > 0 ? 1 : dx < 0 ? -1 : 0, sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+      var opts = Math.abs(dx) >= Math.abs(dy) ? [[sx, 0], [0, sy]] : [[0, sy], [sx, 0]];
+      var next = null;
+      for (var i = 0; i < opts.length && !next; i++) {
+        var nx = x + opts[i][0], ny = y + opts[i][1];
+        if ((!opts[i][0] && !opts[i][1]) || !inBounds(s, nx, ny)) continue;
+        var o = unitAt(s, nx, ny);
+        if (!o || o.id === e.id) next = [nx, ny];
+      }
+      if (!next) break;
+      x = next[0]; y = next[1];
+      path.push(next);
+    }
+    return { path: path, to: [x, y], adjacent: near(x, y), target: w.id };
+  }
+  // ミッション（s.ex.missions: [{ id, tile }]）: その自然が盤面に初めてできたら達成
+  function exMissions(s, ev) {
+    (s.ex.missions || []).forEach(function (m) {
+      s.exDone = s.exDone || {};
+      if (s.exDone[m.id] || s.tiles.indexOf(m.tile) < 0) return;
+      s.exDone[m.id] = true;
+      ev.push({ type: 'mission', id: m.id, cells: [], text: 'ミッション達成: ' + (m.name || m.id) });
+    });
+  }
+  // ターン終了処理のあと: ヒントの数え（山がないまま・火山があるのに桜吹雪なし）と、取り巻きが湧く
+  function exTurnEnd(s, ev, step) {
+    var hasM = s.tiles.indexOf('mountain') >= 0, hasV = s.tiles.indexOf('volcano') >= 0;
+    var c = s.exCount = s.exCount || { noMountain: 0, noSakura: 0 }, said = s.exHints = s.exHints || {};
+    if (!hasM && !hasV) c.noMountain++;
+    if (hasV) c.noSakura++;
+    if (!said.noMountain && c.noMountain >= B.stage3.hintNoMountain) {
+      said.noMountain = true;
+      ev.push({ type: 'exHint', key: 'noMountain', text: '（ヒント）山がないまま' + c.noMountain + 'ターンが過ぎた' });
+    }
+    if (!said.noSakura && c.noSakura >= B.stage3.hintNoSakura) {
+      said.noSakura = true;
+      ev.push({ type: 'exHint', key: 'noSakura', text: '（ヒント）火山があるのに、桜吹雪をまだ起こしていない（' + c.noSakura + 'ターン）' });
+    }
+    if (s.ex.spawn && B.stage3.spawnEvery > 0 && s.turn % B.stage3.spawnEvery === 0) exSpawn(s, ev);
+    step();
+  }
+  // 取り巻きが湧く: ボスの体のすぐ後ろの列（ボスの真ん中の行に近い順）。そこが盤の外かふさがっていたら、なるべく後ろの空いているマス
+  function exSpawn(s, ev) {
+    var sp = s.ex.spawn;
+    if (enemiesOf(s).filter(function (e) { return e.stand === 'float'; }).length >= B.stage3.spawnMax) return;
+    var boss = enemiesOf(s).filter(function (e) { return e.stand === 'boss'; })[0];
+    var F = DIRS[boss ? boss.facing : 'left'], H = rowsOf(s);
+    var n = boss ? (boss.size || 1) : 1, half = Math.floor(n / 2) + 1;   // 真ん中から体のすぐ後ろまでの歩数
+    var cx = boss ? boss.x + Math.floor(n / 2) : s.size - 1, cy = boss ? boss.y + Math.floor(n / 2) : Math.floor(H / 2);
+    var cands = [];
+    for (var y = 0; y < H; y++) for (var x = 0; x < s.size; x++) {
+      if (unitAt(s, x, y)) continue;
+      var back = -((x - cx) * F.dx + (y - cy) * F.dy);   // ボスの後ろほど大きい
+      if (back < 0) continue;
+      cands.push({ x: x, y: y, first: back === half ? 0 : 1, back: back, side: Math.abs((x - cx) * F.dy) + Math.abs((y - cy) * F.dx) });
+    }
+    cands.sort(function (a, b) { return (a.first - b.first) || (b.back - a.back) || (a.side - b.side) || (a.y - b.y) || (a.x - b.x); });
+    var at = cands[0];
+    if (!at) return;
+    var e = addEnemy(s, sp.magic || 'bite', at.x, at.y, sp.facing || (boss ? boss.facing : 'left'));
+    e.stand = 'float'; e.body = 'float'; e.name = '取り巻き' + e.letter;
+    if (sp.hp) { e.hpBase = sp.hp; e.hp = e.maxHp = sp.hp; }
+    ev.push({ type: 'spawn', id: e.id, side: 'enemy', cells: [[e.x, e.y]], text: unitLabel(s, e) + 'がボスの後ろから湧いた' });
+  }
+
   // 増援（チュートリアル②）: シナリオの spawn の所に、毎ターンの終わりに1体ずつ現れる（tutorial.spawn で切れる）。ふさがっていたら出られない
   function spawnPhase(s, ev, step) {
     var sp = s.spawn;
@@ -2256,6 +2448,16 @@
         burnEv.push({ type: 'damage', id: u.id, side: u.side, amount: B.fireTileDamage, src: 'burn', cells: [[u.x, u.y]], text: '炎の上の' + unitLabel(s, u) + 'に' + B.fireTileDamage + 'ダメージ（残りHP ' + Math.max(0, u.hp) + '）' });
       }
     });
+    // 展示ステージ③: 火山の隣（と上）にいる者に熱のダメージ（敵にも味方にも。溶岩は火山のマスから出ない）
+    if (s.ex && B.stage3.heat > 0) s.units.forEach(function (u) {
+      if (u.side === 'object' || u.hp <= 0) return;
+      var hot = bodyCells(u).some(function (c) {
+        return getTile(s, c[0], c[1]) === 'volcano' || neighbors(s, c[0], c[1]).some(function (nb) { return getTile(s, nb.x, nb.y) === 'volcano'; });
+      });
+      if (!hot) return;
+      u.hp -= B.stage3.heat;
+      burnEv.push({ type: 'damage', id: u.id, side: u.side, amount: B.stage3.heat, src: 'heat', cells: [[u.x, u.y]], text: '火山の熱で' + unitLabel(s, u) + 'に' + B.stage3.heat + 'ダメージ（残りHP ' + Math.max(0, u.hp) + '）' });
+    });
     burnEv.forEach(function (e) { ev.push(e); });
     // 2b. 火傷のダメージ（残り回数を1つ減らす）
     s.units.forEach(function (u) {
@@ -2357,6 +2559,8 @@
 
     // 4d. 増援（ターン終了処理のあと）
     if (!s.result && s.enemyActs) spawnPhase(s, ev, step);
+    // 4e. 展示ステージ③: ヒントの数えと、取り巻きが湧く
+    if (!s.result && s.ex) exTurnEnd(s, ev, step);
 
     // 5. 次のターン: 構える味方が構え直す → 敵の移動と予告
     if (!s.result) {
@@ -2439,6 +2643,7 @@
     var sim = clone(s);
     var startUnits = clone(sim.units), startTiles = sim.tiles.slice();
     var ev = [], links = newLinks(), hit = {}, hitOrder = [], src = {}, finishers = [], grows = [], cells = {};
+    if (B.simul.stepwise) sim._fresh = {};   // 展示ステージ③ 1段ずつ
     stanceList(sim).forEach(function (a0) {
       if (sim.result) return;
       var a = findUnit(sim, a0.id);
@@ -2454,6 +2659,7 @@
       grows = grows.concat(ctx.grows);
       cells[a.id] = ctx.cells;
     });
+    delete sim._fresh;
     var tileChanges = [];
     for (var i = 0; i < sim.tiles.length; i++) {
       if (sim.tiles[i] !== startTiles[i]) tileChanges.push({ x: i % sim.size, y: Math.floor(i / sim.size), from: startTiles[i], to: sim.tiles[i] });
@@ -2592,8 +2798,11 @@
         combos: evs.filter(function (x) { return x.type === 'finisher' && x.combo; }).map(function (x) { return { name: x.name, ids: x.combo, magics: x.comboMagics }; }) });
     }
     if (LX && lab('F5')) LX.stancesOf(s).forEach(function (a0) { fire(out.allies, a0); });   // ラボ F5: 味方の構え（構えた順）
-    if (simulOn()) stanceList(s).forEach(function (a0) { fire(out.allies, a0, true); });   // 【一斉】味方の構え（構えた順。構える味方は最後）
-    else alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
+    if (simulOn()) {   // 【一斉】味方の構え（構えた順。構える味方は最後）。展示ステージ③ 1段ずつ: できたばかりの自然には反応しない
+      if (B.simul.stepwise) sim._fresh = {};
+      stanceList(s).forEach(function (a0) { fire(out.allies, a0, true); });
+      delete sim._fresh;
+    } else alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
     if (s.enemyActs) enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) { fire(out.enemies, e0); });
     if (sim.result) return out;
     // 「進む」敵: 発動のあとの盤面で、次に進むマスと、そこから撃つ魔法（enemies に入る。from は進んだ先）
@@ -2826,6 +3035,7 @@
     s.fireAge = {};
     if (s.fireLife) s.fireLife = {};
     delete s.misses;
+    delete s.exDone; delete s.exCount; delete s.exHints;   // 展示ステージ③: ミッション・ヒントの数え
     if (!s.mission) s.mission = newMission('annihilate');
     var m = s.mission;
     m.lost = 0;
@@ -3093,7 +3303,40 @@
       overrides: { waterLength: 1, 'tutorial.slope': true, 'mission.defense.turns': 5, 'ally.move': 2 }
     },
     {
-      id: 'tut3', tutorial: 3, name: '【チュートリアル】③ 3人で合わせる', short: '③ 3人で合わせる',
+      // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
+      id: 'ex3', tutorial: 3, name: '【展示】③ 3人でつなぐ', short: '③ 3人でつなぐ',
+      desc: '味方 山（土）・火（炎）・風の3人（①②の人たち。魔法は①②より強く、届く形が広い）。盤面は横長（12×7）。味方は左端、敵は右端から来る。' +
+        'ボス（3×3・HP40）は1ターンに1マス前へ進み、体の前の2列に一撃を予告する（当たった味方は倒れる）。普通の魔法はほとんど効かず、桜吹雪で倒れる。' +
+        '取り巻き（浮いている・HP1）は地形に関係なく風の人へまっすぐ進み、隣に来たら体当たり。ボスの後ろから2ターンごとに湧き続ける。' +
+        '3段: 山の魔法で十字の山（腕2マス）→ 山に火で火山（溶岩は火山のマスだけ。隣にいる者はターン終了ごとに熱で2）→ 火山に風で桜吹雪' +
+        '（火山の幅から、風の人の向きへ扇形に盤の奥まで。扇の中の敵を、浮いている敵も含めてまとめて倒す）。ボスを倒せば勝ち。味方が1人でも倒れたらステージの頭からやり直し。',
+      rows: ['............', '............', '............', '............', '............', '............', '............'],
+      allies: [['mount', 0, 6, { facing: 'up' }], ['fire', 2, 6, { facing: 'up' }], ['wind', 0, 0, { facing: 'down' }]],
+      enemies: [
+        ['smash', 9, 2, { stand: 'boss', hp: 40, size: 3 }, 'left'],
+        ['bite', 11, 0, { stand: 'float', hp: 1, body: 'float' }, 'left'],
+        ['bite', 11, 6, { stand: 'float', hp: 1, body: 'float' }, 'left']
+      ],
+      enemyOnly: ['smash', 'bite'],
+      ex: {
+        spawn: { magic: 'bite', hp: 1 },                                     // 湧く取り巻き（間隔と上限は stage3.spawnEvery・spawnMax）
+        missions: [{ id: 'volcano', tile: 'volcano', name: '火山を作る' }],   // 最初から出すミッション（表示名は texts.js の stages.ex3.mission）
+        glow: { fire: ['mountain'], wind: ['volcano'] },                    // 選んだ味方の魔法で次の段へ進む自然を光らせる（すでに自然になっているマスだけ）
+        shapeOnly: true,     // 予測は魔法が届く形まで（何になるかは見せない）。構えは形の輪郭と向きで描く
+        fireModes: true,     // 魔法の出し方（ターンの終わりに1段ずつ／ターンの終わりにつながる／撃った瞬間に発動）を画面で切り替える
+        charge: '桜吹雪',    // この決め手の前に「ため」を見せる
+        finale: true         // ボスを倒したら、つながった自然を一枚の大きな絵にして終わる
+      },
+      // 山は2マス先から5マス先までの十字（腕2マス）、火は正面2マス、風は正面4マスを吹き抜ける（風は残らない）。
+      // 山に火で火山（溶岩はあふれない）、火山に風で桜吹雪。桜吹雪の威力60（ボスのHP40を1発で）。移動2
+      overrides: {
+        'shapes.mount': [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [-1, 3], [1, 3], [-2, 3], [2, 3]], 'shapeCenter.mount': [0, 3],
+        'shapes.fire': [[0, 1], [0, 2]], windMode: 'line', lineLength: 4, tornadoRecipe: 'off',
+        'sakura.from': 'fire', 'funka.lava': false, 'eruption.base': 60, 'eruption.perVolcano': 0, 'ally.move': 2
+      }
+    },
+    {
+      id: 'tut3', tutorial: 4, name: '【チュートリアル】③ 3人で合わせる（前の版）', short: '③ 3人で合わせる（前の版）',
       desc: '3人を動かす見せ場（IMPROVE_simul）。教えること: 3人の魔法を順に重ねると、1ターンで3段目まで流れる（合体）。' +
         '一例: 土がその場で上（(3,4)(4,4)(3,3) に山）→ 草がその場で上（山の (3,4)(3,3) に桜、(2,3)(4,3) は森）→ 風が (3,5) へ動いて上 → ' +
         '桜 (3,4) に風が当たって桜吹雪。扇（(3,3)／(2,2)〜(4,2)／(1,1)〜(5,1)）に、1ターン目に1マス進んだ敵2体 (2,1)(4,1) が入る。3人とも扇の後ろ。' +
@@ -3174,11 +3417,18 @@
     p.enemies.forEach(function (e) {
       var u = addEnemy(s, e[0], e[1], e[2], e[4] || 'down');
       if (e[3]) PERSONA_FIELDS.forEach(function (f) { if (e[3][f]) u[f] = e[3][f]; });
+      // 展示ステージ③: HP・大きさ・体（浮く）。ボスと取り巻きの名前
+      if (e[3] && e[3].hp) { u.hpBase = e[3].hp; u.hp = u.maxHp = e[3].hp; }
+      if (e[3] && e[3].size) u.size = e[3].size;
+      if (e[3] && e[3].body) u.body = e[3].body;
+      if (u.stand === 'boss') { u.name = 'ボス'; u.exBoss = true; }
+      if (u.stand === 'float') u.name = '取り巻き' + u.letter;
       if (e[3] && e[3].lab) Object.keys(e[3].lab).forEach(function (f) { u[f] = LX ? LX.labValue(f, e[3].lab[f]) : clone(e[3].lab[f]); });   // ラボ: 大きさ・体・HP など
     });
     if (p.labState) Object.keys(p.labState).forEach(function (f) { s[f] = clone(p.labState[f]); });   // ラボ: 盤面に付ける印（お題の追加など）
     if (p.enemyOnly) s.enemyOnlyMagics = p.enemyOnly.slice();
     if (p.spawn) s.spawn = clone(p.spawn);
+    if (p.ex) s.ex = clone(p.ex);     // 展示ステージ③（ボス・取り巻き・火山の熱・桜吹雪の扇・ミッション・ヒント・画面の見せ方）
     if (p.tutorial) s.stage = p.id;   // やり直し（retryStage）とヒント（stageHint）に使う
     s.mission = newMission(p.mission || 'annihilate');
     (p.villages || []).forEach(function (c) { addObject(s, 'village', c[0], c[1]); });
@@ -3193,6 +3443,14 @@
   function missionInfo(s) {
     var type = missionType(s), m = s.mission || {};
     var info = { type: type, name: MISSION_INFO[type].name, win: '', lose: '味方が全員倒れる', status: [] };
+    if (s.ex) {   // 展示ステージ③: ボスを倒せば勝ち（取り巻きは湧き続ける）。味方が1人でも倒れたら頭からやり直し
+      var boss = enemiesOf(s).filter(function (e) { return e.stand === 'boss'; })[0];
+      info.win = 'ボスを倒す';
+      info.lose = '味方が1人でも倒れる（ステージの頭からやり直し）';
+      info.status.push(boss ? 'ボス HP ' + boss.hp + '/' + boss.maxHp : 'ボスを倒した');
+      info.status.push('取り巻き ' + enemiesOf(s).filter(function (e) { return e.stand === 'float'; }).length + '体');
+      return info;
+    }
     if (type === 'annihilate') {
       info.win = '敵を全員倒す';
       info.status.push('敵 残り' + enemiesOf(s).length + '体');

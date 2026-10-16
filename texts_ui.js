@@ -200,6 +200,8 @@
     else if (e.type === 'intent' && e.side === 'enemy') trigger(['enemyIntent']);
     else if (e.type === 'turnStart' && app.state) trigger(['turn:' + app.state.turn]);
     else if (e.type === 'result') trigger([e.result === 'win' ? 'win' : 'lose']);
+    else if (e.type === 'exHint') trigger(['hint:' + e.key]);     // 展示ステージ③: 山がないまま・火山があるのに桜吹雪なし
+    else if (e.type === 'mission') trigger(['mission:' + e.id, 'mission']);   // 展示ステージ③: ミッション達成
   };
 
   // ---------------------------------------------------------------
@@ -291,7 +293,8 @@
   // ---------------------------------------------------------------
   var TRIGGERS = [
     ['start', 'ステージの始め'], ['turn', 'Nターン目の始め'], ['stance', '構えたとき（1人ずつでは撃ったとき）'], ['beforeFire', '発動の前（1人ずつではターン終了の前）'],
-    ['finisher', '決め手が起きたとき'], ['enemyIntent', '敵が予告したとき'], ['win', 'クリア'], ['lose', '負け'], ['retry', 'やり直し']
+    ['finisher', '決め手が起きたとき'], ['enemyIntent', '敵が予告したとき'], ['win', 'クリア'], ['lose', '負け'], ['retry', 'やり直し'],
+    ['hint', 'ヒント（展示③: noMountain 山がないまま／noSakura 火山があるのに桜吹雪なし）'], ['mission', 'ミッション達成（展示③）']
   ];
   var MODES = [['both', '両方'], ['simul', '一斉だけ'], ['single', '1人ずつだけ']];
   var UI_LABELS = {
@@ -307,6 +310,7 @@
     var p = k.split(':'), t = TRIGGERS.filter(function (x) { return x[0] === p[0]; })[0];
     var name = t ? t[1] : p[0];
     if (p[0] === 'turn') return p[1] + 'ターン目の始め';
+    if (p[0] === 'hint') return 'ヒント（' + ({ noMountain: '山がないまま数ターン', noSakura: '火山があるのに桜吹雪なしで数ターン' }[p[1]] || p[1]) + '）';
     if (p[1]) return name + '（' + (p[0] === 'stance' ? R.magicName(p[1]) : p[1]) + '）';
     return name;
   }
@@ -374,7 +378,10 @@
       field('ヒント（やり直したとき・一斉）', 'stages.' + view.stage + '.hint.simul', (st.hint || {}).simul) +
       field('ヒント（やり直したとき・1人ずつ）', 'stages.' + view.stage + '.hint.single', (st.hint || {}).single) +
       field('クリアの文（空ならルールの文）', 'stages.' + view.stage + '.win', st.win) +
-      field('負けの文（空ならルールの文）', 'stages.' + view.stage + '.lose', st.lose);
+      field('負けの文（空ならルールの文）', 'stages.' + view.stage + '.lose', st.lose) +
+      // 展示ステージ③: ミッションの名前・倒したあとの大きな絵の題
+      (st.missions ? Object.keys(st.missions).map(function (k) { return field('ミッション（' + k + '）', 'stages.' + view.stage + '.missions.' + k, st.missions[k]); }).join('') : '') +
+      (st.finaleTitle !== undefined ? field('大きな絵の題（倒したあと）', 'stages.' + view.stage + '.finaleTitle', st.finaleTitle) + field('大きな絵の下の一言', 'stages.' + view.stage + '.finaleSub', st.finaleSub) : '');
     // きっかけ → 文の一覧
     h += '<h3>きっかけと文</h3><div class="tx-scene-head"><select data-act="pickScene" aria-label="きっかけ">' +
       scenes.map(function (k) { return '<option value="' + esc(k) + '"' + (k === view.scene ? ' selected' : '') + '>' + esc(sceneLabel(k)) + '</option>'; }).join('') + '</select>' +

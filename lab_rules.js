@@ -826,7 +826,7 @@
       if (on('L0')) finRing(s, ctx, ev);   // L 決めるの道: 決め手の範囲が広い（D3 の覆い方の前に足す）
       ctx.order.forEach(function (id) {
         var u = I.findUnit(s, id), h = ctx.hits[id];
-        if (!u || (u.size || 1) <= 1 || h.src !== 'finisher' || h.amount < B.fire.strongDamage) return;
+        if (!u || (u.size || 1) <= 1 || u.exBoss || h.src !== 'finisher' || h.amount < B.fire.strongDamage) return;   // 展示ステージ③のボスは、体のどこに当たっても決め手が効く
         var cover = Object.keys((ctx.labCover || {})[id] || {}).length;
         if (cover < u.size * u.size) { h.amount = B.fire.weakDamage; h.src = 'part'; }
       });
