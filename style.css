@@ -1464,31 +1464,33 @@ body.ng-bar-on { padding-bottom: 72px; }   /* 確認ガイドのバーで、盤�
 .lq-log ol { margin: 4px 0; padding-left: 1.6em; }
 .lq-bar { background: #fef9c3; }
 
-/* ---- 今日やること（today_guide.js） ---- */
+/* ---- 今日やること（today_guide.js）: 1つずつ・短い文・大きいボタン ---- */
 button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradient(135deg, #f59e0b, #ef4444); border-color: #b45309; color: #fff; font-weight: bold; }
-.td-card { max-width: 820px; }
-.td-card h3 { margin-top: 16px; padding-top: 8px; border-top: 1px solid #e5e7eb; }
-.td-sub { margin: 2px 0 6px; font-size: 12px; color: #475569; }
-.td-skip { font-size: 12px; margin: 6px 0; }
-.td-skip ul { margin: 4px 0; padding-left: 1.4em; }
-.td-jrow { list-style: none; }
-.td-judge { border: 1px dashed #c99a1e; border-radius: 8px; padding: 6px 10px; background: #fffbeb; font-size: 12px; }
-.td-judge.done { border-style: solid; background: #f0fdf4; border-color: #16a34a; }
-.td-jhead { font-size: 13px; }
-.td-cq ul { margin: 2px 0; padding-left: 1.4em; }
-.td-opts { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
-.td-opt { font-size: 12px; padding: 3px 8px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #1f2937; cursor: pointer; text-align: left; }
-.td-opt.on { background: #0f766e; border-color: #0f766e; color: #fff; }
-.td-try { font-size: 12px; margin-left: auto; }
-.td-memo { width: 100%; box-sizing: border-box; font-size: 12px; font-family: inherit; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 6px; resize: vertical; }
-.td-dec { border: 1px solid #e5e7eb; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 6px 10px; background: #fff; }
-.td-dec.done { border-left-color: #16a34a; background: #f0fdf4; }
-.td-dec.done .ng-no { background: #16a34a; }
-.td-dec .ng-no { background: #f59e0b; min-width: 1.6em; width: auto; padding: 0 4px; border-radius: 999px; }
-.td-dec .ng-head small { color: #64748b; font-size: 11px; }
-.td-why { margin: 2px 0; font-size: 12px; color: #475569; }
-.td-card .ng-no { width: auto; min-width: 1.6em; padding: 0 4px; border-radius: 999px; }
+.td1-card { max-width: 460px; padding: 14px 18px 16px; }
+.td1-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #64748b; }
+.td1-sec { font-weight: bold; color: #b45309; }
+.td1-count { margin-left: auto; }
+.td1-x { border: none; background: none; font-size: 18px; line-height: 1; color: #64748b; cursor: pointer; padding: 0 2px; }
+.td1-prog { height: 4px; background: #e5e7eb; border-radius: 2px; margin: 6px 0 10px; overflow: hidden; }
+.td1-prog i { display: block; height: 100%; background: #16a34a; }
+.td1-title { font-size: 22px !important; margin: 4px 0 6px !important; }
+.td1-ok { color: #16a34a; margin-right: 6px; }
+.td1-line { font-size: 15px; margin: 0 0 12px; color: #1f2937; }
+.td1-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.td1-big { font-size: 16px; padding: 10px 18px; }
+.td1-opts { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.td1-opt { font-size: 15px; padding: 8px 14px; border: 2px solid #cbd5e1; border-radius: 10px; background: #fff; color: #1f2937; cursor: pointer; }
+.td1-opt.on { background: #0f766e; border-color: #0f766e; color: #fff; }
+.td1-memo { width: 100%; box-sizing: border-box; font-size: 13px; font-family: inherit; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; }
+.td1-more { font-size: 12px; color: #64748b; margin-top: 8px; }
+.td1-more p, .td1-more ul { margin: 4px 0; }
+.td1-more ul { padding-left: 1.4em; }
+.td1-nav { display: flex; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
+.td1-nav .primary { margin-left: auto; font-size: 15px; padding: 8px 16px; }
+.td1-list { list-style: none; margin: 10px 0 0; padding: 0; max-height: 40vh; overflow: auto; font-size: 13px; }
+.td1-lsec { font-weight: bold; color: #b45309; margin: 8px 0 2px; }
+.td1-li { border: none; background: none; text-align: left; padding: 2px 4px; cursor: pointer; color: #1f2937; width: 100%; border-radius: 4px; }
+.td1-li.done { color: #16a34a; }
+.td1-li.now { background: #fef3c7; }
 .td-out textarea { width: 100%; box-sizing: border-box; font-size: 12px; font-family: ui-monospace, monospace; }
-.td-copied { font-size: 12px; color: #16a34a; align-self: center; }
-.td-foot { justify-content: flex-end; }
-.td-foot button { font-size: 11px; }
+.td-copied { font-size: 12px; color: #16a34a; }
