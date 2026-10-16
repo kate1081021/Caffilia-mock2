@@ -2262,27 +2262,21 @@
         expect: { gone: ['E4'], targets: { finKill: 'fire', nextTo: 'wind' } }
       } }), { grass: { aw: 1, fu: 1 }, fire: { aw: 1, fu: 1 }, wind: { aw: 1, fu: 1 } }));
 
-    // 連戦（燃え広がり → 守る → 動かす → 森を育てる）。N の道を持ち越す（localStorage は L・M と別）。1戦目を読むと道を0から
-    [['labNs', 'ラボ: N 連戦 ', null], ['labNq', 'ラボ: N クエスト連戦 ', 'L6']].forEach(function (sv) {
-      var order = [['labN1', ['finKill', 'nextTo', 'held']], ['labN2', ['foiled', 'villagesSafe', 'kinds3']],
-        ['labN3', ['redirect', 'bump', 'finKill']], ['labN4', ['bigFin', 'held', 'twoStage']]];
-      order.forEach(function (o, i) {
-        var base = NS.filter(function (p) { return p.id === o[0]; })[0];
-        var p = JSON.parse(JSON.stringify(base));
-        delete p.demo;
-        p.id = sv[0] + (i + 1);
-        if (sv[2]) p.lab = p.lab.concat([sv[2]]);
-        p.labState = { labTargetList: o[1] };
-        p.name = sv[1] + (i + 1) + '/4（' + base.name.replace('ラボ: N ', '') + '）';
-        p.desc = '【ラボ N・連戦 ' + (i + 1) + '/4' + (sv[2] ? '・L6 クエストを選ぶ' : '') + '】燃え広がり → 守る → 動かす → 森を育てる を続けて遊ぶ。勝つと「育ち」の画面で道が進み、次の戦いに持ち越す。' +
-          (sv[2] ? '戦闘の前に、どのクエスト（討伐＝倒す・開拓＝広げる・誘導＝動かす・守り＝止める）を受けるかを選ぶ。' : '') +
-          (i === 0 ? '1戦目を読むと、道を0から始める。' : '') + 'どちらかの方面の印が2つで変化、覚醒方面はさらに3つで覚醒。 ' + base.desc;
-        p.labSeries = (i + 1) + '/4';
-        if (i === 0) p.labSeriesStart = true; else p.hidden = true;
-        if (i < order.length - 1) p.labNext = sv[0] + (i + 2);
-        NS.push(p);
-      });
-    });
+    // クエスト制（lab_quest.js）の盤面。N の連戦（決まった順の4戦）はクエスト制に置き換えた（10/16 オーナー）。
+    //   第1章は labN1〜labN4 と裏クエスト labND、第2章は labNe・labNd・labNn。クエストの盤面は一覧には出さない（拠点のクエストボードから受ける）
+    NS.push(from('labMD', 'labND', 'ラボ: N 裏クエスト 守るはずの村', ['darkVillage', 'darkCart', 'darkWizard'],
+      '【ラボ N・裏クエスト】7×7。味方 草・火・風。森の列に、村・トロッコ（馬車）・魔法使い（人）が並ぶ。闇のミッション3つ: 村を壊す・トロッコを壊す・魔法使い（こちらに手を出してこない）を倒す。' +
+      '取った魔法は、勝ったときに闇の力を1つ得る（直撃の威力。L7）。覚醒方面・融合方面の印は進まない。火で村を直撃すると村が壊れて足元の森に火が点き、左から風を吹くと燃え広がりでトロッコと魔法使いがまとめて焼ける。',
+      { hidden: true, labDarkName: '守るはずの村' }));
+    NS.push(from('labMe', 'labNe', 'ラボ: N 護衛（運ぶ）', ['carry', 'noWalk', 'noLoss'],
+      '【ラボ N・護衛】【お題】馬車はターンの終わりに、ゴール（右の端）へ1マス進む。風で押すと馬車も運ばれる。' + WANT +
+      'ミッション3つ: 動かす「宝・馬車を運ぶ」（勝ったときに決まる。取るのは決着の一手）・動かす「歩かずに勝つ」（1度も歩かなかった仲間が取る）・止める「誰も倒されずに勝つ」。', { hidden: true }));
+    NS.push(from('labMd', 'labNd', 'ラボ: N 予定の道と高い所', ['held', 'blocked', 'lower'],
+      '【ラボ N・D2 敵の行き先が見える】7×7。味方 土・風・水、敵2体（動いて予告する）。敵Aは丘の上で止まっている。矢印は、敵が次のターンに向かう先（D2）。' + WANT +
+      'ミッション3つ: 止める「敵が動けなかった」・止める「予定の道をふさぐ」（矢印の先へ歩いて行けなくする）・動かす「高い所から下ろす」。風で敵Aを丘から押し下ろすと、矢印の先まで届かなくなる。', { hidden: true }));
+    NS.push(from('labMn', 'labNn', 'ラボ: N 敵の自然', ['enemyNatFin', 'overwrite', 'enemyChange'],
+      '【ラボ N・育つが入】7×7。味方 火・風・土、敵2体（草・火）。敵Aの草は、自然を作りに来る（狙い: 自然）。敵の作った自然は、こちらも使える（法則に例外なし）。' + WANT +
+      'ミッション3つ: 倒す「敵の自然で決め手」・広げる「敵の自然を上書き」・広げる「敵に変えさせる」。1ターン目に敵Aが草むらを敷いたら、2ターン目に火を点けて風で燃え広がらせる。', { hidden: true }));
     // N1〜N5 のカード用: その切り替えだけを足した盤面（一覧には出さない）。N4 は融合の盤面ができてから下で足す
     function variant(src, sw, opts, label) {
       var base = NS.filter(function (p) { return p.id === src; })[0];

@@ -13,6 +13,7 @@
 
 ## 今の状態（10/13 夜）
 
+- **10/16 夕: N の進行をクエスト制にした（NQ）。** 元は NOTES の「強化とクエスト」（オーナー 10/16）。データと進み方 `lab_quest.js`、拠点の画面 `lab_quest_ui.js`（上のバーの「N クエスト」・`index.html#q`）。戦闘はクエストごとに盤面の写し `labQ_<id>` を LAB_PRESETS に足して読む（H1 周回と同じやり方）。育ちの画面に「拠点に戻る」（lab_target_ui.js）。lab_rules.js は1か所（`s.labTargetCount`: クエストが決めたミッションの数）。N の連戦（labNs・labNq）はなくした。決めたことは `DECISIONS.md` の「ラボ N クエスト制」。
 - **10/16: LAB_N（強化と変化）を足した。** 元はオーナーの「強化と変化のまとめ（10/16）」（`.claude/強化と変化のまとめ_20261016.md`）。データ `lab_change.js`、ルールは lab_rules.js の「N」の節（M の土台の上。N0 がオンのあいだ道が N の形に替わる。変化した魔法は castMore の先頭、覚醒先の自然は `s.labAwk` の印）、画面は lab_target_ui.js の N の描き分けと ui.js の `LX.awkTile`（覚醒先の自然のマスの金の縁）。rules.js は触っていない。ミッションの仕分けの確かめは `node tests/lab_nsort.js [盤面…] --pairs`。確かめ方のガイドは `lab_n_guide.js`（上のバーの「N 確認ガイド」・`index.html#n`）。状態は `LAB_PROGRESS.md` の「N」、気づきは `LAB_REPORT.md` の「N」、決めたことは `DECISIONS.md` の「ラボ N」。`lab-n` ブランチ。
 - **10/15: LAB_M（強化の方向は3つ・41のミッション）を足した。** 元はオーナーの「強化の材料まとめ（2026-10-15）」。指示書は `.claude/lab/LAB_M_power.md`（材料まとめを、仮の仕分けつきで書き起こしたもの）。データ `lab_power.js`、ルールは lab_rules.js の「M」の節（L0 の土台の上で、M0 がオンのあいだ L の道の関数が M の形に替わる）、画面は lab_target_ui.js の M の描き分け（ミッションの仕分けの画面も）。rules.js の差し込み口を3つ足した（`LX.onResult`・`LX.keepTile`・`LX.passUnit`）。状態は `LAB_PROGRESS.md` の「M」、気づきは `LAB_REPORT.md` の「M」、決めたことは `DECISIONS.md` の「ラボ M」。
 - **10/15 夜: オーナー判断（草は決め手でなくてよい・道はクリアで進む・育つが前提）を入れ、L6 クエストで方向を選ぶ（クエスト連戦 labLq1〜4）・LE 覚醒を敵が先に見せる（labLE）・覚醒した駒の印を足した。**

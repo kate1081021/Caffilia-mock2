@@ -161,6 +161,7 @@
     var allies = R.alliesOf(st).filter(function (a) { return LXL.pathDef(a.magic) && a.labPath; });
     var pre = app.scenario && R.findPreset(app.scenario);
     var html = '<div class="lt-head"><b>ターゲット</b>' + (pre && pre.labSeries ? ' <span class="lt-series">連戦 ' + esc(pre.labSeries) + '</span>' : '') +
+      (pre && pre.labQuestRun ? ' <span class="lt-series">' + esc(pre.name) + '</span>' : '') +
       (st.labQuest ? ' <span class="lt-quest d-' + esc(dcls(st.labQuest.dir)) + '">' + mark(st.labQuest.dir) + 'クエスト「' + esc(st.labQuest.name) + '」</span>' : '') +
       ' <small>' + (isN() ? '1つ1回。取った魔法に印が1つ（やりたいことと合えば覚醒方面、合わなければ融合方面）。印1つで間の強化が1つ。どちらかの方面が' + LXL.N.changeAt() + 'つで変化' : isM() ? '1つ1回。取った魔法は、戦闘の終わりに強化（形が1マス）。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒' : '1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）') + '</small></div>' +
       (ts.length ? '<ul class="lt-list">' + ts.map(function (t) {
@@ -412,6 +413,7 @@
     h += '<div class="lab-run-buttons">' +
       (!lost && growth.rows.length ? '<button type="button" class="primary" data-g="apply"' + (growth.applied || !allChosen ? ' disabled' : '') + '>' + (growth.applied ? '道に進めた' : '道に進める') + '</button>' : '') +
       (pre && pre.labNext && growth.won ? '<button type="button"' + (growth.applied || lost || !growth.rows.length ? ' class="primary"' : '') + ' data-g="next">次の戦いへ: ' + esc((R.findPreset(pre.labNext) || {}).name || pre.labNext) + '</button>' : '') +
+      (pre && pre.labQuestRun && window.LabQuest ? (!lost && !growth.applied && growth.rows.length ? '<button type="button" class="primary" data-g="home"' + (allChosen ? '' : ' disabled title="先に、だれが取るかを選ぶ"') + '>道に進めて拠点に戻る</button>' : '<button type="button" class="primary" data-g="home">拠点に戻る</button>') : '') +   // クエスト制
       (!growth.won ? '<button type="button" data-g="retry">もう一度</button>' : '') +
       '<button type="button" data-g="close">閉じる</button></div>' +
       (growth.applied ? '<p class="note">道は持ち越される（次に読むシナリオの味方に入る）。エディットで直接いじれる。</p>' : '') + '</div>';
@@ -463,27 +465,30 @@
     if (b.hasAttribute('data-pick')) { var pk = b.getAttribute('data-pick').split(':').map(Number); var r = growth.rows[pk[0]]; r.by = r.cands[pk[1]]; renderGrowth(); return; }
     var a = b.getAttribute('data-g');
     if (a === 'close') { gbox.hidden = true; return; }
-    if (a === 'apply' && !growth.applied) {
-      var pl = plan();
-      Object.keys(pl.work).forEach(function (m) { setPath(m, pl.work[m]); });
-      growth.applied = true; growth.after = pl.work; appliedKey = growth.key;
-      // 盤面の味方にも入れる（戦闘は終わっているので、見た目だけ）
-      app.state.units.forEach(function (u) { if (u.side === 'ally' && pl.work[u.magic]) u.labPath = clone(pl.work[u.magic]); });
-      pl.rows.forEach(function (r) {
-        if (!r.g || !r.g.res.ok) return;
-        if (isN()) app.addLog('【ラボ N】' + R.magicName(r.magic) + ': ' + (r.g.res.kind === 'awake' ? '覚醒方面の印' : r.g.res.kind === 'fuse' ? '融合方面の印' : '間の強化だけ') + (r.g.res.step ? '・間の強化「' + r.g.res.step.name + '」' : '') +
-          (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
-        else if (isM()) app.addLog('【ラボ M】' + R.magicName(r.magic) + ': ' + (r.g.dir === 'simple' ? '単純強化' : dirInfo(r.g.dir).name + 'が1つ進んだ') + (r.g.via ? '（持っていない・閉じた' + dirInfo(r.dir).name + 'で取った）' : '') +
-          (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
-        else app.addLog('【ラボ L】' + R.magicName(r.magic) + 'の' + dirInfo(r.g.dir).name + 'が1マス進んだ' + (r.g.via ? '（得意でない' + dirInfo(r.dir).name + 'で取った）' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
-      });
-      app.clearCache(); app.render();
-      renderGrowth();
-      return;
-    }
+    if (a === 'apply' && !growth.applied) { applyGrowth(); return; }
+    if (a === 'home') { if ((growth.won || growth.keep) && !growth.applied && growth.rows.length && plan().rows.every(function (r) { return !r.need; })) applyGrowth(); gbox.hidden = true; if (window.LabQuest) window.LabQuest.back(); return; }   // クエスト制: 拠点に戻る
     if (a === 'next') { var pre = R.findPreset(app.scenario); gbox.hidden = true; if (pre && pre.labNext) app.loadScenario(pre.labNext); return; }
     if (a === 'retry') { gbox.hidden = true; app.loadScenario(app.scenario, app.state.labQuest ? { labQuest: app.state.labQuest.dir } : undefined); return; }
   });
+  // 取ったターゲットを道に進める（育ちの画面の「道に進める」・クエスト制の「道に進めて拠点に戻る」）
+  function applyGrowth() {
+    if (!growth || growth.applied) return;
+    var pl = plan();
+    Object.keys(pl.work).forEach(function (m) { setPath(m, pl.work[m]); });
+    growth.applied = true; growth.after = pl.work; appliedKey = growth.key;
+    // 盤面の味方にも入れる（戦闘は終わっているので、見た目だけ）
+    app.state.units.forEach(function (u) { if (u.side === 'ally' && pl.work[u.magic]) u.labPath = clone(pl.work[u.magic]); });
+    pl.rows.forEach(function (r) {
+      if (!r.g || !r.g.res.ok) return;
+      if (isN()) app.addLog('【ラボ N】' + R.magicName(r.magic) + ': ' + (r.g.res.kind === 'awake' ? '覚醒方面の印' : r.g.res.kind === 'fuse' ? '融合方面の印' : '間の強化だけ') + (r.g.res.step ? '・間の強化「' + r.g.res.step.name + '」' : '') +
+        (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
+      else if (isM()) app.addLog('【ラボ M】' + R.magicName(r.magic) + ': ' + (r.g.dir === 'simple' ? '単純強化' : dirInfo(r.g.dir).name + 'が1つ進んだ') + (r.g.via ? '（持っていない・閉じた' + dirInfo(r.dir).name + 'で取った）' : '') +
+        (r.g.res.change ? '。変化「' + r.g.res.change.name + '」！' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
+      else app.addLog('【ラボ L】' + R.magicName(r.magic) + 'の' + dirInfo(r.g.dir).name + 'が1マス進んだ' + (r.g.via ? '（得意でない' + dirInfo(r.dir).name + 'で取った）' : '') + (r.g.res.awake ? '。覚醒「' + r.g.res.awake.name + '」！' : ''));
+    });
+    app.clearCache(); app.render();
+    renderGrowth();
+  }
 
   // ---- L6 クエストを選ぶ（戦闘の前に。同じ盤面で、どの方向のミッションが出るか） ----
   var questFor = null;   // クエストを選ぶ盤面（闇クエストの盤面にいるときは、もとの盤面）
@@ -753,6 +758,7 @@
     }
   };
 
-  window.LabTargetUI = { cardHtml: cardHtml, openQuest: openQuest, openSort: openSort, openSortN: openSortN, paths: function () { return clone(paths); }, setPath: setPath, resetPaths: resetPaths, openGrowth: openGrowth, openPaths: openPaths, render: renderBox };
+  window.LabTargetUI = { cardHtml: cardHtml, openQuest: openQuest, openSort: openSort, openSortN: openSortN, paths: function () { return clone(paths); }, setPath: setPath, resetPaths: resetPaths, openGrowth: openGrowth, openPaths: openPaths, render: renderBox,
+    pathOf: pathFor, marksHtml: marksHtml, magicLabel: magicLabel, closeGrowth: function () { gbox.hidden = true; } };   // pathOf・marksHtml・magicLabel はクエスト制の拠点の画面から
   renderBox();
 })();

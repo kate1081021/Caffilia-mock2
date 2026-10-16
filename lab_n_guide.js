@@ -47,9 +47,10 @@
     { scen: 'labNv', title: '道を見る・ミッションの仕分け', panels: true,
       look: ['「道を見る」: 5属性の、やりたいこと・2つの方面（変化 → 覚醒／融合）・間の強化の並び', '「ミッションの仕分け」: 44のミッションを、どのやりたいことに入れるか（変えられる）'],
       q: ['ミッションの仕分けが、属性のやりたいことと素直に合っていたか（計測では、草以外はほとんど融合方面に入った。LAB_REPORT の N）'] },
-    { scen: 'labNs1', title: '連戦で育てる（時間があるとき）', play: true,
-      look: ['4戦（燃え広がり → 守る → 動かす → 森を育てる）。勝つと育ちの画面で印が進み、次の戦いに持ち越す', '戦い方（だれに最後の一手を撃たせるか）で、だれがどちらの方面に進むか'],
-      q: ['戦い方から、覚醒方面と融合方面が自然に分かれたか'] }
+    { quest: true, title: 'クエスト制で育てる（時間があるとき）',
+      look: ['拠点のクエストボードから1件選び、連れていく仲間3人を決めて戦う。盤面の順番は決まっていない', 'クエストの札に、ミッションの印・育ちやすい方向・仲間ごとの行き先（覚醒方面か融合方面か）・報酬・おすすめの魔法',
+        '勝つと育ちの画面で印が進み、「拠点に戻る」でボードへ。第1章のキークエストを全部クリアすると第2章が開く。裏クエストを受けると、ボードに並ぶクエストが変わる'],
+      q: ['クエストを選ぶ理由が「誰をどの方向に育てたいか」になったか', '戦い方から、覚醒方面と融合方面が自然に分かれたか'] }
   ];
 
   var KEY = 'cafilia-n-guide', seen = {};
@@ -79,7 +80,8 @@
       '<div class="ng-q">問い: ' + s.q.map(esc).join('／') + '</div>' +
       '<div class="ng-btns">' +
       (demo ? '<button type="button" class="primary" data-ng="demo" data-i="' + i + '">デモを見る ▶</button>' : '') +
-      (s.panels ? '<button type="button" class="primary" data-ng="paths" data-i="' + i + '">道を見る</button><button type="button" data-ng="sort" data-i="' + i + '">ミッションの仕分け</button>' :
+      (s.quest ? '<button type="button" class="primary" data-ng="quest" data-i="' + i + '">拠点を開く</button>' :
+        s.panels ? '<button type="button" class="primary" data-ng="paths" data-i="' + i + '">道を見る</button><button type="button" data-ng="sort" data-i="' + i + '">ミッションの仕分け</button>' :
         '<button type="button"' + (demo ? '' : ' class="primary"') + ' data-ng="play" data-i="' + i + '">自分で遊ぶ</button>') +
       '<label class="ng-seen"><input type="checkbox" data-ng="seen" data-i="' + i + '"' + (seen[i] ? ' checked' : '') + '> 見た</label>' +
       '</div></li>';
@@ -118,6 +120,7 @@
     hideHowto();
     var gb = document.getElementById('labGrowth');
     if (gb) gb.hidden = true;
+    if (s.quest) { bar.hidden = true; document.body.classList.remove('ng-bar-on'); if (window.LabQuest) window.LabQuest.open(); return; }   // クエスト制は拠点の画面で
     var p = R.findPreset(s.scen);
     if (!p) { app.addLog('【N 確認ガイド】盤面がない: ' + s.scen); return; }
     if (mode !== 'play' && p.demo && !s.play && !s.panels) app.playLabDemo(p);
@@ -140,11 +143,11 @@
     if (a === 'seen') { seen[i] = b.checked; if (!b.checked) delete seen[i]; save(); return; }
     if (a === 'demo') go(i, 'demo');
     else if (a === 'play') go(i, 'play');
-    else if (a === 'paths' || a === 'sort') go(i, a);
+    else if (a === 'paths' || a === 'sort' || a === 'quest') go(i, a);
     else if (a === 'close') close();
     else if (a === 'open') open();
     else if (a === 'reset') { seen = {}; save(); open(); }
-    else if (a === 'next') { if (cur + 1 < STEPS.length) go(cur + 1, 'demo'); else { bar.hidden = true; open(); } }
+    else if (a === 'next') { if (cur + 1 < STEPS.length) go(cur + 1, STEPS[cur + 1].quest ? 'quest' : 'demo'); else { bar.hidden = true; open(); } }
     else if (a === 'again') go(cur, 'demo');
     else if (a === 'growth') growth();
     else if (a === 'hide') { bar.hidden = true; document.body.classList.remove('ng-bar-on'); }

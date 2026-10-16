@@ -2636,7 +2636,7 @@
       if (!lon()) return;
       if (!s.labTargets && s.labTargetList) {
         var list = s.labTargetList.map(targetDef).filter(function (t) { return t && (!t.needsGrow || B.grow.enabled) && mOffer(s, t) && (t.dir !== 'dark' || on('L7')); });   // L7: 闇のミッションは L7 のときだけ
-        s.labTargets = list.slice(0, targetCount());
+        s.labTargets = list.slice(0, s.labTargetCount ? clampN(s.labTargetCount, 1, 6, 3) : targetCount());   // クエスト制: クエストが決めたミッションの数（labState.labTargetCount）
       }
       (s.labTargets || []).forEach(function (t) { t.got = null; delete t.missed; delete t.remainSeen; });
       delete s.labPlanFin; delete s.labFoil; delete s.labShot;

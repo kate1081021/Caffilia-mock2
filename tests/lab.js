@@ -2618,6 +2618,112 @@ console.log('\n■ N 強化と変化（やりたいこと・印・間の強化�
   });
 })();
 
+console.log('\n■ N クエスト制（拠点のクエストボード・章・裏クエスト）');
+(function () {
+  var Q = require('../lab_quest.js');
+  function ids(c) { return Q.board(c).map(function (q) { return q.id; }); }
+  function win(c, id) { return Q.finish(Q.accept(c, id).c, id, true).c; }
+  function battle(q, party) {
+    var p = Q.preset(q, party, R.findPreset, {});
+    R.LAB_PRESETS.push(p);
+    try { R.labApply(p.lab, p.labOpts); return { p: p, s: R.startBattle(R.loadPreset(p.id)).state }; }
+    finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(p), 1); }
+  }
+
+  test('クエスト制: 最初は第1章だけ。いまの4つの盤面と裏クエストが、順番なしで並ぶ。仲間は草・火・風・水', function () {
+    var c = Q.newCampaign();
+    eq(Q.openChapter(c), 1);
+    eq(ids(c), ['c1burn', 'c1guard', 'c1lure', 'c1field', 'c1dark']);
+    eq(Q.board(c).map(function (q) { return q.board; }), ['labN1', 'labN2', 'labN3', 'labN4', 'labND']);
+    eq(c.roster, ['grass', 'fire', 'water', 'wind']);
+    eq(c.flags.order, 'calm');
+  });
+  test('クエスト制: クリアしたクエストはボードから消える。負けたら残る', function () {
+    var c = Q.finish(Q.newCampaign(), 'c1field', false).c;
+    ok(ids(c).indexOf('c1field') >= 0, '負けたら残る');
+    c = win(c, 'c1field');
+    ok(ids(c).indexOf('c1field') < 0, 'クリアしたら消える');
+  });
+  test('クエスト制: 第1章のキークエスト（燃え広がり・守る）を全部クリアすると第2章が開く。寄り道は受けなくてよい', function () {
+    var c = win(Q.newCampaign(), 'c1burn');
+    eq(Q.openChapter(c), 1, 'キーが1つ残っている');
+    var r = Q.finish(Q.accept(c, 'c1guard').c, 'c1guard', true);
+    eq(Q.openChapter(r.c), 2);
+    ok(r.notes.some(function (t) { return /第2章「街道」が開いた/.test(t); }), r.notes.join('／'));
+    eq(ids(r.c), ['c1lure', 'c1field', 'c1dark', 'c2cargo', 'c2hill', 'c2grass'], '第1章の残りも受けられる');
+  });
+  test('クエスト制: 最後の章のキークエストを全部クリアすると1周の終わり', function () {
+    var c = ['c1burn', 'c1guard', 'c2cargo'].reduce(win, Q.newCampaign());
+    ok(!c.done);
+    var r = Q.finish(Q.accept(c, 'c2hill').c, 'c2hill', true);
+    ok(r.c.done && Q.allDone(r.c));
+    ok(r.notes.some(function (t) { return /1周の終わり/.test(t); }));
+  });
+  test('クエスト制: 寄り道「谷の魔物を誘い出せ」の報酬で、土が仲間に加わる', function () {
+    var r = Q.finish(Q.accept(Q.newCampaign(), 'c1lure').c, 'c1lure', true);
+    eq(r.c.roster, ['grass', 'earth', 'fire', 'water', 'wind']);
+    ok(r.notes.some(function (t) { return /土の魔法使いが加わった/.test(t); }));
+  });
+  test('クエスト制: 裏クエストを受けると治安が荒れ、村の依頼が消え、第2章の荷運びが黒衣の男の依頼に入れ替わる', function () {
+    var r = Q.accept(Q.newCampaign(), 'c1dark');
+    eq(r.c.flags.order, 'rough', '受けたときに変わる');
+    ok(ids(r.c).indexOf('c1field') < 0, '村の農家の依頼が消える');
+    var c = ['c1burn', 'c1guard'].reduce(win, r.c);
+    eq(ids(c).filter(function (id) { return /^c2/.test(id); }), ['c2loot', 'c2hill', 'c2grass']);
+    c = ['c2loot', 'c2hill'].reduce(win, c);
+    ok(c.done, '入れ替わったクエストも同じ枠のキークエスト');
+  });
+  test('クエスト制: おだやかなうちに荷運びをクリアしてから荒れても、同じ枠なので入れ替わったクエストは出ない', function () {
+    var c = ['c1burn', 'c1guard', 'c2cargo'].reduce(win, Q.newCampaign());
+    c = Q.accept(c, 'c1dark').c;
+    ok(ids(c).indexOf('c2loot') < 0);
+  });
+  test('クエスト制: 第1章のキークエストは未決なので付け替えられる（寄り道をキーにすると、それもクリアが要る）', function () {
+    var c = Q.setKey(Q.newCampaign(), 'c1lure', true);
+    c = ['c1burn', 'c1guard'].reduce(win, c);
+    eq(Q.openChapter(c), 1, '谷の魔物もキーになった');
+    c = win(c, 'c1lure');
+    eq(Q.openChapter(c), 2);
+    c = Q.setKey(Q.setKey(Q.newCampaign(), 'c1burn', false), 'c1guard', false);
+    eq(Q.openChapter(c), 2, 'キーが1つもなければ、最初から開く');
+    ok(!Q.isKey(Q.setKey(Q.newCampaign(), 'c1dark', true), Q.quest('c1dark')), '裏クエストはキーにしない');
+  });
+  test('クエスト制: 仲間の入れ方（おすすめの魔法はその場所のまま、ほかの仲間は空いた場所へ）', function () {
+    var q = Q.quest('c1guard'), c = Q.newCampaign();
+    eq(Q.recommend(q, R.findPreset), ['grass', 'earth', 'water']);
+    eq(Q.defaultParty(c, q, R.findPreset), ['grass', 'water', 'fire'], '土はまだいないので、仲間の並びから火');
+    var base = R.findPreset('labN2').allies;
+    var b = battle(q, ['grass', 'water', 'fire']);
+    eq(R.alliesOf(b.s).map(function (u) { return [u.magic, u.x, u.y]; }).sort(), [['fire', base[1][1], base[1][2]], ['grass', base[0][1], base[0][2]], ['water', base[2][1], base[2][2]]].sort());
+  });
+  test('クエスト制: クエストの盤面は、クエストのミッションをその数だけ出す（2つ・3つ）。お題の中でのミッション選び（L6）はない', function () {
+    var b = battle(Q.quest('c1field'), ['grass', 'fire', 'wind']);
+    eq(b.s.labTargets.map(function (t) { return t.id; }), ['bigFin', 'twoStage']);
+    ok(b.p.lab.indexOf('L6') < 0 && !R.lab('L6'));
+    b = battle(Q.quest('c1burn'), ['grass', 'fire', 'wind']);
+    eq(b.s.labTargets.map(function (t) { return t.id + ':' + t.dir; }), ['finKill:defeat', 'kill:defeat', 'nextTo:spread'], '倒す寄り');
+  });
+  test('クエスト制: 全部のクエストが、おすすめの仲間で読めて戦闘を始められる。裏クエストと闇の力を持つ仲間がいるときは L7 も', function () {
+    var c = Q.newCampaign();
+    Q.QUESTS.forEach(function (q) {
+      var b = battle(q, Q.defaultParty(c, q, R.findPreset));
+      eq(R.alliesOf(b.s).length, 3, q.id);
+      eq(b.s.labTargets.length, q.missions.length, q.id);
+      ok(R.lab('N0'), q.id + ' は N');
+      eq(R.lab('L7'), q.kind === 'dark', q.id + ' の L7');
+    });
+    ok(Q.preset(Q.quest('c1burn'), ['grass', 'fire', 'wind'], R.findPreset, { dark: true }).lab.indexOf('L7') >= 0);
+  });
+  test('クエスト制: 古い・壊れた進みは、最初の形にそろえる', function () {
+    eq(Q.norm(null).roster, ['grass', 'fire', 'water', 'wind']);
+    var c = Q.norm({ roster: ['wind', 'thunder', 'grass'], flags: { order: 'x' }, cleared: 3 });
+    eq([c.roster, c.flags.order, c.cleared], [['grass', 'wind'], 'calm', {}]);
+  });
+  test('クエスト制: N の連戦（決まった順の4戦）とクエスト連戦はなくなった', function () {
+    ['labNs1', 'labNs4', 'labNq1'].forEach(function (id) { ok(!R.findPreset(id), id); });
+  });
+})();
+
 console.log('\n■ ラボ用シナリオ');
 R.LAB_PRESETS.forEach(function (p) {
   test('シナリオ「' + p.name + '」が読めて、戦闘を始められる', function () {

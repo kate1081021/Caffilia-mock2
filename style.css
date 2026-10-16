@@ -1408,3 +1408,58 @@ button.ng-open { font-size: 12px; }
 .ng-bar .ng-title { color: #bae6fd; }
 .ng-bar button { font-size: 12px; }
 body.ng-bar-on { padding-bottom: 72px; }   /* 確認ガイドのバーで、盤面の下の段が隠れないように */
+
+/* ---- 試作ラボ N クエスト制（lab_quest_ui.js）: 拠点のクエストボード・仲間を選ぶ ---- */
+.lq-wrap { z-index: 59; }   /* 道を見る・育ちの画面（.lab-run 60）は拠点の上に出る */
+.lq-main { max-width: 940px; }
+.lq-notes { background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; margin: 6px 0; font-size: 13px; }
+.lq-notes p { margin: 2px 0; }
+.lq-done { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 6px 10px; margin: 6px 0; font-size: 13px; }
+.lq-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; margin: 6px 0; }
+.lq-order { font-size: 12px; font-weight: bold; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.lq-order.lq-calm { background: #dcfce7; color: #166534; }
+.lq-order.lq-rough { background: #3b2f4d; color: #ede9fe; }
+.lq-party { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12px; background: #f8fafc; border-radius: 6px; padding: 4px 8px; }
+.lq-l { display: inline-block; min-width: 5.5em; color: #64748b; font-size: 11px; flex: none; }
+.lq-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.lq-card { border: 1px solid #e5e7eb; border-top: 4px solid #94a3b8; border-radius: 10px; padding: 8px 10px; background: #fff; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.lq-card.lq-key { border-top-color: #c99a1e; }
+.lq-card.lq-side { border-top-color: #0f766e; }
+.lq-card.lq-dark { background: linear-gradient(160deg, #2b2438, #1c1726); color: #e9e3f5; border-color: #4c3f63; border-top-color: #a78bfa; }
+.lq-card.lq-dark .lq-l, .lq-card.lq-dark small { color: #c4b5fd; }
+.lq-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 14px; }
+.lq-card-head small { font-size: 11px; color: #64748b; }
+.lq-kind { font-size: 11px; font-weight: bold; color: #fff; background: #94a3b8; border-radius: 4px; padding: 0 6px; }
+.lq-key .lq-kind { background: #c99a1e; }
+.lq-side .lq-kind { background: #0f766e; }
+.lq-dark .lq-kind { background: #7c3aed; }
+.lq-story { margin: 0; font-size: 12px; line-height: 1.5; }
+.lq-row { display: flex; align-items: flex-start; gap: 4px; flex-wrap: wrap; }
+.lq-ms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.lq-ms li { display: flex; align-items: center; gap: 4px; }
+.lq-lean { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; font-weight: bold; }
+.lq-lean .lt-mark { width: 1.3em; height: 1.3em; font-size: 10px; }
+.lq-rec { display: inline-block; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 5px; margin-right: 3px; background: #f8fafc; color: #1f2937; }
+.lq-rec.none { opacity: .55; border-style: dashed; }
+.lq-join { color: #b45309; }
+.lq-dark .lq-join { color: #fcd34d; }
+.lq-warn { color: #b91c1c; font-weight: bold; }
+.lq-dark .lq-warn { color: #fca5a5; }
+.lq-fcs > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.lq-fcm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.lq-fcm b { min-width: 1.4em; }
+.lq-fc { font-size: 11px; border-radius: 999px; padding: 0 6px; background: #e2e8f0; color: #334155; }
+.lq-fc.aw { background: #fef3c7; color: #92400e; }
+.lq-fc.fu { background: #cffafe; color: #155e75; }
+.lq-fc.dk { background: #ede9fe; color: #5b21b6; }
+.lq-card button { margin-top: auto; }
+.lq-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 8px 0; }
+.lq-pick { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 2px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; font-size: 12px; color: #1f2937; }
+.lq-pick.on { border-color: #0f766e; background: #f0fdfa; }
+.lq-pick-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.lq-recmark { font-size: 10px; font-weight: bold; color: #fff; background: #c99a1e; border-radius: 4px; padding: 0 4px; }
+.lq-pick-fc { display: flex; flex-wrap: wrap; gap: 3px; }
+.lq-keyedit, .lq-log { margin-top: 10px; font-size: 12px; }
+.lq-keyedit label { margin-right: 8px; white-space: nowrap; }
+.lq-log ol { margin: 4px 0; padding-left: 1.6em; }
+.lq-bar { background: #fef9c3; }
