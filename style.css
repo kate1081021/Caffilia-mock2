@@ -1388,3 +1388,23 @@ body.lab-tidy .cell:not(:hover) .u-boost, body.lab-tidy .cell:not(:hover) .u-ord
 .cell.nawk::after { content: ''; position: absolute; inset: 2px; border: 3px solid #fbbf24; border-radius: 5px; box-shadow: 0 0 8px 2px rgba(251, 191, 36, .85), inset 0 0 6px 1px rgba(251, 191, 36, .6); pointer-events: none; z-index: 3; }
 .cell.nawk .tile-label { color: #fff7d6; font-weight: bold; text-shadow: 0 0 3px #92400e, 0 0 2px #92400e; }
 .b-nawk { position: absolute; left: 2px; top: 2px; font-size: 11px; font-weight: bold; line-height: 1; padding: 2px 3px; border-radius: 4px; background: #b45309; color: #fff; box-shadow: 0 0 0 1px #fde68a; pointer-events: auto; z-index: 4; }
+
+/* ---- ラボ N 確認ガイド（lab_n_guide.js） ---- */
+button.ng-open { font-size: 12px; }
+.ng-card { max-width: 760px; }
+.ng-steps { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.ng-step { border: 1px solid #e5e7eb; border-left: 4px solid #0ea5e9; border-radius: 8px; padding: 6px 10px; background: #fff; }
+.ng-step.seen { border-left-color: #16a34a; background: #f0fdf4; }
+.ng-step.now { box-shadow: 0 0 0 2px #0ea5e9; }
+.ng-head { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.ng-no { display: inline-flex; align-items: center; justify-content: center; width: 1.6em; height: 1.6em; border-radius: 50%; background: #0ea5e9; color: #fff; font-size: 12px; font-weight: bold; flex: none; }
+.ng-step.seen .ng-no { background: #16a34a; }
+.ng-look { margin: 4px 0 2px 1.2em; padding-left: 1em; font-size: 12px; }
+.ng-q { font-size: 12px; color: var(--muted, #6b7280); }
+.ng-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.ng-seen { font-size: 12px; margin-left: auto; }
+.ng-bar { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 55; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: calc(100vw - 32px);
+  background: #0f172a; color: #f8fafc; border-radius: 10px; padding: 8px 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, .3); font-size: 13px; }
+.ng-bar .ng-title { color: #bae6fd; }
+.ng-bar button { font-size: 12px; }
+body.ng-bar-on { padding-bottom: 72px; }   /* 確認ガイドのバーで、盤面の下の段が隠れないように */
