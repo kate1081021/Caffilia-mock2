@@ -3990,6 +3990,13 @@
     function nEarth() { return lopt('N3', 'earth', 'defeat') === 'stop' ? 'stop' : 'defeat'; }   // N3 土のやりたいこと
     function nWeak() { return lopt('N4', 'fuse', 'weak') !== 'same'; }                            // N4 融合を控えめに
     function nKeep() { return lopt('N5', 'steps', 'keep') !== 'reset'; }                           // N5 間の強化を変化した魔法に引き継ぐ
+    // N6 1本の道（.claude/IMPROVE_road.md）。印でマスを埋め、len マスそろったら多い方の方面へ変化（閉じない）
+    //   道 u.labPath.road = [{ w: ミッションのやりたいこと, k: 'awake'／'fuse' }]（変化までのマス。変化したあとの印は入れない）
+    function nRoadOn() { return non() && on('N6'); }
+    function nRoadLen() { return clampN(lopt('N6', 'len', 3), 1, 9, 3); }
+    function nRoadAw(p) { return (p.road || []).filter(function (r) { return r.k === 'awake'; }).length; }
+    // そろった道の方面: 多い方。同点は最後に埋めた形
+    function nRoadForm(road) { var a = nRoadAw({ road: road }), f = road.length - a; return a > f ? 'awake' : f > a ? 'fuse' : road[road.length - 1].k; }
     var N_CANDS = { linger: true, standOn: true, leap: true };   // M の仕組み（mCand）で起こす間の強化
 
     // ---- やりたいことと道 ----
@@ -4008,10 +4015,29 @@
       var src = p0 || {}, p = nNew(), C = nChangeAt(), A = nAwakeAt();
       p.aw = clampN(src.aw, 0, 20, 0); p.fu = clampN(src.fu, 0, 20, 0);
       p.steps = clampN(src.steps === undefined ? p.aw + p.fu : src.steps, 0, d.steps.length + LCH.MORE_MAX, 0);
+      if (nRoadOn()) return nNormRoad(d, src, p);
       var f = src.form === 'awake' && p.aw >= C ? 'awake' : src.form === 'fuse' && p.fu >= C ? 'fuse' : null;
       if (!f && (p.aw >= C || p.fu >= C)) f = p.aw >= p.fu ? 'awake' : 'fuse';
       p.form = f;
       p.awake = f === 'awake' && p.aw >= C + A;
+      return p;
+    }
+    // N6: 道（road）を数に合わせてそろえる。数に合わない道（エディット・シナリオの数だけの道）は、数から作り直す
+    //   作り直すときは、変化した方面（なければ数の多い方）の形を先に置く
+    function nNormRoad(d, src, p) {
+      var L = nRoadLen(), A = nAwakeAt(), n = Math.min(L, p.aw + p.fu);
+      var road = (Array.isArray(src.road) ? src.road : []).filter(function (r) { return r && (r.k === 'awake' || r.k === 'fuse'); })
+        .slice(0, L).map(function (r) { return { w: r.w || (r.k === 'awake' ? d.want : 'odd'), k: r.k }; });
+      var ra = nRoadAw({ road: road });
+      if (road.length !== n || ra > p.aw || road.length - ra > p.fu) {
+        var lead = src.form === 'fuse' || src.form === 'awake' ? src.form : p.aw >= p.fu ? 'awake' : 'fuse';
+        var cnt = { awake: p.aw, fuse: p.fu }, other = lead === 'awake' ? 'fuse' : 'awake';
+        road = [];
+        [lead, other].forEach(function (k) { for (var i = 0; i < cnt[k] && road.length < n; i++) road.push({ w: k === 'awake' ? d.want : 'odd', k: k }); });
+      }
+      p.road = road;
+      p.form = road.length >= L ? nRoadForm(road) : null;
+      p.awake = p.form === 'awake' && p.aw - nRoadAw(p) >= A;
       return p;
     }
     // 印の種類: 'awake' 覚醒方面 ／'fuse' 融合方面 ／'step' 間の強化だけ（N2 step）／null 印にならない（N2 partner）
@@ -4036,12 +4062,50 @@
       var C = nChangeAt(), A = nAwakeAt(), out = { ok: true, kind: kind };
       if (kind === 'awake') p.aw = (p.aw || 0) + 1;
       if (kind === 'fuse') p.fu = (p.fu || 0) + 1;
-      if (p.form && kind !== 'step' && kind !== p.form) out.closed = true;   // 閉じた方面の印（間の強化だけ付く）
-      if (!p.form && kind === 'awake' && p.aw >= C) { p.form = 'awake'; out.change = d.awake; }
-      if (!p.form && kind === 'fuse' && p.fu >= C) { p.form = 'fuse'; out.change = d.fuse; }
+      if (nRoadOn()) nRoadStep(p, d, kind, w, out);
+      else {
+        if (p.form && kind !== 'step' && kind !== p.form) out.closed = true;   // 閉じた方面の印（間の強化だけ付く）
+        if (!p.form && kind === 'awake' && p.aw >= C) { p.form = 'awake'; out.change = d.awake; }
+        if (!p.form && kind === 'fuse' && p.fu >= C) { p.form = 'fuse'; out.change = d.fuse; }
+      }
       if (out.change && !nKeep()) { p.steps = 0; out.reset = true; }   // N5 reset: 変化した魔法は、間の強化を0から
       else { var st = nStepAt(d, p.steps || 0); if (st) { p.steps = (p.steps || 0) + 1; out.step = st; } }
-      if (p.form === 'awake' && !p.awake && p.aw >= C + A) { p.awake = true; out.awake = d.awake.lv2; }
+      if (p.form === 'awake' && !p.awake && (nRoadOn() ? p.aw - nRoadAw(p) >= A : p.aw >= C + A)) { p.awake = true; out.awake = d.awake.lv2; }
+      return out;
+    }
+    // N6: 変化する前なら道のマスを1つ埋め、そろったら多い方へ変化。変化したあとは、覚醒側の自分の形だけが覚醒へ進む
+    //   out.slot 埋めたマス（1から）・out.tally { aw, fu }（そろったときの数）・out.past 道を進めない印（間の強化だけ）
+    function nRoadStep(p, d, kind, w, out) {
+      if (kind !== 'awake' && kind !== 'fuse') return;
+      if (p.form) { if (p.form === 'fuse' || kind === 'fuse') out.past = true; return; }
+      p.road = p.road || [];
+      p.road.push({ w: w, k: kind });
+      out.slot = p.road.length;
+      if (p.road.length < nRoadLen()) return;
+      p.form = nRoadForm(p.road);
+      out.change = p.form === 'awake' ? d.awake : d.fuse;
+      out.tally = { aw: nRoadAw(p), fu: p.road.length - nRoadAw(p) };
+    }
+    // N6: 次の一手で道がどうなるか（魔法カード・予測の一言）。own 自分の形・other ほかの形（N2 で数えない形は null）
+    //   { left 変化までのマス, decided 決まった方面, own/other { change, awake, left }, awakeLeft 覚醒まで }
+    function nNext(m, p0) {
+      var d = nDef(m);
+      if (!d || !nRoadOn()) return null;
+      var p = nNorm(m, p0), L = nRoadLen(), A = nAwakeAt(), out = { form: p.form, awake: p.awake, step: nStepAt(d, p.steps || 0) };
+      var sim = function (kind) {
+        if (kind === 'fuse' && nOdd() === 'step') return null;
+        var q = lclone(p), r = { ok: true, kind: kind };
+        if (kind === 'awake') q.aw++; else q.fu++;
+        nRoadStep(q, d, kind, kind === 'awake' ? d.want : 'odd', r);
+        if (q.form === 'awake' && !q.awake && q.aw - nRoadAw(q) >= A) r.awake = d.awake.lv2;
+        return r;
+      };
+      out.own = sim('awake'); out.other = sim('fuse');
+      if (!p.form) {
+        var a = nRoadAw(p);
+        out.left = L - p.road.length;
+        out.decided = a * 2 > L ? 'awake' : (p.road.length - a) * 2 > L ? 'fuse' : null;   // もう半分を超えた方面
+      } else if (p.form === 'awake' && !p.awake) out.awakeLeft = A - (p.aw - nRoadAw(p));
       return out;
     }
     function nGain(p, m, w) {
@@ -4050,9 +4114,34 @@
       return g;
     }
     // ---- 言葉 ----
+    // 魔法カードの形の図: 術者から見た形のマス（上向き。dx 右・dy 前）。盤の下の真ん中に立たせて数える（盤の外は欠ける）
+    function nCardCells(s, u0) {
+      var sc = lclone(s), u = I.findUnit(sc, u0.id);
+      if (!u) return [];
+      u.x = Math.floor(sc.size / 2); u.y = I.rowsOf(sc) - 1; u.facing = 'up';
+      return I.castCells(sc, u, 'up').map(function (c) { return [c[0] - u.x, u.y - c[1]]; });
+    }
+    // N6: 形（◆●▲■★。数から作った道の、ほかの形は ○）
+    function nShape(w) { return LCH.WANTS[w] && LCH.WANTS[w].shape ? LCH.WANTS[w].shape : '○'; }
+    // N6: 「ほかの形」の言い方（N2 partner なら融合の相手の形だけ）
+    function nOtherName(d) { return nOdd() === 'partner' ? nShape(nWantOf(d.partner)) + '（' + I.magicName(d.partner) + 'の形）' : 'ほかの形'; }
+    // N6: 次の一手で何に変化するか（「次の◆で炎に変化／ほかの形で火の渦に変化」）
+    function nNextText(m, p) {
+      var d = nDef(m), nx = nNext(m, p), own = nShape(d.want);
+      if (!nx) return '';
+      if (nx.form === 'fuse') return '融合「' + d.fuse.name + '」に変化ずみ（道はここまで。印は間の強化だけ）';
+      if (nx.awake) return '覚醒「' + d.awake.lv2.name + '」ずみ';
+      if (nx.form === 'awake') return nx.awakeLeft === 1 ? '次の' + own + 'で覚醒「' + d.awake.lv2.name + '」' : 'あと' + own + nx.awakeLeft + 'つで覚醒「' + d.awake.lv2.name + '」';
+      if (!nx.other) return (nx.left === 1 ? '次の' + own + 'で' : 'あと' + own + nx.left + 'つで') + '「' + d.awake.name + '」に変化（N2: ' + own + 'だけが道を進める）';
+      if (nx.decided) { var dn = nx.decided === 'awake' ? d.awake.name : d.fuse.name; return nx.left === 1 ? '次の1マスで「' + dn + '」に変化（もう決まり）' : 'あと' + nx.left + 'マスで「' + dn + '」に変化（もう決まり）'; }
+      if (nx.left > 1) return 'あと' + nx.left + 'マスで変化（' + own + 'が多いと「' + d.awake.name + '」、' + nOtherName(d) + 'が多いと「' + d.fuse.name + '」）';
+      var to = function (r) { return r && r.change ? (r.change === d.awake ? d.awake.name : d.fuse.name) : null; };
+      return '次の' + own + 'で「' + to(nx.own) + '」に変化' + (nx.other ? '／' + nOtherName(d) + 'で「' + to(nx.other) + '」に変化' : '');
+    }
     function nHint(m, p, r) {
       var d = nDef(m), C = nChangeAt(), A = nAwakeAt();
       if (!d || !p || r.change || r.awake) return '';
+      if (nRoadOn()) return nNextText(m, p);
       if (!p.form) {
         var out = ['あと' + (C - p.aw) + 'つで変化「' + d.awake.name + '」'];
         if (nOdd() !== 'step') out.push('あと' + (C - p.fu) + 'つで融合「' + d.fuse.name + '」');
@@ -4067,6 +4156,7 @@
       var mine = nWantName(d.want), wn = w === 'free' ? 'どれでも' : nWantName(w);
       if (r.none && r.partner) return nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）。融合の相手（' + I.magicName(d.partner) + '「' + nWantName(nWantOf(d.partner)) + '」）とも合わないので、印にならない（N2）';
       if (r.none) return nm + 'には道がない';
+      if (nRoadOn()) return nGainTextRoad(m, w, g, before, d);
       var head = r.kind === 'awake' ? (w === 'free' ? 'どの属性にも合うミッション' : nm + 'のやりたいこと「' + mine + '」と合う') + ' → 覚醒方面の印'
         : r.kind === 'fuse' ? nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）→ 融合方面の印'
         : nm + 'のやりたいこと「' + mine + '」と合わない（' + wn + '）→ 方面には数えない（N2）';
@@ -4082,6 +4172,25 @@
       if (hint) parts.push(hint);
       return head + '（' + parts.join('。') + '）';
     }
+    // N6: 1本の道の言い方（「◆ 火の形（倒す）→ 道の2マス目。次の◆で「炎」に変化／ほかの形で「火の渦」に変化」）
+    function nGainTextRoad(m, w, g, before, d) {
+      var nm = I.magicName(m), r = g.res, sh = nShape(w), wn = w === 'free' ? 'どれでも' : nWantName(w), L = nRoadLen();
+      var head = r.kind === 'awake' ? sh + ' ' + nm + 'の形（' + (w === 'free' ? 'どれでも＝自分の形' : wn) + '）'
+        : r.kind === 'fuse' ? sh + ' ' + nm + 'のほかの形（' + wn + '）'
+        : sh + ' ' + nm + 'のやりたいことと合わない（' + wn + '）→ 道には数えない（N2）';
+      var parts = [];
+      if (r.slot) parts.push('道の' + r.slot + '/' + L + 'マス目');
+      if (r.change) parts.push(L + 'マスそろった（' + nShape(d.want) + r.tally.aw + '・ほか' + r.tally.fu + '）→ ' + (r.change === d.awake ? '変化' : '融合') + '「' + r.change.name + '」！');
+      else if (r.past && before && before.form === 'fuse') parts.push('融合「' + d.fuse.name + '」に変化ずみ（道はここまで）');
+      else if (r.past) parts.push('「' + d.awake.name + '」に変化ずみ。ほかの形は覚醒へ進まない');
+      else if (r.kind === 'awake' && before && before.form === 'awake' && !before.awake && !r.awake) parts.push('覚醒「' + d.awake.lv2.name + '」へ1つ');
+      if (r.awake) parts.push('覚醒「' + r.awake.name + '」！');
+      if (r.reset) parts.push('間の強化は0から（N5）');
+      else parts.push(r.step ? '間の強化「' + r.step.name + '」' : '間の強化はもう上限');
+      var a = g.after;
+      if (a && (!a.form || (a.form === 'awake' && !a.awake))) { var hint = nHint(m, a, r); if (hint) parts.push(hint); }   // 変化ずみ・覚醒ずみは、上の一言で足りる
+      return head + (r.kind === 'step' ? '。' : ' → ') + parts.reduce(function (t, x) { return t ? t + (/！$/.test(t) ? ' ' : '。') + x : x; }, '');
+    }
     function nOutlook(m, p, w) {
       if (!nDef(m)) return '達成するが、' + I.magicName(m) + 'は今回の育ちの対象ではない（道がない）';
       var before = nNorm(m, p || nNew());
@@ -4094,6 +4203,14 @@
       if (!d) return '';
       var p = nNorm(m, p0), C = nChangeAt(), A = nAwakeAt();
       var st = nStepsOf(d, p).map(function (x) { return x.mark; }).join('');
+      if (nRoadOn()) {   // N6: 道◆●・ ／炎 覚醒まで◆・・ ／業火（覚醒） ／火の渦（融合）
+        var slots = '', L = nRoadLen(), up = Math.max(0, p.aw - nRoadAw(p));
+        for (var i = 0; i < L; i++) slots += p.road[i] ? nShape(p.road[i].w) : '・';
+        var aw = '';
+        for (var j = 0; j < A; j++) aw += j < up ? nShape(d.want) : '・';
+        var hr = !p.form ? '道' + slots : p.form === 'fuse' ? d.fuse.name + '（融合）' : p.awake ? d.awake.lv2.name + '（覚醒）' : d.awake.name + ' 覚醒まで' + aw;
+        return hr + (st ? ' 強' + st : '');
+      }
       var h = !p.form ? '覚' + nDots(p.aw, C) + ' 融' + nDots(p.fu, C)
         : p.form === 'awake' ? (p.awake ? '覚醒' : '覚' + nDots(Math.max(0, p.aw - C), A)) + ' 融×'
         : '融合 覚×';
@@ -4510,7 +4627,8 @@
       on: non, CH: LCH, WANTS: LCH.WANTS, WANT_ORDER: LCH.WANT_ORDER, SORT_ORDER: LCH.SORT_ORDER, FORMS: LCH.FORMS, STEPS: LCH.STEPS, MORE: LCH.MORE,
       MISSIONS: function () { return nMissionList(); }, def: nDef, norm: nNorm, wantOf: nWantOf, wantName: nWantName, kind: nKind, stepsOf: function (m, p) { var d = nDef(m); return d ? nStepsOf(d, nNorm(m, p)) : []; },
       stepAt: nStepAt, formOf: nFormOf, changeAt: nChangeAt, awakeAt: nAwakeAt, odd: nOdd, earth: nEarth, weak: nWeak, keep: nKeep,
-      setSort: nSetSort, sortOf: function () { return lclone(nSort); }, missionWant: nMissionWant, mission: nMission, awkTile: nAwkTile, AWK: N_AWK
+      setSort: nSetSort, sortOf: function () { return lclone(nSort); }, missionWant: nMissionWant, mission: nMission, awkTile: nAwkTile, AWK: N_AWK,
+      road: nRoadOn, roadLen: nRoadLen, roadAw: nRoadAw, shape: nShape, otherName: nOtherName, next: nNext, nextText: nNextText, TRAITS: LCH.TRAITS || {}, cardCells: nCardCells   // N6 1本の道
     };
 
     var LAPI = {

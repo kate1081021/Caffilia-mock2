@@ -161,6 +161,7 @@
     p.desc = '【クエスト制・第' + q.ch + '章・' + KIND[q.kind].name + '】' + q.client + 'の依頼: ' + q.story + ' ' + base.desc;
     p.lab = (p.lab || []).filter(function (x) { return x !== 'L6'; });
     if (p.lab.indexOf('N0') < 0) p.lab.unshift('N0');
+    if (p.lab.indexOf('N6') < 0) p.lab.push('N6');   // 1本の道（.claude/IMPROVE_road.md）
     if ((opts && opts.dark) || q.kind === 'dark') { if (p.lab.indexOf('L7') < 0) p.lab.push('L7'); }
     p.labState = Object.assign({}, p.labState || {}, { labTargetList: q.missions.slice(), labTargetCount: q.missions.length });
     p.allies = placeParty(base.allies, party);

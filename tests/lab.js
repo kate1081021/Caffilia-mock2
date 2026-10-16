@@ -2367,6 +2367,79 @@ console.log('\n■ N 強化と変化（やりたいこと・印・間の強化�
     eq(LL.gain(p, 'grass', 'spread').res.step.id, 'shape', '変化した魔法は並びの1つ目から');
   });
 
+  // ---- N6 1本の道（.claude/IMPROVE_road.md） ----
+  test('N6 1本の道: 3マスそろうまで何も閉じない。そろったら多い方の形で変化', function () {
+    R.labApply(['N0', 'N6']);
+    ok(N.road() && N.roadLen() === 3);
+    var p = LL.newPath('fire');
+    var g1 = LL.gain(p, 'fire', 'spread'), g2 = LL.gain(p, 'fire', 'move');
+    eq([p.form, g1.res.slot, g2.res.slot, !!g2.res.change, !!g2.res.closed], [null, 1, 2, false, false], 'ほかの形が2つでも、3マスそろうまで変化しない（早い者勝ちではない）');
+    var g3 = LL.gain(p, 'fire', 'defeat');
+    eq([p.form, g3.res.change.name, g3.res.tally], ['fuse', '火の渦', { aw: 1, fu: 2 }], 'ほかの形が多い → 融合側');
+    eq(p.road.map(function (r) { return r.w; }), ['spread', 'move', 'defeat'], '道には、埋めた順に形（やりたいこと）が残る');
+    eq([g1.res.step.id, g2.res.step.id, g3.res.step.id], ['power', 'shape', 'effect'], '間の強化は今のまま（形に関係なく同じ並び）');
+    var g4 = LL.gain(p, 'fire', 'defeat');
+    ok(g4.res.past && g4.res.step && !p.awake, '融合したあとの印は、間の強化だけ');
+    var q = LL.newPath('grass');
+    LL.gain(q, 'grass', 'spread'); LL.gain(q, 'grass', 'defeat'); var gq = LL.gain(q, 'grass', 'free');
+    eq([q.form, gq.res.change.name], ['awake', '森'], '「どれでも」は自分の形として数える');
+  });
+  test('N6 変化したあと: 覚醒側は自分の形があと3つで覚醒。ほかの形は覚醒へ進まない', function () {
+    R.labApply(['N0', 'N6']);
+    var p = LL.newPath('fire');
+    LL.gain(p, 'fire', 'defeat'); LL.gain(p, 'fire', 'defeat'); LL.gain(p, 'fire', 'spread');
+    eq(p.form, 'awake');
+    var o = LL.gain(p, 'fire', 'spread');
+    ok(o.res.past && !p.awake, 'ほかの形は間の強化だけ');
+    LL.gain(p, 'fire', 'defeat'); LL.gain(p, 'fire', 'defeat');
+    eq(p.awake, false, '自分の形2つではまだ');
+    var g = LL.gain(p, 'fire', 'defeat');
+    eq([p.awake, g.res.awake.name], [true, '業火']);
+    eq(LL.pathMarks('fire', p), '業火（覚醒） 強威形効形形形');
+  });
+  test('N6 同点（len 4）は最後に埋めた形。len は N6 の切り替えで変わる', function () {
+    R.labApply(['N0', 'N6'], { N6: { len: 4 } });
+    var p = LL.newPath('wind');
+    LL.gain(p, 'wind', 'move'); LL.gain(p, 'wind', 'defeat'); LL.gain(p, 'wind', 'move');
+    var g = LL.gain(p, 'wind', 'stop');
+    eq([p.form, g.res.change.name], ['fuse', '砂嵐'], '▲2・ほか2 → 最後のほかの形で融合');
+  });
+  test('N6 数だけの道（シナリオ・エディット）は、数の多い方の形を先に置いて作り直す', function () {
+    R.labApply(['N0', 'N6']);
+    var a = LL.normPath('fire', { aw: 1, fu: 1 });
+    eq([a.form, a.road.map(function (r) { return r.k; })], [null, ['awake', 'fuse']]);
+    eq([LL.normPath('fire', { aw: 2, fu: 1 }).form, LL.normPath('fire', { aw: 1, fu: 2 }).form, LL.normPath('fire', { aw: 2 }).form], ['awake', 'fuse', null], '3マスそろうまでは変化しない');
+    eq([LL.normPath('fire', { aw: 5 }).awake, LL.normPath('fire', { aw: 6 }).awake], [false, true], '覚醒は、道の3マスのあと自分の形3つ');
+    eq(LL.pathMarks('fire', a), '道◆○・ 強威形');
+  });
+  test('N6 次の一手の言葉: 分かれるときは両方、決まったら「もう決まり」。N2 で数え方が変わる', function () {
+    R.labApply(['N0', 'N6']);
+    eq(N.nextText('fire', { aw: 1, fu: 1 }), '次の◆で「炎」に変化／ほかの形で「火の渦」に変化');
+    eq(N.nextText('fire', { aw: 2 }), '次の1マスで「炎」に変化（もう決まり）');
+    eq(N.nextText('fire', null), 'あと3マスで変化（◆が多いと「炎」、ほかの形が多いと「火の渦」）');
+    ok(/道の3\/3マス目。3マスそろった（◆2・ほか1）→ 変化「炎」！/.test(LL.outlook('fire', { aw: 1, fu: 1 }, 'defeat')), LL.outlook('fire', { aw: 1, fu: 1 }, 'defeat'));
+    R.labApply(['N0', 'N6', 'N2'], { N2: { odd: 'partner' } });
+    eq(N.nextText('fire', { aw: 1, fu: 1 }), '次の◆で「炎」に変化／▲（風の形）で「火の渦」に変化', '相手の形だけ');
+    R.labApply(['N0', 'N6', 'N2'], { N2: { odd: 'step' } });
+    ok(/◆だけが道を進める/.test(N.nextText('fire', { aw: 1 })));
+  });
+  test('N6 オフなら2本の道・早い者勝ちのまま。分かれ道とクエスト制は N6 がオン', function () {
+    R.labApply(['N0']);
+    var p = LL.newPath('fire');
+    LL.gain(p, 'fire', 'spread'); LL.gain(p, 'fire', 'move');
+    eq([p.form, p.road], ['fuse', undefined]);
+    ok(R.findPreset('labNv').lab.indexOf('N6') >= 0, '分かれ道');
+    var Q = require('../lab_quest.js'), q = Q.QUESTS[0], pr = Q.preset(q, ['fire', 'grass', 'wind'], R.findPreset);
+    ok(pr && pr.lab.indexOf('N6') >= 0, 'クエスト制の盤面');
+  });
+  test('N6 魔法カードの形の図: 火は正面1マス・炎は正面と左右', function () {
+    R.labApply(['N0', 'N6']);
+    var s = E7(), f = path(s, R.addAlly(s, 'fire', 3, 6, 'up'), { aw: 0 });
+    eq(N.cardCells(s, R.findUnit(s, f.id)), [[0, 1]]);
+    R.findUnit(s, f.id).labPath = { aw: 3, steps: 0 };   // 間の強化（形が1マス）は入れない
+    eq(N.cardCells(s, R.findUnit(s, f.id)).sort(), [[-1, 1], [0, 1], [1, 1]].sort());
+  });
+
   // ---- 変化した魔法（覚醒方面・融合） ----
   test('N 森・炎・岩山: 空きにいきなり森（二段）／横3マスにいきなり炎／一発で岩山（山＋印）', function () {
     withGrow(function () {

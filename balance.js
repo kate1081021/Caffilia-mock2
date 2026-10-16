@@ -325,7 +325,8 @@
       N2: { on: false, odd: 'all' },        // 合わないミッション。odd: 'all' 全部融合方面の印 ／'partner' 融合の相手の属性のやりたいことと合うものだけ（ほかは印にならない）／'step' 方面に数えない（間の強化だけ）
       N3: { on: false, earth: 'defeat' },   // 土のやりたいこと。earth: 'defeat' 倒す ／'stop' 止める
       N4: { on: false, fuse: 'weak' },      // 融合の控えめの出し方。fuse: 'weak' 控えめ（形・届く距離が小さい。桜は丘の桜）／'same' 仲間と組むのと同じ
-      N5: { on: false, steps: 'keep' }      // 間の強化を変化した魔法に引き継ぐか。steps: 'keep' 引き継ぐ ／'reset' 変化したら0から
+      N5: { on: false, steps: 'keep' },     // 間の強化を変化した魔法に引き継ぐか。steps: 'keep' 引き継ぐ ／'reset' 変化したら0から
+      N6: { on: false, len: 3 }             // 1本の道（.claude/IMPROVE_road.md）。印でマスを埋め、len マスそろったら多い方の方面へ変化（閉じない）。オフなら2本の道・早い者勝ち
     }
   };
 

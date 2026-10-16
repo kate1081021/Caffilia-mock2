@@ -10,6 +10,7 @@
  * 印1つで、属性のやりたいことの並び（STEPS）から順に間の強化が1つ付く（覚醒方面の印でも融合方面の印でも同じ並び）。
  *   並びを使い切ったあとは、形が1マス増える（MORE。上限 MORE_MAX）
  * 変化: 覚醒方面か融合方面の印が先に change（N1 初期2）に届いた方面へ。もう片方は閉じる（戻れない）。
+ *   N6「1本の道」がオンなら: 印でマスを埋め、len（初期3）マスそろったときに多い方の方面へ変化（閉じない）。.claude/IMPROVE_road.md
  *   覚醒方面だけ、変化のあと覚醒方面の印がさらに awake（N1 初期3）たまると覚醒
  *
  * 変化先（FORMS）: 属性 → { awake: 覚醒方面の変化（lv2 が覚醒）, fuse: 融合方面の変化 }
@@ -21,11 +22,21 @@
  */
 (function (root) {
   var WANTS = {
-    defeat: { name: '倒す',   mark: '倒', color: '#d24a3c', desc: '敵を倒す力' },
-    spread: { name: '広げる', mark: '広', color: '#2f9e5b', desc: '自然を広げて、盤面を自分たちのものにする力' },
-    move:   { name: '動かす', mark: '動', color: '#8b5cf6', desc: '位置と向きを変える力' },
-    stop:   { name: '止める', mark: '止', color: '#3d73c9', desc: '敵の手を止める・遅らせる力' },
-    free:   { name: 'どれでも', mark: '自', color: '#8a8f86', desc: 'どの属性のやりたいことにも合う（序盤の目印のミッション）' }
+    defeat: { name: '倒す',   mark: '倒', shape: '◆', color: '#d24a3c', desc: '敵を倒す力' },
+    spread: { name: '広げる', mark: '広', shape: '●', color: '#2f9e5b', desc: '自然を広げて、盤面を自分たちのものにする力' },
+    move:   { name: '動かす', mark: '動', shape: '▲', color: '#8b5cf6', desc: '位置と向きを変える力' },
+    stop:   { name: '止める', mark: '止', shape: '■', color: '#3d73c9', desc: '敵の手を止める・遅らせる力' },
+    free:   { name: 'どれでも', mark: '自', shape: '★', color: '#8a8f86', desc: 'どの属性のやりたいことにも合う（序盤の目印のミッション）' }
+  };
+  // shape: N6「1本の道」で、ミッションと道のマスに付ける形（形と色の両方で見分ける。どれでもは、どの魔法でも自分の形として数える）
+
+  // 魔法カードの「性質」の一言【仮】（遊び方・ルール早見から。grow は「育つ」が入のとき）
+  var TRAITS = {
+    grass: { text: '空きに森を置く。山に植えると桜', grow: '空きに草むら、草むらにもう一度で森。山・丘に植えると桜' },
+    earth: { text: '空きに山を盛る。川・水たまりは泥沼に', grow: '空きに丘、丘にもう一度で山。川・水たまりは泥沼に' },
+    fire:  { text: '正面1マス。空きに小さな炎、森は炎に。炎に風が来ると燃え広がり' },
+    water: { text: '正面に池。炎を消す。山に当たると川になる', grow: '正面に水たまり、水たまりにもう一度で川。炎を消す' },
+    wind:  { text: '正面2マス。者を1マス運ぶ。炎に当たると燃え広がり。残った風に火で火の渦' }
   };
   var WANT_ORDER = ['defeat', 'spread', 'move', 'stop'];
   var SORT_ORDER = ['defeat', 'spread', 'move', 'stop', 'free'];
@@ -155,7 +166,7 @@
   var QUEST_LEAN = { annihilate: 'defeat', defense: 'stop', escort: 'move', retrieve: 'move' };
 
   var api = { WANTS: WANTS, WANT_ORDER: WANT_ORDER, SORT_ORDER: SORT_ORDER, ATTR: ATTR, ATTR_ORDER: ATTR_ORDER, STEPS: STEPS, MORE: MORE, MORE_MAX: MORE_MAX,
-    STAND_ON: STAND_ON, FORMS: FORMS, MISSIONS_ADD: MISSIONS_ADD, SORT: SORT,
+    STAND_ON: STAND_ON, FORMS: FORMS, MISSIONS_ADD: MISSIONS_ADD, SORT: SORT, TRAITS: TRAITS,
     QUEST_POOL: QUEST_POOL, QUEST_NAME: QUEST_NAME, QUEST_ORDER: QUEST_ORDER, QUEST_LEAN: QUEST_LEAN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LAB_CHANGE = api;

@@ -1128,6 +1128,7 @@
     if (u.labStage) h += '<span class="u-boss stage" title="大技を組む敵: ' + esc(R.magicName(u.labStage)) + 'で舞台 → ' + esc(R.magicName(u.magic)) + '">技</span>';
     if (st.mission && st.mission.carrier === u.id) h += '<span class="u-treasure" title="宝を持っている（撃てない）">宝</span>';
     if (st.labChase && st.labChase.runner === u.id && R.lab('H6')) h += '<span class="u-treasure" title="宝を持って逃げる敵（逃げ口に着かれたら負け）">宝</span>';   // ラボ H6
+    if (u.side === 'ally' && app.labUnitExtra) h += app.labUnitExtra(u, st);   // ラボ N6: 駒の下に道のマス（lab_target_ui.js）
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
     if (view.warn) h += '<span class="u-warn">予告 -' + view.warn + '</span>';
     if (view.dmg) h += '<span class="u-dmg">-' + view.dmg.amount + (view.dmg.dies ? ' 倒れる' : '') + '</span>';

@@ -36,9 +36,9 @@
   }
   // 拠点では N の切り替えだけをオンにする（ミッションの仕分け・道の形を N で見るため。戦闘の D2・L7 などは戻す）
   function useN() {
-    var want = ['L0', 'M0', 'N0'];
+    var want = ['L0', 'M0', 'N0', 'N6'];
     if (R.labOnList().join('+') === want.join('+')) return;
-    R.labApply(['N0']);
+    R.labApply(['N0', 'N6']);   // N6 1本の道
     if (app.onLabChange) app.onLabChange();
   }
 
@@ -57,7 +57,7 @@
   var guideBtn = document.querySelector('.ng-open');
   if (guideBtn) guideBtn.insertAdjacentElement('afterend', openBtn); else if (btnLab) btnLab.insertAdjacentElement('afterend', openBtn);
 
-  function mark(w, txt) { var W = LXL.N.WANTS[w] || {}; return '<span class="lt-mark d-' + esc(w) + '" title="' + esc((W.name || w) + (W.desc ? '（' + W.desc + '）' : '')) + '">' + esc(txt || W.mark || '？') + '</span>'; }
+  function mark(w, txt) { var W = LXL.N.WANTS[w] || {}, sh = !txt && W.shape && LXL.N.road && LXL.N.road(); return '<span class="lt-mark d-' + esc(w) + (sh ? ' lt-shape' : '') + '" title="' + esc((W.name || w) + (W.desc ? '（' + W.desc + '）' : '')) + '">' + esc(txt || (sh ? W.shape : W.mark) || '？') + '</span>'; }   // N6: 形で見せる
   function wantName(w) { return w === 'dark' ? '闇' : (LXL.N.WANTS[w] || {}).name || w; }
   function missionDefs(q) { return q.missions.map(LXL.targetDef).filter(Boolean); }
   // 育ちやすい方向（ミッションのやりたいことを数える）
@@ -82,6 +82,16 @@
       else if (k === 'awake') aw++; else if (k === 'fuse') fu++; else no++;
     });
     var out = [];
+    if (LXL.N.road && LXL.N.road() && p) {   // N6 1本の道: 自分の形・ほかの形で、道のマスがいくつ埋まるか
+      var own = LXL.N.shape(LXL.N.def(m).want), past = form === 'fuse' ? aw + fu + shut : form === 'awake' ? fu + shut : 0;
+      if (form === 'awake' && aw) out.push('<span class="lq-fc aw" title="覚醒へ進む">' + esc(own) + '×' + aw + '（覚醒へ）</span>');
+      if (!form && aw) out.push('<span class="lq-fc aw" title="自分の形。道のマスを埋める">' + esc(own) + '×' + aw + '</span>');
+      if (!form && fu) out.push('<span class="lq-fc fu" title="ほかの形。道のマスを埋める">ほか×' + fu + '</span>');
+      if (past) out.push('<span class="lq-fc" title="変化したあとの、道を進めない印（間の強化だけ）">間の強化だけ ' + past + '</span>');
+      if (no) out.push('<span class="lq-fc">印にならない ' + no + '</span>');
+      if (dark) out.push('<span class="lq-fc dk">闇の力 ' + dark + '</span>');
+      return out.join('');
+    }
     if (aw) out.push('<span class="lq-fc aw">覚醒方面 ' + aw + '</span>');
     if (fu) out.push('<span class="lq-fc fu">融合方面 ' + fu + '</span>');
     if (shut) out.push('<span class="lq-fc" title="変化して閉じた方面。印は進まず、間の強化だけ付く">閉じた方面 ' + shut + '</span>');

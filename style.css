@@ -1494,3 +1494,52 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
 .td1-li.now { background: #fef3c7; }
 .td-out textarea { width: 100%; box-sizing: border-box; font-size: 12px; font-family: ui-monospace, monospace; }
 .td-copied { font-size: 12px; color: #16a34a; }
+
+/* ラボ N6: 1本の道。盤面側（左）だけで分かる見せ方（.claude/IMPROVE_road.md） */
+.nr-sh { display: inline-flex; align-items: center; justify-content: center; color: var(--ld, #64748b); font-weight: bold; line-height: 1; }
+.nr-sh.d-odd { --ld: #8a8f86; }
+.nr-sh.d-dark { background: #3b0764; color: #fff; border-radius: 4px; padding: 0 3px; font-size: .85em; }
+.nr-slot { display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border: 1px solid #b8ae9c; border-radius: 3px; background: #fff; font-style: normal; box-sizing: border-box; }
+.nr-slot.next { border: 2px solid var(--ink); }
+.nr-slot.pend { border-style: dashed; }
+.nr-slot.pend .nr-sh { opacity: .45; }
+.nr-slot.aw { border-color: #c99a1e; }
+.nr-slot.aw.next { border-color: #a16207; }
+.unit .nr-strip { position: absolute; left: 50%; bottom: -26%; transform: translateX(-50%); display: flex; gap: 1px; font-size: .55em; z-index: 5; }
+.unit .nr-strip .nr-slot { width: 1.35em; height: 1.35em; }
+.nr-mstrip { width: 100%; max-width: 640px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; box-sizing: border-box; }
+.nr-mstrip .nr-mhead { color: var(--muted); margin-right: 2px; }
+.nr-m { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
+.nr-m .nr-sh { font-size: 1.2em; }
+.nr-m small { color: var(--muted); }
+.nr-m.got { background: #f3efe6; }
+.nr-m.got::after { content: '✓'; color: #15803d; font-weight: bold; }
+.nr-card { width: 100%; max-width: 640px; background: var(--panel); border: 2px solid var(--ally); border-radius: 12px; padding: 8px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 5px; box-sizing: border-box; }
+.nr-card p { margin: 0; }
+.nr-card .nr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nr-card .nr-name { font-size: 16px; }
+.nr-card .nr-head small { color: var(--muted); }
+.nr-card .nr-verb { background: #efe8da; border-radius: 999px; padding: 1px 8px; font-weight: bold; }
+.nr-grid { display: inline-grid; grid-template-columns: repeat(var(--gx), 10px); gap: 1px; margin-left: auto; }
+.nr-grid i { width: 10px; height: 10px; background: #ece5d6; border-radius: 2px; }
+.nr-grid i.on { background: var(--accent); }
+.nr-grid i.me { background: var(--ally); }
+.nr-trait { color: var(--muted); }
+.nr-road { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; font-size: 15px; }
+.nr-road .nr-l { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.nr-road .nr-slot { width: 1.5em; height: 1.5em; }
+.nr-arrow { color: var(--muted); margin: 0 2px; }
+.nr-tos { display: inline-flex; flex-direction: column; gap: 2px; }
+.nr-to { display: inline-flex; align-items: baseline; gap: 4px; padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line); background: #fff; font-size: 13px; }
+.nr-to small { color: var(--muted); font-size: 11px; }
+.nr-to.aw { border-color: #c99a1e; }
+.nr-to.fu { border-color: #1f9aa8; }
+.nr-to.got { background: #fef3c7; box-shadow: 0 0 0 2px #facc15; }
+.nr-to.pend { border-style: dashed; background: #fffbeb; }
+.nr-to.off { opacity: .4; }
+.nr-next { font-weight: bold; }
+.nr-pendline, .nr-steps { font-size: 12px; }
+.nr-steps small { color: var(--muted); margin-left: 4px; }
+.lt-path.nr-mini { display: inline-flex; align-items: center; gap: 1px; font-size: 11px; }
+.lt-path.nr-mini small { margin-right: 2px; color: var(--muted); }
+.lt-mark.lt-shape { background: #fff; color: var(--ld, #64748b); box-shadow: inset 0 0 0 1px var(--ld, #64748b); font-size: 13px; }
