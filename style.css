@@ -120,6 +120,11 @@ button.check, button.check:hover:not(:disabled) { background: linear-gradient(13
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
 .note { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
 .muted { color: var(--muted); }
+/* くわしく（上のバーの「くわしく」で出す。初期は隠す）: 説明・補足・ログ。消してはいない。押せば今までと同じ画面に戻る */
+body:not(.show-more) .x-more { display: none !important; }
+body:not(.show-more) .hint.guide { visibility: hidden; }          /* 操作の案内。行の高さは残す（注意の文が出ても盤面がずれない） */
+body:not(.show-more) .act-buttons kbd { display: none; }
+body:not(.show-more) .preview-box.idle { display: none; }         /* 予測もカーソルの情報もないときの空の箱 */
 
 /* ---------- 盤面 ---------- */
 .board-wrap { position: relative; }

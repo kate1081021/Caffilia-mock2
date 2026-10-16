@@ -154,7 +154,7 @@
       h += '<h3>第' + ch + '章「' + esc(Q.chapter(ch).name) + '」 <small>キークエスト ' + done + '/' + keys.length + (Q.chapterDone(camp, ch) ? '（クリア）' : '（全部クリアで次の章）') + '</small></h3>';
       h += inCh.length ? '<div class="lq-cards">' + inCh.map(questCard).join('') + '</div>' : '<p class="muted">この章のクエストは全部クリアした。</p>';
     }
-    if (top < Q.CHAPTERS.length) h += '<p class="note">第' + (top + 1) + '章「' + esc(Q.chapter(top + 1).name) + '」は、第' + top + '章のキークエストを全部クリアすると開く。</p>';
+    if (top < Q.CHAPTERS.length) h += '<p class="note x-more">第' + (top + 1) + '章「' + esc(Q.chapter(top + 1).name) + '」は、第' + top + '章のキークエストを全部クリアすると開く。</p>';
     h += keyEditHtml();
     if (camp.log.length) h += '<details class="lq-log"><summary>これまで（' + camp.log.length + '）</summary><ol>' + camp.log.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ol></details>';
     h += '<div class="lab-run-buttons"><button type="button" data-q="paths">道を見る</button><button type="button" data-q="restart">最初から（道も0から）</button><button type="button" data-q="close">閉じる</button></div>' +
@@ -180,7 +180,7 @@
       '<div class="lq-row"><span class="lq-l">ミッション</span><ul class="lq-ms">' + missionDefs(q).map(function (t) {
         return '<li title="' + esc(t.text) + '">' + (t.dir === 'dark' ? '<span class="lt-mark d-dark">闇</span>' : mark(t.dir)) + esc(t.name) + '</li>';
       }).join('') + '</ul></div>' +
-      '<p class="note">' + n + '人を選ぶ。おすすめの魔法は、盤面のその場所に立つ。ほかの仲間は、空いた場所に入る。ミッションを取った魔法に印が付く（やりたいことと合えば覚醒方面、合わなければ融合方面）。</p>' +
+      '<p class="note x-more">' + n + '人を選ぶ。おすすめの魔法は、盤面のその場所に立つ。ほかの仲間は、空いた場所に入る。ミッションを取った魔法に印が付く（やりたいことと合えば覚醒方面、合わなければ融合方面）。</p>' +
       '<div class="lq-picks">' + camp.roster.map(function (m) {
         var on = pick.party.indexOf(m) >= 0, W = LXL.N.wantOf(m);
         return '<button type="button" class="lq-pick' + (on ? ' on' : '') + '" data-q="pick" data-m="' + esc(m) + '">' +

@@ -1151,8 +1151,8 @@
     }).join('');
     var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') + exm +
       '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
-      '<span class="m-rule"><b>勝ち</b> ' + esc(info.win) + '</span>' +
-      '<span class="m-rule"><b>負け</b> ' + esc(info.lose) + '</span>' +
+      '<span class="m-rule x-more"><b>勝ち</b> ' + esc(info.win) + '</span>' +   // 勝ち方・負け方は「くわしく」で
+      '<span class="m-rule x-more"><b>負け</b> ' + esc(info.lose) + '</span>' +
       '<span class="m-status">' + info.status.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>';
     if (html === missionSig) return;
     missionSig = html;
@@ -1170,7 +1170,7 @@
     if (!on) { el.exBar.innerHTML = ''; return; }
     el.exBar.innerHTML = '<span class="ex-bar-label">' + esc(ui('exFire', '魔法の出し方')) + '</span>' + EX_FIRE.map(function (m) {
       return '<button type="button" data-exfire="' + m[0] + '" class="' + (app.exFire === m[0] ? 'active' : '') + '" aria-pressed="' + (app.exFire === m[0]) + '">' + esc(ui(m[1], m[2])) + '</button>';
-    }).join('') + '<span class="ex-bar-note">' + esc(ui('exFireNote', '切り替えると頭からやり直す')) + '</span>';
+    }).join('') + '<span class="ex-bar-note x-more">' + esc(ui('exFireNote', '切り替えると頭からやり直す')) + '</span>';
   }
   function setExFire(m) {
     if (!EX_FIRE.some(function (x) { return x[0] === m; }) || m === app.exFire) return;
@@ -1830,7 +1830,7 @@
     var npcHtml = R.alliesOf(st).filter(function (a) { return a.npc; }).map(function (a) {
       return '<div class="ally-card npc"><span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
         '<span class="info"><b>' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
-        '<span class="sub">' + (npcPlan[a.id] ? (npcPlan[a.id].order ? (ORDER_MARK[npcPlan[a.id].order] || '') + ' ' : '') + esc(planText(npcPlan[a.id], st)) : '構えていない') +
+        '<span class="sub">' + (npcPlan[a.id] ? (npcPlan[a.id].order ? (ORDER_MARK[npcPlan[a.id].order] || '') + ' ' : '') + esc(planText(npcPlan[a.id], st)) : '<span class="x-more">構えていない</span>') +
         (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
         '</span></span></div>';
     }).join('');
@@ -1846,14 +1846,16 @@
       if (st.mission && st.mission.carrier === a.id) status.push('宝を持っている（撃てない）');
       if (R.LX && R.LX.boostText(a)) status.push('強化: ' + R.LX.boostText(a));   // ラボ G
       if (a.labWear && R.lab('G7')) status.push('まとっている: ' + R.magicName(a.labWear));
-      if (a.labPath && R.lab('L0') && R.LX.L.pathDef(a.magic)) status.push('道 ' + R.LX.L.pathMarks(a.magic, a.labPath));   // ラボ L
+      // いつもの状態（行動前・まだ構えていない）と道の印は「くわしく」で（道は盤面の駒の下・ターゲットにも出ている）
+      var quiet = status[0] === '行動前' || status[0] === 'まだ構えていない' ? [status.shift()] : [];
+      if (a.labPath && R.lab('L0') && R.LX.L.pathDef(a.magic)) quiet.push('道 ' + R.LX.L.pathMarks(a.magic, a.labPath));   // ラボ L
       var cls = 'ally-card' + (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '') + (a.stance ? ' stanced' : '');
       return '<button type="button" class="' + cls + '" data-id="' + a.id + '">' +
         '<span class="dot">' + esc((R.LX && R.LX.formName(a)) || R.magicName(a.magic)) + '</span>' +
         '<span class="info"><b>' + (i + 1) + '. ' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
         (a.runTag ? '<span class="run-tag">' + esc(a.runTag) + '</span>' : '') +   // 進行モック: 強化
-        '<span class="sub">' + esc(status.join('・')) +
-        (nextFor[a.id] ? '<br><span class="next">あと一手: ' + esc(R.magicName(nextFor[a.id].magic)) + 'を当てれば' + esc(nextFor[a.id].name) + '</span>' : '') +
+        '<span class="sub">' + esc(status.join('・')) + (quiet.length ? '<span class="x-more">' + (status.length ? '・' : '') + esc(quiet.join('・')) + '</span>' : '') +
+        (nextFor[a.id] ? '<br class="x-more"><span class="next x-more">あと一手: ' + esc(R.magicName(nextFor[a.id].magic)) + 'を当てれば' + esc(nextFor[a.id].name) + '</span>' : '') +
         (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
         '</span></span></button>';
     }).join('') : '<p class="muted">味方がいません（エディットで置けます）</p>') + npcHtml;
@@ -1881,12 +1883,12 @@
       return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + (e.stand === 'rush' ? ' ' : '（' + esc(R.magicName(e.magic)) + '）') + 'HP ' + e.hp + '/' + e.maxHp +
         (warn[e.id] ? ' <span class="danger">予告で -' + warn[e.id] + (warn[e.id] >= e.hp ? '（倒れる）' : '') + '</span>' : '') +
         '<span class="hpbar"><span style="width:' + Math.max(0, e.hp / e.maxHp * 100) + '%"></span></span> ' + DIR_ARROW[e.facing] + esc(note) + '</span>' +
-        '<span class="persona">' + esc(personaText(e)) + '</span>' +
+        '<span class="persona x-more">' + esc(personaText(e)) + '</span>' +   // 敵の性格は「くわしく」で
         (rushTo[e.id] ? '<span class="plan">次のターンの始めに: ' + esc(rushText(rushTo[e.id])) + '</span>' : '') +
         (marchTo[e.id] ? '<span class="plan">ターンの終わりに ' + DIR_ARROW[marchTo[e.id].dir] + ' へ1マス進む' + (plans[e.id] ? '。そのまま撃つ' : '') + '</span>' : '') +
         (plans[e.id] ? '<span class="plan">' + esc(planText(plans[e.id], st)) + '</span>' : '') + '</div>';
     }).join('');
-    html += '<p class="note">敵は' + (st.enemyActs ? '行動する' : '何もしない') + '設定（エディットで切り替え）</p>';
+    html += '<p class="note' + (st.enemyActs ? ' x-more' : '') + '">敵は' + (st.enemyActs ? '行動する' : '何もしない') + '設定（エディットで切り替え）</p>';   // いつもと違う（何もしない）ときだけ出したまま
     el.enemyList.innerHTML = en.length ? html : '<p class="muted">敵がいません（エディットで置けます）</p>';
 
     renderActPanel();
@@ -1917,10 +1919,11 @@
     if (fa && !shapeOnly()) fa.allies.forEach(function (p) { (p.combos || []).forEach(function (c) { combos.push(comboText({ comboMagics: c.magics }) + ' → ' + finName(c.name) + '！'); }); });
     var waiting = R.controllableOf(st).filter(function (a) { return !a.acted; }).length;
     el.orderPanel.hidden = false;
+    el.orderPanel.classList.toggle('x-more', !rows);   // まだ誰も構えていないときは、欄ごと「くわしく」で
     el.orderPanel.innerHTML = '<h3>' + esc(ui('order', '発動の順番')) + '</h3>' +
       (rows ? '<ol class="order-list">' + rows + '</ol>' : '<p class="muted">まだ誰も構えていません</p>') +
       (combos.length ? '<p class="order-combo">' + combos.map(esc).join('<br>') + '</p>' : '') +
-      (waiting ? '<p class="muted">まだ構えていない味方: ' + waiting + '人</p>' : '');
+      (waiting ? '<p class="muted x-more">まだ構えていない味方: ' + waiting + '人</p>' : '');
   }
 
   function renderActPanel() {
@@ -1938,7 +1941,7 @@
     el.btnSwap.hidden = !m2;
     if (m2) el.btnSwap.innerHTML = '持ち替え: ' + esc(R.magicName(u.magic)) + ' ⇄ ' + esc(R.magicName(m2)) + ' <kbd>Q</kbd>';
     if (!u) {
-      el.actInfo.textContent = app.busy ? '処理中…' : simul() ? ui('actIdleSimul', '味方を選ぶと、ここで向きを選んで構えられます') : ui('actIdleSingle', '味方を選ぶと、ここで向きを選んで撃てます');
+      el.actInfo.innerHTML = app.busy ? '処理中…' : '<span class="x-more">' + esc(simul() ? ui('actIdleSimul', '味方を選ぶと、ここで向きを選んで構えられます') : ui('actIdleSingle', '味方を選ぶと、ここで向きを選んで撃てます')) + '</span>';
       el.dirCenter.textContent = '';
       return;
     }
@@ -1946,7 +1949,7 @@
     el.dirCenter.textContent = R.magicName(u.magic);
     el.actInfo.innerHTML = '<b>' + esc(R.unitLabel(app.state, u)) + '</b>　' +
       (moved ? '移動先 (' + app.plan.to[0] + ',' + app.plan.to[1] + ') <button type="button" id="btnCancelMove">移動を取り消す</button>' :
-        (R.restancing(u) ? '構え直し（移動は戻らない。向きと構えだけ）' : u.stuck ? '泥沼で移動できない（その場で撃つ）' : 'その場（緑のマスで移動先を選べる）')) +
+        (R.restancing(u) ? '構え直し<span class="x-more">（移動は戻らない。向きと構えだけ）</span>' : u.stuck ? '泥沼で移動できない<span class="x-more">（その場で撃つ）</span>' : 'その場<span class="x-more">（緑のマスで移動先を選べる）</span>')) +
       '　向き ' + DIR_ARROW[app.plan.dir] +
       (shootOk ? '' : '<br><span class="danger">宝を持つので撃てない（「待機」で移動を確定）</span>');
   }
@@ -2056,18 +2059,20 @@
     if (!u) {
       // 【一斉】全員構えたら発動へ
       if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。「発動」（T）'); h.classList.add('ready'); return; }
-      h.textContent = ui('pickAlly', '味方をクリック（または 1〜3 キー）で選ぶ'); return;
+      h.textContent = ui('pickAlly', '味方をクリック（または 1〜3 キー）で選ぶ'); h.classList.add('guide'); return;   // 操作の案内は「くわしく」で
     }
     h.textContent = R.restancing(u) ? ui('guideRestance') : simul() ? ui('guideSimul') : ui('guideSingle');
+    h.classList.add('guide');
   }
 
   function renderPreview() {
     var box = el.preview;
     var u = (!app.editMode && !app.busy) ? selUnit() : null;
+    box.classList.remove('idle');   // idle: 出すものが「くわしく」の中だけ（そのときは箱ごと隠す）
     if (u && app.plan && !app.state.result && shapeOnly()) {   // 展示ステージ③: 届く形だけ（何が起きるかは出さない）
       var sp = previewNow(u);
       box.innerHTML = '<div class="pv-head">' + esc(R.unitLabel(app.state, u)) + ': (' + sp.to[0] + ',' + sp.to[1] + ') から ' + DIR_ARROW[sp.dir] + ' に' + esc(R.magicName(u.magic)) + 'を' + (simul() ? '構える' + (sp.order ? '（' + sp.order + '番目に発動）' : '') : '撃つ') + '</div>' +
-        '<div class="pv-line note">' + esc(ui('exPreviewNote', '盤面の点線が、魔法の届く形。何が起きるかは、撃ってのお楽しみ')) + '</div>';
+        '<div class="pv-line note x-more">' + esc(ui('exPreviewNote', '盤面の点線が、魔法の届く形。何が起きるかは、撃ってのお楽しみ')) + '</div>';
       return;
     }
     if (u && app.plan && !app.state.result) {
@@ -2078,7 +2083,7 @@
         return '<div class="pv-line ' + cls + '">' + esc(text) + '</div>';
       });
       var head = p.waitOnly ? '予測: (' + p.to[0] + ',' + p.to[1] + ') へ移動して待機（宝を持っているので撃てない）'
-        : p.stance ? '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'を構える（' + p.order + '番目に発動）→ 構えた順に全部起きたあと'
+        : p.stance ? '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'を構える（' + p.order + '番目に発動）<span class="x-more">→ 構えた順に全部起きたあと</span>'
         : '予測: (' + p.to[0] + ',' + p.to[1] + ') から ' + DIR_ARROW[p.dir] + ' に' + R.magicName(u.magic) + 'の魔法（' + R.MAGIC_INFO[u.magic].verb + '）';
       // ラボ C5: 「育っていれば: 〇〇」
       var notes = (p.notes || []).map(function (n) { return '<div class="pv-line note">' + esc(n) + '</div>'; });
@@ -2090,17 +2095,20 @@
     if (t && R.inBounds(app.state, t.x, t.y)) {
       var tile = R.getTile(app.state, t.x, t.y);
       var o = R.unitAt(app.state, t.x, t.y);
-      var s = '<div class="pv-head">(' + t.x + ',' + t.y + ') ' + esc(R.tileName(tile)) + '</div><div>' + esc(TILE_DESC[tile]) + '</div>';
-      if (o && o.side === 'object') s += '<div class="muted">' + esc(R.unitLabel(app.state, o)) + '　HP ' + o.hp + '/' + o.maxHp + '　' + esc(OBJECT_DESC[o.kind]) + '</div>';
+      // カーソルの下: いつも出すのはユニットの名前・HP・魔法・向きだけ。マスの名前と説明は「くわしく」で
+      var s = '<div class="pv-head x-more">(' + t.x + ',' + t.y + ') ' + esc(R.tileName(tile)) + '</div><div class="x-more">' + esc(TILE_DESC[tile]) + '</div>';
+      if (o && o.side === 'object') s += '<div class="muted">' + esc(R.unitLabel(app.state, o)) + '　HP ' + o.hp + '/' + o.maxHp + '<span class="x-more">　' + esc(OBJECT_DESC[o.kind]) + '</span></div>';
       else if (o) s += '<div class="muted">' + esc(R.unitLabel(app.state, o)) + '　HP ' + o.hp + '/' + o.maxHp + '　魔法: ' + esc(R.magicName(o.magic)) + '　向き ' + DIR_ARROW[o.facing] + '</div>';
       var mm = app.state.mission || {};
-      if (R.inCells(mm.goal, t.x, t.y)) s += '<div class="muted">ゴール: 馬車がここに入ったら勝ち。</div>';
-      if (R.inCells(mm.exit, t.x, t.y)) s += '<div class="muted">帰り口: 宝を持った味方がここで移動を終えたら勝ち。</div>';
-      if (mm.treasure && mm.treasure[0] === t.x && mm.treasure[1] === t.y) s += '<div class="muted">宝: このマスで移動を終えると持つ（持っている間は撃てない）。敵は拾わない。</div>';
+      if (R.inCells(mm.goal, t.x, t.y)) s += '<div class="muted x-more">ゴール: 馬車がここに入ったら勝ち。</div>';
+      if (R.inCells(mm.exit, t.x, t.y)) s += '<div class="muted x-more">帰り口: 宝を持った味方がここで移動を終えたら勝ち。</div>';
+      if (mm.treasure && mm.treasure[0] === t.x && mm.treasure[1] === t.y) s += '<div class="muted x-more">宝: このマスで移動を終えると持つ（持っている間は撃てない）。敵は拾わない。</div>';
       box.innerHTML = s;
+      box.classList.toggle('idle', !o);
       return;
     }
-    box.innerHTML = '<span class="muted">マスにカーソルを乗せると説明が出ます。味方を選ぶと、撃ったときの予測が出ます。紫の印は敵の予告、橙の「燃」は次のターン終了で燃え移る森です。</span>';
+    box.innerHTML = '<span class="muted x-more">マスにカーソルを乗せると説明が出ます。味方を選ぶと、撃ったときの予測が出ます。紫の印は敵の予告、橙の「燃」は次のターン終了で燃え移る森です。</span>';
+    box.classList.add('idle');
   }
 
   var logSig = '';
@@ -2195,6 +2203,21 @@
   el.btnEdit.addEventListener('click', function () { setEditMode(!app.editMode); });
   el.btnEditDone.addEventListener('click', function () { setEditMode(false); });
   el.showForecast.addEventListener('change', function () { app.showForecast = el.showForecast.checked; render(); });
+
+  // くわしく: 説明・補足・ログ（.x-more）を出す／隠す。初期は隠す。選んだ形は覚える（使えなければ毎回、隠すから）
+  var MORE_KEY = 'caffilia-show-more';
+  var btnMore = $('btnMore');
+  function setMore(on) {
+    document.body.classList.toggle('show-more', on);
+    if (btnMore) { btnMore.classList.toggle('active', on); btnMore.setAttribute('aria-pressed', String(on)); }
+    try { window.localStorage.setItem(MORE_KEY, on ? '1' : '0'); } catch (e) { /* 覚えられなくても遊べる */ }
+  }
+  (function () {
+    var saved = null;
+    try { saved = window.localStorage.getItem(MORE_KEY); } catch (e) { saved = null; }
+    setMore(saved === '1');
+  })();
+  if (btnMore) btnMore.addEventListener('click', function () { setMore(!document.body.classList.contains('show-more')); btnMore.blur(); });
 
   // チュートリアル: ボタンを押すと一覧が開く。まだない番号は「準備中」で並べておく（R.TUTORIALS に足せば出る）
   var TUTORIAL_SLOTS = 3;

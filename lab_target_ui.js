@@ -163,7 +163,7 @@
     var html = '<div class="lt-head"><b>ターゲット</b>' + (pre && pre.labSeries ? ' <span class="lt-series">連戦 ' + esc(pre.labSeries) + '</span>' : '') +
       (pre && pre.labQuestRun ? ' <span class="lt-series">' + esc(pre.name) + '</span>' : '') +
       (st.labQuest ? ' <span class="lt-quest d-' + esc(dcls(st.labQuest.dir)) + '">' + mark(st.labQuest.dir) + 'クエスト「' + esc(st.labQuest.name) + '」</span>' : '') +
-      ' <small>' + (isRoad() ? '1つ1回。取った魔法の道を、ミッションの形で1マス埋める。' + LXL.N.roadLen() + 'マスそろったら、多い方の形で変化（自分の形なら覚醒側、ほかの形なら融合側）。印1つで間の強化が1つ' : isN() ? '1つ1回。取った魔法に印が1つ（やりたいことと合えば覚醒方面、合わなければ融合方面）。印1つで間の強化が1つ。どちらかの方面が' + LXL.N.changeAt() + 'つで変化' : isM() ? '1つ1回。取った魔法は、戦闘の終わりに強化（形が1マス）。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒' : '1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）') + '</small></div>' +
+      ' <small class="x-more">' + (isRoad() ? '1つ1回。取った魔法の道を、ミッションの形で1マス埋める。' + LXL.N.roadLen() + 'マスそろったら、多い方の形で変化（自分の形なら覚醒側、ほかの形なら融合側）。印1つで間の強化が1つ' : isN() ? '1つ1回。取った魔法に印が1つ（やりたいことと合えば覚醒方面、合わなければ融合方面）。印1つで間の強化が1つ。どちらかの方面が' + LXL.N.changeAt() + 'つで変化' : isM() ? '1つ1回。取った魔法は、戦闘の終わりに強化（形が1マス）。同じ方向が' + LXL.M.changeAt() + 'つで変化、合計' + LXL.M.awakeAt() + 'で覚醒' : '1つ1回。取った魔法は、戦闘の終わりにその方向の道を1マス進む（得意でなければ作る）') + '</small></div>' +
       (ts.length ? '<ul class="lt-list">' + ts.map(function (t) {
         return '<li class="lt-row d-' + esc(dcls(t.dir)) + (t.got ? ' got' : '') + (flash[t.id] ? ' flash' : '') + '" data-tid="' + esc(t.id) + '">' + mark(t.dir) +
           '<span class="lt-name">' + esc(t.name) + '<small>' + esc(t.text + takerHtml(t)) + '</small></span>' + whoHtml(st, t) + '</li>';
@@ -171,10 +171,13 @@
       (allies.length ? '<div class="lt-party">' + allies.map(function (a) {
         return '<span class="lt-ally" title="' + esc('得意: ' + goodText(a.magic)) + '"><b>' + esc(magicLabel(a.magic, a.labPath)) + '</b>' + marksHtml(a.magic, a.labPath) + '</span>';
       }).join('') + '</div>' : '') +
-      '<div class="lt-foot"><small>' + esc(modesText()) + '</small>' +
+      '<div class="lt-foot"><small class="x-more">' + esc(modesText()) + '</small>' +
       '<span class="lt-btns">' + (st.result && ts.length ? '<button type="button" class="primary" data-lt="growth">育ちを見る</button>' : '') +
       (st.labQuest && !st.result ? '<button type="button" data-lt="quest">クエストを選び直す</button>' : '') + (isN() ? '<button type="button" data-lt="sort" title="44のミッションを、どのやりたいことに入れるか（ラボの中だけ）">ミッションの仕分け</button>' : isM() ? '<button type="button" data-lt="sort" title="41のミッションを、どの方向に入れるか（ラボの中だけ）">ミッションの仕分け</button>' : '') + '<button type="button" data-lt="paths">道を見る</button><button type="button" data-lt="reset" title="魔法ごとの道を全部0に戻す（持ち越しも消える）">道を0に戻す</button></span></div>' +
       (storeOk ? '' : '<p class="note danger">この環境では道を持ち越せません（localStorage が使えない）。</p>');
+    // 1本の道（N6）では、ミッションは盤面の上、道は駒の下と魔法カードに出ているので、欄ごと「くわしく」で（押すボタンがあるときは出す）
+    var quiet = isRoad() && !(st.result && ts.length) && !(st.labQuest && !st.result);
+    box.classList.toggle('x-more', quiet);
     if (html === boxSig) return;
     boxSig = html;
     box.innerHTML = html;
@@ -845,7 +848,8 @@
       if (p.form === 'awake' || q.form === 'awake') h += '<span class="nr-arrow">→</span>' + roadSlots(m, p.form === 'awake' ? p : q, q) + '<span class="nr-arrow">→</span><span class="nr-to aw' + (p.awake ? ' got' : q.awake ? ' pend' : '') + '"><b>' + esc(aw.lv2.name) + '</b><small>覚醒</small></span>';
       h += '</div>';
       var nx = !p.form && q.form ? 'この戦いで' + N.roadLen() + 'マスそろった → 勝つと「' + (q.form === 'awake' ? aw.name : fu.name) + '」に変化' : N.nextText(m, q);
-      if (nx) h += '<p class="nr-next">' + esc(nx) + '</p>';
+      // 「あと3マスで変化（◆が多いと…）」のかっこの中は、すぐ上の道の図と同じなので「くわしく」で
+      if (nx) h += '<p class="nr-next">' + esc(nx).replace(/^(あと\d+マスで変化)（(.+)）$/, '$1<span class="x-more">（$2）</span>') + '</p>';
     } else h += '<div class="nr-road"><span class="nr-l">道</span>' + marksHtmlN(m, p) + '</div>';
     // この戦いで取った印・間の強化
     var mine = LXL.gotOrder(app.state).filter(function (t) { return t.got.by && t.got.by.magic === m; });
