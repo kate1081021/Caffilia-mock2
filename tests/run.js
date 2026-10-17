@@ -2463,10 +2463,10 @@ console.log('\n■ ステージ②「2人で守る」（IMPROVE_tutorial2）');
 // 座標は (x, y)。6×6（10/17 に横5・縦11 から変えた）。山使い (0,5)・水使い (1,5)・村 (2,5)〜(5,5)・敵は (3,0)(4,0) から。突進は1ターンに1マス
 // 勝てる一例: 山使いがその場で上 → 頂上 (0,3)、腕 (0,2) 上・(1,3) 右・(0,4) 下。水使いが (1,4) で上 → 右の腕 (1,3) に水 → (2,3)〜(5,3) に川
 function tut2() { return R.startBattle(R.loadPreset('tut2')).state; }
-// ふさぎきっても勝ちにしない（ふさいだあとの敵の動き・増援・5ターンの守り切りを見る）
-function tut2Open(more) {
+// このステージの数値に足して始める
+function tut2With(more) {
   var s = R.loadPreset('tut2');
-  s.overrides = Object.assign({}, s.overrides, { 'mission.defense.sealWin': false }, more || {});
+  s.overrides = Object.assign({}, s.overrides, more);
   return R.startBattle(s).state;
 }
 function t2Mount(s) { return R.controllableOf(s).filter(function (a) { return a.magic === 'mount'; })[0]; }
@@ -2502,7 +2502,7 @@ test('盤面: 6×6。山使い・水使い（上向き）、村4つ（HP1）、�
   eq(R.objectsOf(s0, 'village').map(function (v) { return [v.x, v.y, v.hp]; }), [[2, 5, 1], [3, 5, 1], [4, 5, 1], [5, 5, 1]]);
   eq(R.enemiesOf(s0).map(function (e) { return [e.x, e.y, e.stand]; }), [[3, 0, 'rush'], [4, 0, 'rush']]);
   eq(s0.mission.type, 'defense');
-  eq(R.missionInfo(s0).win, 'ターン5の終わりまで村を守る（村への道をふさぐか、敵の全滅でも勝ち）');
+  eq(R.missionInfo(s0).win, 'ターン5の終わりまで村を守る（村への道をふさいだら、その場でクリアにできる。敵の全滅でも勝ち）');
   eq(R.magicName('mount'), '山', '土の魔法は「山」と表示');
   ok(R.TUTORIALS.some(function (t) { return t.id === 'tut2' && t.tutorial === 2 && /2人で守る/.test(t.name); }), 'チュートリアルの一覧に入っている');
   ok(!R.inBounds(s0, 6, 0) && R.inBounds(s0, 5, 5) && !R.inBounds(s0, 0, 6), '盤の外');
@@ -2626,7 +2626,7 @@ test('突進の敵: 山・川・水たまり・泥沼・ユニットのいるマ
   });
 });
 test('突進の敵: 道がなければ、届くマスのうち村に一番近いマスまで走って待つ（そこにいればその場で待つ）', function () {
-  var st = t2Solved(tut2Open());
+  var st = t2Solved(tut2());
   var fc = R.forecast(st);
   var b = fc.rushes.filter(function (r) { return r.id === R.enemiesOf(st)[1].id; })[0];
   eq([b.reach, b.path, b.stop], [false, [[4, 2]], 1], 'B は川の手前 (4,2) まで');
@@ -2637,7 +2637,7 @@ test('突進の敵: 道がなければ、届くマスのうち村に一番近い
   eq(pos(t.state, b.id), [4, 2]);
 });
 test('突進の敵: enemy.rushNoPath を wait にすると、道がなければ今いる所で待つ（仕様の文どおりの動き）', function () {
-  var st = t2Solved(tut2Open({ 'enemy.rushNoPath': 'wait' }));
+  var st = t2Solved(tut2With({ 'enemy.rushNoPath': 'wait' }));
   ok(R.forecast(st).rushes.every(function (r) { return !r.reach && r.path.length === 0; }), 'どの敵も走らない');
   var t = R.endTurn(st);
   eq(R.enemiesOf(t.state).map(function (e) { return [e.x, e.y]; }), [[3, 1], [4, 1], [3, 0]], '増援も出てきた所で待つ');
@@ -2664,8 +2664,8 @@ test('進む道: 村へ届く道なら村に印。撃ったあとの盤面で計
   var pvBad = R.previewAct(a.state, t2Water(a.state).id, [1, 4], 'left');   // 下の腕 (0,4) に撃つ
   ok(R.forecast(pvBad.state).rushes.some(function (r) { return r.reach; }), '違う腕では届いたまま');
 });
-test('ふさいでも勝ちにしない（標準の防衛）なら、山 → 水 のあと敵は村に届かず、5ターンしのいで勝つ', function () {
-  var st = t2Solved(tut2Open());
+test('山 → 水 でふさいだあと「クリア」しなくても、敵は村に届かず、5ターンしのいで勝つ', function () {
+  var st = t2Solved(tut2());
   for (var turn = 1; turn <= 5; turn++) {
     var t = R.endTurn(st);
     ok(!t.events.some(function (e) { return e.type === 'ram'; }), 'ターン' + turn + ': 体当たりはない');
@@ -2706,49 +2706,56 @@ test('水 → 山の順: 腕のマスが水たまり → 泥沼（腕になら�
   eq(t2Run(b.state, 5).result, 'win', '2ターン目に立て直して勝つ');
 });
 test('増援: 毎ターンの終わりに上の端 (3,0) から1体。ふさがっていたら出られない。overrides で切れる', function () {
-  var t = R.endTurn(t2Solved(tut2Open()));
+  var t = R.endTurn(t2Solved(tut2()));
   var sp = t.events.filter(function (e) { return e.type === 'spawn'; });
   eq(sp.length, 1);
   eq(sp[0].cells, [[3, 0]]);
   ok(R.enemiesOf(t.state).some(function (e) { return e.id === sp[0].id && e.stand === 'rush' && e.y > 0; }), '現れた敵は次のターンの始めに走る');
-  var t2 = R.endTurn(t2Solved(tut2Open({ 'tutorial.spawn': false })));
+  var t2 = R.endTurn(t2Solved(tut2With({ 'tutorial.spawn': false })));
   ok(!t2.events.some(function (e) { return e.type === 'spawn'; }), '切ると増えない');
-  var s3 = t2Solved(tut2Open());
+  var s3 = t2Solved(tut2());
   R.addEnemy(s3, 'earth', 3, 0, 'down');   // 出てくる所に誰かいる
   ok(R.endTurn(s3).events.some(function (e) { return /増援は出られなかった/.test(e.text); }));
 });
-test('ふさぎきったら、最後のターンを待たずにその場で勝ち（山だけではまだ、水で川が流れた瞬間）', function () {
+test('ふさぎきったら、キーで（claimSeal）最後のターンを待たずにクリアにできる。勝手には勝たない', function () {
   var s = tut2();
   var a = R.act(s, t2Mount(s).id, { dir: 'up' });
-  eq(a.state.result, null, '山だけでは、まだ右から回れる');
+  ok(!R.sealReady(a.state), '山だけでは、まだ右から回れる');
+  ok(!R.claimSeal(a.state).ok, 'ふさいでいないとクリアにできない');
   var b = R.act(a.state, t2Water(a.state).id, { to: [1, 4], dir: 'up' });
-  eq([b.state.result, b.state.turn, b.state.resultText], ['win', 1, '村への道をふさいだ！（勝利）']);
-  ok(b.events.some(function (e) { return e.type === 'result' && e.result === 'win'; }), '勝ちの出来事');
-  ok(!R.endTurn(b.state).ok, 'ターン終了は回さない');
+  eq([b.state.result, R.sealReady(b.state)], [null, true], 'ふさいだ。まだ勝ちにはしない');
+  var c = R.claimSeal(b.state);
+  ok(c.ok, c.error);
+  eq([c.state.result, c.state.turn, c.state.resultText], ['win', 1, '村への道をふさいだ！（勝利）']);
+  ok(c.events.some(function (e) { return e.type === 'result' && e.result === 'win'; }), '勝ちの出来事');
+  eq(b.state.result, null, '元の状態は変えない');
+  var later = R.endTurn(b.state).state;
+  ok(!later.result && R.sealReady(later), 'クリアせずにターンを続けても、ふさいだまま（あとからでもクリアにできる）');
 });
 test('ふさいだかは地形だけで見る: 味方が道に立っているだけでは、ふさいだことにならない', function () {
   var s = tut2();
   [2, 3, 4].forEach(function (x) { R.setTile(s, x, 3, 'river'); });
   var w = t2Water(s); w.x = 5; w.y = 3;   // 残った (5,3) に水使いが立つ
-  eq(R.act(s, t2Mount(s).id, { dir: 'up' }).state.result, null, '人が立っているだけ');
+  ok(!R.sealReady(R.act(s, t2Mount(s).id, { dir: 'up' }).state), '人が立っているだけ');
   var s2 = tut2();
   [2, 3, 4, 5].forEach(function (x) { R.setTile(s2, x, 3, 'river'); });
-  eq(R.act(s2, t2Mount(s2).id, { dir: 'up' }).state.result, 'win', '川で埋まっていれば勝ち');
+  ok(R.sealReady(R.act(s2, t2Mount(s2).id, { dir: 'up' }).state), '川で埋まっていれば、ふさいだ');
 });
 test('ふさいだかは増援の出てくる所も数える。泥沼もふさぐ', function () {
   var s = tut2();
   [2, 3, 4, 5].forEach(function (x) { R.setTile(s, x, 3, 'river'); });
   s.spawn.y = 4;   // 壁の内側から湧くなら、ふさいだことにならない
-  eq(R.act(s, t2Mount(s).id, { dir: 'up' }).state.result, null, '増援の出てくる所から村へ行ける');
+  ok(!R.sealReady(R.act(s, t2Mount(s).id, { dir: 'up' }).state), '増援の出てくる所から村へ行ける');
   var s2 = tut2();
   [2, 3, 4].forEach(function (x) { R.setTile(s2, x, 3, 'river'); });
   R.setTile(s2, 5, 3, 'mud');
-  eq(R.act(s2, t2Mount(s2).id, { dir: 'up' }).state.result, 'win', '突進の敵は泥沼を通らない');
+  ok(R.sealReady(R.act(s2, t2Mount(s2).id, { dir: 'up' }).state), '突進の敵は泥沼を通らない');
 });
-test('ふさぐ勝ちはステージ②だけ（標準の防衛は切）', function () {
+test('ふさいでクリアはステージ②だけ（標準の防衛は切）', function () {
   var s = R.startBattle(R.loadPreset('mDefense')).state;
   eq(R.withOverrides(s, function () { return B.mission.defense.sealWin; }), false);
-  ok(!/ふさぐ/.test(R.missionInfo(s).win), R.missionInfo(s).win);
+  ok(!/ふさい/.test(R.missionInfo(s).win), R.missionInfo(s).win);
+  ok(!R.sealReady(s), 'ふさいだことにならない');
 });
 test('やり直し: 負けたあと最初からやり直すと、盤面が最初に戻り、ヒントが1文出る（最初の挑戦では出ない）', function () {
   var s = tut2();

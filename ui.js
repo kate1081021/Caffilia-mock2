@@ -135,7 +135,7 @@
     'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
     'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption',
-    'btnTutorial', 'tutorialMenu', 'btnRetry', 'stageHint', 'exBar',
+    'btnTutorial', 'tutorialMenu', 'btnRetry', 'btnSealWin', 'stageHint', 'exBar',
     'turnModeSelect', 'turnModeLabel', 'orderPanel', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
@@ -570,6 +570,7 @@
     play(res.steps, res.state, function () {
       if (simul()) { if (!app.state.result) selectNext(id); return; }   // 【一斉】全員構えても、発動はボタンで
       if (!app.state.result && R.allAlliesActed(app.state)) {
+        if (R.sealReady(app.state)) { selectNext(id); return; }   // ステージ②: ふさぎきったら、ターン終了は回さずに「クリアする」を待つ（続けるなら T）
         addLog(R.controllableOf(app.state).length === 3 ? '3人とも行動したので、ターン終了' : '全員行動したので、ターン終了', 'system');
         runEndTurn();
       } else {
@@ -589,9 +590,23 @@
       var t = R.endTurn(app.state);
       if (!t.ok) { say(t.error); return; }
       if (simul()) { app.chain = []; app.chainCombo = null; }
-      play(t.steps, t.state, function () { selectNext(null); if (app.onTurnDone) app.onTurnDone(); });
+      play(t.steps, t.state, function () {
+        if (R.sealReady(app.state)) { app.sel = null; app.plan = null; render(); }   // ステージ②: ふさぎきったら味方を選ばず、「クリアする」の案内を出す
+        else selectNext(null);
+        if (app.onTurnDone) app.onTurnDone();
+      });
     };
     if (app.onBeforeFire) app.onBeforeFire(go); else go();
+  }
+
+  // ステージ②: 村への道をふさぎきったら、押して（C）クリア
+  function doSealWin() {
+    if (!canControl() || !R.sealReady(app.state)) return;
+    var r = R.claimSeal(app.state);
+    if (!r.ok) { say(r.error); return; }
+    pushHistory();
+    app.sel = null; app.plan = null;
+    play(r.steps, r.state, function () { render(); });
   }
 
   function doEndTurn() {
@@ -1112,6 +1127,9 @@
     el.btnEdit.innerHTML = (app.editMode ? 'エディット終了' : 'エディット') + ' <kbd>E</kbd>';
     // チュートリアル: 負けたら「やり直す」。やり直したあと（2回目以降の開始時）は、盤面の上にヒントを1行
     el.btnRetry.hidden = !(st.result === 'lose' && st.stage && !app.editMode && !app.busy);
+    // ステージ②: 村への道をふさぎきったら「クリアする」（勝手には勝たない）
+    el.btnSealWin.hidden = !(canControl() && R.sealReady(st));
+    el.btnSealWin.innerHTML = esc(ui('sealWin', 'クリアする')) + ' <kbd>C</kbd>';
     var sh = app.editMode ? null : R.stageHint(st);
     el.stageHint.hidden = !sh;
     if (sh && el.stageHint.textContent !== sh) el.stageHint.textContent = sh;
@@ -1955,6 +1973,7 @@
     }
     var u = selUnit();
     if (!u) {
+      if (R.sealReady(st)) { h.textContent = ui('sealReady', '村への道をふさいだ！「クリアする」（C）でクリアできる'); h.classList.add('ready'); return; }   // ステージ②
       // 【一斉】全員構えたら発動へ
       if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。「発動」（T）'); h.classList.add('ready'); return; }
       h.textContent = ui('pickAlly', '味方をクリック（または 1〜3 キー）で選ぶ'); h.classList.add('guide'); return;   // 操作の案内は「くわしく」で
@@ -2078,6 +2097,7 @@
   el.btnStay.addEventListener('click', stay);
   el.btnShoot.addEventListener('click', function () { doAct(true); });
   el.btnRetry.addEventListener('click', retry);
+  el.btnSealWin.addEventListener('click', doSealWin);
   el.btnWait.addEventListener('click', function () { doAct(false); });
   el.btnSwap.addEventListener('click', function () { swapMagic(); });
   el.btnEndTurn.addEventListener('click', doEndTurn);
@@ -2361,6 +2381,7 @@
       return;
     }
     if (k === 't' || k === 'T') { doEndTurn(); return; }
+    if (k === 'c' || k === 'C') { doSealWin(); return; }   // ステージ②: ふさぎきったらクリア
     if (k >= '1' && k <= '9') {
       var a = R.controllableOf(app.state)[Number(k) - 1];
       if (a && canControl()) select(a.id);

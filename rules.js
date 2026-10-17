@@ -514,10 +514,7 @@
     }
     if ((type === 'annihilate' || type === 'defense') && enemyDied && enemiesOf(s).length === 0 && !(LX && LX.noAnnihilateWin(s))) {   // ラボ H5 消火: 敵を倒しても勝ちにならない
       setResult(s, ev, 'win', '敵を全員倒した！（勝利）');
-      return;
     }
-    // ステージ②: 村への道をふさぎきったら、最後のターンを待たずに勝ち
-    if (type === 'defense' && B.mission.defense.sealWin && rushSealed(s)) setResult(s, ev, 'win', '村への道をふさいだ！（勝利）');
   }
 
   // 水か氷が当たると、火傷が治る
@@ -2184,7 +2181,15 @@
     var v = reach ? villageNextTo(s, goal[0], goal[1]) : null;
     return { id: e.id, from: [e.x, e.y], path: path, reach: reach, village: v ? v.id : null, stop: Math.min(B.enemy.rushMove, path.length) };
   }
-  // ふさぎきったか（mission.defense.sealWin）: 敵が全員突進の敵で、どの敵からも増援の出てくる所からも、どの村の隣へも行けない。
+  // ステージ②（mission.defense.sealWin）: 村への道をふさぎきったら、プレイヤーがキーでクリアにできる（勝手には勝たない。オーナー 10/17）
+  function sealReady(s) { return !s.result && missionType(s) === 'defense' && !!B.mission.defense.sealWin && rushSealed(s); }
+  function claimSeal(s0) {
+    if (!sealReady(s0)) return fail(s0, 'まだ村への道をふさいでいない');
+    var s = clone(s0), ev = [];
+    setResult(s, ev, 'win', '村への道をふさいだ！（勝利）');
+    return { ok: true, state: s, events: ev, steps: [{ state: clone(s), events: ev.slice() }] };
+  }
+  // ふさぎきったか: 敵が全員突進の敵で、どの敵からも増援の出てくる所からも、どの村の隣へも行けない。
   //   人は動くので数えず、地形（と村）だけで見る。味方が道に立っているだけでは、ふさいだことにならない
   function rushSealed(s) {
     var es = enemiesOf(s);
@@ -3315,7 +3320,7 @@
       id: 'tut2', tutorial: 2, name: '【チュートリアル】② 2人で守る', short: '② 2人で守る', mission: 'defense',
       desc: '2人を動かす防衛戦。教えること: 倒しきれない敵は、倒すのではなく自然で道をふさぐ。2人の魔法を、自分で順番を決めて重ねる。' +
         '勝てる一例: 山使いがその場で上に撃つ → 頂上 (0,3)、腕 (0,2)(0,4)(1,3) の T 字の山。水使いが (1,4) へ上がり、上を向いて右の腕 (1,3) に水 → ' +
-        '頂上と反対の右へ (2,3)〜(5,3) に川が流れ、4行目が端から端までふさがって、その場で勝ち（ふさぎきったら最後のターンを待たない）。1ターン目に何もしなくても、2ターン目に同じ手で間に合う。3ターン目では遅く、何もしなければ4ターン目の敵の移動で村に届いて負け。' +
+        '頂上と反対の右へ (2,3)〜(5,3) に川が流れ、4行目が端から端までふさがる。ふさぎきったら「クリア」（C キー）で、最後のターンを待たずにクリアにできる。1ターン目に何もしなくても、2ターン目に同じ手で間に合う。3ターン目では遅く、何もしなければ4ターン目の敵の移動で村に届いて負け。' +
         '敵は突進（人は無視して一番近い村へ1ターンに1マス、村の隣で体当たり）。毎ターンの終わりに上の端 (3,0) から1体ずつ増える。ふさがなくても5ターン守れば勝ち。',
       // 6×6（オーナー 10/17: 敵は1ターンに1マスでいい代わりに毎ターン新しい敵が出る。縦長でなく正方形に）
       rows: ['......', '......', '......', '......', '......', '......'],
@@ -3324,7 +3329,7 @@
       villages: [[2, 5], [3, 5], [4, 5], [5, 5]],
       spawn: { x: 3, y: 0, facing: 'down', magic: 'earth', stand: 'rush' },   // 増援の出てくる所【仮】
       // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
-      // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、突進は1ターンに1マス、5ターン目の終わりまで守るか、道をふさぎきれば勝ち（オーナー 10/17）、移動2
+      // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち。道をふさぎきったらキーでクリアにできる（オーナー 10/17）、移動2
       overrides: { waterLength: 1, 'tutorial.slope': true, 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'mission.defense.sealWin': true, 'ally.move': 2 }
     },
     {
@@ -3467,7 +3472,7 @@
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'defense') {
       var T = B.mission.defense.turns;
-      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (B.mission.defense.sealWin ? '村への道をふさぐか、' : '') + '敵の全滅でも勝ち）';
+      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (B.mission.defense.sealWin ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
       info.lose = '村が' + B.mission.defense.loseAt + 'つ壊れる／味方が全員倒れる';
       info.status.push(s.result ? 'ターン' + s.turn + '/' + T : '残り' + Math.max(0, T - s.turn + 1) + 'ターン（今 ' + s.turn + '/' + T + '）');
       info.status.push('村 ' + objectsOf(s, 'village').map(function (v) { return unitLabel(s, v) + ' HP' + v.hp; }).join('・') + (m.lost ? '（壊れた ' + m.lost + '）' : ''));
@@ -3594,6 +3599,7 @@
     npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, validOverrides: validOverrides,
     // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
+    sealReady: withStage(sealReady), claimSeal: withStage(claimSeal),   // ステージ②: ふさぎきったらキーでクリア
     withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); },
     // 【一斉】ターンの形（構えて、ターンの終わりに一斉に発動）
     simulOn: simulOn, stanceList: stanceList, stanceOrder: stanceOrder, reorderStance: withStage(reorderStance),

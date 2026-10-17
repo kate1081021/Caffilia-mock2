@@ -96,9 +96,7 @@ test('一斉: 並べ替え（▲▼）で順番が入れ替わる。端より先
 });
 test('一斉: 発動は構えた順に1人ずつ（出来事に順番）。そのあと敵が発動する', function () {
   mode('simul');
-  var s = R.loadPreset('tut2');
-  s.overrides = Object.assign({}, s.overrides, { 'mission.defense.sealWin': false });   // ふさいでも勝ちにせず、ターンの最後まで見る
-  s = R.startBattle(s).state;
+  var s = start('tut2');
   s = act(s, byMagic(s, 'mount').id, [0, 5], 'up').state;
   s = act(s, byMagic(s, 'water').id, [1, 4], 'up').state;
   var t = R.endTurn(s);
@@ -156,11 +154,13 @@ console.log('\n■ チュートリアル（両方のターンの形でクリア�
       eq(f.comboMagics, ['fire', 'wind'], '自分の火 → 仲間の風で合体');
     }
   });
-  test('② 2人で守る（' + m + '）: 山 → 水で川の壁、ふさいだ瞬間に勝ち（1ターン目のうち）', function () {
+  test('② 2人で守る（' + m + '）: 山 → 水で川の壁。ふさいだらキーでクリア', function () {
     mode(m);
     var t = playTurn(start('tut2'), [['mount', [0, 5], 'up'], ['water', [1, 4], 'up']]);
     eq([0, 1, 2, 3, 4, 5].map(function (x) { return R.getTile(t.state, x, 3); }), ['mountain', 'mountain', 'river', 'river', 'river', 'river']);
-    eq([t.state.result, t.state.turn, t.state.resultText], ['win', 1, '村への道をふさいだ！（勝利）']);
+    eq([t.state.result, R.sealReady(t.state)], [null, true], '勝手には勝たない');
+    var c = R.claimSeal(t.state);
+    eq([c.state.result, c.state.resultText], ['win', '村への道をふさいだ！（勝利）']);
   });
 });
 test('② 一斉: 水 → 山の順だと泥沼（予測でも分かる）。並べ替えると川の壁', function () {

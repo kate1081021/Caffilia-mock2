@@ -24,13 +24,19 @@ function scenario(title, setup, fn) {
       if (!r.ok) throw new Error(unitId + ' が行動できない: ' + r.error);
       var events = r.events;
       var st = r.state;
-      if (!st.result && R.allAlliesActed(st)) {
+      if (!st.result && R.allAlliesActed(st) && !R.sealReady(st)) {   // 画面と同じ: ステージ②でふさぎきったら、ターン終了は回さずにクリアのキーを待つ
         var t = R.endTurn(st);
         events = events.concat([{ text: '3人とも行動したので、ターン終了' }], t.events);
         st = t.state;
       }
       this.state = st;
       this.record(events);
+    },
+    claimSeal: function () {   // ステージ②: ふさぎきったらキーでクリア
+      var r = R.claimSeal(this.state);
+      if (!r.ok) throw new Error('クリアにできない: ' + r.error);
+      this.state = r.state;
+      this.record(r.events);
     },
     endTurn: function () {
       var r = R.endTurn(this.state);
@@ -349,7 +355,7 @@ scenario('12. 【チュートリアル】① 重ねる: 2回外すと、ター�
     check(g.state.result === 'lose' && g.state.turn === 2, 'ターン2で失敗');
   });
 
-scenario('13. ステージ② 2人で守る: 1ターン目は何もしない → 2ターン目に山使いがその場で上に山 → 水使いが右の腕に水 → 4行目が山と川でふさがり、ターン終了を待たずにその場で勝ち',
+scenario('13. ステージ② 2人で守る: 1ターン目は何もしない → 2ターン目に山使いがその場で上に山 → 水使いが右の腕に水 → 4行目が山と川でふさがり、キーでクリア（最後のターンを待たない）',
   function () { return R.startBattle(R.loadPreset('tut2')).state; },
   function (g) {
     var mount = R.controllableOf(g.state).filter(function (a) { return a.magic === 'mount'; })[0].id;
@@ -363,6 +369,8 @@ scenario('13. ステージ② 2人で守る: 1ターン目は何もしない →
     g.act(water, [1, 4], 'up');           // 右の腕 (1,3) に水 → 頂上と反対の右へ川
     g.expectLog('山の腕に当たって、頂上と反対の右へ川が流れ出した、右へ川が4マス流れた、盤の端まで流れた');
     check([0, 1, 2, 3, 4, 5].map(function (x) { return g.tile(x, 3); }).join(',') === 'mountain,mountain,river,river,river,river', '4行目が端から端までふさがった');
+    check(!g.state.result && R.sealReady(g.state) && g.state.turn === 2, 'ふさいだ。勝手には勝たず、ターン終了も回さない');
+    g.claimSeal();                        // C キー
     g.expectLog('村への道をふさいだ！（勝利）');
     check(g.state.result === 'win' && g.state.turn === 2 && R.objectsOf(g.state, 'village').length === 4, 'ターン2のうちに、村は4つとも残って勝ち');
     check(!g.log.some(function (l) { return /体当たり/.test(l); }), '一度も体当たりされない');
