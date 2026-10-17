@@ -1512,13 +1512,61 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
 .nr-slot.aw.next { border-color: #a16207; }
 .unit .nr-strip { position: absolute; left: 50%; bottom: -26%; transform: translateX(-50%); display: flex; gap: 1px; font-size: .55em; z-index: 5; }
 .unit .nr-strip .nr-slot { width: 1.35em; height: 1.35em; }
-.nr-mstrip { width: 100%; max-width: 640px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; box-sizing: border-box; }
-.nr-mstrip .nr-mhead { color: var(--muted); margin-right: 2px; }
-.nr-m { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
-.nr-m .nr-sh { font-size: 1.2em; }
+.nr-mstrip { width: 100%; max-width: 640px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 12px; background: #fffbea; border: 2px solid #e2b93b; border-radius: 12px; font-size: 15px; box-sizing: border-box; }
+.nr-mstrip .nr-mhead { margin-right: 4px; font-size: 15px; }
+.nr-mcount { display: inline-block; margin-left: 4px; padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid #e2b93b; font-size: 13px; }
+.nr-m { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid #d6c7a1; border-radius: 999px; background: #fff; }
+.nr-m .nr-sh { font-size: 1.25em; }
 .nr-m small { color: var(--muted); }
-.nr-m.got { background: #f3efe6; }
+.nr-m.got { background: #fde68a; border-color: #ca8a04; font-weight: bold; }
+.nr-m.got small { color: #854d0e; }
 .nr-m.got::after { content: '✓'; color: #15803d; font-weight: bold; }
+.nr-m.flash { animation: nrMFlash 1.2s ease-out 2; }
+@keyframes nrMFlash { 0% { transform: scale(1); box-shadow: 0 0 0 0 #facc15; } 25% { transform: scale(1.12); box-shadow: 0 0 0 5px #facc15, 0 0 18px 6px #fde047; } 100% { transform: scale(1); box-shadow: none; } }
+/* ミッション達成の札（盤面の上の方に出て、消える） */
+.nr-toast { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 6px; }
+.nr-toast.show { animation: nrToast 2.6s ease-out forwards; }
+.nr-toast-row { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: #fffbea; border: 3px solid #ca8a04; border-radius: 14px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25); font-size: 18px; white-space: nowrap; }
+.nr-toast-row .nr-sh { font-size: 1.4em; }
+.nr-toast-h { color: #b45309; font-weight: bold; }
+.nr-toast-who { color: #6b5d43; font-size: 15px; }
+@keyframes nrToast { 0% { opacity: 0; transform: translate(-50%, 12px) scale(.9); } 12% { opacity: 1; transform: translate(-50%, 0) scale(1.04); } 20% { transform: translate(-50%, 0) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -10px); } }
+/* 1本の軸: 小さいマス＝印1つ（下に間の強化）、ひし形＝チェックポイント（変化・覚醒） */
+.ax { display: flex; align-items: flex-start; gap: 3px; flex-wrap: wrap; font-size: 15px; }
+.ax-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+.ax-cell .ax-box { display: inline-flex; align-items: center; justify-content: center; width: 1.7em; height: 1.7em; border: 1.5px solid #b8ae9c; border-radius: 4px; background: #fff; font-style: normal; box-sizing: border-box; }
+.ax-cell small { font-size: 11px; color: #6b5d43; font-weight: bold; min-height: 1.2em; }
+.ax-cell.on .ax-box { border-color: #6b5d43; background: #f6f1e6; }
+.ax-cell.pend .ax-box { border-style: dashed; background: #fffbeb; }
+.ax-cell.pend .nr-sh { opacity: .5; }
+.ax-cell.next .ax-box { border: 2px solid var(--ink); }
+.ax-cell.aw .ax-box { border-color: #c99a1e; }
+.ax-cell.later { opacity: .35; }
+.ax-cell.new .ax-box { animation: axNew 1s ease-out 3; }
+.ax-cp { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; margin: 0 4px; }
+.ax-dia { display: inline-flex; align-items: center; justify-content: center; width: 1.85em; height: 1.85em; margin: .2em 0; transform: rotate(45deg); border: 2px solid #a16207; background: #fff7dc; border-radius: 4px; font-style: normal; }
+.ax-dia b { transform: rotate(-45deg); font-size: 10px; color: #854d0e; white-space: nowrap; }
+.ax-cp small { font-size: 11px; color: #6b5d43; white-space: nowrap; }
+.ax-cp.got .ax-dia { background: #facc15; border-color: #a16207; box-shadow: 0 0 0 2px #fde047; }
+.ax-cp.got small { color: #854d0e; font-weight: bold; }
+.ax-cp.pend .ax-dia { border-style: dashed; background: #fef9c3; }
+.ax-cp.later { opacity: .35; }
+.ax-cp.new .ax-dia { animation: axNew 1s ease-out 3; }
+.ax-end { align-self: center; font-size: 11px; color: var(--muted); }
+.ax-extra { align-self: center; font-size: 12px; color: #6b5d43; font-weight: bold; padding: 1px 6px; border: 1px dashed #b8ae9c; border-radius: 999px; }
+@keyframes axNew { 0% { box-shadow: 0 0 0 0 #facc15; } 35% { box-shadow: 0 0 0 4px #facc15, 0 0 14px 4px #fde047; } 100% { box-shadow: none; } }
+.nr-cpm { display: inline-block; width: .8em; height: .8em; margin: 0 .2em; transform: rotate(45deg); border: 1px solid #a16207; background: #fff7dc; font-style: normal; align-self: center; box-sizing: border-box; }
+.nr-cpm.pend { background: #fde047; }
+/* 育ちの画面（1本の道） */
+.nr-growth h2 small { font-size: 15px; color: #854d0e; margin-left: 6px; }
+.nr-gsteps li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 15px; }
+.nr-gsteps .nr-sh { font-size: 1.3em; }
+.nr-gname { font-weight: bold; }
+.nr-gbig { color: #b45309; }
+.nr-gpaths { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.nr-gpath { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: #fff; }
+.nr-gpath.big { border: 2px solid #ca8a04; background: #fffbea; }
+.nr-gpath-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 15px; }
 .nr-card { width: 100%; max-width: 640px; background: var(--panel); border: 2px solid var(--ally); border-radius: 12px; padding: 8px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 5px; box-sizing: border-box; }
 .nr-card p { margin: 0; }
 .nr-card .nr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
