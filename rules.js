@@ -514,7 +514,10 @@
     }
     if ((type === 'annihilate' || type === 'defense') && enemyDied && enemiesOf(s).length === 0 && !(LX && LX.noAnnihilateWin(s))) {   // ラボ H5 消火: 敵を倒しても勝ちにならない
       setResult(s, ev, 'win', '敵を全員倒した！（勝利）');
+      return;
     }
+    // ステージ②: 村への道をふさぎきったら、最後のターンを待たずに勝ち
+    if (type === 'defense' && B.mission.defense.sealWin && rushSealed(s)) setResult(s, ev, 'win', '村への道をふさいだ！（勝利）');
   }
 
   // 水か氷が当たると、火傷が治る
@@ -2181,6 +2184,28 @@
     var v = reach ? villageNextTo(s, goal[0], goal[1]) : null;
     return { id: e.id, from: [e.x, e.y], path: path, reach: reach, village: v ? v.id : null, stop: Math.min(B.enemy.rushMove, path.length) };
   }
+  // ふさぎきったか（mission.defense.sealWin）: 敵が全員突進の敵で、どの敵からも増援の出てくる所からも、どの村の隣へも行けない。
+  //   人は動くので数えず、地形（と村）だけで見る。味方が道に立っているだけでは、ふさいだことにならない
+  function rushSealed(s) {
+    var es = enemiesOf(s);
+    if (!objectsOf(s, 'village').length || es.some(function (e) { return e.stand !== 'rush'; })) return false;
+    var starts = es.map(function (e) { return [e.x, e.y]; });
+    if (s.spawn) starts.push([s.spawn.x, s.spawn.y]);
+    var seen = {}, queue = [];
+    starts.forEach(function (c) { if (!seen[key(c[0], c[1])]) { seen[key(c[0], c[1])] = true; queue.push(c); } });
+    if (!queue.length) return false;
+    while (queue.length) {
+      var c = queue.shift();
+      if (villageNextTo(s, c[0], c[1])) return false;
+      neighbors(s, c[0], c[1]).forEach(function (n) {
+        var k = key(n.x, n.y), t = getTile(s, n.x, n.y), o = unitAt(s, n.x, n.y);
+        if (seen[k] || !isPassable(t) || RUSH_BLOCK[t] || (o && o.kind === 'village')) return;
+        seen[k] = true;
+        queue.push([n.x, n.y]);
+      });
+    }
+    return true;
+  }
   // 突進の敵が走る（＋体当たり）。使った道を返す
   function rushMove(s, e, ev, step) {
     var r = rushRoute(s, e);
@@ -3290,8 +3315,8 @@
       id: 'tut2', tutorial: 2, name: '【チュートリアル】② 2人で守る', short: '② 2人で守る', mission: 'defense',
       desc: '2人を動かす防衛戦。教えること: 倒しきれない敵は、倒すのではなく自然で道をふさぐ。2人の魔法を、自分で順番を決めて重ねる。' +
         '勝てる一例: 山使いがその場で上に撃つ → 頂上 (0,3)、腕 (0,2)(0,4)(1,3) の T 字の山。水使いが (1,4) へ上がり、上を向いて右の腕 (1,3) に水 → ' +
-        '頂上と反対の右へ (2,3)〜(5,3) に川が流れ、4行目が端から端までふさがる。1ターン目に何もしなくても、2ターン目に同じ手で間に合う。3ターン目では遅く、何もしなければ4ターン目の敵の移動で村に届いて負け。' +
-        '敵は突進（人は無視して一番近い村へ1ターンに1マス、村の隣で体当たり）。毎ターンの終わりに上の端 (3,0) から1体ずつ増える。5ターン守れば勝ち。',
+        '頂上と反対の右へ (2,3)〜(5,3) に川が流れ、4行目が端から端までふさがって、その場で勝ち（ふさぎきったら最後のターンを待たない）。1ターン目に何もしなくても、2ターン目に同じ手で間に合う。3ターン目では遅く、何もしなければ4ターン目の敵の移動で村に届いて負け。' +
+        '敵は突進（人は無視して一番近い村へ1ターンに1マス、村の隣で体当たり）。毎ターンの終わりに上の端 (3,0) から1体ずつ増える。ふさがなくても5ターン守れば勝ち。',
       // 6×6（オーナー 10/17: 敵は1ターンに1マスでいい代わりに毎ターン新しい敵が出る。縦長でなく正方形に）
       rows: ['......', '......', '......', '......', '......', '......'],
       allies: [['mount', 0, 5, { facing: 'up' }], ['water', 1, 5, { facing: 'up' }]],
@@ -3299,8 +3324,8 @@
       villages: [[2, 5], [3, 5], [4, 5], [5, 5]],
       spawn: { x: 3, y: 0, facing: 'down', magic: 'earth', stand: 'rush' },   // 増援の出てくる所【仮】
       // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
-      // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち、移動2
-      overrides: { waterLength: 1, 'tutorial.slope': true, 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'ally.move': 2 }
+      // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、突進は1ターンに1マス、5ターン目の終わりまで守るか、道をふさぎきれば勝ち（オーナー 10/17）、移動2
+      overrides: { waterLength: 1, 'tutorial.slope': true, 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'mission.defense.sealWin': true, 'ally.move': 2 }
     },
     {
       // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
@@ -3332,18 +3357,6 @@
         'shapes.fire': [[0, 1], [0, 2]], windMode: 'line', lineLength: 4, tornadoRecipe: 'off',
         'sakura.from': 'fire', 'funka.lava': false, 'eruption.base': 60, 'eruption.perVolcano': 0, 'ally.move': 2
       }
-    },
-    {
-      id: 'tut3', tutorial: 4, name: '【チュートリアル】③ 3人で合わせる（前の版）', short: '③ 3人で合わせる（前の版）',
-      desc: '3人を動かす見せ場（IMPROVE_simul）。教えること: 3人の魔法を順に重ねると、1ターンで3段目まで流れる（合体）。' +
-        '一例: 土がその場で上（(3,4)(4,4)(3,3) に山）→ 草がその場で上（山の (3,4)(3,3) に桜、(2,3)(4,3) は森）→ 風が (3,5) へ動いて上 → ' +
-        '桜 (3,4) に風が当たって桜吹雪。扇（(3,3)／(2,2)〜(4,2)／(1,1)〜(5,1)）に、1ターン目に1マス進んだ敵2体 (2,1)(4,1) が入る。3人とも扇の後ろ。' +
-        '1ターン目に勝てる手は3通り（tests/tut3_search.js）。敵はこのステージだけ1ターンに1マス進むので、外しても2ターン目はまだ遠く、同じ形で立て直せる。',
-      rows: ['.......', '.......', '.......', '.......', '.......', '.......', '.......'],
-      allies: [['earth', 4, 6], ['grass', 3, 6], ['wind', 2, 6]],
-      enemies: [['fire', 2, 0], ['fire', 4, 0]],
-      // 敵は1ターンに1マス（標準は2。2だと外したあと2ターン目に敵が扇を抜けてしまい、立て直せない）、移動2
-      overrides: { 'enemy.move': 1, 'ally.move': 2 }
     }
   ];
 
@@ -3454,7 +3467,7 @@
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'defense') {
       var T = B.mission.defense.turns;
-      info.win = 'ターン' + T + 'の終わりまで村を守る（敵の全滅でも勝ち）';
+      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (B.mission.defense.sealWin ? '村への道をふさぐか、' : '') + '敵の全滅でも勝ち）';
       info.lose = '村が' + B.mission.defense.loseAt + 'つ壊れる／味方が全員倒れる';
       info.status.push(s.result ? 'ターン' + s.turn + '/' + T : '残り' + Math.max(0, T - s.turn + 1) + 'ターン（今 ' + s.turn + '/' + T + '）');
       info.status.push('村 ' + objectsOf(s, 'village').map(function (v) { return unitLabel(s, v) + ' HP' + v.hp; }).join('・') + (m.lost ? '（壊れた ' + m.lost + '）' : ''));

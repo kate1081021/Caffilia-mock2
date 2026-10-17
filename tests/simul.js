@@ -17,7 +17,15 @@ function test(name, fn) {
 function eq(a, b, msg) { var x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) throw new Error((msg ? msg + ': ' : '') + 'expected ' + y + ' but got ' + x); }
 function ok(c, msg) { if (!c) throw new Error(msg || 'assertion failed'); }
 function mode(m) { B.turnMode = m; }
-function start(id) { return R.startBattle(R.loadPreset(id)).state; }
+// 3人の一斉発動を確かめる盤面（前のチュートリアル③「3人で合わせる」の配置。ステージは 10/17 に消し、テストの盤面としてだけ残した）。
+//   土 (4,6)・草 (3,6)・風 (2,6)、火の敵2体。一例: 土がその場で上 → 草がその場で上 → 風が (3,5) で上 → 桜吹雪で敵2体
+var TRIO = {
+  rows: ['.......', '.......', '.......', '.......', '.......', '.......', '.......'],
+  allies: [['earth', 4, 6], ['grass', 3, 6], ['wind', 2, 6]],
+  enemies: [['fire', 2, 0], ['fire', 4, 0]],
+  overrides: { 'enemy.move': 1, 'ally.move': 2 }
+};
+function start(id) { return R.startBattle(id === 'trio' ? R.buildPreset(TRIO) : R.loadPreset(id)).state; }
 function byMagic(s, m) { return R.controllableOf(s).filter(function (a) { return a.magic === m; })[0]; }
 function act(s, id, to, dir, shoot) { var r = R.act(s, id, { to: to, dir: dir, shoot: shoot }); if (!r.ok) throw new Error(id + ': ' + r.error); return r; }
 function names(ev, type) { return ev.filter(function (e) { return e.type === type; }).map(function (e) { return e.name; }); }
@@ -48,7 +56,7 @@ test('1人ずつ: 撃つとすぐ起きる（構えは出ない）', function ()
 });
 test('一斉: 構えるとまだ起きず、盤面は変わらない。予告（forecast の allies）に、構えた順で出る', function () {
   mode('simul');
-  var s = start('tut3');
+  var s = start('trio');
   var r = act(s, 'P1', [4, 6], 'up');
   ok(!r.events.some(function (e) { return e.type === 'cast'; }), '撃たない');
   eq(r.state.tiles, s.tiles, '盤面は変わらない');
@@ -61,7 +69,7 @@ test('一斉: 構えるとまだ起きず、盤面は変わらない。予告（
 });
 test('一斉: 構え直しは向きだけ（動けない）。順番はそのまま。待機にすると構えは消える', function () {
   mode('simul');
-  var s = start('tut3');
+  var s = start('trio');
   s = act(s, 'P1', [4, 6], 'up').state;
   s = act(s, 'P2', [3, 6], 'up').state;
   ok(!R.act(s, 'P1', { to: [4, 5], dir: 'up' }).ok, '構え直しでは動けない');
@@ -75,7 +83,7 @@ test('一斉: 構え直しは向きだけ（動けない）。順番はそのま
 });
 test('一斉: 並べ替え（▲▼）で順番が入れ替わる。端より先へは動かせない。構える味方は動かせない', function () {
   mode('simul');
-  var s = start('tut3');
+  var s = start('trio');
   s = act(s, 'P1', [4, 6], 'up').state;
   s = act(s, 'P2', [3, 6], 'up').state;
   var r = R.reorderStance(s, 'P2', -1);
@@ -88,7 +96,9 @@ test('一斉: 並べ替え（▲▼）で順番が入れ替わる。端より先
 });
 test('一斉: 発動は構えた順に1人ずつ（出来事に順番）。そのあと敵が発動する', function () {
   mode('simul');
-  var s = start('tut2');
+  var s = R.loadPreset('tut2');
+  s.overrides = Object.assign({}, s.overrides, { 'mission.defense.sealWin': false });   // ふさいでも勝ちにせず、ターンの最後まで見る
+  s = R.startBattle(s).state;
   s = act(s, byMagic(s, 'mount').id, [0, 5], 'up').state;
   s = act(s, byMagic(s, 'water').id, [1, 4], 'up').state;
   var t = R.endTurn(s);
@@ -100,7 +110,7 @@ test('一斉: 発動は構えた順に1人ずつ（出来事に順番）。そ�
 });
 test('一斉: 予測（previewAct）は構えた順に全部起きたあと。敵の予告はその盤面で計算し直す', function () {
   mode('simul');
-  var s = start('tut3');
+  var s = start('trio');
   s = act(s, 'P1', [4, 6], 'up').state;
   s = act(s, 'P2', [3, 6], 'up').state;
   var pv = R.previewAct(s, 'P3', [3, 5], 'up');
@@ -112,7 +122,7 @@ test('一斉: 予測（previewAct）は構えた順に全部起きたあと。�
 });
 test('一斉: 3人の魔法がつながった決め手は「合体」（参加した味方を発動した順に）', function () {
   mode('simul');
-  var t = playTurn(start('tut3'), [['earth', [4, 6], 'up'], ['grass', [3, 6], 'up'], ['wind', [3, 5], 'up']]);
+  var t = playTurn(start('trio'), [['earth', [4, 6], 'up'], ['grass', [3, 6], 'up'], ['wind', [3, 5], 'up']]);
   var f = t.events.filter(function (e) { return e.type === 'finisher'; })[0];
   eq([f.name, f.combo, f.comboMagics], ['桜吹雪', ['P1', 'P2', 'P3'], ['earth', 'grass', 'wind']]);
   eq(t.state.result, 'win');
@@ -129,7 +139,7 @@ test('一斉: 1人で起こした決め手は合体にならない', function ()
   ok(f && f.name === '燃え広がり' && !f.combo, '合体なし');
 });
 test('1人ずつ: 合体は出ない（今のまま）', function () {
-  var t = playTurn(start('tut3'), [['earth', [4, 6], 'up'], ['grass', [3, 6], 'up'], ['wind', [3, 5], 'up']]);
+  var t = playTurn(start('trio'), [['earth', [4, 6], 'up'], ['grass', [3, 6], 'up'], ['wind', [3, 5], 'up']]);
   var f = t.events.filter(function (e) { return e.type === 'finisher'; })[0];
   ok(f && !f.combo);
 });
@@ -146,23 +156,11 @@ console.log('\n■ チュートリアル（両方のターンの形でクリア�
       eq(f.comboMagics, ['fire', 'wind'], '自分の火 → 仲間の風で合体');
     }
   });
-  test('② 2人で守る（' + m + '）: 山 → 水で川の壁、5ターン守って勝ち', function () {
+  test('② 2人で守る（' + m + '）: 山 → 水で川の壁、ふさいだ瞬間に勝ち（1ターン目のうち）', function () {
     mode(m);
     var t = playTurn(start('tut2'), [['mount', [0, 5], 'up'], ['water', [1, 4], 'up']]);
     eq([0, 1, 2, 3, 4, 5].map(function (x) { return R.getTile(t.state, x, 3); }), ['mountain', 'mountain', 'river', 'river', 'river', 'river']);
-    var s = t.state;
-    for (var i = 0; i < 6 && !s.result; i++) {
-      R.controllableOf(s).forEach(function (a) { if (!s.result) s = act(s, a.id, [a.x, a.y], a.facing, false).state; });
-      if (!s.result) s = R.endTurn(s).state;
-    }
-    eq(s.result, 'win');
-  });
-  test('③ 3人で合わせる（' + m + '）: 土 → 草 → 風で桜吹雪、1ターンで勝ち。3人とも扇の外', function () {
-    mode(m);
-    var t = playTurn(start('tut3'), [['earth', [4, 6], 'up'], ['grass', [3, 6], 'up'], ['wind', [3, 5], 'up']]);
-    eq(t.state.result, 'win');
-    eq(names(t.events, 'finisher'), ['桜吹雪']);
-    eq(R.alliesOf(t.state).map(function (a) { return a.hp; }), [3, 3, 3], '味方は無傷');
+    eq([t.state.result, t.state.turn, t.state.resultText], ['win', 1, '村への道をふさいだ！（勝利）']);
   });
 });
 test('② 一斉: 水 → 山の順だと泥沼（予測でも分かる）。並べ替えると川の壁', function () {
@@ -189,49 +187,6 @@ test('① 一斉: 外すと「火は点いたのに、風は別の所」。構�
   var casts = t.events.filter(function (e) { return e.type === 'cast'; });
   eq(casts.slice(0, 2).map(function (e) { return e.cells; }), [[[0, 2]], [[1, 1]]]);
   ok(!t.state.result);
-});
-test('③ 一斉: 外しても（全員待機）1ターン目に味方は倒れず、2ターン目にまた同じ形で勝てる', function () {
-  mode('simul');
-  var s = start('tut3');
-  R.controllableOf(s).forEach(function (a) { s = act(s, a.id, [a.x, a.y], a.facing, false).state; });
-  s = R.endTurn(s).state;
-  eq([s.result, R.alliesOf(s).length], [null, 3]);
-  var t = playTurn(s, [['earth', [4, 6], 'up'], ['grass', [3, 6], 'up'], ['wind', [3, 5], 'up']]);
-  eq(t.state.result, 'win');
-});
-// 2ターン目に 土 → 草 → 風 で勝てる手があるか（tests/tut3_search.js と同じ数え方の小さい版）
-function canWinTurn(s0) {
-  var E = byMagic(s0, 'earth');
-  return Object.keys(R.reachableCells(s0, E.id)).some(function (ke) {
-    return R.DIR_ORDER.some(function (de) {
-      var se = R.act(s0, E.id, { to: ke.split(',').map(Number), dir: de }); if (!se.ok) return false;
-      var G = byMagic(se.state, 'grass');
-      return Object.keys(R.reachableCells(se.state, G.id)).some(function (kg) {
-        return R.DIR_ORDER.some(function (dg) {
-          var sg = R.act(se.state, G.id, { to: kg.split(',').map(Number), dir: dg }); if (!sg.ok) return false;
-          if (!R.fireAllStances(sg.state).after.tiles.some(function (t) { return t === 'sakura'; })) return false;
-          var W = byMagic(sg.state, 'wind');
-          return Object.keys(R.reachableCells(sg.state, W.id)).some(function (kw) {
-            return R.DIR_ORDER.some(function (dw) {
-              var sw = R.act(sg.state, W.id, { to: kw.split(',').map(Number), dir: dw });
-              return sw.ok && R.fireAllStances(sw.state).after.result === 'win';
-            });
-          });
-        });
-      });
-    });
-  });
-}
-['wind-earth-grass', 'grass-earth-wind'].forEach(function (order) {
-  test('③ 一斉: 順番を間違えても（' + order + '）負けにならず、2ターン目に3人で勝てる', function () {
-    mode('simul');
-    var pos = { earth: [[4, 6], 'up'], grass: [[3, 6], 'up'], wind: [[3, 5], 'up'] };
-    var s = start('tut3');
-    order.split('-').forEach(function (m) { s = act(s, byMagic(s, m).id, pos[m][0], pos[m][1]).state; });
-    s = R.endTurn(s).state;
-    eq([s.result, R.alliesOf(s).length], [null, 3], '負けていない・味方は3人');
-    ok(canWinTurn(s), '2ターン目に勝てる手がある');
-  });
 });
 test('やり直しのヒントはターンの形ごと（texts.js）', function () {
   ['single', 'simul'].forEach(function (m) {
@@ -270,7 +225,6 @@ DEMOS.forEach(function (d) {
       });
       ok(p, 'シナリオがある');
       console.log('        → ' + (s.result || '決着せず') + '、決め手 ' + (fins.join('・') || 'なし') + (errs ? '、動けなかった手 ' + errs : ''));
-      if (d.id === 'tut3') eq(s.result, 'win', 'チュートリアル③のデモは勝つ');
       } finally { B.windMode = saved[0]; B.tornadoRecipe = saved[1]; B.sakura.from = saved[2]; }
     });
   });
@@ -284,7 +238,7 @@ test('texts.js は書き出し（serialize）と同じ形。読み込み直す�
   eq(IO.parse(src), TEXTS);
 });
 test('3つのチュートリアルに名前・目標・場面がある。仮の文は【仮】か「（ここに文章）」', function () {
-  ['tut1', 'tut2', 'tut3'].forEach(function (id) {
+  ['tut1', 'tut2', 'ex3'].forEach(function (id) {
     var st = TEXTS.stages[id];
     ok(st && st.name && st.goal, id);
     ok(st.scenes.start.length >= 2, id + ' の始めの文');
@@ -304,10 +258,10 @@ test('書き換えた所だけを出す（diff・exportText）。文の並びは
 });
 test('書き換えて保存したファイルを読み込み直すと、書き換えが残っている', function () {
   var cur = IO.clone(TEXTS);
-  cur.stages.tut3.scenes.win = [{ who: '', text: 'やった！', mode: 'both' }];
+  cur.stages.ex3.scenes.win = [{ who: '', text: 'やった！', mode: 'both' }];
   cur.savedAt = IO.stamp(new Date(2099, 0, 2, 3, 4, 5));
   var back = IO.parse(IO.serialize(cur));
-  eq(back.stages.tut3.scenes.win[0].text, 'やった！');
+  eq(back.stages.ex3.scenes.win[0].text, 'やった！');
   eq(back.savedAt, '2099-01-02 03:04:05');
 });
 test('ルールの中に、チュートリアルのヒントの文を持たない（texts.js から読む）', function () {
