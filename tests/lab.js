@@ -675,7 +675,7 @@ test('G3: 姿 A・B（草A 大樹の根はまっすぐ4マス、水A 二筋の�
   var s2 = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
   var w = boosted(s2, 'water', 3, 6, 'up', [{ k: 'G3', v: 'A' }]);
   var r2 = act(s2, w, 'up');
-  eq([tile(r2.state, 2, 5), tile(r2.state, 4, 5), tile(r2.state, 3, 5)], ['river', 'river', 'empty'], '左右の筋');
+  eq([tile(r2.state, 2, 5), tile(r2.state, 4, 5), tile(r2.state, 3, 5)], ['puddle', 'puddle', 'empty'], '左右の筋（10/17 から水だけなら水たまり）');
 });
 test('G4: 融合「草＋火」は形の各マスに植えてすぐ点ける（small は2マス）。damage は決め手が半分', function () {
   R.labApply(['G4'], { G4: { weak: 'small' } });
@@ -916,7 +916,7 @@ test('F3: 森の中で草は形の先にもう1マス、水辺で水は1マス�
   var s2 = board(['.......', '.......', '.......', '.......', '.......', '.......', '..R....']);
   var w = R.addAlly(s2, 'water', 3, 6, 'up');
   var r = act(s2, w, 'up');
-  eq([tile(r.state, 3, 5), tile(r.state, 3, 4), tile(r.state, 3, 3)], ['river', 'river', 'river'], '池が3マス');
+  eq([tile(r.state, 3, 5), tile(r.state, 3, 4), tile(r.state, 3, 3)], ['puddle', 'puddle', 'puddle'], '水たまりが3マス');
   R.labApply([]);
   eq(R.previewAct(s, g.id, null, 'up').cells.length, 4, 'オフ');
 });
@@ -1511,7 +1511,7 @@ test('L 作る: 形が1マス増える（草・土は横、水・風は奥へ長
   setPath(s, f, { make: 2 });
   eq(sorted(cellsOf(act(s, f, 'up').state, 'smallfire')), sorted([[3, 5], [4, 4], [2, 4]]), '火は斜め前');
   setPath(s, w, { make: 2 });
-  eq(tile(act(s, w, 'up').state, 0, 2), 'river', '水は2マス長く（池4マス）');
+  eq(tile(act(s, w, 'up').state, 0, 2), 'puddle', '水は2マス長く（水たまり4マス）');
   var s2 = board(['........', '........', '........', '........', '........', '........', '........', '........']);
   var g2 = R.addAlly(s2, 'grass', 3, 7, 'up');
   setPath(s2, g2, { make: 1 });
@@ -2147,13 +2147,13 @@ test('M 性質「当たるまで流れる」（奔流）・「貫く」（岩槍
   var s = board(['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
   var w = R.addAlly(s, 'water', 3, 6, 'up'); R.addEnemy(s, 'fire', 0, 0);
   mPath(s, w, { decide: 2 });
-  eq(cellsOf(act(s, R.findUnit(s, w.id), 'up').state, 'river').length, 6, '盤の端まで（育つが切なので池＝川）');
+  eq(cellsOf(act(s, R.findUnit(s, w.id), 'up').state, 'puddle').length, 6, '盤の端まで（10/17 から水だけなら水たまり）');
   var e = R.addEnemy(s, 'fire', 3, 3); tough(s, e);
   var r = act(s, R.findUnit(s, w.id), 'up');
   eq(tile(r.state, 3, 2), 'empty', '奔流は人で止まる');
   mPath(s, w, { decide: 2, simple: 3 });
   var r2 = act(s, R.findUnit(s, w.id), 'up');
-  eq(tile(r2.state, 3, 2), 'river', '大瀑布は人を貫いて流れ続ける');
+  eq(tile(r2.state, 3, 2), 'puddle', '大瀑布は人を貫いて流れ続ける（水だけなら水たまり）');
   var s2 = board(['.....', '.....', '.....', '.....', '.....']);
   var ea = R.addAlly(s2, 'earth', 3, 4, 'up'); var e2 = R.addEnemy(s2, 'fire', 2, 2); tough(s2, e2);
   var before = shotCells(s2, ea, 'up').length;

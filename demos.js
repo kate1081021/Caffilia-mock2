@@ -23,14 +23,14 @@
       id: 'mEscort',
       name: '【お題】護衛: 風で川を運んで、馬車の道を作る',
       preset: 'mEscort',
-      desc: '探索で見つけた手順（10/13「人の足元にも自然ができる」に合わせて探し直した）。風で川を吹くと、川の水が運ばれて水たまり（通れる）になり、馬車の新しい渡り口ができる。水で川を流して壁にし、土で山を盛って馬車の道を守る。',
+      desc: '探索で見つけた手順（10/17「水だけなら水たまり」に合わせて探し直した。幅10）。風で川を吹くと、川の水が運ばれて水たまり（通れる）になり、馬車の新しい渡り口ができる。水たまりに水をかけて川に戻して壁にし、土で山を盛って馬車の道を守る。',
       turns: [
-        [{ id: 'P3', to: [3, 4], dir: 'down' }, { id: 'P2', to: [3, 5], dir: 'right' }, { id: 'P1', to: [0, 6], dir: 'up' }],
-        [{ id: 'P1', to: [1, 5], dir: 'right' }, { id: 'P3', to: [3, 4], dir: 'right' }, { id: 'P2', to: [3, 5], dir: 'up' }],
-        [{ id: 'P1', to: [2, 5], dir: 'right' }, { id: 'P2', to: [4, 5], dir: 'right' }, { id: 'P3', to: [3, 4], dir: 'up' }],
-        [{ id: 'P1', to: [2, 3], dir: 'right' }, { id: 'P2', to: [4, 5], dir: 'up' }, { id: 'P3', to: [3, 4], dir: 'up' }],
-        [{ id: 'P1', to: [2, 3], dir: 'right' }, { id: 'P2', to: [4, 5], dir: 'up' }, { id: 'P3', to: [3, 4], dir: 'up' }],
-        [{ id: 'P1', to: [2, 3], dir: 'up' }, { id: 'P2', to: [4, 5], dir: 'up' }, { id: 'P3', to: [3, 4], dir: 'up' }]
+        [{ id: 'P3', to: [3, 4], dir: 'down' }, { id: 'P2', to: [2, 5], dir: 'right' }, { id: 'P1', to: [0, 6], dir: 'up' }],
+        [{ id: 'P2', to: [2, 5], dir: 'right' }, { id: 'P1', to: [1, 5], dir: 'up' }, { id: 'P3', to: [3, 4], dir: 'up' }],
+        [{ id: 'P3', to: [2, 4], dir: 'up' }, { id: 'P1', to: [1, 4], dir: 'right' }, { id: 'P2', to: [2, 5], dir: 'up' }],
+        [{ id: 'P1', to: [1, 5], dir: 'up' }, { id: 'P3', to: [1, 4], dir: 'right' }, { id: 'P2', to: [2, 5], dir: 'up' }],
+        [{ id: 'P1', to: [1, 5], dir: 'up' }, { id: 'P2', to: [2, 5], dir: 'up' }, { id: 'P3', to: [1, 4], dir: 'up' }],
+        [{ id: 'P1', to: [1, 5], dir: 'up' }, { id: 'P2', to: [2, 5], dir: 'up' }, { id: 'P3', to: [1, 4], dir: 'up' }]
       ]
     },
     {

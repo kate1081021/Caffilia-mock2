@@ -41,7 +41,8 @@
     'fire.strongDamage': '強い炎のダメージ（燃えた森の上）', 'fire.weakDamage': '弱い炎のダメージ',
     'fire.burnDamage': '火傷: ターン終了ごとのダメージ', 'fire.burnTurns': '火傷: 治るまでのターン数',
     'fire.burnOutTurns': '炎が燃え尽きるまでのターン数',
-    'lineLength': '風（元の形）の長さ', 'breezeLength': '風（標準の形）の長さ', 'waterLength': '水の池の長さ',
+    'lineLength': '風（元の形）の長さ', 'breezeLength': '風（標準の形）の長さ', 'waterLength': '水だけのときの長さ',
+    'waterPuddle': '水だけなら水たまり（切ると元の池＝川）',
     'stepDelayMs': '演出の間隔（ミリ秒）',
     'simul.fireDelayMs': '一斉発動: 1人ずつ見せる間隔（ミリ秒）',
     'spread.maxLength': '燃え広がりの長さ（最大）',
@@ -69,6 +70,7 @@
     'fx.bigPicture': 'つながった自然を1枚の大きな絵で描く',
     'sakura.petals': '火山に風の桜吹雪は花びら（切ると元の火の粉）',
     'eruption.depth': '桜吹雪の奥行き（段）', 'eruption.base': '桜吹雪のダメージ', 'eruption.perVolcano': '桜吹雪: 火山1つごとの追加',
+    'eruption.scale': '桜吹雪の扇はつながった火山の大きさで（切ると元の1・3・5）',
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',
     'ideas.windClearsMirage': '風で蜃気楼が晴れる', 'ideas.spreadMeltsIce': '燃え広がりは氷を溶かす'
   };

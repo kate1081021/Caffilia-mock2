@@ -660,13 +660,35 @@
     }
     // ラボ C4: 扇の列の数＝つながった桜の数。C5: 丘の桜（一段）は1列・弱い5
     if (LX && labAny(['C4', 'C5'])) { depth = LX.eruptionDepth(s, kind, comp, depth); labWeak = LX.eruptionWeak(kind); }
+    // 広げた自然が大きいほど大きく（eruption.scale、オーナー 10/17）: 扇は今までどおり、風が当たった火山から風下へ1段ずつ。
+    //   ただし幅は、つながった火山の幅（風の向きと直角）から始まり、1段ごとに左右へ1マスずつ広がる。
+    //   奥行きは、つながった火山の一番先から先にも depth 段届くように、火山の中を通る段の分だけ伸びる。
+    //   火山1つなら今までと同じ（1・3・5マス）。元の形より小さくはならない。ラボ C4・C5 がオンのときは、ラボの決め方のまま
+    var scaled = B.eruption.scale && !(LX && labAny(['C4', 'C5']));
+    var hitAlong = vx * F.dx + vy * F.dy, front = hitAlong, lo = 0, hi = 0;
+    if (scaled) {
+      var side = comp.map(function (c) { return c[0] * Rx + c[1] * Ry; });
+      front = Math.max.apply(null, comp.map(function (c) { return c[0] * F.dx + c[1] * F.dy; }));
+      lo = Math.min.apply(null, side); hi = Math.max.apply(null, side);
+      depth += front - hitAlong;
+    }
     var cells = [];
     for (var d = 1; d <= depth; d++) {
+      if (scaled) {
+        // 向きの軸 hitAlong+d・横の軸 w のマス（F と R は直交する単位ベクトルなので、x = 軸×F ＋ 横×R）
+        for (var w2 = lo - (d - 1); w2 <= hi + (d - 1); w2++) {
+          var x2 = F.dx * (hitAlong + d) + Rx * w2, y2 = F.dy * (hitAlong + d) + Ry * w2;
+          if (inBounds(s, x2, y2)) cells.push([x2, y2]);
+        }
+        continue;
+      }
       for (var w = -(d - 1); w <= d - 1; w++) {
         var x = vx + F.dx * d + Rx * w, y = vy + F.dy * d + Ry * w;
         if (inBounds(s, x, y)) cells.push([x, y]);
       }
     }
+    var inComp = function (c) { return comp.some(function (v) { return v[0] === c[0] && v[1] === c[1]; }); };
+    var wideNote = scaled && comp.length > 1 ? '。火山の大きさの分、扇が広がった（' + cells.filter(function (c) { return !inComp(c); }).length + 'マス）' : '';
     var amount = B.eruption.base + comp.length * B.eruption.perVolcano;
     var burned = 0;
     cells.forEach(function (c) {
@@ -685,7 +707,7 @@
       type: 'finisher', name: '桜吹雪', isNew: true, origin: [vx, vy], cells: cells, damage: fin.damage, pink: pink, dir: dir,
       text: '【新案】桜吹雪！ ' + (kind === 'volcano' ? '火山' : '桜') + comp.length + 'つの' + (pink ? '花びら' : '火の粉') + 'が' + DIRS[dir].name + 'へ舞い散った（威力' + fin.damage + '）' +
         (LX && lab('C4') ? '【ラボ: 桜' + comp.length + 'つで扇' + depth + '列】' : '') + (labWeak ? '【ラボ: 丘の桜は少し舞うだけ】' : '') +
-        (burned ? '。森' + burned + 'つに火がついた' : '')
+        wideNote + (burned ? '。森' + burned + 'つに火がついた' : '')
     });
     return fin;
   }
@@ -1344,12 +1366,14 @@
   }
 
   // 流れる（水）
-  //   【新案】水だけなら正面に小さな池（waterLength マス）。山に当たると山を下って、盤の端まで川になる（源流）
-  //   【育つ】入のときは、池ではなく水たまり。通り道に水たまりがあると、そこから向きの奥へ川に育つ（grow.riverLength マス先まで）
+  //   水だけなら正面に水たまり（waterLength マス。waterPuddle を切ると元の池＝川）。山に当たると山を下って、盤の端まで川になる（源流）
+  //   【育つ】通り道に水たまりがあると、そこから向きの奥へ川に育つ（grow.riverLength マス先まで）
   function flow(s, u, facing, ctx, ev) {
     var F = DIRS[facing], from = castOrigin(s, u, facing);   // 【育つ】丘の上からは1マス先から流れる
     var made = 0, pond = 0, stop = null, sourced = false, tornadoHit = null, whirlHit = null;
-    var growOn = B.grow.enabled, puddleOn = growOn || B.tutorial.slope, pondName = puddleOn ? '水たまり' : '池';   // チュートリアル②: 水だけなら水たまり
+    // 水だけなら水たまり（waterPuddle、オーナー 10/17）。育つ・チュートリアル②は前から水たまり
+    var growOn = B.grow.enabled, puddleOn = growOn || B.tutorial.slope || B.waterPuddle, pondName = puddleOn ? '水たまり' : '池';
+    var plainPuddle = B.waterPuddle && !growOn && !B.tutorial.slope;   // 水だけなら水たまり、が育つ・②の決まりでなく標準の決まりとして効いている
     var growing = false, left = 0, river = null;   // 【育つ】水たまりから川に育っている途中か、あと何マス進めるか、育った川のマス
     var pondLen = B.shape.frontOne ? 1 : B.waterLength;
     if (LX) pondLen = LX.lengthFor(s, u, 'water', pondLen);   // ラボ: 形が伸びる（G2）・姿（G3）・武器（G6）
@@ -1365,7 +1389,7 @@
       if (LX && !growing && !sourced) { var lf = LX.flowCell(s, u, x, y, t, facing, ctx, ev, o); if (lf) { stop = lf; break; } }   // ラボ B: 草むら → 森・火山が冷える・花筏・雨・土石流（泥沼の上の者ごと）
       if (o) {
         addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
-        // 人の足元にも自然ができる: 池が立てる水たまりのとき（育つが入）だけ、当たった人の足元にも水たまり
+        // 人の足元にも自然ができる: 水が立てる水たまりのとき（標準・育つ・②）だけ、当たった人の足元にも水たまり
         if (B.ideas.natureUnderUnits && !lab('C1') && puddleOn && !sourced && !growing && t === 'empty') { setTile(s, x, y, 'puddle'); made++; }
         if (LX && LX.passUnit(s, u, o, ctx)) { stop = null; continue; }   // ラボ M: 人を貫いて流れ続ける
         break;
@@ -1407,7 +1431,12 @@
         }
         continue;
       }
-      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn && !sourced && !twoStep ? 'puddle' : 'river'); made++; continue; }   // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり
+      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
+        // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり。
+        //   水だけなら水たまり（waterPuddle）で変わるのは空きだけ: 水たまり・蜃気楼に水が流れると、今までどおり川に戻る
+        var keepRule = plainPuddle && t !== 'empty';
+        setTile(s, x, y, puddleOn && !sourced && !twoStep && !keepRule ? 'puddle' : 'river'); made++; continue;
+      }
       if (t === 'river' || t === 'ice') continue;
       if (t === 'lava') { setTile(s, x, y, 'mountain'); stop = '【新案】溶岩が冷えて山になった'; break; }
       if (t === 'firewhirl') {

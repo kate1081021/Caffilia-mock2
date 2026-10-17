@@ -1239,7 +1239,8 @@
         touchFire(s, x, y, dir, ctx, ev, '');
       } else if (m === 'water') {
         if (o) I.cureBurn(s, o, ctx);
-        if (t === 'empty' && under(grow ? 'puddle' : 'river')) { setTile(s, x, y, grow ? 'puddle' : 'river'); ctx.phrases.push(grow ? '水たまりができた' : '池ができた'); }
+        var pud = grow || B.waterPuddle;   // 水だけなら水たまり（標準。切ると元の池＝川）
+        if (t === 'empty' && under(pud ? 'puddle' : 'river')) { setTile(s, x, y, pud ? 'puddle' : 'river'); ctx.phrases.push(pud ? '水たまりができた' : '池ができた'); }
         else if (t === 'puddle' && grow && !o) { setTile(s, x, y, 'river'); ctx.phrases.push('水たまりが川に育った'); }
         else if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); ctx.phrases.push(tileName(t) + 'が消えた'); }
         else if (t === 'firewhirl' && once('sentakuki')) { ctx.phrases.push('火の渦に水が入った'); I.doSentakuki(s, x, y, ctx, ev, dir); }
