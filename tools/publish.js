@@ -4,6 +4,7 @@
  *   node tools/publish.js latest   … 最新版 publish/latest/ を上書き
  *   node tools/publish.js 1006     … 固定版 publish/1006/（同じ名前があれば止まる）
  *   node tools/publish.js          … 今日の日付 MMDD を固定版の名前にする
+ *   --top=強化版                   … トップの大きいボタンでこの版を開く（ボタンは「強化版で遊ぶ」）
  *   --no-push                      … commit・push をしない（確かめる用）
  *
  * publish/ はこのモックとは別の git リポジトリ（private、Cloudflare（Workers の静的サイト）が main を公開する）。
@@ -63,15 +64,26 @@ function esc(t) {
   return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
 }
 
-// トップ: 最新版へのリンクと、固定版の一覧（新しい順）
+// トップの大きいボタンで開く版（--top で決める）。なければ最新版
+function readTop() {
+  try {
+    var top = JSON.parse(fs.readFileSync(path.join(PUB, 'top.json'), 'utf8'));
+    var v = readVersion(path.join(PUB, top.name));
+    return v ? { name: v.name, label: top.label, publishedAt: v.publishedAt } : null;
+  } catch (e) { return null; }
+}
+
+// トップ: 大きいボタン（--top の版か最新版）と、固定版の一覧（新しい順）
 function topPage() {
   var fixed = fs.readdirSync(PUB).filter(function (n) {
     return n !== 'latest' && n[0] !== '.' && fs.statSync(path.join(PUB, n)).isDirectory() && readVersion(path.join(PUB, n));
   }).map(function (n) { return readVersion(path.join(PUB, n)); });
   fixed.sort(function (a, b) { return a.publishedAt < b.publishedAt ? 1 : a.publishedAt > b.publishedAt ? -1 : 0; });
   var latest = readVersion(path.join(PUB, 'latest'));
+  var top = readTop();
   var li = fixed.map(function (v) {
-    return '    <li><a href="' + encodeURIComponent(v.name) + '/">版 ' + esc(v.name) + '</a> <small>' + esc(v.publishedAt) + '</small></li>';
+    var label = top && top.name === v.name ? '（' + esc(top.label) + '）' : '';
+    return '    <li><a href="' + encodeURIComponent(v.name) + '/">版 ' + esc(v.name) + label + '</a> <small>' + esc(v.publishedAt) + '</small></li>';
   }).join('\n');
   return '<!doctype html>\n<html lang="ja">\n<head>\n  <meta charset="utf-8">\n  ' + NOINDEX + '\n' +
     '  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>Caffilia シナジーモック</title>\n' +
@@ -84,7 +96,9 @@ function topPage() {
     '    h2 { font-size: 1rem; margin: 36px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; } ul { padding-left: 1.2em; } small { color: var(--sub); margin-left: 6px; }\n' +
     '  </style>\n</head>\n<body>\n' +
     '  <h1>Caffilia シナジーモック</h1>\n  <p>魔法を撃つと自然になり、重ねると変わり、壊すと敵ごと吹き飛ぶ。PC のブラウザで遊べます。</p>\n' +
-    (latest ? '  <a class="latest" href="latest/">最新版で遊ぶ</a> <small>' + esc(latest.publishedAt) + '</small>\n' : '') +
+    (top ? '  <a class="latest" href="' + encodeURIComponent(top.name) + '/">' + esc(top.label) + 'で遊ぶ</a> <small>' + esc(top.publishedAt) + '</small>\n' +
+      (latest ? '  <p style="margin-top: 16px"><a href="latest/">最新版</a> <small>' + esc(latest.publishedAt) + '</small></p>\n' : '')
+      : latest ? '  <a class="latest" href="latest/">最新版で遊ぶ</a> <small>' + esc(latest.publishedAt) + '</small>\n' : '') +
     '  <h2>固定版</h2>\n' + (li ? '  <ul>\n' + li + '\n  </ul>\n' : '  <p>まだありません。</p>\n') +
     '</body>\n</html>\n';
 }
@@ -97,6 +111,7 @@ function main() {
   var argv = process.argv.slice(2);
   var push = argv.indexOf('--no-push') === -1;
   var name = argv.filter(function (a) { return a[0] !== '-'; })[0] || today();
+  var topLabel = (argv.filter(function (a) { return /^--top=/.test(a); })[0] || '').slice(6);
   if (!/^[A-Za-z0-9_-]+$/.test(name)) { console.error('版の名前は英数字・-・_ だけにしてください: ' + name); process.exit(1); }
   if (!fs.existsSync(path.join(PUB, '.git'))) { console.error('publish/ がありません（公開用リポジトリを clone してください）'); process.exit(1); }
 
@@ -121,6 +136,7 @@ function main() {
   });
   var version = { name: name, publishedAt: stamp(new Date()) };
   fs.writeFileSync(path.join(dest, 'version.js'), 'window.CAFFILIA_VERSION = ' + JSON.stringify(version) + ';\n');
+  if (topLabel) fs.writeFileSync(path.join(PUB, 'top.json'), JSON.stringify({ name: name, label: topLabel }) + '\n');
 
   fs.writeFileSync(path.join(PUB, 'index.html'), topPage());
   fs.writeFileSync(path.join(PUB, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
@@ -130,7 +146,7 @@ function main() {
     compatibility_date: '2026-10-01',
     assets: { directory: './' }
   }, null, 2) + '\n');
-  fs.writeFileSync(path.join(PUB, '.assetsignore'), '.git\n.gitignore\n.assetsignore\nwrangler.jsonc\n');
+  fs.writeFileSync(path.join(PUB, '.assetsignore'), '.git\n.gitignore\n.assetsignore\nwrangler.jsonc\ntop.json\n');
   fs.writeFileSync(path.join(PUB, '_headers'), '/*\n  X-Robots-Tag: noindex, nofollow\n\n/latest/*\n  Cache-Control: no-cache\n');
 
   console.log('版「' + name + '」を publish/' + name + '/ に置きました: ' + files.concat('version.js').join(', '));
