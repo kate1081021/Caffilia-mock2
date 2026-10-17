@@ -194,7 +194,13 @@
     }
   };
   app.onAct = function (u, shoot) { if (shoot) trigger(['stance:' + u.magic, 'stance']); };
-  app.onBeforeFire = function (go) { trigger(['beforeFire'], go); };
+  // 発動（ターン終了）を押したら、出ている文（始めの文など）は閉じて、すぐ発動する。
+  //   開いたままだと窓を閉じるまで発動が待たされ、「魔法を撃ってくれない」に見えていた（10/17）。発動の前の文（beforeFire）があるときだけ、読み終えてから
+  app.onBeforeFire = function (go) {
+    dlg.queue = [];
+    if (dlg.cur) closeDialog();
+    trigger(['beforeFire'], go);
+  };
   app.onEvent = function (e) {
     if (e.type === 'finisher') trigger(['finisher:' + e.name, 'finisher']);
     else if (e.type === 'intent' && e.side === 'enemy') trigger(['enemyIntent']);
@@ -379,9 +385,8 @@
       field('ヒント（やり直したとき・1人ずつ）', 'stages.' + view.stage + '.hint.single', (st.hint || {}).single) +
       field('クリアの文（空ならルールの文）', 'stages.' + view.stage + '.win', st.win) +
       field('負けの文（空ならルールの文）', 'stages.' + view.stage + '.lose', st.lose) +
-      // 展示ステージ③: ミッションの名前・倒したあとの大きな絵の題
-      (st.missions ? Object.keys(st.missions).map(function (k) { return field('ミッション（' + k + '）', 'stages.' + view.stage + '.missions.' + k, st.missions[k]); }).join('') : '') +
-      (st.finaleTitle !== undefined ? field('大きな絵の題（倒したあと）', 'stages.' + view.stage + '.finaleTitle', st.finaleTitle) + field('大きな絵の下の一言', 'stages.' + view.stage + '.finaleSub', st.finaleSub) : '');
+      // 展示ステージ③: ミッションの名前
+      (st.missions ? Object.keys(st.missions).map(function (k) { return field('ミッション（' + k + '）', 'stages.' + view.stage + '.missions.' + k, st.missions[k]); }).join('') : '');
     // きっかけ → 文の一覧
     h += '<h3>きっかけと文</h3><div class="tx-scene-head"><select data-act="pickScene" aria-label="きっかけ">' +
       scenes.map(function (k) { return '<option value="' + esc(k) + '"' + (k === view.scene ? ' selected' : '') + '>' + esc(sceneLabel(k)) + '</option>'; }).join('') + '</select>' +

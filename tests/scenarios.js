@@ -349,7 +349,7 @@ scenario('12. 【チュートリアル】① 重ねる: 2回外すと、ター�
     check(g.state.result === 'lose' && g.state.turn === 2, 'ターン2で失敗');
   });
 
-scenario('13. ステージ② 2人で守る: 1ターン目は何もしない → 2ターン目に山使いがその場で上に山 → 水使いが右の腕に水 → 9行目が山と川でふさがり、増援が溜まっても5ターン守り切る',
+scenario('13. ステージ② 2人で守る: 1ターン目は何もしない → 2ターン目に山使いがその場で上に山 → 水使いが右の腕に水 → 4行目が山と川でふさがり、増援が溜まっても5ターン守り切る',
   function () { return R.startBattle(R.loadPreset('tut2')).state; },
   function (g) {
     var mount = R.controllableOf(g.state).filter(function (a) { return a.magic === 'mount'; })[0].id;
@@ -357,17 +357,17 @@ scenario('13. ステージ② 2人で守る: 1ターン目は何もしない →
     check(R.forecast(g.state).rushes.every(function (r) { return r.reach; }), '最初は2体とも村へ届く道（村に -1）');
     g.endTurn();                          // 1ターン目は様子見（まだ間に合う）
     check(!g.state.result && g.state.turn === 2, '1ターン目では負けない');
-    g.act(mount, null, 'up');             // 頂上 (0,8)、腕 (0,7)(0,9)(1,8) の T 字の山
+    g.act(mount, null, 'up');             // 頂上 (0,3)、腕 (0,2)(0,4)(1,3) の T 字の山
     g.expectLog('山ができた×4');
-    g.act(water, [1, 9], 'up');           // 右の腕 (1,8) に水 → 頂上と反対の右へ川
-    g.expectLog('山の腕に当たって、頂上と反対の右へ川が流れ出した、右へ川が3マス流れた、盤の端まで流れた');
-    check([0, 1, 2, 3, 4].map(function (x) { return g.tile(x, 8); }).join(',') === 'mountain,mountain,river,river,river', '9行目が端から端までふさがった');
+    g.act(water, [1, 4], 'up');           // 右の腕 (1,3) に水 → 頂上と反対の右へ川
+    g.expectLog('山の腕に当たって、頂上と反対の右へ川が流れ出した、右へ川が4マス流れた、盤の端まで流れた');
+    check([0, 1, 2, 3, 4, 5].map(function (x) { return g.tile(x, 3); }).join(',') === 'mountain,mountain,river,river,river,river', '4行目が端から端までふさがった');
     g.expectLog('敵Bは村への道がないので、その場で待った');
     g.endTurn(); g.endTurn(); g.endTurn();
     check(!g.log.some(function (l) { return /体当たり/.test(l); }), '一度も体当たりされない');
     g.expectLog('ターン5を守り切った。村は無事！（勝利）');
-    check(g.state.result === 'win' && R.objectsOf(g.state, 'village').length === 3, '村は3つとも残って勝ち');
-    check(R.enemiesOf(g.state).length === 6 && R.enemiesOf(g.state).every(function (e) { return e.y <= 7; }), '増援で6体に増え、全員が川の手前に溜まっている');
+    check(g.state.result === 'win' && R.objectsOf(g.state, 'village').length === 4, '村は4つとも残って勝ち');
+    check(R.enemiesOf(g.state).length === 6 && R.enemiesOf(g.state).every(function (e) { return e.y <= 2; }), '増援で6体に増え、全員が川の手前に溜まっている');
     check(B.waterLength === 2 && B.tutorial.slope === false && B.mission.defense.turns === 5, 'このステージの数値はほかに漏れていない');
   });
 

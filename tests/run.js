@@ -2460,8 +2460,8 @@ test('このステージの風は、正面1マスのユニットを1マス押し
 
 // ---------------------------------------------------------------
 console.log('\n■ ステージ②「2人で守る」（IMPROVE_tutorial2）');
-// 座標は (x, y)。仕様書の（行, 列）は (列-1, 行-1)。横5・縦11。山使い (0,10)・水使い (1,10)・村 (2,10)(3,10)(4,10)・敵は (3,0)(3,1) から
-// 勝てる一例: 山使いがその場で上 → 頂上 (0,8)、腕 (0,7) 上・(1,8) 右・(0,9) 下。水使いが (1,9) で上 → 右の腕 (1,8) に水 → (2,8)〜(4,8) に川
+// 座標は (x, y)。6×6（10/17 に横5・縦11 から変えた）。山使い (0,5)・水使い (1,5)・村 (2,5)〜(5,5)・敵は (3,0)(4,0) から。突進は1ターンに1マス
+// 勝てる一例: 山使いがその場で上 → 頂上 (0,3)、腕 (0,2) 上・(1,3) 右・(0,4) 下。水使いが (1,4) で上 → 右の腕 (1,3) に水 → (2,3)〜(5,3) に川
 function tut2() { return R.startBattle(R.loadPreset('tut2')).state; }
 function t2Mount(s) { return R.controllableOf(s).filter(function (a) { return a.magic === 'mount'; })[0]; }
 function t2Water(s) { return R.controllableOf(s).filter(function (a) { return a.magic === 'water'; })[0]; }
@@ -2482,34 +2482,41 @@ function crossBoard() {
 // 勝てる手順の一例（山 → 水）を打った盤面
 function t2Solved(s) {
   var a = R.act(s, t2Mount(s).id, { dir: 'up' });
-  return R.act(a.state, t2Water(a.state).id, { to: [1, 9], dir: 'up' }).state;
+  return R.act(a.state, t2Water(a.state).id, { to: [1, 4], dir: 'up' }).state;
 }
+// 山と川を置くマス（先頭の敵がここにいると、ふさげない）
+var T2_WALL = [[0, 2], [0, 3], [0, 4], [1, 3], [1, 4], [2, 3], [3, 3], [4, 3], [5, 3]];
 // ターン終了を、勝負がつくか n 回まで
 function t2Run(s, n) { for (var i = 0; i < n && !s.result; i++) s = R.endTurn(s).state; return s; }
-test('盤面: 横5・縦11。山使い・水使い（上向き）、村3つ（HP1）、突進の敵2体、お題は防衛（5ターン）', function () {
+test('盤面: 6×6。山使い・水使い（上向き）、村4つ（HP1）、突進の敵2体、お題は防衛（5ターン）', function () {
   var s0 = R.loadPreset('tut2');
-  eq([s0.size, R.rowsOf(s0), s0.tiles.length], [5, 11, 55]);
+  eq([s0.size, R.rowsOf(s0), s0.tiles.length, s0.h], [6, 6, 36, undefined]);
   ok(s0.tiles.every(function (t) { return t === 'empty'; }), '最初は山も川もない');
-  eq([t2Mount(s0).x, t2Mount(s0).y, t2Mount(s0).facing, t2Water(s0).x, t2Water(s0).y, t2Water(s0).facing], [0, 10, 'up', 1, 10, 'up']);
-  eq(R.objectsOf(s0, 'village').map(function (v) { return [v.x, v.y, v.hp]; }), [[2, 10, 1], [3, 10, 1], [4, 10, 1]]);
-  eq(R.enemiesOf(s0).map(function (e) { return [e.x, e.y, e.stand]; }), [[3, 0, 'rush'], [3, 1, 'rush']]);
+  eq([t2Mount(s0).x, t2Mount(s0).y, t2Mount(s0).facing, t2Water(s0).x, t2Water(s0).y, t2Water(s0).facing], [0, 5, 'up', 1, 5, 'up']);
+  eq(R.objectsOf(s0, 'village').map(function (v) { return [v.x, v.y, v.hp]; }), [[2, 5, 1], [3, 5, 1], [4, 5, 1], [5, 5, 1]]);
+  eq(R.enemiesOf(s0).map(function (e) { return [e.x, e.y, e.stand]; }), [[3, 0, 'rush'], [4, 0, 'rush']]);
   eq(s0.mission.type, 'defense');
   eq(R.missionInfo(s0).win, 'ターン5の終わりまで村を守る（敵の全滅でも勝ち）');
   eq(R.magicName('mount'), '山', '土の魔法は「山」と表示');
   ok(R.TUTORIALS.some(function (t) { return t.id === 'tut2' && t.tutorial === 2 && /2人で守る/.test(t.name); }), 'チュートリアルの一覧に入っている');
-  ok(!R.inBounds(s0, 5, 0) && R.inBounds(s0, 4, 10) && !R.inBounds(s0, 0, 11), '盤の外');
+  ok(!R.inBounds(s0, 6, 0) && R.inBounds(s0, 5, 5) && !R.inBounds(s0, 0, 6), '盤の外');
+  eq(R.withOverrides(s0, function () { return B.enemy.rushMove; }), 1, '突進は1ターンに1マス（このステージだけ）');
 });
-test('横長・縦長の盤面: JSON の書き出し・読み込みで縦の大きさと増援が残る。大きさを変えると正方形に戻る', function () {
+test('JSON の書き出し・読み込みで増援と突進の敵が残る。横長の盤面（③）は縦の大きさが残り、大きさを変えると正方形に戻る', function () {
   var s = R.loadPreset('tut2');
   var r = R.importLayout(R.exportLayout(s));
   ok(r.ok, r.error);
-  eq([r.state.size, R.rowsOf(r.state), r.state.tiles.length], [5, 11, 55]);
+  eq([r.state.size, R.rowsOf(r.state), r.state.tiles.length], [6, 6, 36]);
   eq(r.state.spawn, s.spawn, '増援の出てくる所');
   eq(R.enemiesOf(r.state).map(function (e) { return e.stand; }), ['rush', 'rush'], '突進の敵');
   var d = JSON.parse(R.exportLayout(s)); d.tiles.pop();
   ok(!R.importLayout(d).ok, '地形の数が合わない');
   eq(JSON.parse(R.exportLayout(R.loadPreset('spread'))).h, undefined, '正方形の盤面には h がない');
-  var rs = R.editResize(s, 6).state;
+  var w = R.loadPreset('ex3');
+  var rw = R.importLayout(R.exportLayout(w));
+  ok(rw.ok, rw.error);
+  eq([rw.state.size, R.rowsOf(rw.state), rw.state.tiles.length], [12, 7, 84], '横長の盤面');
+  var rs = R.editResize(w, 6).state;
   eq([rs.size, R.rowsOf(rs), rs.h], [6, 6, undefined]);
 });
 test('山の魔法: 正面2マス先が頂上、上下左右が腕の十字。腕に下り坂の向き、頂上に「peak」の印', function () {
@@ -2520,7 +2527,7 @@ test('山の魔法: 正面2マス先が頂上、上下左右が腕の十字。�
 test('山の魔法: 腕が盤の外に出るなら、その腕だけなくなる（ステージでは T 字）。山は通れない', function () {
   var s = tut2();
   var r = fire(s, t2Mount(s), 'up');
-  eq([slopeAt(r.state, 0, 8), slopeAt(r.state, 0, 7), slopeAt(r.state, 1, 8), slopeAt(r.state, 0, 9)], ['peak', 'up', 'right', 'down'], '頂上 (0,8)、腕 (0,7)(1,8)(0,9)');
+  eq([slopeAt(r.state, 0, 3), slopeAt(r.state, 0, 2), slopeAt(r.state, 1, 3), slopeAt(r.state, 0, 4)], ['peak', 'up', 'right', 'down'], '頂上 (0,3)、腕 (0,2)(1,3)(0,4)');
   eq(r.state.tiles.filter(function (t) { return t === 'mountain'; }).length, 4, 'T 字の4マス');
   ok(!R.isPassable('mountain'));
 });
@@ -2536,7 +2543,7 @@ test('山の魔法: 置くマスの水たまり・川は泥沼になり、頂上
 test('水: 空きに撃つと、このステージでは水たまり1マス（標準は池2マス）', function () {
   var s = tut2();
   var r = fire(s, t2Water(s), 'up');
-  eq([tile(r.state, 1, 9), tile(r.state, 1, 8)], ['puddle', 'empty']);
+  eq([tile(r.state, 1, 4), tile(r.state, 1, 3)], ['puddle', 'empty']);
   var o = empty(6);
   var r2 = fire(o, R.addAlly(o, 'water', 2, 5), 'up');
   eq([tile(r2.state, 2, 4), tile(r2.state, 2, 3)], ['river', 'river'], 'ほかのシナリオは今どおり池2マス');
@@ -2557,9 +2564,9 @@ test('水: 山の腕に当てると、その腕の次のマスから頂上と反
   var r3 = R.act(st3, R.addAlly(st3, 'water', 4, 5, 'left').id, { dir: 'left' });
   eq([tile(r3.state, 3, 6), tile(r3.state, 2, 5)], ['river', 'empty'], '下へ1マス流れて盤の端');
 });
-test('水: ステージの右の腕 (1,8) に当てると、右へ (2,8)〜(4,8) に川が流れて9行目が端から端までふさがる', function () {
+test('水: ステージの右の腕 (1,3) に当てると、右へ (2,3)〜(5,3) に川が流れて4行目が端から端までふさがる', function () {
   var st = t2Solved(tut2());
-  eq([0, 1, 2, 3, 4].map(function (x) { return tile(st, x, 8); }), ['mountain', 'mountain', 'river', 'river', 'river']);
+  eq([0, 1, 2, 3, 4, 5].map(function (x) { return tile(st, x, 3); }), ['mountain', 'mountain', 'river', 'river', 'river', 'river']);
   ok(!R.isPassable('river'), '川は通れない');
 });
 test('水: 山の頂上に当たると、すべての腕から川が流れる（十字なら4本。法則として）', function () {
@@ -2589,39 +2596,39 @@ test('川はユニット・村の手前で止まる（ダメージはない）',
   ok(/村の手前で止まった/.test(r2.events[0].text), r2.events[0].text);
   eq(R.objectsOf(r2.state, 'village')[0].hp, 1, '村は壊れない');
 });
-test('突進の敵: 人は無視して一番近い村へ、1ターンに3マス。魔法は撃たず、予告も出さない', function () {
+test('突進の敵: 人は無視して一番近い村へ、このステージでは1ターンに1マス。魔法は撃たず、予告も出さない', function () {
   var s = tut2();
   var es = R.enemiesOf(s);
-  eq(es.map(function (e) { return [e.x, e.y]; }), [[4, 2], [3, 4]], '最初の移動のあと（A は B をよけて回り道、B はまっすぐ3マス）');
+  eq(es.map(function (e) { return [e.x, e.y]; }), [[3, 1], [4, 1]], '最初の移動のあと（どちらもまっすぐ1マス）');
   ok(es.every(function (e) { return !e.intent; }), '予告を出さない');
   eq(R.forecast(s).enemies, [], '魔法の予告はない');
   eq(R.planEnemy(s, es[0]).kind, 'rush');
   var t = R.endTurn(s);
   ok(!t.events.some(function (e) { return e.type === 'cast'; }), '撃たない');
-  eq(t.events.filter(function (e) { return e.type === 'move'; })[0].text, '敵Aが村へ向かって3マス走った');
+  eq(t.events.filter(function (e) { return e.type === 'move'; })[0].text, '敵Aが村へ向かって1マス走った');
 });
 test('突進の敵: 山・川・水たまり・泥沼・ユニットのいるマスは通らず、回り道する', function () {
   ['mountain', 'river', 'puddle', 'mud', 'unit'].forEach(function (wall) {
     var s = R.loadPreset('tut2');
     s.units = s.units.filter(function (u) { return u.side !== 'enemy'; });
-    var e = R.addEnemy(s, 'earth', 3, 3, 'down'); e.stand = 'rush';
-    if (wall === 'unit') R.addEnemy(s, 'earth', 3, 4, 'down');
-    else R.setTile(s, 3, 4, wall);
+    var e = R.addEnemy(s, 'earth', 3, 1, 'down'); e.stand = 'rush';
+    if (wall === 'unit') R.addEnemy(s, 'earth', 3, 2, 'down');
+    else R.setTile(s, 3, 2, wall);
     var r = R.rushRoute(s, R.findUnit(s, e.id));
-    ok(r.reach && !r.path.some(function (c) { return c[0] === 3 && c[1] === 4; }), wall + ' を通らない: ' + JSON.stringify(r.path));
-    eq(r.path.length, 7, wall + ': 回り道で7マス（まっすぐなら6マス）');
+    ok(r.reach && !r.path.some(function (c) { return c[0] === 3 && c[1] === 2; }), wall + ' を通らない: ' + JSON.stringify(r.path));
+    eq(r.path.length, 4, wall + ': 回り道で4マス（まっすぐなら3マス）');
   });
 });
 test('突進の敵: 道がなければ、届くマスのうち村に一番近いマスまで走って待つ（そこにいればその場で待つ）', function () {
   var st = t2Solved(tut2());
   var fc = R.forecast(st);
   var b = fc.rushes.filter(function (r) { return r.id === R.enemiesOf(st)[1].id; })[0];
-  eq([b.reach, b.path, b.stop], [false, [[3, 5], [3, 6], [3, 7]], 3], 'B は川の手前 (3,7) まで');
+  eq([b.reach, b.path, b.stop], [false, [[4, 2]], 1], 'B は川の手前 (4,2) まで');
   var st2 = R.endTurn(st).state;
-  eq(pos(st2, b.id), [3, 7]);
+  eq(pos(st2, b.id), [4, 2]);
   var t = R.endTurn(st2);
   ok(t.events.some(function (e) { return e.text === '敵Bは村への道がないので、その場で待った'; }), '川の手前に着いたら、その場で待つ');
-  eq(pos(t.state, b.id), [3, 7]);
+  eq(pos(t.state, b.id), [4, 2]);
 });
 test('突進の敵: enemy.rushNoPath を wait にすると、道がなければ今いる所で待つ（仕様の文どおりの動き）', function () {
   var s = R.loadPreset('tut2');
@@ -2629,28 +2636,28 @@ test('突進の敵: enemy.rushNoPath を wait にすると、道がなければ�
   var st = t2Solved(R.startBattle(s).state);
   ok(R.forecast(st).rushes.every(function (r) { return !r.reach && r.path.length === 0; }), 'どの敵も走らない');
   var t = R.endTurn(st);
-  eq(R.enemiesOf(t.state).map(function (e) { return [e.x, e.y]; }), [[4, 2], [3, 4], [3, 0]], '増援も出てきた所で待つ');
+  eq(R.enemiesOf(t.state).map(function (e) { return [e.x, e.y]; }), [[3, 1], [4, 1], [3, 0]], '増援も出てきた所で待つ');
   eq(B.enemy.rushNoPath, 'approach', '標準は approach のまま');
 });
 test('突進の敵: 走り終えて村の隣にいたら、体当たりで村を壊す（予告なし）→ 防衛は負け', function () {
-  var st = t2Run(tut2(), 2);   // 何もしない
-  eq([st.result, st.turn], ['lose', 3], '3ターン目の敵の移動で負け');
+  var st = t2Run(tut2(), 3);   // 何もしない
+  eq([st.result, st.turn], ['lose', 4], '4ターン目の敵の移動で負け');
   ok(/村が壊された/.test(st.resultText));
-  var t = R.endTurn(R.endTurn(tut2()).state);
+  var t = R.endTurn(R.endTurn(R.endTurn(tut2()).state).state);
   var ram = t.events.filter(function (e) { return e.type === 'ram'; })[0];
-  ok(ram && ram.text === '敵Bが村2に体当たりした', ram && ram.text);
+  ok(ram && ram.text === '敵Aが村2に体当たりした', ram && ram.text);
 });
 test('進む道: 村へ届く道なら村に印。撃ったあとの盤面で計算し直す（道をふさぐと届かなくなる）', function () {
   var s = tut2();
   var vs = R.objectsOf(s, 'village');
   var fc = R.forecast(s);
-  eq(fc.rushes.filter(function (r) { return R.findUnit(s, r.id); }).map(function (r) { return [r.reach, r.village]; }), [[true, vs[2].id], [true, vs[1].id]], '最初は2体とも村へ届く');
-  eq(fc.rushes[1].path, [[3, 5], [3, 6], [3, 7], [3, 8], [3, 9]], 'B の道');
+  eq(fc.rushes.filter(function (r) { return R.findUnit(s, r.id); }).map(function (r) { return [r.reach, r.village]; }), [[true, vs[1].id], [true, vs[2].id]], '最初は2体とも村へ届く');
+  eq(fc.rushes[1].path, [[4, 2], [4, 3], [4, 4]], 'B の道');
   var a = R.act(s, t2Mount(s).id, { dir: 'up' });
   ok(R.forecast(a.state).rushes.some(function (r) { return r.reach; }), '山だけではまだ届く');
-  var pv = R.previewAct(a.state, t2Water(a.state).id, [1, 9], 'up');
+  var pv = R.previewAct(a.state, t2Water(a.state).id, [1, 4], 'up');
   ok(R.forecast(pv.state).rushes.every(function (r) { return !r.reach; }), '水を構えた予測の盤面では、どの敵も届かない');
-  var pvBad = R.previewAct(a.state, t2Water(a.state).id, [1, 9], 'left');   // 下の腕 (0,9) に撃つ
+  var pvBad = R.previewAct(a.state, t2Water(a.state).id, [1, 4], 'left');   // 下の腕 (0,4) に撃つ
   ok(R.forecast(pvBad.state).rushes.some(function (r) { return r.reach; }), '違う腕では届いたまま');
 });
 test('勝てる手順の一例（山 → 水）を1ターン目に打つと、敵は村に届かず、5ターンしのいで勝つ', function () {
@@ -2662,35 +2669,35 @@ test('勝てる手順の一例（山 → 水）を1ターン目に打つと、�
     if (turn < 5) eq(st.result, null, 'ターン' + turn + ' はまだ続く');
   }
   eq([st.result, st.turn], ['win', 5]);
-  eq(R.objectsOf(st, 'village').length, 3, '村は全部残っている');
-  ok(R.enemiesOf(st).every(function (e) { return e.y <= 7; }), '敵は全員9行目より上');
+  eq(R.objectsOf(st, 'village').length, 4, '村は全部残っている');
+  ok(R.enemiesOf(st).every(function (e) { return e.y <= 2; }), '敵は全員4行目より上');
   eq(R.enemiesOf(st).length, 6, '増援で6体に増えている（ターン1〜4の終わりに1体ずつ）');
 });
 test('1ターン目に何もしなくても、2ターン目に同じ手順を打てば間に合って勝つ', function () {
   var st = R.endTurn(tut2()).state;
   eq([st.result, st.turn], [null, 2]);
-  var wall = [[0, 7], [0, 8], [0, 9], [1, 8], [1, 9], [2, 8], [3, 8], [4, 8]];
-  ok(R.enemiesOf(st).every(function (e) { return e.y < 8 && !R.inCells(wall, e.x, e.y); }), '2ターン目の始めも、敵は山・川を置くマスをふさいでいない');
+  ok(R.enemiesOf(st).every(function (e) { return e.y < 3 && !R.inCells(T2_WALL, e.x, e.y); }), '2ターン目の始めも、敵は山・川を置くマスをふさいでいない');
   eq(t2Run(t2Solved(st), 5).result, 'win');
+  var st3 = R.endTurn(st).state;
+  eq(t2Run(t2Solved(st3), 5).result, 'lose', '3ターン目では遅い（先頭の敵が川を置くマスにいる）');
 });
 test('1ターン目の敵の移動のあと、先頭の敵は山・川を置くマスをふさいでいない', function () {
   var s = tut2();
-  var wall = [[0, 7], [0, 8], [0, 9], [1, 8], [1, 9], [2, 8], [3, 8], [4, 8]];
-  ok(R.enemiesOf(s).every(function (e) { return e.y < 8 && !R.inCells(wall, e.x, e.y); }));
+  ok(R.enemiesOf(s).every(function (e) { return e.y < 3 && !R.inCells(T2_WALL, e.x, e.y); }));
 });
 test('水 → 山の順: 腕のマスが水たまり → 泥沼（腕にならない）。2ターン目に立て直せる', function () {
   var s = tut2();
-  var w = R.act(s, t2Water(s).id, { to: [1, 9], dir: 'up' });
-  eq(tile(w.state, 1, 8), 'puddle');
+  var w = R.act(s, t2Water(s).id, { to: [1, 4], dir: 'up' });
+  eq(tile(w.state, 1, 3), 'puddle');
   var m = R.act(w.state, t2Mount(w.state).id, { dir: 'up' });
-  eq([tile(m.state, 1, 8), slopeAt(m.state, 1, 8)], ['mud', undefined], '泥沼');
+  eq([tile(m.state, 1, 3), slopeAt(m.state, 1, 3)], ['mud', undefined], '泥沼');
   var st = R.endTurn(m.state).state;
   eq(st.result, null, '1ターン目では負けない');
-  // 立て直しの一例: 山使いが (1,10) へ動いて上に山（真ん中 (1,8) は泥沼のまま、右の腕 (2,8) ができる）→ 水使いが (2,9) から上の右の腕に水 → 右へ川
-  var a = R.act(st, t2Mount(st).id, { to: [1, 10], dir: 'up' });
-  eq(slopeAt(a.state, 2, 8), 'right', '右の腕');
-  var b = R.act(a.state, t2Water(a.state).id, { to: [2, 9], dir: 'up' });
-  eq([tile(b.state, 3, 8), tile(b.state, 4, 8)], ['river', 'river']);
+  // 立て直しの一例: 山使いが (1,5) へ動いて上に山（真ん中 (1,3) は泥沼のまま、右の腕 (2,3) ができる）→ 水使いが (2,4) から上の右の腕に水 → 右へ川
+  var a = R.act(st, t2Mount(st).id, { to: [1, 5], dir: 'up' });
+  eq(slopeAt(a.state, 2, 3), 'right', '右の腕');
+  var b = R.act(a.state, t2Water(a.state).id, { to: [2, 4], dir: 'up' });
+  eq([tile(b.state, 3, 3), tile(b.state, 4, 3), tile(b.state, 5, 3)], ['river', 'river', 'river']);
   ok(b.ok, b.error);
   eq(t2Run(b.state, 5).result, 'win', '2ターン目に立て直して勝つ');
 });
@@ -2711,7 +2718,7 @@ test('増援: 毎ターンの終わりに上の端 (3,0) から1体。ふさが�
 test('やり直し: 負けたあと最初からやり直すと、盤面が最初に戻り、ヒントが1文出る（最初の挑戦では出ない）', function () {
   var s = tut2();
   eq(R.stageHint(s), null, '最初は出ない');
-  var lost = t2Run(s, 2);
+  var lost = t2Run(s, 3);
   eq(lost.result, 'lose');
   var r = R.retryStage(lost);
   ok(r && r.ok);
@@ -2719,7 +2726,7 @@ test('やり直し: 負けたあと最初からやり直すと、盤面が最初
   eq(r.state.tiles, tut2().tiles, '盤面が最初に戻る');
   eq(r.state.units.map(function (u) { return [u.x, u.y, u.hp]; }), tut2().units.map(function (u) { return [u.x, u.y, u.hp]; }), 'ユニットも最初に戻る（敵の最初の移動まで）');
   eq(R.stageHint(r.state), require('../texts.js').stages.tut2.hint.single);   // 文は texts.js（IMPROVE_simul）。今は「山に向かって水を撃つと…？」
-  eq(R.retryStage(t2Run(r.state, 2)).state.tries, 2, '何度でも');
+  eq(R.retryStage(t2Run(r.state, 3)).state.tries, 2, '何度でも');
   eq(R.retryStage(R.startBattle(R.loadPreset('spread')).state), null, 'チュートリアルでなければ、やり直しはない');
 });
 test('overrides: このシナリオの中だけで効き、ほかのシナリオと BALANCE に漏れない', function () {

@@ -89,8 +89,8 @@ test('一斉: 並べ替え（▲▼）で順番が入れ替わる。端より先
 test('一斉: 発動は構えた順に1人ずつ（出来事に順番）。そのあと敵が発動する', function () {
   mode('simul');
   var s = start('tut2');
-  s = act(s, byMagic(s, 'mount').id, [0, 10], 'up').state;
-  s = act(s, byMagic(s, 'water').id, [1, 9], 'up').state;
+  s = act(s, byMagic(s, 'mount').id, [0, 5], 'up').state;
+  s = act(s, byMagic(s, 'water').id, [1, 4], 'up').state;
   var t = R.endTurn(s);
   var casts = t.events.filter(function (e) { return e.type === 'cast'; });
   eq(casts.slice(0, 2).map(function (e) { return [e.magic, e.order]; }), [['mount', 1], ['water', 2]]);
@@ -148,8 +148,8 @@ console.log('\n■ チュートリアル（両方のターンの形でクリア�
   });
   test('② 2人で守る（' + m + '）: 山 → 水で川の壁、5ターン守って勝ち', function () {
     mode(m);
-    var t = playTurn(start('tut2'), [['mount', [0, 10], 'up'], ['water', [1, 9], 'up']]);
-    eq([0, 1, 2, 3, 4].map(function (x) { return R.getTile(t.state, x, 8); }), ['mountain', 'mountain', 'river', 'river', 'river']);
+    var t = playTurn(start('tut2'), [['mount', [0, 5], 'up'], ['water', [1, 4], 'up']]);
+    eq([0, 1, 2, 3, 4, 5].map(function (x) { return R.getTile(t.state, x, 3); }), ['mountain', 'mountain', 'river', 'river', 'river', 'river']);
     var s = t.state;
     for (var i = 0; i < 6 && !s.result; i++) {
       R.controllableOf(s).forEach(function (a) { if (!s.result) s = act(s, a.id, [a.x, a.y], a.facing, false).state; });
@@ -168,12 +168,12 @@ console.log('\n■ チュートリアル（両方のターンの形でクリア�
 test('② 一斉: 水 → 山の順だと泥沼（予測でも分かる）。並べ替えると川の壁', function () {
   mode('simul');
   var s = start('tut2');
-  s = act(s, byMagic(s, 'water').id, [1, 9], 'up').state;
-  s = act(s, byMagic(s, 'mount').id, [0, 10], 'up').state;
+  s = act(s, byMagic(s, 'water').id, [1, 4], 'up').state;
+  s = act(s, byMagic(s, 'mount').id, [0, 5], 'up').state;
   var r = R.fireAllStances(s);
-  eq(R.getTile(r.after, 1, 8), 'mud', '水 → 山: 泥沼');
+  eq(R.getTile(r.after, 1, 3), 'mud', '水 → 山: 泥沼');
   var sw = R.reorderStance(s, byMagic(s, 'water').id, 1).state;
-  eq(R.getTile(R.fireAllStances(sw).after, 2, 8), 'river', '山 → 水: 川');
+  eq(R.getTile(R.fireAllStances(sw).after, 2, 3), 'river', '山 → 水: 川');
 });
 test('① 一斉: 構える味方は最初から構えていて、順番はいつも最後', function () {
   mode('simul');
@@ -237,7 +237,7 @@ test('やり直しのヒントはターンの形ごと（texts.js）', function 
   ['single', 'simul'].forEach(function (m) {
     mode(m);
     var lost = R.startBattle(R.loadPreset('tut2')).state;
-    for (var i = 0; i < 4 && !lost.result; i++) lost = R.endTurn(lost).state;
+    for (var i = 0; i < 5 && !lost.result; i++) lost = R.endTurn(lost).state;
     var r = R.retryStage(lost);
     eq(R.stageHint(r.state), TEXTS.stages.tut2.hint[m]);
   });

@@ -52,9 +52,9 @@ test('横長（12×7）。味方は左端に山・火・風、ボス（3×3・HP
   ok(R.TUTORIALS.some(function (t) { return t.id === 'ex3' && t.tutorial === 3; }), 'チュートリアルの③');
   ok(R.allyMagics(s).indexOf('smash') < 0 && R.allyMagics(s).indexOf('bite') < 0, '敵の攻撃は味方の魔法にない');
 });
-test('魔法は①②より広い: 山は十字（腕2マス・9マス）、火は正面2マス、風は正面4マス。上書きはこのステージの中だけ', function () {
+test('魔法は①②より広い: 山はダイヤ型（13マス）、火は正面2マス、風は正面4マス。上書きはこのステージの中だけ', function () {
   var s = start();
-  eq(R.shapeCells(s, 'mount', 0, 4, 'right').length, 9);
+  eq(R.shapeCells(s, 'mount', 0, 4, 'right').length, 13);
   eq(R.shapeCells(s, 'fire', 2, 6, 'up'), [[2, 5], [2, 4]]);
   eq(B.shapes.mount.length, 5, 'BALANCE の山の形は元のまま');
   eq(B.shapes.fire, [[0, 1]], 'BALANCE の火の形は元のまま');
@@ -83,9 +83,9 @@ test('1段ずつ: 同じターンに構えても、できたばかりの自然�
   var s = start();
   var t1 = playTurn(s, [EARTH, FIRE, ['wind', [0, 2], 'up', false]]);
   eq(count(t1.state, 'volcano'), 0, '1ターン目は山だけ');
-  eq(count(t1.state, 'mountain'), 9);
+  eq(count(t1.state, 'mountain'), 13);
   var t2 = playTurn(t1.state, [wait(t1.state, 'mount'), FIRE, WIND]);
-  eq(count(t2.state, 'volcano'), 9, '2ターン目に火山（同じターンの風は、できたばかりの火山に反応しない）');
+  eq(count(t2.state, 'volcano'), 13, '2ターン目に火山（同じターンの風は、できたばかりの火山に反応しない）');
   ok(!t2.events.some(function (e) { return e.type === 'finisher'; }), '桜吹雪はまだ');
   ok(t2.events.some(function (e) { return e.type === 'mission' && e.id === 'volcano'; }), 'ミッション達成（火山を作る）');
   var t3 = playTurn(t2.state, [wait(t2.state, 'mount'), wait(t2.state, 'fire'), WIND]);
@@ -119,7 +119,7 @@ test('ボス: 1ターンに1マス前へ進み、体の前の2列に一撃を予
   eq(fc.cells.length, 6, '体の前の2列（3×2）');
   ok(fc.cells.every(function (c) { return c[0] === 6 || c[0] === 7; }));
   mode('instant');
-  var t = playTurn(s, [EARTH, wait(s, 'fire'), ['wind', [0, 2], 'up', false]]);   // 山の十字の右の端は (5,4)
+  var t = playTurn(s, [EARTH, wait(s, 'fire'), ['wind', [0, 2], 'up', false]]);   // 山のダイヤの右の端は (5,4)
   t = idle(t.state);
   eq(boss(t.state).x, 6, 'ターン3で x=6 まで');
   t = idle(t.state);

@@ -66,7 +66,6 @@
     deadforest: { cls: 'deadwoods', name: '死の森', mark: '🥀' }
   };
   var J1_BIG = { river: { cls: 'lake', name: '大河', mark: '〜' }, sakura: { cls: 'blossom', name: '桜の山', mark: '🌸' }, fire: { cls: 'blaze', name: '大火', mark: '🔥' } };   // ラボ J1
-  var FINALE_BIG = { petals: { cls: 'blossomfield', name: '一面の桜吹雪', mark: '🌸' } };   // 展示ステージ③: 倒したあとの一枚の大きな絵
 
   var TILE_DESC = {
     empty: '何もないマス。通れる。',
@@ -353,95 +352,15 @@
     });
   }
 
-  // 展示ステージ③: ミッション達成。大きな札と紙吹雪、ミッションの欄が金色に
+  // 展示ステージ③: ミッションの名前（texts.js の stages.ex3.missions）
   function exMissionName(id) {
     var stx = stageTexts(app.state && app.state.stage), m = ((exOf() || {}).missions || []).filter(function (x) { return x.id === id; })[0];
     return (stx && stx.missions && stx.missions[id]) || (m && m.name) || id;
   }
-  function exCelebrate(e) {
-    showBanner(exMissionName(e.id), ui('exMissionDone', 'ミッション達成！'));
-    el.banner.classList.add('mission');
-    setTimeout(function () { el.banner.classList.remove('mission'); }, 2600);
-    var w = el.boardWrap.getBoundingClientRect();
-    var colors = ['#fde047', '#f472b6', '#60a5fa', '#34d399', '#fb923c', '#fff'];
-    for (var i = 0; i < 60; i++) {
-      var d = document.createElement('div');
-      d.className = 'confetti';
-      d.style.left = (w.width / 2) + 'px';
-      d.style.top = (w.height * 0.42) + 'px';
-      d.style.background = colors[i % colors.length];
-      var ang = (i * 137.5) % 360 * Math.PI / 180, dist = 90 + (i * 53) % (w.width * 0.45);
-      d.style.setProperty('--dx', Math.round(Math.cos(ang) * dist) + 'px');
-      d.style.setProperty('--dy', Math.round(Math.sin(ang) * dist * 0.7 + 80) + 'px');
-      d.style.setProperty('--rot', ((i * 97) % 720) + 'deg');
-      d.style.animationDelay = (i % 12) * 25 + 'ms';
-      el.fx.appendChild(d);
-      (function (node) { setTimeout(function () { node.remove(); }, 2200); })(d);
-    }
-    app.missionFlash = Date.now();
-    missionSig = '';
-    renderMission();
-  }
-  // 展示ステージ③: 決め手（桜吹雪）の前の「ため」。火山が脈打って光り、まわりが暗くなり、光の粒が火山へ吸いこまれる
-  function fxCharge(source, castCells) {
-    el.boardWrap.classList.add('ex-charging');
-    (castCells || []).forEach(function (c) { app.hl[key(c[0], c[1])] = true; });
-    app.charge = {};
-    (source || []).forEach(function (c) { app.charge[key(c[0], c[1])] = true; });
-    renderBoard(false);
-    var cs = (source || []).map(function (c) { return cellCenter(c[0], c[1]); }).filter(Boolean);
-    if (cs.length) {
-      var cx = 0, cy = 0;
-      cs.forEach(function (p) { cx += p.x; cy += p.y; });
-      cx /= cs.length; cy /= cs.length;
-      for (var i = 0; i < 26; i++) {
-        var d = document.createElement('div');
-        d.className = 'charge-mote';
-        var ang = i * 0.97, r = 120 + (i * 37) % 90;
-        d.style.left = (cx + Math.cos(ang) * r) + 'px';
-        d.style.top = (cy + Math.sin(ang) * r) + 'px';
-        d.style.setProperty('--dx', (-Math.cos(ang) * r) + 'px');
-        d.style.setProperty('--dy', (-Math.sin(ang) * r) + 'px');
-        d.style.animationDelay = (i * 45) + 'ms';
-        el.fx.appendChild(d);
-        (function (node) { setTimeout(function () { node.remove(); }, B.stage3.chargeMs + 300); })(d);
-      }
-    }
-  }
-  function endCharge() {
-    el.boardWrap.classList.remove('ex-charging');
-    app.charge = null;
-  }
-  // 展示ステージ③: 倒したあとの一枚の大きな絵。つながった自然を一枚に描き、花びらが舞い続け、題を出す
-  function startFinale() {
-    app.finale = true;
-    var stx = stageTexts(app.state.stage) || {};
-    var cap = document.createElement('div');
-    cap.className = 'finale-cap';
-    cap.innerHTML = '<span class="finale-title">' + esc(stx.finaleTitle || '一面の桜吹雪') + '</span><span class="finale-sub">' + esc(stx.finaleSub || 'クリア！') + '</span>';
-    el.boardWrap.appendChild(cap);
-    var w = el.boardWrap.getBoundingClientRect();
-    for (var i = 0; i < 40; i++) {
-      var d = document.createElement('div');
-      d.className = 'finale-petal';
-      d.style.left = ((i * 61) % 100) + '%';
-      d.style.setProperty('--sway', (((i * 29) % 60) - 30) + 'px');
-      d.style.setProperty('--fall', (w.height + 40) + 'px');
-      d.style.animationDuration = (4 + (i * 7) % 5) + 's';
-      d.style.animationDelay = ((i * 13) % 40) / 10 + 's';
-      cap.appendChild(d);
-    }
-    render();
-  }
-  function endFinale() {
-    if (!app.finale) return;
-    app.finale = false;
-    Array.prototype.forEach.call(el.boardWrap.querySelectorAll('.finale-cap'), function (n) { n.remove(); });
-  }
 
   // 出来事をログに足し、演出を出す
   function showEvents(events, animate) {
-    var hl = {}, flash = {}, finishers = [], combo = null, mission = null;
+    var hl = {}, flash = {}, finishers = [], combo = null;
     var exNow = !!exOf();
     events.forEach(function (e) {
       addLog((e.combo ? '【' + comboText(e) + '】' : '') + e.text, logType(e));
@@ -450,7 +369,6 @@
       var synergy = e.type === 'finisher' || (exNow && e.type === 'kindle' && e.made === 'volcano');
       var sName = e.type === 'finisher' ? e.name : '火山';
       if (synergy && app.chain) { app.chain.push(finName(sName)); if (e.combo) app.chainCombo = comboText(e); }
-      if (e.type === 'mission') mission = e;
       if (e.combo) combo = comboText(e);
       if (!animate) return;
       if (exNow && e.type === 'kindle' && e.made === 'volcano') { finishers.push('火山'); (e.cells || []).forEach(function (c) { flash[key(c[0], c[1])] = true; }); }
@@ -477,8 +395,6 @@
       clearTimeout(showEvents.timer);
       showEvents.timer = setTimeout(function () { app.flash = {}; renderBoard(false); }, 950);
     }
-    // 展示ステージ③: ミッション達成（シナジーの名前と重なるときは、名前のあとに）
-    if (mission) setTimeout(function () { exCelebrate(mission); }, finishers.length ? 1100 : 0);
     // ダメージ数字は描き直したあとの位置に出す
     setTimeout(function () {
       events.forEach(function (e) {
@@ -489,7 +405,7 @@
         if ((e.name === 'センタクキ' || e.name === '火炎竜巻') && e.center) fxSpin(e.center, e.name === '火炎竜巻');
         if (e.name === '火の渦' && e.center) fxSpin(e.center, true, 2.4);
         if (e.name === 'オバケヤシキ' && e.center) fxSpin(e.center, false, 3.2, true);
-        if (e.name === '桜吹雪' && e.origin) fxPetals(e.origin, e.cells || [], e.pink);
+        if (e.name === '桜吹雪' && e.origin && !exNow) fxPetals(e.origin, e.cells || [], e.pink);   // 展示ステージ③では舞わせない（オーナー 10/17。盤面に花びらが積もるだけ）
         if (R.lab('J3') && R.LX && e.cells && e.cells.length) fxWave(e.cells, e.wave || R.LX.waveFrom(e.cells, e.origin || e.cells[0]));   // ラボ J3: 波
       });
       if (R.lab('J6')) {   // ラボ J6: 起きたことを盤面の吹き出しで1つずつ
@@ -549,16 +465,7 @@
     if (!pb) return;
     if (pb.i >= pb.steps.length) { finishPlayback(); return; }
     var st = pb.steps[pb.i];
-    // 展示ステージ③: 決め手（桜吹雪）の前に「ため」を見せてから起こす
-    var ex = exOf(st.state), big = ex && ex.charge && st.events.filter(function (e) { return e.type === 'finisher' && e.name === ex.charge; })[0];
-    if (big && !st.charged) {
-      st.charged = true;
-      var cast = st.events.filter(function (e) { return e.type === 'cast'; })[0];
-      fxCharge(big.source || [big.origin], cast ? cast.cells : []);
-      pb.timer = setTimeout(nextStep, app.demo ? B.stage3.chargeMs * 1.3 : B.stage3.chargeMs);
-      return;
-    }
-    if (big) endCharge();
+    var ex = exOf(st.state);
     pb.i++;
     app.state = st.state;
     showEvents(st.events, true);
@@ -568,7 +475,7 @@
     var wait = stance ? ((B.simul && B.simul.fireDelayMs) || 900) : B.stepDelayMs;
     if (st.events.every(function (e) { return e.type === 'stance'; })) wait = 120;   // 構えただけ（まだ何も起きない）は、すぐ次へ
     // 展示ステージ③: シナジー（火山・決め手）が起きたら、少し間を取る
-    if (ex && st.events.some(function (e) { return e.type === 'finisher' || (e.type === 'kindle' && e.made === 'volcano') || e.type === 'mission'; })) wait += B.stage3.synergyPauseMs + (big ? 900 : 0);
+    if (ex && st.events.some(function (e) { return e.type === 'finisher' || (e.type === 'kindle' && e.made === 'volcano') || e.type === 'mission'; })) wait += B.stage3.synergyPauseMs;
     pb.timer = setTimeout(nextStep, app.demo ? wait * 1.6 : wait);
   }
   function finishPlayback() {
@@ -580,13 +487,12 @@
     app.state = pb.final;
     app.hl = {};
     app.chain = null; app.chainCombo = null;
-    endCharge();
     render(true);
     if (pb.done) pb.done();
     if (app.afterPlayback) app.afterPlayback();   // 進行モック: 戦闘の決着を見る
     exAfterPlayback();
   }
-  // 展示ステージ③: 決着のあと。味方が倒れたら少し見せてからステージの頭からやり直す。ボスを倒したら一枚の大きな絵
+  // 展示ステージ③: 決着のあと。味方が倒れたら少し見せてからステージの頭からやり直す
   function exAfterPlayback() {
     var ex = exOf(), st = app.state;
     if (!ex || app.demo || app.editMode || !st.result) return;
@@ -595,8 +501,6 @@
       exAfterPlayback.timer = setTimeout(function () {
         if (app.state === st && !app.busy && !app.editMode) retry();
       }, B.stage3.retryDelayMs);
-    } else if (st.result === 'win' && ex.finale && !app.finale) {
-      setTimeout(function () { if (app.state === st) startFinale(); }, 600);
     }
   }
   function skipPlayback() {
@@ -676,7 +580,12 @@
 
   // ターン終了（1人ずつ）・発動（一斉）。発動の前の文章があれば、読み終えてから
   function runEndTurn() {
+    if (app.fireWaiting) return;   // 発動の前の文を読んでいる間に、もう一度押しても重ねて発動しない
+    var s0 = app.state;
+    app.fireWaiting = true;
     var go = function () {
+      app.fireWaiting = false;
+      if (app.state !== s0) return;   // 読んでいる間に盤面が変わった（1手戻す・読み直し）なら発動しない
       var t = R.endTurn(app.state);
       if (!t.ok) { say(t.error); return; }
       if (simul()) { app.chain = []; app.chainCombo = null; }
@@ -686,7 +595,7 @@
   }
 
   function doEndTurn() {
-    if (app.busy || app.editMode) return;
+    if (app.busy || app.editMode || app.fireWaiting) return;
     if (app.state.result) { say('勝負はついています。「1手戻す」か「リセット」で続けられます'); return; }
     // 【一斉】発動は、動かせる味方が全員構え終えて（か待機して）から
     if (simul() && !R.allAlliesActed(app.state) && R.controllableOf(app.state).length) { say(ui('notReady', 'まだ構えていない味方がいます（構えるか「待機」）')); return; }
@@ -711,7 +620,6 @@
     if (app.busy) skipPlayback();
     var h = app.history.pop();
     if (!h) { say('これ以上戻せません'); return; }
-    endFinale();
     app.state = h.state;
     app.log.length = h.logLen;
     app.sel = null; app.plan = null; app.editPick = null;
@@ -720,7 +628,6 @@
 
   function setState(s, logText) {
     pushHistory();
-    endFinale();
     app.state = s;
     app.sel = null; app.plan = null; app.editPick = null;
     if (logText) addLog(logText, 'system');
@@ -1143,10 +1050,10 @@
     }
     var stx = stageTexts(app.state.stage);   // チュートリアルの目標（texts.js）
     renderExBar();
-    // 展示ステージ③: ミッション（最初から出す。達成したら金色）
+    // 展示ステージ③: ミッション（最初から出す。達成したら ✔）
     var exm = ((exOf() || {}).missions || []).map(function (m) {
       var done = !!(app.state.exDone && app.state.exDone[m.id]);
-      return '<span class="m-ex-mission' + (done ? ' done' : '') + (done && app.missionFlash && Date.now() - app.missionFlash < 3000 ? ' fresh' : '') + '">' +
+      return '<span class="m-ex-mission' + (done ? ' done' : '') + '">' +
         '<b>' + esc(ui('exMission', 'ミッション')) + '</b> ' + esc(exMissionName(m.id)) + ' <span class="m-check">' + (done ? '✔ ' + esc(ui('exMissionDone', 'ミッション達成！')) : '□') + '</span></span>';
     }).join('');
     var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') + exm +
@@ -1357,7 +1264,6 @@
 
     var u = (!app.editMode && !app.busy) ? selUnit() : null;
     var so = shapeOnly();   // 展示ステージ③: 予測は魔法が届く形まで（何になるかは見せない）
-    el.boardWrap.classList.toggle('ex-finale', !!app.finale);
     var reach = u ? R.reachableCells(st, u.id) : {};
     var guide = (u && !st.result && !so) ? guideNow(u) : {};
     var pv = (u && app.plan && !st.result) ? previewNow(u) : null;
@@ -1451,11 +1357,6 @@
           soCell[k2] = { magic: g.magic, edges: edges, first: i === 0, dir: g.dir, n: g.n, planned: !!g.planned };
         });
       });
-    }
-    // 展示ステージ③: 光るヒント。選んだ味方の魔法を当てると次の段へ進む自然（すでに自然になっているマスだけ）
-    var exGlow = {}, exg = exOf() && exOf().glow;
-    if (u && exg && exg[u.magic] && !st.result) {
-      for (var gy = 0; gy < rows; gy++) for (var gx = 0; gx < n; gx++) if (exg[u.magic].indexOf(R.getTile(st, gx, gy)) >= 0) exGlow[key(gx, gy)] = true;
     }
     // 外したときのヒント: 構える味方が狙っているマスを光らせる（文字は出さない）
     var tutHint = {};
@@ -1606,8 +1507,7 @@
     var bigComp = {}, bigAt = {};
     var BIGU = BIG;
     if (R.lab('J1')) { BIGU = {}; Object.keys(BIG).forEach(function (t) { BIGU[t] = BIG[t]; }); Object.keys(J1_BIG).forEach(function (t) { BIGU[t] = J1_BIG[t]; }); }   // ラボ J1
-    if (app.finale) { var BF = {}; Object.keys(BIGU).forEach(function (t) { BF[t] = BIGU[t]; }); Object.keys(FINALE_BIG).forEach(function (t) { BF[t] = FINALE_BIG[t]; }); BIGU = BF; }   // 展示ステージ③の大きな絵
-    if (B.fx.bigPicture || R.lab('J1') || app.finale) {
+    if (B.fx.bigPicture || R.lab('J1')) {
       for (var by = 0; by < rows; by++) {
         for (var bx = 0; bx < n; bx++) {
           var bt = R.getTile(st, bx, by);
@@ -1655,8 +1555,6 @@
         if (faRange[k]) cls.push('fa-range');
         if (faStrong[k]) cls.push('fa-strong');
         if (tutHint[k]) cls.push('tut-hint');
-        if (exGlow[k]) cls.push('ex-glow');
-        if (app.charge && app.charge[k]) cls.push('ex-charge');
         if (soCell[k]) cls.push('so');
         if (app.hl[k]) cls.push('hl');
         if (app.flash[k]) cls.push('flash');
@@ -2514,7 +2412,6 @@
     stopDemo();
     endCheck();
     restoreExFire();
-    endFinale();
     if (app.busy) skipPlayback();
     if (app.editMode) { app.editMode = false; }
     app.scenario = '';

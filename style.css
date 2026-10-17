@@ -1558,22 +1558,12 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
 .ex-bar-note { color: var(--muted); font-size: 12px; margin-left: auto; }
 @media (max-width: 600px) { .ex-bar-note { margin-left: 0; flex-basis: 100%; } .ex-bar button { flex: 1 1 auto; } }
 
-/* ミッション（最初から出す。達成で金色） */
+/* ミッション（最初から出す。達成で ✔） */
 .m-ex-mission { flex-basis: 100%; display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 8px; background: #f3efe6; border: 2px dashed #b9a77f; font-weight: bold; }
 .m-ex-mission b { color: #7c5e10; }
 .m-ex-mission .m-check { color: var(--muted); }
-.m-ex-mission.done { background: linear-gradient(90deg, #fde68a, #fbbf24); border: 2px solid #b45309; }
+.m-ex-mission.done { border-style: solid; }
 .m-ex-mission.done .m-check { color: #7c2d12; }
-.m-ex-mission.fresh { animation: exMissionPop 1.2s ease-out 2; }
-@keyframes exMissionPop { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 191, 36, .9); } 30% { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); } 100% { transform: scale(1); } }
-.banner.mission .banner-main { color: #fff7d6; text-shadow: 0 0 10px #f59e0b, 0 0 22px #fbbf24, 0 3px 0 #92400e; }
-.banner.mission.show { animation-duration: 2.6s; }
-.confetti { position: absolute; width: 9px; height: 14px; border-radius: 2px; z-index: 42; pointer-events: none; opacity: 0; animation: confetti 1.9s cubic-bezier(.15, .7, .3, 1) forwards; }
-@keyframes confetti { 0% { opacity: 1; transform: translate(0, 0) rotate(0); } 85% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); } }
-
-/* 光るヒント（すでに自然になっているマスだけ） */
-.cell.ex-glow { z-index: 2; animation: exGlow 1.4s ease-in-out infinite; }
-@keyframes exGlow { 0%, 100% { box-shadow: inset 0 0 0 3px rgba(250, 204, 21, .9), 0 0 4px 1px rgba(250, 204, 21, .5); } 50% { box-shadow: inset 0 0 0 4px rgba(250, 204, 21, 1), 0 0 16px 6px rgba(250, 204, 21, .85); } }
 
 /* 構えと予測: 魔法の形の輪郭（外側の辺だけの点線）と向き。自然のマスとは別の見た目 */
 .so-line { position: absolute; inset: 2px; pointer-events: none; z-index: 3; border: 0 dashed var(--so, #1d4ed8); }
@@ -1588,25 +1578,3 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
 .so-wind { --so: #0f766e; }
 .so-tag { position: absolute; left: 2px; top: 2px; z-index: 6; font-size: 11px; font-weight: bold; line-height: 1.2; padding: 0 4px; border-radius: 6px; color: #fff; background: var(--so, #1d4ed8); pointer-events: none; white-space: nowrap; }
 .so-tag.planned { box-shadow: 0 0 0 2px #fff; }
-
-/* 桜吹雪の前の「ため」 */
-.board-wrap.ex-charging .board { filter: saturate(.7) brightness(.8); transition: filter .4s; }
-.cell.ex-charge { z-index: 5; animation: exCharge .5s ease-in-out infinite alternate; filter: brightness(1.6) saturate(1.4); }
-@keyframes exCharge { from { box-shadow: 0 0 6px 2px rgba(244, 114, 182, .7), inset 0 0 8px rgba(255, 255, 255, .6); } to { box-shadow: 0 0 24px 10px rgba(244, 114, 182, 1), inset 0 0 14px rgba(255, 255, 255, .9); } }
-.charge-mote { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: radial-gradient(circle, #fff, #f472b6); box-shadow: 0 0 8px #f472b6; z-index: 41; pointer-events: none; opacity: 0; animation: chargeMote 1.2s ease-in forwards; }
-@keyframes chargeMote { 0% { opacity: 0; transform: translate(0, 0) scale(.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.4); } }
-
-/* 倒したあとの一枚の大きな絵 */
-.board-wrap.ex-finale .board { gap: 0; background: #fdf2f8; transition: gap .8s, background .8s; animation: finaleZoom 6s ease-out forwards; }
-.board-wrap.ex-finale .cell { border-radius: 0; }
-.board-wrap.ex-finale .unit:not(.ally) { opacity: .15; }
-.board-wrap.ex-finale .b-fc, .board-wrap.ex-finale .tile-label, .board-wrap.ex-finale .so-line, .board-wrap.ex-finale .so-tag { display: none; }
-@keyframes finaleZoom { from { transform: scale(1); } to { transform: scale(1.03); } }
-.bigland.blossomfield { background: radial-gradient(ellipse at 30% 40%, #fbcfe8 0 12%, transparent 13%), radial-gradient(ellipse at 70% 65%, #f9a8d4 0 10%, transparent 11%), linear-gradient(160deg, #fce7f3, #fbcfe8); }
-.bigmark.blossomfield { filter: drop-shadow(0 0 6px rgba(255, 255, 255, .9)); }
-.finale-cap { position: absolute; inset: 0; z-index: 44; pointer-events: none; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.finale-title { font-size: clamp(30px, 7vw, 60px); font-weight: 900; color: #fff; letter-spacing: .12em; text-shadow: 0 0 10px #ec4899, 0 0 24px #f472b6, 0 3px 0 #831843; opacity: 0; animation: finaleIn 1.6s ease-out .3s forwards; }
-.finale-sub { margin-top: 6px; font-size: clamp(16px, 3vw, 24px); font-weight: bold; color: #831843; background: rgba(255, 255, 255, .8); border-radius: 999px; padding: 2px 16px; opacity: 0; animation: finaleIn 1.2s ease-out 1.2s forwards; }
-@keyframes finaleIn { from { opacity: 0; transform: translateY(14px) scale(.9); } to { opacity: 1; transform: none; } }
-.finale-petal { position: absolute; top: -20px; width: 12px; height: 8px; border-radius: 60% 0 60% 0; background: linear-gradient(135deg, #fbcfe8, #f472b6); opacity: .9; animation: finaleFall 5s linear infinite; }
-@keyframes finaleFall { from { transform: translate(0, 0) rotate(0); } 50% { transform: translate(var(--sway), calc(var(--fall) / 2)) rotate(200deg); } to { transform: translate(0, var(--fall)) rotate(420deg); } }
