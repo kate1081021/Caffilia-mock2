@@ -67,6 +67,7 @@
     'fire.plantStrong': '草むらが燃えたマスも強い炎',
     'fx.grow': '育つ瞬間を波で見せる',
     'fx.bigPicture': 'つながった自然を1枚の大きな絵で描く',
+    'sakura.petals': '火山に風の桜吹雪は花びら（切ると元の火の粉）',
     'eruption.depth': '桜吹雪の奥行き（段）', 'eruption.base': '桜吹雪のダメージ', 'eruption.perVolcano': '桜吹雪: 火山1つごとの追加',
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',
     'ideas.windClearsMirage': '風で蜃気楼が晴れる', 'ideas.spreadMeltsIce': '燃え広がりは氷を溶かす'

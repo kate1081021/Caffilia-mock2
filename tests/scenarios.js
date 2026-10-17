@@ -7,6 +7,9 @@ var R = require('../rules.js');
 var B = require('../balance.js');
 
 var failures = 0;
+var SAKURA0 = B.sakura.from;   // 桜吹雪の起こし方の標準（balance.js。オーナー 10/17 から火山に風）
+// 敵の動きを見る流れで、弱い炎（5）で倒れてしまわないように、その間だけ敵の HP を元の 20 にして盤面を作る（オーナー 10/17 に基礎は 5）
+function hp20(fn) { var h = B.enemy.hp; B.enemy.hp = 20; try { return fn(); } finally { B.enemy.hp = h; } }
 
 function check(cond, what) {
   if (cond) console.log('  ✔ ' + what);
@@ -122,7 +125,9 @@ scenario('3. 火の敵が森に火をつける → こちらの風で燃え広�
     g.act('P1', [4, 3], 'up');             // (4,2) の森を越えて (4,1) の炎に風が当たる
     g.expectLog('燃え広がり！');
     var e2 = R.enemiesOf(g.state)[0];
-    check(e2.hp === B.enemy.hp - B.fire.weakDamage && e2.burn === B.fire.burnTurns, '敵Aは弱い炎で5、火傷を負う（森の上ではないので倒れない）');
+    g.expectLog('敵Aに' + B.fire.weakDamage + 'ダメージ（弱い炎）');
+    if (B.enemy.hp > B.fire.weakDamage) check(e2 && e2.hp === B.enemy.hp - B.fire.weakDamage && e2.burn === B.fire.burnTurns, '敵Aは弱い炎で5、火傷を負う（森の上ではないので倒れない）');
+    else check(!e2, '敵Aは弱い炎の5で倒れる（森の上ではないので弱い炎。敵の HP が ' + B.enemy.hp + '）');
   });
 
 // ---------------------------------------------------------------
@@ -165,10 +170,10 @@ scenario('5. 【新案・元の噴火】土で山 → 隣から火で噴火（�
     check(g.tile(1, 3) === 'lava' && g.tile(1, 2) !== 'lava', '溶岩は山脈のまわり1マスだけに流れ出した');
     check(R.alliesOf(g.state).length === 2, '【課題】火は1マスなので、火を点けた味方は溶岩に巻き込まれる');
     g.act('P3', [1, 2], 'down');                  // 風: 溶岩 (1,3) の上を吹き抜けて (1,4) の火山へ → 桜吹雪
-    g.expectLog('【新案】桜吹雪！ 火山3つの火の粉が下へ舞い散った（威力20）');
+    g.expectLog('【新案】桜吹雪！ 火山3つの花びらが下へ舞い散った（威力20）');
     check(g.state.result === 'win', '扇の中の敵Aが倒れる');
     B.funka.lava = false;
-    B.sakura.from = 'grass';
+    B.sakura.from = SAKURA0;
   });
 
 scenario('6. 【新案】土で山 → 水が山を下って川の壁 → 氷で一気に凍らせて、壁が道に変わる',
@@ -250,7 +255,7 @@ scenario('7c. 【新案】風でつむじ風 → 水を流して竜巻 → 火�
     B.windMode = 'breeze';
   });
 
-scenario('7d. 「燃え広がり」シナリオ: 森なしの火 → 風では敵は倒れない（弱い炎 5＋火傷）',
+scenario('7d. 「燃え広がり」シナリオ: 森なしの火 → 風は弱い炎（5＋火傷）。敵の HP が 5 なら、それで倒れる',
   function () { return R.startBattle(R.loadPreset('spread')).state; },
   function (g) {
     var e = R.enemiesOf(g.state)[0];
@@ -258,8 +263,10 @@ scenario('7d. 「燃え広がり」シナリオ: 森なしの火 → 風では�
     g.act('P2', [3, 4], 'left');          // 火: (2,4) に小さな炎
     g.act('P3', [2, 5], 'up');            // 風: (2,4) の小さな炎に当たって上へ燃え広がり
     g.expectLog('燃えた森はなし（弱い炎');
-    var e2 = R.enemiesOf(g.state)[0];
-    check(e2 && e2.hp === B.enemy.hp - B.fire.weakDamage && e2.burn === B.fire.burnTurns, '敵は倒れず、5と火傷');
+    var e2 = R.enemiesOf(g.state).filter(function (u) { return u.id === e.id; })[0];
+    g.expectLog('に' + B.fire.weakDamage + 'ダメージ');
+    if (B.enemy.hp > B.fire.weakDamage) check(e2 && e2.hp === B.enemy.hp - B.fire.weakDamage && e2.burn === B.fire.burnTurns, '敵は倒れず、5と火傷');
+    else check(!e2, '敵の HP（' + B.enemy.hp + '）は弱い炎で尽きて倒れる');
   });
 
 // ---------------------------------------------------------------
@@ -283,18 +290,18 @@ scenario('8. 【敵】敵の火を使う: 敵Aの予告先に風を吹かせる 
   });
 
 scenario('9. 【敵】罠に踏み込む: 避けない敵Aは炎を踏み越えて来る／避ける敵Bは炎の列が燃え尽きるまで出られない',
-  function () { return R.startBattle(R.loadPreset('trap')).state; },
+  function () { return hp20(function () { return R.startBattle(R.loadPreset('trap')).state; }); },
   function (g) {
     var a = enemyAt(g, 'A'), b = enemyAt(g, 'B');
     check(a.y === 3, '敵A（通れない所だけ避ける）は炎の列を越えて (1,3) へ');
     check(b.x === 4 && b.y === 1, '敵B（危ない所も避ける）は動けない');
-    check(R.startBattle(R.loadPreset('trap')).events.some(function (e) { return e.text === '敵Bは味方への道がないので、その場で構える'; }), '敵Bは道がないので、その場で構える');
+    check(hp20(function () { return R.startBattle(R.loadPreset('trap')); }).events.some(function (e) { return e.text === '敵Bは味方への道がないので、その場で構える'; }), '敵Bは道がないので、その場で構える');
     g.act('P1', [0, 5], 'up', false);
     g.act('P2', [3, 4], 'up');            // 火: (3,3) に小さな炎
     g.act('P3', [5, 3], 'left');          // 風: (4,3) → (3,3) の小さな炎に当たって、左へ燃え広がり
     g.expectLog('燃え広がり！');
     var a1 = enemyAt(g, 'A');
-    check(a1 && a1.hp < B.enemy.hp && a1.burn > 0, '踏み込んだ敵Aは弱い炎で焼かれて火傷（足元が森ではないので倒れない）');
+    check(a1 && a1.hp < 20 && a1.burn > 0, '踏み込んだ敵Aは弱い炎で焼かれて火傷（足元が森ではないので倒れない。この流れは敵の HP 20）');
     check(R.alliesOf(g.state).length === 2, '風の味方は敵Bの土の予告先に立っていたので倒れる（引き換え）');
     check(g.tile(0, 2) === 'fire', '1回目のターン終了では炎の列は残る');
     check(enemyAt(g, 'B').x === 4 && enemyAt(g, 'B').y === 1, '敵Bはまだ出られない');
@@ -385,7 +392,7 @@ DEMOS.forEach(function (d) {
     B.tornadoRecipe = d.recipe || 'off';
     B.windMode = d.windMode || 'breeze';
     var pre = R.PRESETS.filter(function (p) { return p.id === d.preset; })[0];
-    B.sakura.from = (pre && pre.sakuraFrom) || 'grass';
+    B.sakura.from = (pre && pre.sakuraFrom) || SAKURA0;
     var st = R.loadPreset(d.preset);
     if (d.enemyActs === false) st = R.editSetEnemyActs(st, false).state;
     return R.startBattle(st).state;
@@ -413,7 +420,7 @@ function setPath(o, p, v) { var ks = p.split('.'), last = ks.pop(); ks.reduce(fu
 CHECKS.forEach(function (c) {
   var saved = {};
   scenario('新案プレイ: ' + c.name, function () {
-    B.tornadoRecipe = 'off'; B.windMode = 'breeze'; B.sakura.from = 'grass';
+    B.tornadoRecipe = 'off'; B.windMode = 'breeze'; B.sakura.from = SAKURA0;
     Object.keys(c.set || {}).forEach(function (p) { saved[p] = getPath(B, p); setPath(B, p, c.set[p]); });
     var st = R.buildPreset(c.layout);
     if (c.enemyActs === false) st = R.editSetEnemyActs(st, false).state;

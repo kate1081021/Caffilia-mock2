@@ -639,10 +639,10 @@
   }
 
   // 【新案】桜吹雪: 風が火山に当たる（破壊3段目）
-  //   火の粉が風下へ扇形に舞い散る。つながった火山が多いほど強い。噴き終えた火山は冷えて山に戻る
+  //   花びら（sakura.petals が false なら火の粉）が風下へ扇形に舞い散る。つながった火山が多いほど強い。噴き終えた火山は冷えて山に戻る
   function doEruption(s, vx, vy, dir, ctx, ev) {
     if (s.ex && getTile(s, vx, vy) === 'volcano') return doSakuraStorm(s, vx, vy, dir, ctx, ev);   // 展示ステージ③: 扇は火山の幅から盤の奥まで
-    var kind = getTile(s, vx, vy), pink = kind === 'sakura' || kind === 'hillsakura';   // 【新案・試し】桜（花びら）か火山（火の粉）か
+    var kind = getTile(s, vx, vy), pink = kind === 'sakura' || kind === 'hillsakura' || B.sakura.petals;   // 花びらか、元の火の粉（火山で sakura.petals が false のときだけ）
     // 【育つ】桜吹雪の奥行きは、桜が咲いた自然の大きさで決まる（丘は2列、山は3列）
     var depth = kind === 'hillsakura' ? B.grow.sakuraDepthHill : (B.grow.enabled && kind === 'sakura') ? B.grow.sakuraDepthMountain : B.eruption.depth;
     var labWeak = false;
@@ -683,7 +683,7 @@
     ctx.finishers.push(fin);
     ev.push({
       type: 'finisher', name: '桜吹雪', isNew: true, origin: [vx, vy], cells: cells, damage: fin.damage, pink: pink, dir: dir,
-      text: (pink ? '【新案】桜吹雪！ 桜' + comp.length + 'つの花びらが' : '【新案】桜吹雪！ 火山' + comp.length + 'つの火の粉が') + DIRS[dir].name + 'へ舞い散った（威力' + fin.damage + '）' +
+      text: '【新案】桜吹雪！ ' + (kind === 'volcano' ? '火山' : '桜') + comp.length + 'つの' + (pink ? '花びら' : '火の粉') + 'が' + DIRS[dir].name + 'へ舞い散った（威力' + fin.damage + '）' +
         (LX && lab('C4') ? '【ラボ: 桜' + comp.length + 'つで扇' + depth + '列】' : '') + (labWeak ? '【ラボ: 丘の桜は少し舞うだけ】' : '') +
         (burned ? '。森' + burned + 'つに火がついた' : '')
     });
@@ -3254,7 +3254,7 @@
     },
     {
       id: 'sakura', name: '【新案】桜吹雪（火山）', isNew: true, sakuraFrom: 'fire',
-      desc: '【新案】味方 土・火・風、敵1体（火）。山に火で火山、火山に風で火の粉が扇形に舞う。森に落ちれば燃え出す。',
+      desc: '【新案】味方 土・火・風、敵1体（火）。山に火で火山、火山に風で花びらが扇形に舞う桜吹雪（花びらを切ると元の火の粉。森に落ちれば燃え出す）。',
       rows: ['......', '.F..F.', '......', '......', '......', '......'],
       allies: [['earth', 1, 5], ['fire', 3, 5], ['wind', 4, 5]],
       enemies: [['fire', 2, 0]]

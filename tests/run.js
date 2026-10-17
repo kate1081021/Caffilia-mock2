@@ -237,7 +237,7 @@ test('通り道の敵を押す（遠い方から処理するので、並んで�
   var r = fire(s, a, 'up');
   eq(pos(r.state, farE.id), [2, 2]);
   eq(pos(r.state, near.id), [2, 3]);
-  eq([hp(r.state, near.id), hp(r.state, farE.id)], [19, 19]);
+  eq([hp(r.state, near.id), hp(r.state, farE.id)], [B.enemy.hp - B.ally.power, B.enemy.hp - B.ally.power]);
 });
 test('押せないとき（盤の端・ユニット・通れないマス）はダメージだけ', function () {
   var s = empty(6);
@@ -245,7 +245,7 @@ test('押せないとき（盤の端・ユニット・通れないマス）は�
   var e = R.addEnemy(s, 'fire', 2, 0);
   var r = fire(s, a, 'up');
   eq(pos(r.state, e.id), [2, 0]);
-  eq(hp(r.state, e.id), 19);
+  eq(hp(r.state, e.id), B.enemy.hp - B.ally.power);
   // 風の届かない川には押せない
   var s2 = board(['..R...', '......', '......', '......', '......', '......']);
   var a2 = R.addAlly(s2, 'wind', 2, 3);
@@ -386,9 +386,32 @@ test('同じ水に何マス触れても感電は1回。味方も巻き込まれ�
 
 console.log('\n■ 【新案】火山と桜吹雪');
 
-// 【新案・試し】桜吹雪の起こし方が「桜」（標準）
+test('標準の起こし方は「火山に風」で、花びらが舞う（オーナー 10/17）', function () {
+  eq([B.sakura.from, B.sakura.petals], ['fire', true]);
+});
+test('風が火山に当たると、風下へ扇形（1・3・5マス）に花びらが舞う。森は燃えず、火山は山に戻る', function () {
+  var s = board(['.......', '.......', '...F...', '.......', '..VV...', '.......', '.......']);
+  var a = R.addAlly(s, 'wind', 3, 6);
+  var e = tough(s, R.addEnemy(s, 'fire', 1, 1));
+  var r = fire(s, a, 'up');
+  eq(names(r.events, 'finisher'), ['桜吹雪']);
+  eq(dealt(r, e.id), B.eruption.base + 2 * B.eruption.perVolcano);
+  eq([tile(r.state, 3, 3), tile(r.state, 2, 2), tile(r.state, 4, 2), tile(r.state, 5, 1)], ['petals', 'petals', 'petals', 'petals']);
+  eq(tile(r.state, 3, 2), 'forest', '森は燃えない');
+  eq(tile(r.state, 0, 1), 'empty', '扇の外');
+  eq([tile(r.state, 2, 4), tile(r.state, 3, 4)], ['mountain', 'mountain'], 'つながった火山がまとめて山に戻る');
+  ok(/火山2つの花びらが上へ舞い散った/.test(r.events.filter(function (ev) { return ev.type === 'finisher'; })[0].text));
+  eq(R.endTurn(r.state).state.tiles.filter(function (t) { return t === 'petals'; }).length, 0, '花びらはターン終了で散る');
+});
+test('標準では、山に草を植えても桜は咲かない（土 → 草 → 風はなくした）', function () {
+  var s = board(['......', '......', '..M...', '......', '......', '......']);
+  var a = R.addAlly(s, 'grass', 2, 5);
+  eq(tile(fire(s, a, 'up').state, 2, 2), 'mountain');
+});
+
+// 元の試しの起こし方（山に草で桜）
+B.sakura.from = 'grass';
 test('【試し】山に草を植えると桜が咲く（森にはならない）。空きには森', function () {
-  eq(B.sakura.from, 'grass');
   var s = board(['......', '......', '..M...', '......', '......', '......']);
   var a = R.addAlly(s, 'grass', 2, 5);              // 上向き: (2,3)(1,2)(2,2)(3,2)
   var r = fire(s, a, 'up');
@@ -412,9 +435,10 @@ test('【試し】桜の起こし方のとき、火山に風は止まるだけ',
   eq(names(fire(s, a, 'up').events, 'finisher'), []);
 });
 
-// ここから元の起こし方（火山に風）
+// ここから火山に風（標準）。火の粉の2つは、元の見せ方（sakura.petals を切る）
 B.sakura.from = 'fire';
-test('風が火山に当たると、風下へ扇形（1・3・5マス）に火の粉が舞う', function () {
+B.sakura.petals = false;
+test('【元】花びらを切ると、風が火山に当たって風下へ扇形（1・3・5マス）に火の粉が舞う', function () {
   var s = board(['.......', '.......', '.......', '.......', '...V...', '.......', '.......']);
   var a = R.addAlly(s, 'wind', 3, 6);
   var e = R.addEnemy(s, 'fire', 1, 1);
@@ -425,7 +449,7 @@ test('風が火山に当たると、風下へ扇形（1・3・5マス）に火�
   eq(dealt(r, e.id), B.eruption.base + B.eruption.perVolcano);
   eq(tile(r.state, 3, 4), 'mountain', '噴き終えた火山は山に戻る');
 });
-test('つながった火山がまとめて冷え、森に落ちれば森が燃える', function () {
+test('【元】花びらを切ると、つながった火山がまとめて冷え、森に落ちれば森が燃える', function () {
   var s = board(['.......', '.......', '...F...', '.......', '..VV...', '.......', '.......']);
   var a = R.addAlly(s, 'wind', 3, 6);
   var e = R.addEnemy(s, 'fire', 3, 1);
@@ -434,12 +458,12 @@ test('つながった火山がまとめて冷え、森に落ちれば森が燃�
   eq(tile(r.state, 3, 2), 'fire');
   eq([tile(r.state, 2, 4), tile(r.state, 3, 4)], ['mountain', 'mountain']);
 });
+B.sakura.petals = true;
 test('山は風をさえぎる（決め手は起きない）が、火山は桜吹雪になる', function () {
   var s = board(['......', '......', '..M...', '......', '......', '......']);
   var a = R.addAlly(s, 'wind', 2, 5);
   eq(names(fire(s, a, 'up').events, 'finisher'), []);
 });
-B.sakura.from = 'grass';
 
 
 console.log('\n■ 【新案】雷は高い所に落ちる');
@@ -880,22 +904,22 @@ test('燃え広がり: 燃えた森のマスは強い炎（20）、それ以外�
   eq([R.findUnit(r.state, onForest.id).burn, R.findUnit(r.state, onPath.id).burn], [0, B.fire.burnTurns], '弱い炎だけ火傷');
   eq(R.previewAct(s, w.id, [2, 5], 'up').finishers[0].strong, [[2, 1]], '強い炎のマスが分かる');
 });
-test('森なしの火 → 風では、敵は1発で倒れない', function () {
+test('森なしの火 → 風では、弱い炎（威力は弱い炎のまま）', function () {
   var s = empty(6);
   var f = R.addAlly(s, 'fire', 2, 4);
   var w = R.addAlly(s, 'wind', 2, 5);
-  var e = R.addEnemy(s, 'fire', 2, 1);
+  var e = tough(s, R.addEnemy(s, 'fire', 2, 1));
   var st = fire(s, f, 'up').state;                     // (2,3) に小さな炎
   var r = R.act(st, w.id, { to: [2, 5], dir: 'up' });  // (2,4) を越えて (2,3) の小さな炎に風
   eq(names(r.events, 'finisher'), ['燃え広がり']);
-  eq(hp(r.state, e.id), B.enemy.hp - B.fire.weakDamage);
+  eq(dealt(r, e.id), B.fire.weakDamage);
 });
-test('森なしの風 → 火（火の渦）では、敵は1発で倒れない。2×2に森があれば、そのマスは強い炎', function () {
+test('森なしの風 → 火（火の渦）は弱い炎。2×2に森があれば、そのマスは強い炎', function () {
   var s = board(['......', '......', '..B...', '..B...', '......', '......']);
-  var e = R.addEnemy(s, 'fire', 3, 2);
+  var e = tough(s, R.addEnemy(s, 'fire', 3, 2));
   var a = R.addAlly(s, 'fire', 2, 4);
   var r = fire(s, a, 'up');
-  eq(hp(r.state, e.id), B.enemy.hp - B.fire.weakDamage);
+  eq(dealt(r, e.id), B.fire.weakDamage);
   var s2 = board(['......', '......', '..BF..', '..B...', '......', '......']);
   var e2 = R.addEnemy(s2, 'fire', 3, 2);               // 森の上
   var a2 = R.addAlly(s2, 'fire', 2, 4);
@@ -2202,10 +2226,12 @@ test('風: 敵の風も同じく、こちらの風を強風に育てる', functi
 console.log('\n■ 育つ（IMPROVE_grow）: 桜吹雪の奥行き');
 CH.k = 'hillsakura';
 function countTile(s, t) { return s.tiles.filter(function (x) { return x === t; }).length; }
-test('桜: 丘に草で丘の桜が咲く（丘の性質のまま、通れる）', function () { withGrow(function () {
+test('【試し】桜: 丘に草で丘の桜が咲く（丘の性質のまま、通れる。起こし方が「山に草で桜」のときだけ）', function () { withGrow(function () {
   var s = board(['......', '......', '..h...', '......', '......', '......']);
   var a = R.addAlly(s, 'grass', 2, 4);   // 形の (0,2) が (2,2)
-  var r = fire(s, a, 'up');
+  B.sakura.from = 'grass';
+  var r;
+  try { r = fire(s, a, 'up'); } finally { B.sakura.from = 'fire'; }
   eq(tile(r.state, 2, 2), 'hillsakura');
   ok(R.isPassable('hillsakura'), '通れる');
 }); });
@@ -2364,7 +2390,7 @@ test('(2,1) に火を置いても勝てない（弱い火は燃え移らない�
   ok(!t.state.result, '勝負はつかない');
   ok(!t.events.some(function (e) { return e.type === 'finisher' || e.type === 'fireSpread'; }), '燃え広がりも燃え移りもない');
   eq([tile(t.state, 3, 1), tile(t.state, 2, 1)], ['forest', 'empty'], '森は残り、小さな炎は消える');
-  eq(R.enemiesOf(t.state)[0].hp, 20);
+  eq(R.enemiesOf(t.state)[0].hp, B.enemy.hp);
   eq(pos(t.state, R.enemiesOf(t.state)[0].id), [3, 1], '敵は森の中を1マス進んだだけ');
 });
 test('外したあとのターンで、構える味方の狙うマス (1,1) が光る（外す前は光らない）', function () {
@@ -2593,7 +2619,7 @@ test('川はユニット・村の手前で止まる（ダメージはない）',
   var r = R.act(st, R.addAlly(st, 'water', 2, 3, 'right').id, { dir: 'right' });
   eq([tile(r.state, 3, 2), tile(r.state, 3, 1)], ['river', 'empty']);
   ok(/敵Aの手前で止まった/.test(r.events[0].text), r.events[0].text);
-  eq(hp(r.state, e.id), 20, 'ダメージはない');
+  eq(hp(r.state, e.id), B.enemy.hp, 'ダメージはない');
   // 右の腕 (4,4) から右へ: (6,4) に村 → (5,4) まで
   var st2 = crossBoard();
   R.addObject(st2, 'village', 6, 4);

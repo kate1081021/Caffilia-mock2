@@ -129,7 +129,7 @@
       expect: {
         tiles: { '1,4': 'hill', '3,4': 'hill', '4,3': 'hill', '4,4': 'puddle', '4,2': 'river', '4,0': 'river' },
         at: { P1: [1, 4], E5: [3, 2] },
-        hp: { E4: 19 }
+        hp: { E4: 4 }
       }
     },
     {
@@ -229,7 +229,7 @@
          { id: 'P2', to: [3, 6], dir: 'up', say: '2人目の風: 残った風に重なって、そこから奥へ強風が4マス吹き抜ける。強風の中の敵Aは2マス運ばれる（ふつうの風なら届かない距離）。' }],
         [{ say: 'ここまで: 強風は遠くまで届き、2マス運ぶ。ターン終了で強風もやむ。強風の長さは調整パネル（育つ: 強風の長さ）で変えられる。' }]
       ],
-      expect: { at: { E3: [3, 0] }, hp: { E3: 19 } }
+      expect: { at: { E3: [3, 0] }, hp: { E3: 4 } }
     },
     {
       id: 'galeSpread',
@@ -252,7 +252,7 @@
     {
       id: 'sakuraDepth',
       name: '【育つ】桜吹雪の奥行き: 丘の桜は2列、山の桜は3列',
-      set: { 'grow.enabled': true, 'grow.sakuraDepthHill': 2, 'grow.sakuraDepthMountain': 3 },
+      set: { 'grow.enabled': true, 'grow.sakuraDepthHill': 2, 'grow.sakuraDepthMountain': 3, 'sakura.from': 'grass' },   // 草で桜は元の試しの起こし方（標準は火山に風。オーナー 10/17）
       enemyActs: false,
       desc: '桜は丘（土1回）にも山（土2回）にも咲く（草）。風で桜吹雪になるが、奥行きは咲いた自然の大きさで決まる。丘の桜は扇2列、山の桜は扇3列。散ると元の丘・山に戻る。',
       layout: {

@@ -192,7 +192,7 @@ test('強化の直撃の威力は、戦闘のダメージに見える（火力2 
 test('ボスは HP40（決め手1発では倒れない）', function () {
   var s = P.buildBattle(P.newRun('quest', 1), 'c2key', ['M1', 'M2', 'M3']);
   var boss = R.enemiesOf(s)[0];
-  eq([boss.hp, boss.maxHp, R.enemiesOf(s)[1].hp], [40, 40, 20]);
+  eq([boss.hp, boss.maxHp, R.enemiesOf(s)[1].hp], [40, 40, B.enemy.hp]);
 });
 test('最初の3人（草・火・風）で、どの戦闘も自動プレイで勝てる（強化なし・1人ずつ。置き場所の順はどれか1つで）', function () {
   var perms = [['M1', 'M2', 'M3'], ['M1', 'M3', 'M2'], ['M2', 'M1', 'M3'], ['M2', 'M3', 'M1'], ['M3', 'M1', 'M2'], ['M3', 'M2', 'M1']];

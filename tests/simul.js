@@ -23,7 +23,7 @@ var TRIO = {
   rows: ['.......', '.......', '.......', '.......', '.......', '.......', '.......'],
   allies: [['earth', 4, 6], ['grass', 3, 6], ['wind', 2, 6]],
   enemies: [['fire', 2, 0], ['fire', 4, 0]],
-  overrides: { 'enemy.move': 1, 'ally.move': 2 }
+  overrides: { 'enemy.move': 1, 'ally.move': 2, 'sakura.from': 'grass' }   // 土 → 草 → 風は元の試しの起こし方（標準は火山に風。オーナー 10/17）。一斉発動の仕組みを見る盤面なのでそのまま
 };
 function start(id) { return R.startBattle(id === 'trio' ? R.buildPreset(TRIO) : R.loadPreset(id)).state; }
 function byMagic(s, m) { return R.controllableOf(s).filter(function (a) { return a.magic === m; })[0]; }

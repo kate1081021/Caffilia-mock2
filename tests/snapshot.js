@@ -22,7 +22,7 @@ var VARIANTS = [
   { name: '風=line', set: function () { B.windMode = 'line'; } },
   { name: '竜巻=windWind', set: function () { B.tornadoRecipe = 'windWind'; } },
   { name: '竜巻=senpu', set: function () { B.tornadoRecipe = 'senpu'; } },
-  { name: '桜=fire', set: function () { B.sakura.from = 'fire'; } },
+  { name: '桜=grass', set: function () { B.sakura.from = 'grass'; } },   // 標準は火山に風（オーナー 10/17）。元の試し「山に草で桜」を切り替えで見る
   { name: '噴火=溶岩', set: function () { B.funka.lava = true; } }
 ];
 var saved = { windMode: B.windMode, tornadoRecipe: B.tornadoRecipe, sakura: B.sakura.from, lava: B.funka.lava };
@@ -58,7 +58,7 @@ function demoLine(d) {
   B.tornadoRecipe = d.recipe || 'off';
   B.windMode = d.windMode || 'breeze';
   var pre = R.PRESETS.filter(function (p) { return p.id === d.preset; })[0];
-  B.sakura.from = (pre && pre.sakuraFrom) || 'grass';
+  B.sakura.from = (pre && pre.sakuraFrom) || saved.sakura;
   var st = R.loadPreset(d.preset);
   if (d.enemyActs === false) st = R.editSetEnemyActs(st, false).state;
   st = R.startBattle(st).state;
