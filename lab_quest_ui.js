@@ -112,46 +112,48 @@
     var T = TUI(), p = T ? T.pathOf(m) : null;
     return '<span class="lt-ally"><b>' + esc(T ? T.magicLabel(m, p) : R.magicName(m)) + '</b>' + (T && p ? T.marksHtml(m, p) : '') + '</span>';
   }
+  // quiet: いつも出すもの（新しい仲間・治安・闇の力）がない。そのときは行ごと「くわしく」で
   function rewardHtml(q) {
-    var out = ['ミッション' + q.missions.length + 'つ（取った魔法が育つ）'];
-    if (q.kind === 'dark') out = ['闇の力（ミッションを取った魔法の直撃の威力が上がる）'];
+    var out = [], more = ['ミッション' + q.missions.length + 'つ（取った魔法が育つ）'];   // ミッションの欄と同じことなので「くわしく」で
+    if (q.kind === 'dark') { out = ['闇の力<span class="x-more">（ミッションを取った魔法の直撃の威力が上がる）</span>']; more = []; }
     if (q.reward && q.reward.join) out.push('<b class="lq-join">新しい仲間: ' + esc(R.magicName(q.reward.join)) + (camp.roster.indexOf(q.reward.join) >= 0 ? '（もういる）' : '') + '</b>');
     if (q.accept && q.accept.order) out.push('<span class="lq-warn">受けると、村の治安が「' + esc(Q.ORDER[q.accept.order].name) + '」になる</span>');
-    return out.join('・');
+    return { html: out.join('・') + (more.length ? '<span class="x-more">' + (out.length ? '・' : '') + more.join('・') + '</span>' : ''), quiet: !out.length };
   }
 
   function questCard(q) {
     var key = Q.isKey(camp, q), kind = q.kind === 'dark' ? 'dark' : key ? 'key' : 'side';
-    var rec = Q.recommend(q, R.findPreset);
+    var rec = Q.recommend(q, R.findPreset), rw = rewardHtml(q);
+    // 札で出したままにするのは、名前・依頼文・ミッション・新しい仲間と治安・おすすめ・受ける。戦い・育ちやすい方向・行き先（仲間を選ぶ画面にも出る）は「くわしく」で
     return '<div class="lq-card lq-' + kind + '">' +
       '<div class="lq-card-head"><span class="lq-kind">' + esc(Q.KIND[kind].name) + '</span><b>' + esc(q.name) + '</b><small>' + esc(q.client) + 'の依頼</small></div>' +
       '<p class="lq-story">' + esc(q.story) + '</p>' +
-      '<div class="lq-row"><span class="lq-l">戦い</span>' + esc(fightText(q)) + '</div>' +
+      '<div class="lq-row x-more"><span class="lq-l">戦い</span>' + esc(fightText(q)) + '</div>' +
       '<div class="lq-row"><span class="lq-l">ミッション</span><ul class="lq-ms">' + missionDefs(q).map(function (t) {
         return '<li title="' + esc(t.text) + '">' + (t.dir === 'dark' ? '<span class="lt-mark d-dark">闇</span>' : mark(t.dir)) + esc(t.name) + '</li>';
       }).join('') + '</ul></div>' +
-      '<div class="lq-row"><span class="lq-l"></span>' + leanHtml(q) + '</div>' +
-      '<div class="lq-row"><span class="lq-l">報酬</span>' + rewardHtml(q) + '</div>' +
+      '<div class="lq-row x-more"><span class="lq-l"></span>' + leanHtml(q) + '</div>' +
+      '<div class="lq-row' + (rw.quiet ? ' x-more' : '') + '"><span class="lq-l">報酬</span>' + rw.html + '</div>' +
       '<div class="lq-row"><span class="lq-l">おすすめ</span>' + rec.map(function (m) {
         var have = camp.roster.indexOf(m) >= 0;
         return '<span class="lq-rec' + (have ? '' : ' none') + '" title="' + esc(have ? '仲間にいる' : 'まだ仲間にいない') + '">' + esc(R.magicName(m)) + (have ? '' : '（まだいない）') + '</span>';
       }).join('') + '</div>' +
-      '<div class="lq-row lq-fcs"><span class="lq-l">行き先</span><span>' + camp.roster.map(function (m) { return '<span class="lq-fcm"><b>' + esc(R.magicName(m)) + '</b>' + forecast(m, q) + '</span>'; }).join('') + '</span></div>' +
+      '<div class="lq-row lq-fcs x-more"><span class="lq-l">行き先</span><span>' + camp.roster.map(function (m) { return '<span class="lq-fcm"><b>' + esc(R.magicName(m)) + '</b>' + forecast(m, q) + '</span>'; }).join('') + '</span></div>' +
       '<button type="button" class="primary" data-q="take" data-id="' + esc(q.id) + '">' + (q.kind === 'dark' ? '裏クエストを受ける' : '受ける') + '</button></div>';
   }
 
   function boardHtml() {
     var top = Q.openChapter(camp), list = Q.board(camp), ord = Q.ORDER[camp.flags.order];
-    var h = '<div class="lab-run-card lq-main"><h2>拠点 — クエストボード <small>試作ラボ N クエスト制</small></h2>';
+    var h = '<div class="lab-run-card lq-main"><h2>拠点 — クエストボード <small class="x-more">試作ラボ N クエスト制</small></h2>';
     if (notes.length) h += '<div class="lq-notes">' + notes.map(function (t) { return '<p>' + esc(t) + '</p>'; }).join('') + '</div>';
     if (camp.done) h += '<div class="lq-done"><b>1周の終わり！</b> 最後の章のキークエストを全部クリアした。残ったクエストは受けられる。「最初から」で1周目に戻る（道も0から）。</div>';
-    h += '<div class="lq-status"><span><b>第' + top + '章「' + esc(Q.chapter(top).name) + '」</b> ' + esc(Q.chapter(top).text[camp.flags.order]) + '</span>' +
+    h += '<div class="lq-status"><span class="x-more"><b>第' + top + '章「' + esc(Q.chapter(top).name) + '」</b> ' + esc(Q.chapter(top).text[camp.flags.order]) + '</span>' +   // 章の名前は下の見出しにもある。章の説明は「くわしく」で
       '<span class="lq-order lq-' + esc(camp.flags.order) + '" title="' + esc(ord.text) + '">村の治安: ' + esc(ord.name) + '</span></div>' +
       '<div class="lq-party"><span class="lq-l">仲間</span>' + camp.roster.map(allyHtml).join('') + '</div>';
     for (var ch = 1; ch <= top; ch++) {
       var inCh = list.filter(function (q) { return q.ch === ch; });
       var keys = Q.keySlots(camp, ch), done = keys.filter(function (sl) { return camp.cleared[sl]; }).length;
-      h += '<h3>第' + ch + '章「' + esc(Q.chapter(ch).name) + '」 <small>キークエスト ' + done + '/' + keys.length + (Q.chapterDone(camp, ch) ? '（クリア）' : '（全部クリアで次の章）') + '</small></h3>';
+      h += '<h3>第' + ch + '章「' + esc(Q.chapter(ch).name) + '」 <small>キークエスト ' + done + '/' + keys.length + (Q.chapterDone(camp, ch) ? '（クリア）' : '<span class="x-more">（全部クリアで次の章）</span>') + '</small></h3>';
       h += inCh.length ? '<div class="lq-cards">' + inCh.map(questCard).join('') + '</div>' : '<p class="muted">この章のクエストは全部クリアした。</p>';
     }
     if (top < Q.CHAPTERS.length) h += '<p class="note x-more">第' + (top + 1) + '章「' + esc(Q.chapter(top + 1).name) + '」は、第' + top + '章のキークエストを全部クリアすると開く。</p>';
@@ -175,8 +177,8 @@
   function partyHtml() {
     var q = Q.quest(pick.id), rec = Q.recommend(q, R.findPreset), n = Q.PARTY_SIZE;
     var h = '<div class="lab-run-card lq-main"><h2>連れていく仲間を選ぶ <small>' + esc(q.name) + '（' + esc(q.client) + 'の依頼）</small></h2>' +
-      '<p class="lq-story">' + esc(q.story) + '</p>' +
-      '<div class="lq-row"><span class="lq-l">戦い</span>' + esc(fightText(q)) + '</div>' +
+      '<p class="lq-story x-more">' + esc(q.story) + '</p>' +   // 依頼文と戦いはボードの札と同じなので「くわしく」で
+      '<div class="lq-row x-more"><span class="lq-l">戦い</span>' + esc(fightText(q)) + '</div>' +
       '<div class="lq-row"><span class="lq-l">ミッション</span><ul class="lq-ms">' + missionDefs(q).map(function (t) {
         return '<li title="' + esc(t.text) + '">' + (t.dir === 'dark' ? '<span class="lt-mark d-dark">闇</span>' : mark(t.dir)) + esc(t.name) + '</li>';
       }).join('') + '</ul></div>' +
