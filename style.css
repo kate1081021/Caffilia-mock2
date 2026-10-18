@@ -1597,6 +1597,68 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
 .lt-path.nr-mini small { margin-right: 2px; color: var(--muted); }
 .lt-mark.lt-shape { background: #fff; color: var(--ld, #64748b); box-shadow: inset 0 0 0 1px var(--ld, #64748b); font-size: 13px; }
 
+/* ラボ N7 区切りの道（10/19）: 区切りごとのまとまりと、区切りの終わりの節目 */
+.sg-ax { gap: 4px 2px; align-items: flex-start; }
+.sg-seg { display: inline-flex; gap: 2px; padding: 3px 4px 0; border: 1px solid #e5dcc7; border-radius: 8px; background: #fbf8f1; }
+.sg-ax .ax-cell.own .ax-box { box-shadow: inset 0 -3px 0 #e8c66a; }
+.sg-tbd { color: #a8a29e; font-weight: normal; }
+.sg-cp.k-change .ax-dia, .sg-cp.k-awake .ax-dia { border-color: #a16207; }
+.sg-cp.k-fuse .ax-dia { border-color: #0e7490; background: #ecfeff; }
+.sg-cp.k-fuse.got .ax-dia { background: #67e8f9; box-shadow: 0 0 0 2px #a5f3fc; }
+.sg-cp.k-range .ax-dia { border-color: #7c3aed; background: #f5f3ff; }
+.sg-cp.k-range.got .ax-dia { background: #c4b5fd; box-shadow: 0 0 0 2px #ddd6fe; }
+.sg-cp.k-tbd .ax-dia { border-color: #a8a29e; background: #f5f5f4; }
+.sg-cp.upcoming .ax-dia { border-style: dashed; background: #fff; }
+.sg-cp.upcoming small { color: #78716c; font-weight: bold; }
+.sg-count { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; margin: 2px 0; }
+.sg-segno { font-size: 11px; color: #fff; background: #78716c; border-radius: 4px; padding: 0 6px; }
+.sg-cnt { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: #f1f5f9; border: 1px solid #cbd5e1; }
+.sg-cnt.own { background: #fef3c7; border-color: #e8c66a; }
+.sg-cnt b { font-size: 15px; }
+.sg-to b { color: #854d0e; }
+.sg-left { color: var(--muted); }
+.sg-badge.k-fuse { color: #0e7490; }
+.sg-badge.k-range { color: #6d28d9; }
+.sg-badge.k-tbd { color: #78716c; }
+.sg-badge { margin-right: 6px; font-size: 16px; }
+.sg-msd { margin: 2px 0; font-size: 12px; color: #57534e; }
+.sg-gslot { font-size: 12px; color: #57534e; }
+.sg-rules li.on { font-weight: bold; }
+.sg-tbdli { color: #a8a29e; }
+/* 強化ためし */
+.tr-wrap { z-index: 59; }
+.tr-main { max-width: 1040px; }
+.tr-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; margin: 4px 0 8px; }
+.tr-opts details label { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; font-size: 12px; }
+.tr-lens { display: inline-flex; align-items: center; gap: 4px; }
+.tr-len, .tr-pick, .tr-shape { border: 2px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 3px 10px; font-weight: bold; cursor: pointer; }
+.tr-len.on, .tr-pick.on { border-color: #0f766e; background: #f0fdfa; }
+.tr-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tr-tab { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; border: 2px solid #e5e7eb; border-radius: 10px; background: #fff; cursor: pointer; font-size: 12px; color: #1f2937; }
+.tr-tab.on { border-color: #0f766e; background: #f0fdfa; box-shadow: 0 0 0 2px #99f6e4; }
+.tr-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+@media (max-width: 760px) { .tr-body { grid-template-columns: 1fr; } }
+.tr-card { max-width: none; }
+.tr-last { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 8px 10px; background: #fff; font-size: 13px; margin-bottom: 8px; }
+.tr-last.big { border: 2px solid #ca8a04; background: #fffbea; animation: axNew 1s ease-out 2; }
+.tr-lasthead { flex-wrap: wrap; font-size: 14px; }
+.tr-lasthead small { color: var(--muted); font-size: 11px; }
+.tr-badges { margin: 4px 0; }
+.tr-badges .sg-badge, .tr-badges .lt-awake { font-size: 20px; }
+.tr-text { margin: 4px 0 0; }
+.tr-add, .tr-battle { border: 1px solid #e5e7eb; border-radius: 10px; padding: 6px 10px; background: #fafaf9; }
+.tr-battle { margin-top: 10px; }
+.tr-add h3, .tr-battle h3 { margin: 2px 0 6px; font-size: 14px; }
+.tr-add h3 small, .tr-battle h3 small { color: var(--muted); font-weight: normal; font-size: 11px; }
+.tr-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.tr-row select { max-width: 100%; }
+.tr-outlook { font-size: 12px; margin: 4px 0; color: #44403c; }
+.tr-ms { display: inline-flex; flex-wrap: wrap; gap: 4px; font-size: 12px; }
+.tr-ms .nr-m { padding: 2px 8px; }
+.tr-more { font-size: 12px; margin-top: 4px; }
+.tr-bar { background: #ede9fe; }
+.lq-segrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; }
+
 /* ---------- 展示ステージ③（3人でつなぐ） ---------- */
 /* 魔法の出し方（ターンの終わりに1段ずつ／つながる／撃った瞬間） */
 .ex-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; padding: 6px 10px; background: #fff7e0; border: 2px solid #f5c518; border-radius: 10px; }

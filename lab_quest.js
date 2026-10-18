@@ -150,6 +150,7 @@
   }
   // 戦闘の盤面を作る（盤面のシナリオの写し。ミッション・味方・切り替えだけ差しかえる）
   //   opts.dark: 仲間が闇の力を持っている（L7 をオンにしないと、闇の力が効かない）
+  //   opts.seg: N7 区切りの道（10/19）の切り替え { on, len, star, awakeLater, fuseLater }。省略は入（初期の値）。on: false なら N6（3マスの道）のまま
   function preset(q, party, findPreset, opts) {
     var base = findPreset(q.board);
     if (!base) return null;
@@ -162,11 +163,26 @@
     p.lab = (p.lab || []).filter(function (x) { return x !== 'L6'; });
     if (p.lab.indexOf('N0') < 0) p.lab.unshift('N0');
     if (p.lab.indexOf('N6') < 0) p.lab.push('N6');   // 1本の道（.claude/IMPROVE_road.md）
+    var seg = segOpts(opts && opts.seg);
+    if (seg) { if (p.lab.indexOf('N7') < 0) p.lab.push('N7'); p.labOpts = Object.assign({}, p.labOpts || {}, { N7: seg }); }   // N7 区切りの道（10/19）
+    else p.lab = p.lab.filter(function (x) { return x !== 'N7'; });
     if ((opts && opts.dark) || q.kind === 'dark') { if (p.lab.indexOf('L7') < 0) p.lab.push('L7'); }
     p.labState = Object.assign({}, p.labState || {}, { labTargetList: q.missions.slice(), labTargetCount: q.missions.length });
     p.allies = placeParty(base.allies, party);
     p.labQuestRun = q.id;
     return p;
+  }
+
+  // N7 区切りの道の切り替え（クエスト制・強化ためしでは入が初期）。null は切（N6 のまま）
+  var SEG_DEFAULT = { len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range' };
+  var SEG_LENS = [3, 5, 7];
+  function segOpts(o) {
+    if (o && o.on === false) return null;
+    var out = clone(SEG_DEFAULT);
+    Object.keys(SEG_DEFAULT).forEach(function (k) { if (o && o[k] !== undefined && o[k] !== null) out[k] = o[k]; });
+    if (SEG_LENS.indexOf(Number(out.len)) < 0) out.len = SEG_DEFAULT.len;
+    out.len = Number(out.len);
+    return out;
   }
 
   // 受ける（裏クエストは、ここで治安が変わる）。{ c, notes }
@@ -210,7 +226,7 @@
   var api = { NAME: NAME, ROSTER_START: ROSTER_START, ROSTER_ORDER: ROSTER_ORDER, PARTY_SIZE: PARTY_SIZE, ORDER: ORDER, KIND: KIND, CHAPTERS: CHAPTERS, QUESTS: QUESTS,
     quest: quest, chapter: chapter, slotOf: slotOf, newCampaign: newCampaign, norm: norm, isKey: isKey, shows: shows, keySlots: keySlots, chapterDone: chapterDone,
     openChapter: openChapter, board: board, allDone: allDone, recommend: recommend, defaultParty: defaultParty, placeParty: placeParty, preset: preset,
-    accept: accept, finish: finish, setKey: setKey };
+    accept: accept, finish: finish, setKey: setKey, segOpts: segOpts, SEG_DEFAULT: SEG_DEFAULT, SEG_LENS: SEG_LENS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LAB_QUEST = api;
 })(this);

@@ -2440,6 +2440,150 @@ console.log('\n■ N 強化と変化（やりたいこと・印・間の強化�
     eq(N.cardCells(s, R.findUnit(s, f.id)).sort(), [[-1, 1], [0, 1], [1, 1]].sort());
   });
 
+  // ---- N7 区切りの道（10/19 オーナー「強化の組み直しと強化ためし」） ----
+  function feed(p, m, ws) { return ws.map(function (w) { return LL.gain(p, m, w); }); }
+  test('N7 区切りの道: 5マスで1区切り。区切りの中の多い方で節目1（自分 → 覚醒方面の変化／ほか → 融合方面の変化）。道は変化のあとも続く', function () {
+    R.labApply(['N7']);
+    ok(N.seg() && N.road() && N.segLen() === 5, 'N7 は N6 の上（needs）');
+    var p = LL.newPath('fire'), g = feed(p, 'fire', ['spread', 'defeat', 'move', 'defeat']);
+    eq([p.form, g.map(function (x) { return x.res.slot; }), g.map(function (x) { return x.res.inSeg; })], [null, [1, 2, 3, 4], [1, 2, 3, 4]], '4マスではまだ節目にならない');
+    var g5 = LL.gain(p, 'fire', 'defeat');
+    eq([p.form, g5.res.change.name, g5.res.ms.kind, g5.res.tally], ['awake', '炎', 'change', { aw: 3, fu: 2, star: 0 }], '倒す3・ほか2 → 覚醒方面の変化');
+    var g6 = LL.gain(p, 'fire', 'spread');
+    eq([p.road.length, g6.res.slot, g6.res.seg, g6.res.inSeg, !!g6.res.past], [6, 6, 2, 1, false], '変化のあとも道に入る（区切り2の1マス目）');
+    var q = LL.newPath('fire');
+    feed(q, 'fire', ['spread', 'spread', 'defeat', 'move', 'defeat']);
+    eq([q.form, q.ms[0].kind], ['fuse', 'fuse'], 'ほか3・倒す2 → 融合方面（火の渦）');
+    var s = E7(), u = path(s, R.addAlly(s, 'fire', 3, 6, 'up'), q);
+    eq(R.LX.formName(R.findUnit(s, u.id)), '火の渦');
+  });
+  test('N7 2つ目からの節目: 覚醒方面は 自分が多い → 覚醒 ／ほかが多い → 範囲の大きな強化。覚醒は次の区切りで自分が多ければ。覚醒のあとは未定', function () {
+    R.labApply(['N7']);
+    var p = LL.newPath('fire');
+    feed(p, 'fire', ['defeat', 'defeat', 'defeat', 'spread', 'spread']);   // 節目1: 炎
+    var g = feed(p, 'fire', ['spread', 'move', 'stop', 'defeat', 'defeat']);   // 節目2: ほか3 → 範囲
+    eq([p.form, p.awake, p.range, g[4].res.ms.kind, !!g[4].res.range], ['awake', false, 1, 'range', true]);
+    var g3 = feed(p, 'fire', ['defeat', 'spread', 'defeat', 'move', 'defeat']);   // 節目3: 倒す3 → 覚醒
+    eq([p.awake, g3[4].res.awake.name, p.ms.map(function (m) { return m.kind; })], [true, '業火', ['change', 'range', 'awake']]);
+    var g4 = feed(p, 'fire', ['defeat', 'defeat', 'defeat', 'defeat', 'defeat']);
+    eq([g4[4].res.ms.kind, !!g4[4].res.tbd, p.road.length], ['tbd', true, 20], '覚醒のあとも道は続き、節目は「未定」');
+    eq(N.segNextText('fire', p), '節目まであと5マス（節目の中身は未定）');
+  });
+  test('N7 融合方面: 2つ目からは範囲の大きな強化（fuseLater: none なら未定）。awakeLater: any なら多い方に関係なく覚醒', function () {
+    R.labApply(['N7']);
+    var p = LL.newPath('wind');
+    feed(p, 'wind', ['defeat', 'defeat', 'defeat', 'move', 'move']);
+    eq([p.form, p.ms[0].kind], ['fuse', 'fuse'], '風: ほか3 → 砂嵐');
+    feed(p, 'wind', ['move', 'move', 'move', 'move', 'move']);
+    eq([p.awake, p.range, p.ms[1].kind], [false, 1, 'range'], '融合方面からは覚醒しない（自分の形が多くても範囲）');
+    R.labApply(['N7'], { N7: { fuseLater: 'none' } });
+    eq(LL.normPath('wind', p).ms[1].kind, 'tbd', 'fuseLater none');
+    R.labApply(['N7'], { N7: { awakeLater: 'any' } });
+    var q = LL.newPath('fire');
+    feed(q, 'fire', ['defeat', 'defeat', 'defeat', 'spread', 'spread', 'spread', 'spread', 'spread', 'spread', 'spread']);
+    eq([q.awake, q.ms[1].kind], [true, 'awake'], 'awakeLater any: 2つ目の節目で必ず覚醒');
+  });
+  test('N7 小さな強化: 自分の方向の欄に、間の強化の並びから形が増えるものを外して順に。ほかの形と並びのあとは未定（形は増えない）', function () {
+    R.labApply(['N7']);
+    var p = LL.newPath('fire'), g = feed(p, 'fire', ['defeat', 'spread', 'defeat', 'defeat', 'free']);
+    eq(g.map(function (x) { return x.res.small ? x.res.small.id : null; }), ['power', null, 'effect', null, null], '火（倒す）: 直撃の威力 → 効き目が1段 → 未定（形が1マスは外した）');
+    eq(N.smallCells('fire', p).map(function (c) { return c.col; }), ['defeat', 'spread', 'defeat', 'defeat', 'defeat'], '★は自分の方向の欄（star own）');
+    var gr = LL.newPath('grass'), gg = feed(gr, 'grass', ['spread', 'spread']);
+    eq(gg.map(function (x) { return x.res.small ? x.res.small.id : null; }), ['linger', null], '草（広げる）: もう1ターン残る だけ（形が1マス・足場で形が増えるは外した）');
+    var wi = LL.newPath('wind'), gw = feed(wi, 'wind', ['move', 'move', 'move', 'move']);
+    eq(gw.map(function (x) { return x.res.small ? x.res.small.id : null; }), ['pushMore', 'moveAfter', 'leap', null]);
+    var s = E7(), f = path(s, R.addAlly(s, 'fire', 3, 6, 'up'), LL.normPath('fire', p));
+    eq([R.LX.L.shapeSteps(R.findUnit(s, f.id)), N.cardCells(s, R.findUnit(s, f.id)).length], [0, 3], '小さな強化では形が増えない（炎の3マスのまま）');
+    var e = R.addEnemy(s, 'fire', 3, 5); tough(s, e);
+    eq(dealt(act(s, f, 'up'), e.id) >= 1 + 2, true, '小さな強化「直撃の威力」は効く（+2）');
+  });
+  test('N7 ★の数え方（star）: own 自分の方向・other ほかの方向・none どちらでもない（同じ数は★を除いた最後の形）', function () {
+    R.labApply(['N7']);
+    var ws = ['free', 'free', 'spread', 'spread', 'defeat'];
+    var a = LL.newPath('fire'); feed(a, 'fire', ws);
+    eq(a.form, 'awake', 'own: ★2＋◆1 → 自分3');
+    R.labApply(['N7'], { N7: { star: 'other' } });
+    var b = LL.newPath('fire'); feed(b, 'fire', ws);
+    eq([b.form, N.smallCells('fire', b)[0].col], ['fuse', 'free'], 'other: ★はほかの方向（小さな強化は★の欄＝未定）');
+    R.labApply(['N7'], { N7: { star: 'none' } });
+    var c = LL.newPath('fire'); feed(c, 'fire', ['free', 'spread', 'free', 'defeat', 'free']);
+    eq([c.form, c.ms[0].star, c.ms[0].own, c.ms[0].other], ['awake', 3, 1, 1], 'none: 倒す1・ほか1 → 最後の形（◆）で覚醒方面');
+  });
+  test('N7 区切りの長さ（len 3・7）。道は同じまま、節目が数え直される', function () {
+    R.labApply(['N7'], { N7: { len: 3 } });
+    var p = LL.newPath('fire'), g = feed(p, 'fire', ['defeat', 'spread', 'defeat']);
+    eq([p.form, g[2].res.segLen], ['awake', 3]);
+    R.labApply(['N7'], { N7: { len: 7 } });
+    var q = LL.normPath('fire', p);
+    eq([q.form, q.ms.length, N.segNext('fire', q).left], [null, 0, 4], '7マスでは、まだ節目1の前');
+  });
+  test('N7 範囲の大きな強化: 形が奥へ1列（横・後ろには広げない）。置く融合は1段大きく（仲間と組むのと同じまで）。源流は1マス長く', function () {
+    R.labApply(['N7']);
+    var p = LL.newPath('fire');
+    feed(p, 'fire', ['defeat', 'defeat', 'defeat', 'spread', 'spread', 'spread', 'spread', 'spread', 'defeat', 'defeat']);
+    eq([p.form, p.range], ['awake', 1]);
+    var s = E7(), f = path(s, R.addAlly(s, 'fire', 3, 6, 'up'), p);
+    eq(N.cardCells(s, R.findUnit(s, f.id)).sort(), [[-1, 1], [0, 1], [1, 1], [-1, 2], [0, 2], [1, 2]].sort(), '炎（正面と左右）が奥へ1列');
+    var w = LL.newPath('fire');
+    feed(w, 'fire', ['spread', 'spread', 'spread', 'defeat', 'defeat']);
+    var s2 = E7(), u2 = path(s2, R.addAlly(s2, 'fire', 3, 6, 'up'), LL.normPath('fire', w));
+    eq(N.cardCells(s2, R.findUnit(s2, u2.id)), [[0, 1]], '火の渦（控えめ）は正面1マス');
+    feed(w, 'fire', ['spread', 'spread', 'spread', 'spread', 'spread']);
+    R.findUnit(s2, u2.id).labPath = LL.normPath('fire', w);
+    eq(N.cardCells(s2, R.findUnit(s2, u2.id)).sort(), [[0, 1], [1, 1], [0, 2], [1, 2]].sort(), '範囲の大きな強化で、仲間と組むのと同じ2×2');
+    feed(w, 'fire', ['spread', 'spread', 'spread', 'spread', 'spread']);
+    R.findUnit(s2, u2.id).labPath = LL.normPath('fire', w);
+    eq([LL.normPath('fire', w).range, N.cardCells(s2, R.findUnit(s2, u2.id)).length], [2, 4], '2つ目の範囲でも、仲間と組むより大きくはしない');
+    var wa = LL.newPath('water');
+    feed(wa, 'water', ['defeat', 'defeat', 'defeat', 'stop', 'stop']);
+    var s3 = E7(), u3 = path(s3, R.addAlly(s3, 'water', 3, 6, 'up'), LL.normPath('water', wa));
+    var r0 = act(s3, u3, 'up'), n0 = [0, 1, 2, 3, 4, 5].filter(function (y) { return tile(r0.state, 3, y) === 'river'; }).length;
+    feed(wa, 'water', ['defeat', 'defeat', 'defeat', 'stop', 'stop']);
+    R.findUnit(s3, u3.id).labPath = LL.normPath('water', wa);
+    var r1 = act(s3, u3, 'up'), n1 = [0, 1, 2, 3, 4, 5].filter(function (y) { return tile(r1.state, 3, y) === 'river'; }).length;
+    eq([n0, n1], [3, 4], '源流（控えめ3マス）が1マス長く');
+    var gs = LL.newPath('grass');
+    feed(gs, 'grass', ['defeat', 'defeat', 'defeat', 'spread', 'spread']);
+    var s4 = E7(), u4 = path(s4, R.addAlly(s4, 'grass', 3, 6, 'up'), LL.normPath('grass', gs));
+    eq(tile(act(s4, u4, 'up').state, 3, 4), 'hillsakura', '桜（控えめ）は丘の桜');
+    feed(gs, 'grass', ['defeat', 'defeat', 'defeat', 'spread', 'spread']);
+    R.findUnit(s4, u4.id).labPath = LL.normPath('grass', gs);
+    eq(tile(act(s4, u4, 'up').state, 3, 4), 'sakura', '範囲の大きな強化で、山の桜（仲間と組むのと同じ）');
+  });
+  test('N7 言葉: 撃つ前の予測（取ったら道の何マス目・小さな強化・節目まで・このままなら）と、道の印', function () {
+    R.labApply(['N7']);
+    eq(LL.outlook('fire', null, 'defeat'), '◆ 火の形（倒す） → 道の1マス目（区切り1の1/5）。小さな強化「直撃の威力」。節目まであと4マス（倒す 1・ほか 0 → このままなら覚醒方面の変化「炎」）');
+    var p = LL.newPath('fire'); feed(p, 'fire', ['defeat', 'spread', 'defeat', 'move']);
+    ok(/区切りがそろった（倒す 3・ほか 2）→ 節目: 覚醒方面の変化「炎」！/.test(LL.outlook('fire', p, 'defeat')), LL.outlook('fire', p, 'defeat'));
+    eq(N.segNextText('fire', { road: [{ w: 'defeat' }, { w: 'defeat' }, { w: 'defeat' }], seg: 1 }), '節目まであと2マス（倒す 3・ほか 0 → 覚醒方面の変化「炎」に決まり）');
+    eq(N.segNextText('fire', { road: [{ w: 'defeat' }, { w: 'move' }], seg: 1 }), '節目まであと3マス（倒す 1・ほか 1 → ◆が多いと覚醒方面の変化「炎」、ほかが多いと融合方面の変化「火の渦」）');
+    feed(p, 'fire', ['defeat', 'stop']);
+    eq(LL.pathMarks('fire', p), '◆●◆▲◆◇炎｜■・・・・ 小威効');
+  });
+  test('N7 数だけの道（シナリオ・エディット）は自分の形を先に置いて作り直す。N6 の道は、道のあとに数の残りを足す', function () {
+    R.labApply(['N7']);
+    var a = LL.normPath('fire', { aw: 3, fu: 2 });
+    eq([a.road.map(function (r) { return r.k; }), a.form], [['awake', 'awake', 'awake', 'fuse', 'fuse'], 'awake']);
+    var b = LL.normPath('fire', { aw: 4, fu: 1, road: [{ w: 'spread', k: 'fuse' }, { w: 'defeat', k: 'awake' }, { w: 'defeat', k: 'awake' }], form: 'awake' });
+    eq(b.road.map(function (r) { return r.w; }), ['spread', 'defeat', 'defeat', 'defeat', 'defeat'], 'N6 の3マスのあとに、覚醒までの◆を足す');
+    var c = LL.normPath('fire', LL.normPath('fire', b));
+    eq(c.road.length, 5, 'そろえた道は、もう一度そろえても同じ');
+  });
+  test('N7 オフなら N6 のまま。クエスト制の盤面は N7 が初期で入（seg.on: false なら入れない。区切りの長さは labOpts）', function () {
+    R.labApply(['N0', 'N6']);
+    ok(!N.seg());
+    var Q = require('../lab_quest.js'), q = Q.QUESTS[0];
+    var pr = Q.preset(q, ['fire', 'grass', 'wind'], R.findPreset);
+    eq([pr.lab.indexOf('N7') >= 0, pr.labOpts.N7.len], [true, 5]);
+    var p3 = Q.preset(q, ['fire', 'grass', 'wind'], R.findPreset, { seg: { len: 3 } });
+    eq(p3.labOpts.N7.len, 3);
+    var off = Q.preset(q, ['fire', 'grass', 'wind'], R.findPreset, { seg: { on: false } });
+    eq([off.lab.indexOf('N7'), off.lab.indexOf('N6') >= 0], [-1, true]);
+    eq(Q.segOpts({ len: 4 }).len, 5, '区切りは 3・5・7 だけ');
+    R.labApply(pr.lab, pr.labOpts);
+    ok(N.seg() && N.segLen() === 5);
+  });
+
   // ---- 変化した魔法（覚醒方面・融合） ----
   test('N 森・炎・岩山: 空きにいきなり森（二段）／横3マスにいきなり炎／一発で岩山（山＋印）', function () {
     withGrow(function () {

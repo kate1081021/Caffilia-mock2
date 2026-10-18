@@ -33,7 +33,7 @@
   function implemented(c) {
     if (kind(c) === 'exist') return true;
     if (kind(c) === 'switch' && !(B.lab && B.lab[c.id])) return false;
-    return (c.scen || []).some(function (sid) { return sid === 'run' || sid === 'quest' || !!R.findPreset(sid) || sid === 'plaza'; });
+    return (c.scen || []).some(function (sid) { return sid === 'run' || sid === 'quest' || sid === 'trial' || !!R.findPreset(sid) || sid === 'plaza'; });
   }
   function hasDemo(c) {
     if (c.demoCheck) return true;
@@ -92,6 +92,7 @@
   function scenName(sid) {
     if (sid === 'run') return '周回を始める';
     if (sid === 'quest') return '拠点を開く（クエスト制）';
+    if (sid === 'trial') return '強化ためしを開く';
     if (sid === 'plaza') return '広場';
     var p = R.findPreset(sid);
     return p ? p.name : sid + '（まだない）';
@@ -229,6 +230,7 @@
     if (!sid) return;
     if (sid === 'run') { if (window.LabRun) window.LabRun.start(c.id); else app.say('周回はまだ作っていません'); return; }
     if (sid === 'quest') { if (window.LabQuest) window.LabQuest.open(); else app.say('クエスト制はまだ作っていません'); return; }
+    if (sid === 'trial') { if (window.LabTrial) window.LabTrial.open(); else app.say('強化ためしはまだ作っていません'); return; }
     var p = R.findPreset(sid);
     if (kind(c) === 'exist') {
       // 既存の切り替え: 値を入れて（オフでくらべるなら off の値）、そのシナリオを最初から

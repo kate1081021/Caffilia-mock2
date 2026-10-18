@@ -11,6 +11,8 @@
  *   並びを使い切ったあとは、形が1マス増える（MORE。上限 MORE_MAX）
  * 変化: 覚醒方面か融合方面の印が先に change（N1 初期2）に届いた方面へ。もう片方は閉じる（戻れない）。
  *   N6「1本の道」がオンなら: 印でマスを埋め、len（初期3）マスそろったときに多い方の方面へ変化（閉じない）。.claude/IMPROVE_road.md
+ *   N7「区切りの道」がオンなら: 道は続き、len（初期5）マスごとの区切りの終わりに節目（多い方の形で、変化・覚醒・範囲の大きな強化）。
+ *     1マスごとに小さな強化（SMALL）が1つ。範囲（形が増える）は節目の範囲の大きな強化（RANGE）だけ
  *   覚醒方面だけ、変化のあと覚醒方面の印がさらに awake（N1 初期3）たまると覚醒
  *
  * 変化先（FORMS）: 属性 → { awake: 覚醒方面の変化（lv2 が覚醒）, fuse: 融合方面の変化 }
@@ -67,6 +69,26 @@
       { id: 'hold', name: '次の移動を止める', mark: '止', text: '当たった敵は、次の移動ができない' },
       { id: 'shrink', name: '形が小さくなる', mark: '小', text: '当たった敵の、次の魔法の形が小さくなる（1マスだけ）' }
     ]
+  };
+  // N7「区切りの道」（10/19 オーナー「強化の組み直しと強化ためし」）: 1マスごとの小さな強化の表【仮】
+  //   属性 → 入った形（やりたいこと）→ 並び（STEPS の id）。その列の形が入るたびに、並びの次の1つが入る。
+  //   今は中身を詰めない: 自分の方向の欄に、間の強化の並びから形が増えるもの（形が1マス・足場で形が増える）を外して順に入れた。
+  //   ほかの方向の欄（ここに書いていない列）と、並びが尽きたあとは空欄 → マスには形だけ入って「未定」。
+  //   free は ★ をほかの方向・どちらでもないに数えるとき（N7 star）の列。自分の方向に数えるときは、自分の方向の列を使う
+  var SMALL = {
+    grass: { spread: ['linger'] },
+    earth: { defeat: ['power', 'effect'], stop: ['delay', 'hold', 'shrink'] },   // stop は N3 で土を止めるにしたとき
+    fire:  { defeat: ['power', 'effect'] },
+    water: { stop: ['delay', 'hold', 'shrink'] },
+    wind:  { move: ['pushMore', 'moveAfter', 'leap'] }
+  };
+  // 範囲の大きな強化【仮】（節目の中身）。形を奥へ1列伸ばす（術者の横・後ろには広げない）。
+  //   その場に置く融合（桜・泥・火の渦・砂嵐）は、置く大きさを1段大きく（控えめ → 仲間と組むのと同じ。それより大きくはしない）。
+  //   流れる・吹く魔法（水・風の元の魔法・源流）は、届く長さが1マス伸びる
+  var RANGE = {
+    name: '範囲の大きな強化', mark: '範', text: '形が奥へ1列伸びる（術者の横・後ろには広げない）',
+    place: { nsakura: true, nmud: true, nwhirl: true, nsand: true },
+    placeText: '置く大きさが1段大きくなる（仲間と組むのと同じ大きさまで）'
   };
   var MORE = { id: 'shape', name: '形が1マス', mark: '形', text: '並びを使い切ったあとは、印1つで形が1マス増える' };
   var MORE_MAX = 3;   // 並びのあとの「形が1マス」の上限
@@ -165,7 +187,7 @@
   var QUEST_ORDER = ['defeat', 'spread', 'move', 'stop'];
   var QUEST_LEAN = { annihilate: 'defeat', defense: 'stop', escort: 'move', retrieve: 'move' };
 
-  var api = { WANTS: WANTS, WANT_ORDER: WANT_ORDER, SORT_ORDER: SORT_ORDER, ATTR: ATTR, ATTR_ORDER: ATTR_ORDER, STEPS: STEPS, MORE: MORE, MORE_MAX: MORE_MAX,
+  var api = { WANTS: WANTS, WANT_ORDER: WANT_ORDER, SORT_ORDER: SORT_ORDER, ATTR: ATTR, ATTR_ORDER: ATTR_ORDER, STEPS: STEPS, MORE: MORE, MORE_MAX: MORE_MAX, SMALL: SMALL, RANGE: RANGE,
     STAND_ON: STAND_ON, FORMS: FORMS, MISSIONS_ADD: MISSIONS_ADD, SORT: SORT, TRAITS: TRAITS,
     QUEST_POOL: QUEST_POOL, QUEST_NAME: QUEST_NAME, QUEST_ORDER: QUEST_ORDER, QUEST_LEAN: QUEST_LEAN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -357,7 +357,12 @@
       N3: { on: false, earth: 'defeat' },   // 土のやりたいこと。earth: 'defeat' 倒す ／'stop' 止める
       N4: { on: false, fuse: 'weak' },      // 融合の控えめの出し方。fuse: 'weak' 控えめ（形・届く距離が小さい。桜は丘の桜）／'same' 仲間と組むのと同じ
       N5: { on: false, steps: 'keep' },     // 間の強化を変化した魔法に引き継ぐか。steps: 'keep' 引き継ぐ ／'reset' 変化したら0から
-      N6: { on: false, len: 3 }             // 1本の道（.claude/IMPROVE_road.md）。印でマスを埋め、len マスそろったら多い方の方面へ変化（閉じない）。オフなら2本の道・早い者勝ち
+      N6: { on: false, len: 3 },            // 1本の道（.claude/IMPROVE_road.md）。印でマスを埋め、len マスそろったら多い方の方面へ変化（閉じない）。オフなら2本の道・早い者勝ち
+      // N7 区切りの道（10/19 オーナー「強化の組み直しと強化ためし」。N6 の上）。道は続き、len マスの区切りごとに節目。1マスごとに小さな強化。範囲は節目の大きな強化だけ
+      //   len 区切りのマス数（3・5・7）／star ★の数え方: 'own' 自分の方向 ／'other' ほかの方向 ／'none' どちらでもない
+      //   awakeLater 2つ目からの節目（覚醒方面）: 'own' 自分の方向が多ければ覚醒・ほかが多ければ範囲の大きな強化 ／'any' 多い方に関係なく覚醒
+      //   fuseLater 2つ目からの節目（融合方面）: 'range' 範囲の大きな強化 ／'none' 何もない（未定）
+      N7: { on: false, len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range' }
     }
   };
 

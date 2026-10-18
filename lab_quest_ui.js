@@ -35,12 +35,15 @@
     app.addLog('【クエスト制】最初から（道を0から始めた）');
   }
   // 拠点では N の切り替えだけをオンにする（ミッションの仕分け・道の形を N で見るため。戦闘の D2・L7 などは戻す）
+  //   N7 区切りの道（10/19）は初期で入。拠点の「道の決まり」で切にすると N6（3マスの道）のまま
   function useN() {
+    if (TUI() && TUI().useN) { TUI().useN(); return; }
     var want = ['L0', 'M0', 'N0', 'N6'];
     if (R.labOnList().join('+') === want.join('+')) return;
     R.labApply(['N0', 'N6']);   // N6 1本の道
     if (app.onLabChange) app.onLabChange();
   }
+  function segSet() { return TUI() && TUI().segSettings ? TUI().segSettings() : { on: false }; }
 
   // ---- 画面 ----
   var box = document.createElement('div');
@@ -82,6 +85,18 @@
       else if (k === 'awake') aw++; else if (k === 'fuse') fu++; else no++;
     });
     var out = [];
+    if (LXL.N.seg && LXL.N.seg() && p) {   // N7 区切りの道: 変化のあとも全部、道に入る（自分の形・ほかの形）
+      var so = 0, sx = 0, ss = 0, sown = LXL.N.shape(LXL.N.def(m).want);
+      missionDefs(q).forEach(function (t) { if (t.dir === 'dark') return; var k = LXL.N.kind(m, t.dir); if (k !== 'awake' && k !== 'fuse') return; var sk = LXL.N.segKind(m, t.dir); if (sk === 'awake') so++; else if (sk === 'star') ss++; else sx++; });
+      var nx = LXL.N.segNext(m, p);
+      if (so) out.push('<span class="lq-fc aw" title="自分の方向の形">' + esc(sown) + '×' + so + '</span>');
+      if (sx) out.push('<span class="lq-fc fu" title="ほかの方向の形">ほか×' + sx + '</span>');
+      if (ss) out.push('<span class="lq-fc" title="どちらにも数えない★">★×' + ss + '</span>');
+      if (no) out.push('<span class="lq-fc">印にならない ' + no + '</span>');
+      if (dark) out.push('<span class="lq-fc dk">闇の力 ' + dark + '</span>');
+      if (nx) out.push('<span class="lq-fc" title="' + esc(LXL.N.segNextText(m, p)) + '">節目まで' + nx.left + '</span>');
+      return out.join('');
+    }
     if (LXL.N.road && LXL.N.road() && p) {   // N6 1本の道: 自分の形・ほかの形で、道のマスがいくつ埋まるか
       var own = LXL.N.shape(LXL.N.def(m).want), past = form === 'fuse' ? aw + fu + shut : form === 'awake' ? fu + shut : 0;
       if (form === 'awake' && aw) out.push('<span class="lq-fc aw" title="覚醒へ進む">' + esc(own) + '×' + aw + '（覚醒へ）</span>');
@@ -159,6 +174,9 @@
     if (top < Q.CHAPTERS.length) h += '<p class="note x-more">第' + (top + 1) + '章「' + esc(Q.chapter(top + 1).name) + '」は、第' + top + '章のキークエストを全部クリアすると開く。</p>';
     h += keyEditHtml();
     if (camp.log.length) h += '<details class="lq-log"><summary>これまで（' + camp.log.length + '）</summary><ol>' + camp.log.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ol></details>';
+    var sg = segSet();
+    h += '<div class="lq-segrow"><span class="lq-l">道の決まり</span><label title="10/19「強化の組み直し」: 5マスごとの区切りと節目。切にすると 10/16 の3マスの道"><input type="checkbox" data-qseg="on"' + (sg.on ? ' checked' : '') + '> 区切りの道（' + (sg.on ? sg.len + 'マスで1区切り' : '切: 3マスの道') + '）</label>' +
+      (window.LabTrial ? '<button type="button" data-q="trial">強化ためし</button>' : '') + '</div>';
     h += '<div class="lab-run-buttons"><button type="button" data-q="paths">道を見る</button><button type="button" data-q="restart">最初から（道も0から）</button><button type="button" data-q="close">閉じる</button></div>' +
       (storeOk ? '' : '<p class="note danger">この環境では1周の進みを持ち越せません（localStorage が使えない）。</p>') + '</div>';
     return h;
@@ -182,7 +200,7 @@
       '<div class="lq-row"><span class="lq-l">ミッション</span><ul class="lq-ms">' + missionDefs(q).map(function (t) {
         return '<li title="' + esc(t.text) + '">' + (t.dir === 'dark' ? '<span class="lt-mark d-dark">闇</span>' : mark(t.dir)) + esc(t.name) + '</li>';
       }).join('') + '</ul></div>' +
-      '<p class="note x-more">' + n + '人を選ぶ。おすすめの魔法は、盤面のその場所に立つ。ほかの仲間は、空いた場所に入る。ミッションを取った魔法に印が付く（やりたいことと合えば覚醒方面、合わなければ融合方面）。</p>' +
+      '<p class="note x-more">' + n + '人を選ぶ。おすすめの魔法は、盤面のその場所に立つ。ほかの仲間は、空いた場所に入る。' + (LXL.N.seg && LXL.N.seg() ? 'ミッションを取った魔法の道に、その形で1マス入る（区切りの終わりに、多い方の形で節目）。' : 'ミッションを取った魔法に印が付く（やりたいことと合えば覚醒方面、合わなければ融合方面）。') + '</p>' +
       '<div class="lq-picks">' + camp.roster.map(function (m) {
         var on = pick.party.indexOf(m) >= 0, W = LXL.N.wantOf(m);
         return '<button type="button" class="lq-pick' + (on ? ' on' : '') + '" data-q="pick" data-m="' + esc(m) + '">' +
@@ -236,7 +254,7 @@
     var q = Q.quest(pick.id);
     if (!q || pick.party.length !== Q.PARTY_SIZE) return;
     var T = TUI(), dark = pick.party.some(function (m) { var p = T ? T.pathOf(m) : null; return p && p.dark > 0; });
-    var p = Q.preset(q, pick.party, R.findPreset, { dark: dark });
+    var p = Q.preset(q, pick.party, R.findPreset, { dark: dark, seg: segSet() });   // N7 区切りの道（拠点の「道の決まり」）
     if (!p) { app.addLog('【クエスト制】盤面がない: ' + q.board); return; }
     var list = R.LAB_PRESETS;
     for (var i = list.length - 1; i >= 0; i--) if (list[i].id === p.id) list.splice(i, 1);
@@ -286,6 +304,7 @@
     else if (a === 'back') { view = 'board'; render(); }
     else if (a === 'go') go();
     else if (a === 'paths') { if (TUI()) TUI().openPaths(); }   // 道を見る画面は拠点の上に出る（閉じると拠点に戻る）
+    else if (a === 'trial') { close(); if (window.LabTrial) window.LabTrial.open(); }   // 強化ためし（10/19）
     else if (a === 'restart') { if (window.confirm('1周目からやり直します（クリアの記録・仲間・治安・魔法の道が全部消える）。よいですか？')) { restart(); view = 'board'; render(); } }
     else if (a === 'pick') {
       var m = b.getAttribute('data-m'), k = pick.party.indexOf(m);
@@ -294,6 +313,8 @@
     }
   });
   box.addEventListener('change', function (e) {
+    var sg = e.target.closest('[data-qseg]');
+    if (sg && TUI() && TUI().setSegSettings) { TUI().setSegSettings({ on: sg.checked }); useN(); app.addLog('【クエスト制】道の決まり: ' + (sg.checked ? '区切りの道（10/19）' : '3マスの道（10/16）')); render(); return; }
     var c = e.target.closest('[data-qkey]');
     if (!c) return;
     camp = Q.setKey(camp, c.getAttribute('data-qkey'), c.checked);
