@@ -76,28 +76,39 @@ function play(s, mode, width) {
   return s;
 }
 
-function lap(order, mode, len, width, each) {
+// 1戦（負けたら tries 回まで）。paths は魔法ごとの道（読むだけ）。{ state, tries }
+function battle(q, party, paths, mode, width, len, maxTries) {
+  var p = Q.preset(q, party, R.findPreset, { seg: { len: len }, dark: party.some(function (m) { return paths[m] && paths[m].dark > 0; }) });
+  R.LAB_PRESETS.push(p);
+  var st = null, tries = 0;
+  try {
+    while (tries < (maxTries || 3) && !(st && st.result === 'win')) {
+      tries++;
+      R.labApply(p.lab, p.labOpts);
+      var s0 = R.loadPreset(p.id);
+      s0.units.forEach(function (u) { if (u.side === 'ally' && N.def(u.magic)) u.labPath = LL.normPath(u.magic, paths[u.magic] || null); });
+      st = play(R.startBattle(s0).state, mode, width);
+    }
+  } finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(p), 1); }
+  return { state: st, tries: tries };
+}
+function recParty(q, roster) {
+  var party = Q.recommend(q, R.findPreset).filter(function (m) { return roster.indexOf(m) >= 0; });
+  roster.forEach(function (m) { if (party.length < Q.PARTY_SIZE && party.indexOf(m) < 0) party.push(m); });
+  return party;
+}
+// opts.quests: 受ける順（なければボードの上から）・opts.party(q, roster): 連れていく仲間（なければおすすめ）
+function lap(order, mode, len, width, each, opts) {
+  opts = opts || {};
   var roster = Q.ROSTER_START.slice(), paths = {}, log = [];
-  route(order).forEach(function (q) {
-    var party = Q.recommend(q, R.findPreset).filter(function (m) { return roster.indexOf(m) >= 0; });
-    roster.forEach(function (m) { if (party.length < Q.PARTY_SIZE && party.indexOf(m) < 0) party.push(m); });
-    var p = Q.preset(q, party, R.findPreset, { seg: { len: len } });
-    R.LAB_PRESETS.push(p);
-    var st = null, tries = 0;
-    try {
-      while (tries < 3 && !(st && st.result === 'win')) {
-        tries++;
-        R.labApply(p.lab, p.labOpts);
-        var s0 = R.loadPreset(p.id);
-        s0.units.forEach(function (u) { if (u.side === 'ally' && N.def(u.magic)) u.labPath = LL.normPath(u.magic, paths[u.magic] || null); });
-        st = play(R.startBattle(s0).state, mode, width);
-      }
-    } finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(p), 1); }
+  (opts.quests ? opts.quests.map(Q.quest) : route(order)).forEach(function (q) {
+    var party = opts.party ? opts.party(q, roster) : recParty(q, roster);
+    var b = battle(q, party, paths, mode, width, len), st = b.state, tries = b.tries;
     var got = [];
     if (st.result === 'win') LL.gotOrder(st).forEach(function (t) {
       var h = t.got.by || (t.got.cands || [])[0];
       if (!h) return;
-      if (t.dir === 'dark') { got.push({ name: t.name, w: 'dark', m: h.magic }); return; }
+      if (t.dir === 'dark') { paths[h.magic] = paths[h.magic] || LL.newPath(h.magic); LL.gain(paths[h.magic], h.magic, 'dark'); got.push({ name: t.name, w: 'dark', m: h.magic }); return; }
       paths[h.magic] = paths[h.magic] || LL.newPath(h.magic);
       var before = LL.normPath(h.magic, paths[h.magic]);
       var g = LL.gain(paths[h.magic], h.magic, t.dir);
@@ -128,7 +139,10 @@ function show(order, mode, len, width) {
   console.log('  （' + Math.round((Date.now() - t0) / 1000) + '秒）');
 }
 
-var a = process.argv.slice(2), len = Number(a[2]) || 5, width = Number(a[3]) || 25;
-var orders = a[0] ? [a[0]] : ['calm', 'rough'], modes = a[1] ? [a[1]] : ['win', 'aim'];
-orders.forEach(function (o) { modes.forEach(function (m) { show(o, m, len, width); }); });
-R.labApply([]);
+module.exports = { route: route, play: play, battle: battle, lap: lap, recParty: recParty };
+if (require.main === module) {
+  var a = process.argv.slice(2), len = Number(a[2]) || 5, width = Number(a[3]) || 25;
+  var orders = a[0] ? [a[0]] : ['calm', 'rough'], modes = a[1] ? [a[1]] : ['win', 'aim'];
+  orders.forEach(function (o) { modes.forEach(function (m) { show(o, m, len, width); }); });
+  R.labApply([]);
+}
