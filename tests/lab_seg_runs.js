@@ -1,8 +1,9 @@
 /*
- * N7 区切りの道（10/19）のシミュレーションを、条件を変えて何回か回す（結果は JSON。まとめのページの元）。
- *   node tests/lab_seg_runs.js quest <クエストid> <出力.json>   … そのクエストを、5つの魔法から3人の組み合わせ全部（10通り）で1回ずつ戦う（道は0から）
- *   node tests/lab_seg_runs.js lap <やり方> <出力.json>          … 1周（道を持ち越す）。やり方は下の LAPS
- *   戦い方は lab_seg_sim.js（自動の打ち手。幅12・区切り5）。
+ * N7 区切りの道のシミュレーションを、条件を変えて回す（結果は JSON。まとめの元）。10/19「ミッションの組み直しと道の切り替え」で組み直した
+ *   node tests/lab_seg_runs.js quest <クエストid> <出力.json> [番号]   … そのクエストを、5つの魔法から3人の組み合わせ全部（10通り）で1回ずつ戦う（道は0から・勝つだけ）。番号（0〜9）があればその組だけ（手分けして回す）
+ *   node tests/lab_seg_runs.js lap <やり方> <A|B> <出力.json>          … 1周（道を持ち越す）。やり方は下の LAPS か aim:<魔法>（その魔法を狙う）
+ *   戦い方・選び方は lab_seg_sim.js（自動の打ち手。幅12・区切り5。誰が取るかは「クリア後に選ぶ」）。
+ *   quest の結果は、だれが候補になったか（ミッションごと・役ごと）。道は0からなので、道の決まり（A/B）では変わらない。
  */
 var fs = require('fs');
 var R = require('../rules.js');
@@ -19,49 +20,38 @@ function combos() {
 }
 function missionsOf(st) {
   return (st.labTargets || []).map(function (t) {
-    var h = t.got ? (t.got.by || (t.got.cands || [])[0]) : null;
-    return { id: t.id, name: t.name, w: t.dir, by: h ? h.magic : null, how: t.got ? t.got.how : null, kind: h && t.dir !== 'dark' && N.def(h.magic) ? N.segKind(h.magic, t.dir) : null };
+    return { id: t.id, name: t.name, w: t.dir, cands: S.candsOf(t).map(function (h) { return h.magic; }), roles: S.roleList(t), turn: t.got ? t.got.turn : null };
   });
 }
-function pathInfo(m, p0) {
-  var p = LL.normPath(m, p0);
-  return { marks: LL.pathMarks(m, p), road: p.road.map(function (r) { return r.w; }), cells: p.road.length, ms: p.ms.map(function (x) { return x.kind; }), form: p.form, awake: p.awake, range: p.range || 0, dark: p.dark || 0,
-    small: N.smallCells(m, p).filter(function (c) { return c.step; }).map(function (c) { return c.step.name; }) };
-}
 
-// 1周のやり方
-function keepRec(must) {   // must の魔法を必ず連れていき、残りはおすすめから
-  return function (q, roster) {
-    var party = must.filter(function (m) { return roster.indexOf(m) >= 0; });
-    S.recParty(q, roster).forEach(function (m) { if (party.length < Q.PARTY_SIZE && party.indexOf(m) < 0) party.push(m); });
-    return party;
-  };
-}
+// 1周のやり方（勝つだけ）。aim:<魔法> は lab_seg_sim.js の狙う打ち手
 var LAPS = {
   board:  { label: 'ボードの上から順・おすすめの仲間', order: 'calm' },
   side:   { label: '寄り道を先に（谷 → 畑 → 森 → 村 → 第2章）', order: 'calm', quests: ['c1lure', 'c1field', 'c1burn', 'c1guard', 'c2grass', 'c2cargo', 'c2hill'] },
   key:    { label: 'キークエストだけ（寄り道しない）', order: 'calm', quests: ['c1burn', 'c1guard', 'c2cargo', 'c2hill'] },
   rough:  { label: '裏クエストを受ける（荒れている）', order: 'rough' },
-  grow:   { label: '草と火を必ず連れていく（育てたい魔法を入れる）', order: 'calm', party: keepRec(['grass', 'fire']) },
-  narrow: { label: 'ボードの上から順・打ち手の幅8（別の手を選ぶ）', order: 'calm', width: 8 },
-  aim:    { label: 'ボードの上から順・自分の方向を狙う', order: 'calm', mode: 'aim' }
+  grow:   { label: '草と火を必ず連れていく（育てたい魔法を入れる）', order: 'calm', party: S.keepRec(['grass', 'fire']) },
+  narrow: { label: 'ボードの上から順・打ち手の幅8（別の手を選ぶ）', order: 'calm', width: 8 }
 };
 
 var a = process.argv.slice(2), out = {};
 if (a[0] === 'quest') {
   var q = Q.quest(a[1]);
-  out = { quest: q.id, runs: combos().map(function (party) {
-    var t0 = Date.now(), b = S.battle(q, party, {}, 'win', WIDTH, LEN, 1);
+  var list = combos().map(function (p, i) { return { p: p, i: i }; }).filter(function (x) { return a[3] === undefined || x.i === Number(a[3]); });
+  out = { quest: q.id, runs: list.map(function (x) {
+    var party = x.p;
+    var t0 = Date.now(), b = S.battle(q, party, {}, { width: WIDTH, len: LEN, rule: 'A' }, 1);
     return { party: party, result: b.state.result || 'none', turn: b.state.turn, ms: Date.now() - t0, missions: missionsOf(b.state) };
   }) };
+  fs.writeFileSync(a[2], JSON.stringify(out, null, 1));
 } else if (a[0] === 'lap') {
-  var L = LAPS[a[1]];
-  var r = S.lap(L.order, L.mode || 'win', LEN, L.width || WIDTH, null, { quests: L.quests, party: L.party });
-  out = { lap: a[1], label: L.label, quests: r.log.map(function (x) {
-    return { id: x.q.id, name: x.q.name, party: x.party, result: x.result, turn: x.turn, tries: x.tries, all: x.all,
-      got: x.got.map(function (g) { return { name: g.name, w: g.w, m: g.m, own: !!g.own, slot: g.slot || null, small: g.small || null, ms: g.ms || null }; }) };
-  }), paths: Object.keys(r.paths).reduce(function (o, m) { o[m] = pathInfo(m, r.paths[m]); return o; }, {}) };
-} else { console.log('使い方: quest <id> <out> ／ lap <' + Object.keys(LAPS).join('|') + '> <out>'); process.exit(1); }
-fs.writeFileSync(a[2], JSON.stringify(out, null, 1));
-console.log('wrote ' + a[2]);
+  var aim = /^aim:/.test(a[1]) ? a[1].slice(4) : null, L = aim ? { label: R.magicName(aim) + 'を狙う（ボードの上から順・' + R.magicName(aim) + 'を必ず連れていく）', order: 'calm' } : LAPS[a[1]], rule = a[2] === 'B' ? 'B' : 'A';
+  var t1 = Date.now();
+  var r = S.lap({ order: L.order, rule: rule, aim: aim, len: LEN, width: L.width || WIDTH, quests: L.quests, party: L.party });
+  out = { lap: a[1], rule: rule, aim: aim, label: L.label, ms: Date.now() - t1, quests: r.log.map(function (x) {
+    return { id: x.q.id, name: x.q.name, party: x.party, result: x.result, turn: x.turn, tries: x.tries, all: x.all, missions: x.missions, got: x.got };
+  }), paths: Object.keys(r.paths).reduce(function (o, m) { o[m] = S.pathInfo(m, r.paths[m]); return o; }, {}) };
+  fs.writeFileSync(a[3], JSON.stringify(out, null, 1));
+} else { console.log('使い方: quest <id> <out> ／ lap <' + Object.keys(LAPS).join('|') + '|aim:<魔法>> <A|B> <out>'); process.exit(1); }
+console.log('wrote ' + (a[0] === 'quest' ? a[2] : a[3]));
 R.labApply([]);

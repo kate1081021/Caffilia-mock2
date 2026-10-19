@@ -362,7 +362,10 @@
       //   len 区切りのマス数（3・5・7）／star ★の数え方: 'own' 自分の方向 ／'other' ほかの方向 ／'none' どちらでもない
       //   awakeLater 2つ目からの節目（覚醒方面）: 'own' 自分の方向が多ければ覚醒・ほかが多ければ範囲の大きな強化 ／'any' 多い方に関係なく覚醒
       //   fuseLater 2つ目からの節目（融合方面）: 'range' 範囲の大きな強化 ／'none' 何もない（未定）
-      N7: { on: false, len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range' }
+      //   （10/19「ミッションの組み直しと道の切り替え」）
+      //   rule 道の決まり: 'A' 自分の方向かそれ以外か、多い方で節目（上の star・awakeLater・fuseLater）／'B' 方向を2つ持つ。区切りに同じ形が3つ以上で、その方向に変化・覚醒（lab_change.js の DIRS2）
+      //   take 誰が取るか: 'pick' ミッションを満たした1発を撃った魔法が候補（決め手は役ごと）。勝ったあと育ちの画面で1人選ぶ ／'hand' 達成の一手を撃った魔法が取る（10/19 までの形）
+      N7: { on: false, len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range', rule: 'A', take: 'pick' }
     }
   };
 

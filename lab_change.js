@@ -14,6 +14,7 @@
  *   N7「区切りの道」がオンなら: 道は続き、len（初期5）マスごとの区切りの終わりに節目（多い方の形で、変化・覚醒・範囲の大きな強化）。
  *     1マスごとに小さな強化（SMALL）が1つ。範囲（形が増える）は節目の範囲の大きな強化（RANGE）だけ
  *   覚醒方面だけ、変化のあと覚醒方面の印がさらに awake（N1 初期3）たまると覚醒
+ *   N7 の rule: B（10/19「ミッションの組み直しと道の切り替え」）なら: 各魔法が方向を2つ（DIRS2）。区切りに同じ形が B_NEED 以上で、その方向に変化・覚醒（下の DIRS2 の説明）
  *
  * 変化先（FORMS）: 属性 → { awake: 覚醒方面の変化（lv2 が覚醒）, fuse: 融合方面の変化 }
  *   id     処理の番号（lab_rules.js の N の節）
@@ -152,11 +153,34 @@
 
   // ミッション 42〜44（材料まとめの 41 に足したもの）。1〜41 は lab_power.js の MISSIONS を使う
   //   43・44 は盤面ごとに中身を決める（シナリオの labTargetList に { id, cells } や { id, names } で置く）
+  //   45〜48（10/19「ミッションの組み直しと道の切り替え」）: 誰でも取れる、動かす・止めるのミッション。撃つ前と後の、敵の予告と行き先（D2 の矢印）をくらべる
+  //     押しても、壁を作っても、立ち位置で誘っても取れる（どの魔法・どのシナジーで取るかは書かない）。needsPlan は敵の行き先が見える（D2）ときだけ出す
   var MISSIONS_ADD = [
     { no: 42, id: 'shot1', name: '魔法を1発撃つ', text: '魔法を1発撃つ（どこへでも）', check: { kind: 'shot' } },
     { no: 43, id: 'hitCell', name: '決められたマスに撃つ', text: '光っているマスに魔法を当てる', check: { kind: 'hitTile', cells: [] } },
-    { no: 44, id: 'synergy', name: '決められたシナジーを起こす', text: '決められた決め手を起こす', check: { kind: 'finName', names: ['燃え広がり'] } }
+    { no: 44, id: 'synergy', name: '決められたシナジーを起こす', text: '決められた決め手を起こす', check: { kind: 'finName', names: ['燃え広がり'] } },
+    { no: 45, id: 'reroute', name: '敵の予定の道を変えさせる', text: '敵が次のターンに向かう先（矢印）を、別の所に変えさせる', check: { kind: 'reroute' }, needsPlan: true },
+    { no: 46, id: 'aimFoe', name: '敵の予告を別の敵に向ける', text: '敵の予告が、別の敵に当たるようにする', check: { kind: 'aimFoe' } },
+    { no: 47, id: 'guardHit', name: '敵の予告を外させる', text: '敵の予告で当たるはずだった味方・村・馬車に、当たらないようにする', check: { kind: 'guardHit' } },
+    { no: 48, id: 'keepAway', name: '敵を馬車から遠ざける', text: '敵が次のターンに向かう先（矢印）を、馬車から遠くにする', check: { kind: 'keepAway' }, needsPlan: true, needsCarry: true },
+    { no: 49, id: 'lureInto', name: '敵を森・泥沼・水辺へ誘い込む', text: '敵が次のターンに向かう先（矢印）を、森・泥沼・水たまりの中にする', check: { kind: 'lureInto' }, needsPlan: true },
+    { no: 50, id: 'guardAlly', name: '味方への予告を外させる', text: '敵の予告で当たるはずだった味方に、当たらないようにする', check: { kind: 'guardAlly' } },
+    { no: 51, id: 'guardObj', name: '村・馬車への予告を外させる', text: '敵の予告で当たるはずだった村・馬車に、当たらないようにする', check: { kind: 'guardObj' }, needsObj: true }
   ];
+
+  // 道の決まり B（10/19「ミッションの組み直しと道の切り替え」）【仮】: 各魔法が方向を2つ持つ
+  //   1つ目 今のやりたいこと（変化と覚醒は今の覚醒方面: 火なら 炎 → 業火）
+  //   2つ目 今の融合先を作るときの相手の属性の方向（変化は今の融合先: 火なら 火の渦。その先の覚醒はまだない → 未定）
+  //   区切りの中で同じ形が B_NEED 以上あり、それがその魔法の方向なら、その方向に変化（そろわなければ、節目では何も起きない）。
+  //   変化のあと、そのあとの区切りで同じ方向の形が B_NEED 以上なら覚醒。★は1つ目の方向として数える。データで差し替えられる
+  var DIRS2 = {
+    grass: ['spread', 'defeat'],   // 広げる（森 → 大樹）／倒す（桜。山＝土）
+    earth: ['defeat', 'stop'],     // 倒す（岩 → 岩山）／止める（泥。川＝水）
+    fire:  ['defeat', 'move'],     // 倒す（炎 → 業火）／動かす（火の渦。風）
+    water: ['stop', 'defeat'],     // 止める（湖 → 氷）／倒す（源流。山＝土）
+    wind:  ['move', 'defeat']      // 動かす（旋風 → 竜巻）／倒す（砂嵐。土）
+  };
+  var B_NEED = 3;
 
   // ミッションの仕分け【仮】（id → やりたいこと）。画面の「ミッションの仕分け」で変えられる
   //   まず言葉の意味で分け、tests/lab_nsort.js で「どの属性が取りやすいか」を数えて確かめる（LAB_REPORT の N）
@@ -169,9 +193,9 @@
     waterDown: 'spread', half: 'spread', nextTo: 'spread',
     // 動かす（位置と向き）
     redirect: 'move', push2: 'move', pushInto: 'move', bump: 'move', gather: 'move', lower: 'move', edge: 'move', turnIntent: 'move',
-    rescue: 'move', carry: 'move', noWalk: 'move',
+    rescue: 'move', carry: 'move', noWalk: 'move', reroute: 'move', aimFoe: 'move', keepAway: 'move', lureInto: 'move',
     // 止める（足・道・予告・守る）
-    held: 'stop', held2: 'stop', heldFin: 'stop', blocked: 'stop', foiled: 'stop', neverShot: 'stop', noLoss: 'stop', villagesSafe: 'stop',
+    held: 'stop', held2: 'stop', heldFin: 'stop', blocked: 'stop', foiled: 'stop', neverShot: 'stop', noLoss: 'stop', villagesSafe: 'stop', guardHit: 'stop', guardAlly: 'stop', guardObj: 'stop',
     // どれでも（序盤の目印）
     shot1: 'free', hitCell: 'free', synergy: 'free'
   };
@@ -187,7 +211,7 @@
   var QUEST_ORDER = ['defeat', 'spread', 'move', 'stop'];
   var QUEST_LEAN = { annihilate: 'defeat', defense: 'stop', escort: 'move', retrieve: 'move' };
 
-  var api = { WANTS: WANTS, WANT_ORDER: WANT_ORDER, SORT_ORDER: SORT_ORDER, ATTR: ATTR, ATTR_ORDER: ATTR_ORDER, STEPS: STEPS, MORE: MORE, MORE_MAX: MORE_MAX, SMALL: SMALL, RANGE: RANGE,
+  var api = { WANTS: WANTS, WANT_ORDER: WANT_ORDER, SORT_ORDER: SORT_ORDER, ATTR: ATTR, ATTR_ORDER: ATTR_ORDER, STEPS: STEPS, MORE: MORE, MORE_MAX: MORE_MAX, SMALL: SMALL, RANGE: RANGE, DIRS2: DIRS2, B_NEED: B_NEED,
     STAND_ON: STAND_ON, FORMS: FORMS, MISSIONS_ADD: MISSIONS_ADD, SORT: SORT, TRAITS: TRAITS,
     QUEST_POOL: QUEST_POOL, QUEST_NAME: QUEST_NAME, QUEST_ORDER: QUEST_ORDER, QUEST_LEAN: QUEST_LEAN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

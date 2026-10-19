@@ -85,6 +85,17 @@
       else if (k === 'awake') aw++; else if (k === 'fuse') fu++; else no++;
     });
     var out = [];
+    if (LXL.N.bOn && LXL.N.bOn() && p) {   // 道の決まり B（10/19）: 1つ目の方向・2つ目の方向・方向ではない形
+      var D = LXL.N.bDirs(m), c1 = 0, c2 = 0, c0 = 0;
+      missionDefs(q).forEach(function (t) { if (t.dir === 'dark') return; var sk = LXL.N.segKind(m, t.dir); if (sk === 'awake') c1++; else if (sk === 'fuse') c2++; else c0++; });
+      var nb = LXL.N.segNext(m, p);
+      if (c1) out.push('<span class="lq-fc aw" title="1つ目の方向の形">' + esc(LXL.N.shape(D[0])) + '×' + c1 + '</span>');
+      if (c2) out.push('<span class="lq-fc fu" title="2つ目の方向の形">' + esc(LXL.N.shape(D[1])) + '×' + c2 + '</span>');
+      if (c0) out.push('<span class="lq-fc" title="この魔法の方向ではない形（道には入る）">ほか×' + c0 + '</span>');
+      if (dark) out.push('<span class="lq-fc dk">闇の力 ' + dark + '</span>');
+      if (nb) out.push('<span class="lq-fc" title="' + esc(LXL.N.segNextText(m, p)) + '">節目まで' + nb.left + '</span>');
+      return out.join('');
+    }
     if (LXL.N.seg && LXL.N.seg() && p) {   // N7 区切りの道: 変化のあとも全部、道に入る（自分の形・ほかの形）
       var so = 0, sx = 0, ss = 0, sown = LXL.N.shape(LXL.N.def(m).want);
       missionDefs(q).forEach(function (t) { if (t.dir === 'dark') return; var k = LXL.N.kind(m, t.dir); if (k !== 'awake' && k !== 'fuse') return; var sk = LXL.N.segKind(m, t.dir); if (sk === 'awake') so++; else if (sk === 'star') ss++; else sx++; });
@@ -176,6 +187,8 @@
     if (camp.log.length) h += '<details class="lq-log"><summary>これまで（' + camp.log.length + '）</summary><ol>' + camp.log.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ol></details>';
     var sg = segSet();
     h += '<div class="lq-segrow"><span class="lq-l">道の決まり</span><label title="10/19「強化の組み直し」: 5マスごとの区切りと節目。切にすると 10/16 の3マスの道"><input type="checkbox" data-qseg="on"' + (sg.on ? ' checked' : '') + '> 区切りの道（' + (sg.on ? sg.len + 'マスで1区切り' : '切: 3マスの道') + '）</label>' +
+      (sg.on ? '<label title="A: 自分の方向か、それ以外か（多い方で節目）／B: 方向を2つ持つ（同じ形が3つ以上で、その方向に変化）">決まり <select data-qopt="rule"><option value="A"' + (sg.rule !== 'B' ? ' selected' : '') + '>A 自分の方向かそれ以外か</option><option value="B"' + (sg.rule === 'B' ? ' selected' : '') + '>B 方向を2つ</option></select></label>' +
+        '<label title="クリア後に選ぶ: ミッションを満たした1発を撃った魔法が候補。勝ったあと、育ちの画面で1人選ぶ（10/19）">取り方 <select data-qopt="take"><option value="pick"' + (sg.take !== 'hand' ? ' selected' : '') + '>クリア後に選ぶ</option><option value="hand"' + (sg.take === 'hand' ? ' selected' : '') + '>達成の一手</option></select></label>' : '') +
       (window.LabTrial ? '<button type="button" data-q="trial">強化ためし</button>' : '') + '</div>';
     h += '<div class="lab-run-buttons"><button type="button" data-q="paths">道を見る</button><button type="button" data-q="restart">最初から（道も0から）</button><button type="button" data-q="close">閉じる</button></div>' +
       (storeOk ? '' : '<p class="note danger">この環境では1周の進みを持ち越せません（localStorage が使えない）。</p>') + '</div>';
@@ -315,6 +328,8 @@
   box.addEventListener('change', function (e) {
     var sg = e.target.closest('[data-qseg]');
     if (sg && TUI() && TUI().setSegSettings) { TUI().setSegSettings({ on: sg.checked }); useN(); app.addLog('【クエスト制】道の決まり: ' + (sg.checked ? '区切りの道（10/19）' : '3マスの道（10/16）')); render(); return; }
+    var so = e.target.closest('[data-qopt]');
+    if (so && TUI() && TUI().setSegSettings) { var o = {}; o[so.getAttribute('data-qopt')] = so.value; TUI().setSegSettings(o); useN(); app.addLog('【クエスト制】' + (so.getAttribute('data-qopt') === 'rule' ? '道の決まり ' + so.value : '取り方: ' + (so.value === 'hand' ? '達成の一手' : 'クリア後に選ぶ'))); render(); return; }
     var c = e.target.closest('[data-qkey]');
     if (!c) return;
     camp = Q.setKey(camp, c.getAttribute('data-qkey'), c.checked);

@@ -2826,7 +2826,8 @@
   //   enemies: [{ id, from, to, shootFrom, dir, magic, cells, tileChanges, damages, finishers, cancelled }]
   //   enemyDamage: 発動でダメージを受ける者（味方も敵も）。fireSpread・burn: 発動のあとのターン終了処理
   //   allies: 構える味方の予告（敵より先に発動する。形は enemies と同じ。damages は enemyDamage にも入る）
-  function forecast(s) {
+  //   opts.noPaths: ラボ D2 の「敵が次のターンに向かう先」（labPaths）を数えない（重いので、要らないとき。ラボのミッションの判定・自動の打ち手）
+  function forecast(s, opts) {
     //   rushes: 突進の敵が次のターンの始めに走る道（ターン終了処理のあとの盤面で、敵の順に走らせて計算する）
     var out = { allies: [], enemies: [], marches: [], rushes: [], fireSpread: [], burnOut: [], burn: [], enemyDamage: [], wagon: null };
     if (s.result) return out;
@@ -2884,7 +2885,7 @@
     // ターン終了処理で受けるダメージ（炎の上・火傷）。燃え移りも含めて、そのまま動かして数える
     var later = clone(sim), laterEv = [];
     timePasses(later, laterEv, function () {});
-    if (LX) { var lp = LX.nextPaths(later); if (lp) out.labPaths = lp; }   // ラボ D2: 敵が次のターンに向かう先（D4: 崩すマス）
+    if (LX && !(opts && opts.noPaths)) { var lp = LX.nextPaths(later); if (lp) out.labPaths = lp; }   // ラボ D2: 敵が次のターンに向かう先（D4: 崩すマス）
     var sum = {};
     laterEv.forEach(function (e) {
       if (e.type !== 'damage') return;

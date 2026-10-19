@@ -2615,7 +2615,7 @@
       if (!on('L7')) return;
       var wiz = e.side === 'enemy' && (s.labWizardIds || []).indexOf(e.id) >= 0;
       (s.labTargets || []).forEach(function (t) {
-        if (t.got || !t.check) return;
+        if ((t.got && !pickMode()) || !t.check) return;
         var k = t.check.kind;
         if ((k === 'breakObj' && e.side === 'object' && e.kind === t.check.obj) || (k === 'killWizard' && wiz)) {
           achieve(s, t, { id: null, side: 'time' }, c ? preparersAt(s, s.labMaker || {}, [c]) : [], ev, c ? [c] : []);
@@ -2645,7 +2645,8 @@
       s.units.forEach(function (u) { delete u.labHeldBy; delete u.labHeldRun; delete u.labMovedBy; delete u.labBind; });
       if (on('L7')) { var wz = s.units.filter(function (u) { return u.labWizard; }).map(function (u) { return u.id; }); if (wz.length) s.labWizardIds = wz; else delete s.labWizardIds; }   // L7
     }
-    function openT(s, kind) { return (s.labTargets || []).filter(function (t) { return !t.got && t.check && t.check.kind === kind; }); }
+    // まだ見ているミッション（クリア後に選ぶ形 pickMode では、達成したあとも候補が増えるので見続ける）
+    function openT(s, kind) { var pk = pickMode(); return (s.labTargets || []).filter(function (t) { return (!t.got || pk) && t.check && t.check.kind === kind; }); }
     function uniqHands(list) { var out = []; list.forEach(function (h) { out = out.filter(function (x) { return x.id !== h.id; }); out.push(h); }); return out; }
     function handName(s, h) {
       if (!h) return '？';
@@ -2688,9 +2689,73 @@
       }
       return false;
     }
+    // ---- クリア後に選ぶ（10/19「ミッションの組み直しと道の切り替え」。N7 の take: 'pick'。初期） ----
+    //   ミッションを満たした1発を撃った魔法が「候補」。同じミッションを別の魔法がまた満たせば、その魔法も候補（勝っただけで全員が候補、にはしない）
+    //   決め手のミッション（FIN_KINDS）は、決め手に関わった役ごとに候補: 材料の自然を作った（空きに作った）・舞台を作った（先にある自然を、決め手の直前の姿に変えた）・決め手を起こした
+    //   止めた・動かした・ふさいだ など、ミッションが決めた手（taker）は、その手が味方なら候補。敵の手で満たしたものは候補にしない。
+    //   ターン終了の炎で倒れたときは、その炎（マス）を作った味方が候補（材料）
+    //   t.got = { cands: [手], roles: { id: [役] }, by: 候補が1人ならその手, how: 'pick', turn, seq }。勝ったあと、育ちの画面で候補から1人選ぶ（1人なら自動）
+    function pickMode() { return nSegOn() && lopt('N7', 'take', 'pick') !== 'hand'; }
+    var FIN_KINDS = { finKill: 1, finHits: 1, finHitsOne: 1, finChain: 1, finTurn: 1, fin3: 1, lastFin: 1, farFin: 1, bigFin: 1, enemyNatFin: 1, allThree: 1, finName: 1 };
+    var ROLE_NAME = { mat: '材料', stage: '舞台', trigger: '決め手', hand: '', maker: '作った', stopper: '止めた', mover: '動かした', helper: '手を貸した', last: '決着', still: '歩かなかった', carrier: '運んだ', blocker: 'ふさいだ' };
+    // マスごとの「その自然に手を入れた味方・敵」の記録（空きに戻ると消える）。pickMode のときだけ s.labHist = { マスの番号: [{ by, side, magic, from }] }
+    function histPush(s, i, old) {
+      if (!pickMode() || !s.labShot) return;
+      s.labHist = s.labHist || {};
+      var h = s.labHist[i] = s.labHist[i] || [];
+      h.push({ by: s.labShot.by, side: s.labShot.side, magic: s.labShot.magic, from: old || 'empty' });
+      if (h.length > 6) h.splice(0, h.length - 6);
+    }
+    // 決め手のマスの記録から、役ごとの候補（材料: 空きから作った ／舞台: 先にある自然を変えた）
+    function finRoles(s, hist, cells) {
+      var out = [], seen = {};
+      (cells || []).forEach(function (c) {
+        if (!inBounds(s, c[0], c[1])) return;
+        ((hist || {})[idx(s, c[0], c[1])] || []).forEach(function (e) {
+          if (e.side !== 'ally') return;
+          var role = e.from === 'empty' ? 'mat' : 'stage', k = e.by + ':' + role;
+          if (seen[k]) return;
+          seen[k] = true;
+          out.push({ h: { id: e.by, side: 'ally', magic: e.magic }, role: role });
+        });
+      });
+      return out;
+    }
+    function rolesText(s, got, h) { var r = (got.roles[h.id] || []).map(function (k) { return ROLE_NAME[k]; }).filter(Boolean); return r.length ? '（' + r.join('・') + '）' : ''; }
+    function pickAchieve(s, t, hand, roles, preps, ev, cells) {
+      var list = [];
+      if (hand && hand.side === 'ally') list.push({ h: hand, role: roles ? 'trigger' : (t.taker && t.taker !== 'hand' ? t.taker : 'hand') });
+      else if (hand && hand.side === 'time') (preps || []).forEach(function (h) { list.push({ h: h, role: 'mat' }); });   // ターン終了の炎: その炎を作った味方
+      if (hand && hand.side === 'ally') (roles || []).forEach(function (r) { list.push(r); });
+      list = list.filter(function (x) { return x.h && x.h.side === 'ally' && pathDef(x.h.magic); });
+      if (!list.length) {
+        if (!t.got && !t.missed) {
+          t.missed = true;
+          ev.push({ type: 'info', cells: cells || [], text: '【ミッション】' + dirName(t.dir) + '「' + t.name + '」は' + (hand && hand.side === 'time' ? 'ターン終了' : '敵の手') + 'で起きたので、だれも候補にならない（まだ取れる）' });
+        }
+        return false;
+      }
+      var got = t.got || { cands: [], roles: {}, how: 'pick', turn: s.turn }, fresh = [];
+      list.forEach(function (x) {
+        var id = x.h.id;
+        if (!got.roles[id]) { got.roles[id] = []; got.cands.push({ id: id, side: 'ally', magic: x.h.magic }); fresh.push(id); }
+        if (got.roles[id].indexOf(x.role) < 0) got.roles[id].push(x.role);
+      });
+      got.by = got.cands.length === 1 ? got.cands[0] : null;
+      if (!t.got) { s.labGotSeq = (s.labGotSeq || 0) + 1; got.seq = s.labGotSeq; got.turn = s.turn; }
+      t.got = got;
+      if (!fresh.length) return true;
+      var names = fresh.map(function (id) { var h = got.cands.filter(function (c) { return c.id === id; })[0]; return handName(s, h) + rolesText(s, got, h); });
+      var all = got.cands.length > fresh.length ? '（候補: ' + got.cands.map(function (h) { return handName(s, h); }).join('・') + '）' : '';
+      ev.push({ type: 'labTarget', target: t.id, dir: t.dir, cells: cells || [], pick: fresh.slice(),
+        text: '【ミッション】' + tShapeName(t.dir) + '「' + t.name + '」: この一手で、' + names.join('・') + 'が候補に入る' + all });
+      return true;
+    }
+    function tShapeName(w) { return non() ? nShape(w) + ' ' : dirName(w); }
     // 達成: 誰が取るかを決めて記録する（取る魔法・L1・L2・L5）。取れなければ false
-    //   hand は取る魔法の手（taker が hand なら達成の一手、ほかはミッションが決めた手）
-    function achieve(s, t, hand, preps, ev, cells) {
+    //   hand は取る魔法の手（taker が hand なら達成の一手、ほかはミッションが決めた手）。roles は決め手の役（pickMode のときだけ）
+    function achieve(s, t, hand, preps, ev, cells, roles) {
+      if (pickMode()) return pickAchieve(s, t, hand, roles, uniqHands(preps || []), ev, cells);
       var who = whoMode(), taker = t.taker || 'hand', got;
       preps = uniqHands(preps || []);
       var canTake = function (h) {
@@ -2742,13 +2807,15 @@
             held: track && x.side === 'enemy' ? heldNow(s, x) : false, heldBy: x.labHeldBy || null,
             intent: !!x.intent, facing: x.facing, tile: getTile(s, x.x, x.y), shots: x.labShots || 0 };   // M: 予告の前に倒す・向きを変える・高い所から下ろす・撃たせずに倒す
         }) };
+      if (pickMode()) ctx.labPre.hist = lclone(s.labHist || {});   // クリア後に選ぶ: 決め手の役（材料・舞台）
       ctx.labPrevShot = s.labShot;
       s.labShot = { by: u.id, side: u.side, magic: u.magic };
       if (mon()) mShotStart(s, u, ctx, ev);
     }
-    function makerSet(s, i, t) {
-      if (t === 'empty') { if (s.labMaker) delete s.labMaker[i]; return; }
+    function makerSet(s, i, t, old) {
+      if (t === 'empty') { if (s.labMaker) delete s.labMaker[i]; if (s.labHist) delete s.labHist[i]; return; }
       if (!s.labShot) return;   // 撃った1発の外（燃え移り・燃え尽き・エディット）は、元の作り手のまま
+      histPush(s, i, old);
       s.labMaker = s.labMaker || {};
       s.labSeq = (s.labSeq || 0) + 1;
       s.labMaker[i] = { by: s.labShot.by, side: s.labShot.side, magic: s.labShot.magic, n: s.labSeq };
@@ -2785,7 +2852,7 @@
       });
       var E = { pre: pre, changed: changed, deadEnemies: deadEnemies, finCells: finCells, moved: moved, byFin: byFin, at: at };   // M の判定に渡す
       (s.labTargets || []).forEach(function (t) {
-        if (t.got) return;
+        if (t.got && !pickMode()) return;   // クリア後に選ぶ: 達成したあとも、別の魔法がまた満たせば候補が増える
         var k = t.check.kind, r = null, taker = null;
         if (k === 'farNature') {
           // 距離は、撃つ前にいた敵から（その1発で倒した敵のそばも「離れた所」ではない）
@@ -2863,7 +2930,7 @@
           var mr = mJudge(s, u, ctx, ev, t, E);   // M: 41のミッションのうち、L にない判定
           if (mr) { r = mr.r; taker = mr.taker || null; }
         }
-        if (r) achieve(s, t, taker || hand, preparersAt(s, pre.maker, r.mat), ev, r.cells);
+        if (r) achieve(s, t, taker || hand, preparersAt(s, pre.maker, r.mat), ev, r.cells, !taker && FIN_KINDS[k] && pickMode() && ctx.finishers.length ? finRoles(s, pre.hist, r.mat && r.mat.length ? r.mat : E.finCells) : null);   // クリア後に選ぶ: 決め手は役ごとに候補
       });
       // 動かす「予告を別の敵に」: 味方が動かした敵を覚える（その敵が撃つまで）。敵の手で動いたら忘れる
       if (openT(s, 'redirect').length || (mon() && openT(s, 'enemyFinKill').length)) moved.forEach(function (m) {   // M: 敵の決め手で倒す（動かした味方が手を貸した）
@@ -2929,21 +2996,67 @@
     function afterPlan(s, ev) {
       if (!lon()) return;
       if (mon()) mAfterPlan(s, ev);   // M: 敵の予定の行き先（予定の道をふさぐ）
-      delete s.labPlanFin; delete s.labFoil;
-      if (s.result || !s.labTargets || !openT(s, 'foiled').length) return;
+      delete s.labPlanFin; delete s.labFoil; delete s.labLook;
+      if (s.result || !s.labTargets) return;
+      var fc = null, F = function () { return fc || (fc = I.forecast(s, { noPaths: !needPaths(s) })); };
+      if (lookOpen(s)) s.labLook = lookNow(s, F());   // 予定の道・予告をくらべるミッション（10/19）
+      if (!openT(s, 'foiled').length) return;
       var fin = {}, any = false;
-      I.forecast(s).enemies.forEach(function (p) {
+      F().enemies.forEach(function (p) {
         if (p.cancelled || !p.finishers || !p.finishers.length) return;
         fin[p.id] = p.finishers.map(function (f) { return f.name; }); any = true;
       });
       if (any) s.labPlanFin = fin;
     }
+    // ---- 動かす・止める（10/19「ミッションの組み直しと道の切り替え」）: 撃つ前と後の、敵の予告と行き先をくらべる ----
+    //   reroute 敵の予定の道を変えさせる ／keepAway 敵を馬車から遠ざける（D2 の矢印の先）／aimFoe 敵の予告を別の敵に向ける ／guardHit 敵の予告を外させる
+    //   押しても、壁を作っても、立ち位置で誘っても取れる。敵の予告が出そろったあと（味方の番の始め）に、敵ごとの行き先と予告で当たる相手を覚える（s.labLook）。
+    //   味方が1人動くたびに見直し、変わったらその味方の手で達成（そのときの形を覚え直す。次の味方の手は、そこからの変化で見る）。倒した敵は数えない
+    var LOOK = ['reroute', 'keepAway', 'aimFoe', 'guardHit', 'lureInto', 'guardAlly', 'guardObj'];
+    function lookOpen(s) { return !!s.labTargets && LOOK.some(function (k) { return openT(s, k).length; }); }
+    function needPaths(s) { return !!s.labTargets && (openT(s, 'reroute').length + openT(s, 'keepAway').length + openT(s, 'lureInto').length > 0); }
+    function lookNow(s, fc) {
+      var out = { e: {}, wagon: null }, w = I.objectsOf(s, 'wagon')[0];
+      if (w) out.wagon = [w.x, w.y];
+      ((fc && fc.labPaths) || []).forEach(function (p) { out.e[p.id] = { to: p.to.slice(), tile: getTile(s, p.to[0], p.to[1]), hits: [] }; });
+      ((fc && fc.enemies) || []).forEach(function (p) {
+        var o = out.e[p.id] = out.e[p.id] || { to: null, hits: [] };
+        if (p.cancelled) return;
+        (p.damages || []).forEach(function (d) { if (d.amount > 0 && d.id !== p.id && o.hits.indexOf(d.id) < 0) o.hits.push(d.id); });
+      });
+      return out;
+    }
+    function lookJudge(s, u, fc, ev) {
+      var a = s.labLook, b = lookNow(s, fc), hand = { id: u.id, side: 'ally', magic: u.magic };
+      var dist = function (p, q) { return Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]); };
+      var at = function (id) { var q = I.findUnit(s, id); return q ? [q.x, q.y] : null; };
+      var won = function (kind, cells) { openT(s, kind).forEach(function (t) { achieve(s, t, hand, [], ev, cells.filter(Boolean)); }); };
+      Object.keys(a.e).forEach(function (id) {
+        var was = a.e[id], now = b.e[id], e = I.findUnit(s, id);
+        if (!e || e.side !== 'enemy' || !now) return;
+        if (was.to && now.to && (was.to[0] !== now.to[0] || was.to[1] !== now.to[1])) won('reroute', [[e.x, e.y], now.to.slice()]);
+        if (was.to && now.to && a.wagon && b.wagon && dist(now.to, b.wagon) > dist(was.to, a.wagon)) won('keepAway', [[e.x, e.y], now.to.slice(), b.wagon]);
+        if (now.to && INTO[now.tile] && !(was.to && INTO[was.tile] && was.to[0] === now.to[0] && was.to[1] === now.to[1])) won('lureInto', [[e.x, e.y], now.to.slice()]);
+        var foes = now.hits.filter(function (x) { var q = I.findUnit(s, x); return q && q.side === 'enemy' && was.hits.indexOf(x) < 0; });
+        if (foes.length) won('aimFoe', [[e.x, e.y]].concat(foes.map(at)));
+        var safe = was.hits.filter(function (x) { var q = I.findUnit(s, x); return q && q.side !== 'enemy' && now.hits.indexOf(x) < 0; });
+        if (safe.length) won('guardHit', [[e.x, e.y]].concat(safe.map(at)));
+        var side = function (id2) { var q = I.findUnit(s, id2); return q ? q.side : null; };
+        var sa = safe.filter(function (x) { return side(x) === 'ally'; }), so = safe.filter(function (x) { return side(x) === 'object'; });
+        if (sa.length) won('guardAlly', [[e.x, e.y]].concat(sa.map(at)));
+        if (so.length) won('guardObj', [[e.x, e.y]].concat(so.map(at)));
+      });
+      s.labLook = b;
+    }
     // 味方が1人動いたあと: その手で、予告の決め手が起きなくなった敵を覚える（また起きるようになったら消す）
     function afterAct(s, u, ev) {
       if (mon()) mAfterAct(s, u, ev);   // M: 撃ったあと動ける・2回撃てる・予定の道をふさぐ
-      if (!lon() || s.result || !s.labPlanFin || !openT(s, 'foiled').length) return;
+      if (!lon() || s.result || !s.labTargets) return;
+      var fc = null, F = function () { return fc || (fc = I.forecast(s, { noPaths: !needPaths(s) })); };   // 敵の行き先（D2）は重いので、要るミッションがあるときだけ
+      if (s.labLook && u.side === 'ally' && lookOpen(s)) lookJudge(s, u, F(), ev);   // 予定の道・予告をくらべるミッション（10/19）
+      if (!s.labPlanFin || !openT(s, 'foiled').length) return;
       var still = {};
-      I.forecast(s).enemies.forEach(function (p) { if (!p.cancelled && p.finishers && p.finishers.length) still[p.id] = true; });
+      F().enemies.forEach(function (p) { if (!p.cancelled && p.finishers && p.finishers.length) still[p.id] = true; });
       s.labFoil = s.labFoil || {};
       Object.keys(s.labPlanFin).forEach(function (id) {
         if (still[id]) { delete s.labFoil[id]; return; }
@@ -3363,7 +3476,8 @@
       if (t.dir === 'off') return false;
       if (t.needsVillage && !I.objectsOf(s, 'village').length) return false;
       if (t.needsCarry && ['retrieve', 'escort'].indexOf(I.missionType(s)) < 0) return false;
-      if (t.check.kind === 'blocked' && !on('D2')) return false;
+      if (t.needsObj && !I.objectsOf(s, 'village').length && !I.objectsOf(s, 'wagon').length) return false;   // 村・馬車への予告（10/19）
+      if ((t.check.kind === 'blocked' || t.needsPlan) && !on('D2')) return false;   // 敵の行き先が見えないと取れない（10/19: 予定の道を変えさせる・馬車から遠ざける）
       return true;
     }
     function mSetup(s) {
@@ -3794,7 +3908,7 @@
       s.labEndDone = true;
       var last = s.labLastHand || null;
       (s.labTargets || []).forEach(function (t) {
-        if (t.got || !t.check.end) return;
+        if ((t.got && !pickMode()) || !t.check.end) return;
         var k = t.check.kind, hand = null, cells = [];
         if (k === 'turnWin' && s.turn <= (t.check.turns || 3)) hand = last;
         if (k === 'noLoss' && !s.labAllyLost) hand = last;
@@ -4013,13 +4127,46 @@
     function nStar() { var v = lopt('N7', 'star', 'own'); return v === 'other' || v === 'none' ? v : 'own'; }
     function nAwLater() { return lopt('N7', 'awakeLater', 'own') === 'any' ? 'any' : 'own'; }
     function nFuLater() { return lopt('N7', 'fuseLater', 'range') === 'none' ? 'none' : 'range'; }
+    // ---- 道の決まり B（10/19「ミッションの組み直しと道の切り替え」。N7 の rule: 'B'）【仮】 ----
+    //   各魔法が方向を2つ持つ（lab_change.js の DIRS2。1つ目 今のやりたいこと・2つ目 融合先の相手の属性の方向）。★は1つ目の方向
+    //   区切りの中で同じ形が B_NEED（3）以上あり、それがその魔法の方向なら、その方向に変化（1つ目 → 覚醒方面の変化、2つ目 → 融合先）。そろわなければ、節目では何も起きない（小さな強化だけ）
+    //   変化のあと、そのあとの区切りで同じ方向の形が B_NEED 以上なら覚醒（1つ目 → 今の覚醒先。2つ目 → まだないので「覚醒（未定）」）。そろわなければ何も起きない。覚醒のあとは未定
+    //   範囲の大きな強化は B にはない
+    function nBOn() { return nSegOn() && lopt('N7', 'rule', 'A') === 'B'; }
+    function nBDirs(m) { var D = (LCH.DIRS2 || {})[m]; return D && D.length ? D.slice(0, 2) : [nWantOf(m)]; }
+    function nBNeed() { return clampN(LCH.B_NEED, 1, 9, 3); }
+    function nBDir(m, w) { return w === 'free' ? nBDirs(m)[0] : w; }   // ★は1つ目の方向
+    // 区切りの中の、形ごとの数（★は1つ目の方向に足す）
+    function nBTally(m, cells) { var c = {}; cells.forEach(function (r) { var x = nBDir(m, r.w); c[x] = (c[x] || 0) + 1; }); return c; }
+    // 「◆3・▲1・●1」（数の多い順。同じなら ◆●▲■ の順）
+    function nBCountText(cnt) {
+      var ks = Object.keys(cnt || {}).filter(function (k) { return cnt[k] > 0; }).sort(function (a, b) { return (cnt[b] - cnt[a]) || (LCH.SORT_ORDER.indexOf(a) - LCH.SORT_ORDER.indexOf(b)); });
+      return ks.length ? ks.map(function (k) { return nShape(k) + cnt[k]; }).join('・') : 'まだ0';
+    }
+    function nSegMsB(m, road) {
+      var L = nSegLen(), need = nBNeed(), D = nBDirs(m), n = Math.floor((road || []).length / L), out = { ms: [], form: null, awake: false, fuAwake: false, range: 0 };
+      for (var i = 0; i < n; i++) {
+        var cells = road.slice(i * L, (i + 1) * L), cnt = nBTally(m, cells), kind = 'none', dir = null;
+        if (!out.form) {
+          var ok = D.filter(function (x) { return (cnt[x] || 0) >= need; }).sort(function (a, b) { return ((cnt[b] || 0) - (cnt[a] || 0)) || (D.indexOf(a) - D.indexOf(b)); });
+          if (ok.length) { dir = ok[0]; kind = dir === D[0] ? 'change' : 'fuse'; out.form = kind === 'change' ? 'awake' : 'fuse'; }
+        } else if (out.form === 'awake' ? !out.awake : !out.fuAwake) {
+          var dd = out.form === 'awake' ? D[0] : D[1];
+          if ((cnt[dd] || 0) >= need) { dir = dd; kind = out.form === 'awake' ? 'awake' : 'fuAwake'; if (kind === 'awake') out.awake = true; else out.fuAwake = true; }
+        } else kind = 'tbd';
+        out.ms.push({ no: i + 1, kind: kind, cnt: cnt, dir: dir, own: cnt[D[0]] || 0, other: L - (cnt[D[0]] || 0), star: 0 });
+      }
+      return out;
+    }
     // マスの数え方: 'awake' 自分の方向 ／'fuse' ほかの方向 ／'star' どちらでもない（★を none で数えるとき）
+    //   B: 'awake' 1つ目の方向（★も）／'fuse' 2つ目の方向 ／'none' どちらの方向でもない
     function nSegKind(m, w) {
+      if (nBOn()) { var D = nBDirs(m), x = nBDir(m, w); return x === D[0] ? 'awake' : x === D[1] ? 'fuse' : 'none'; }
       if (w === 'free') { var st = nStar(); return st === 'own' ? 'awake' : st === 'other' ? 'fuse' : 'star'; }
       return w === nWantOf(m) ? 'awake' : 'fuse';
     }
-    // 小さな強化の列（★を自分の方向に数えるなら、自分の方向の列）
-    function nSmallCol(m, w) { return w === 'free' && nStar() === 'own' ? nWantOf(m) : w; }
+    // 小さな強化の列（★を自分の方向に数えるなら、自分の方向の列。B は★を1つ目の方向の列）
+    function nSmallCol(m, w) { if (nBOn()) return nBDir(m, w); return w === 'free' && nStar() === 'own' ? nWantOf(m) : w; }
     function nStepById(id) {
       for (var k in LCH.STEPS) { var f = LCH.STEPS[k].filter(function (x) { return x.id === id; })[0]; if (f) return f; }
       return null;
@@ -4054,6 +4201,7 @@
       return nAwLater() === 'any' || win === 'own' ? 'awake' : 'range';
     }
     function nSegMs(m, road) {
+      if (nBOn()) return nSegMsB(m, road || []);   // 道の決まり B
       var L = nSegLen(), n = Math.floor((road || []).length / L), out = { ms: [], form: null, awake: false, range: 0 };
       for (var i = 0; i < n; i++) {
         var cells = road.slice(i * L, (i + 1) * L), t = nSegTally(m, cells), win = nSegWin(m, cells), kind = nSegKindAt(out.form, out.awake, win);
@@ -4081,6 +4229,7 @@
       p.fu = sm.filter(function (c) { return c.k === 'fuse'; }).length;
       p.steps = sm.filter(function (c) { return c.step; }).length;
       p.form = ms.form; p.awake = ms.awake; p.range = ms.range; p.ms = ms.ms;
+      if (ms.fuAwake) p.fuAwake = true; else delete p.fuAwake;   // B: 2つ目の方向の覚醒（中身は未定）
       return p;
     }
     // 1マス入れる（p を書き換える）。out.slot 道の何マス目・seg 何番目の区切り・inSeg 区切りの中の何マス目・small 小さな強化（null は未定）・ms 届いた節目
@@ -4101,14 +4250,15 @@
         if (ms.kind === 'fuse') out.change = d.fuse;
         if (ms.kind === 'awake') out.awake = d.awake.lv2;
         if (ms.kind === 'range') out.range = nRangeInfo(d, after);
-        if (ms.kind === 'tbd') out.tbd = true;
+        if (ms.kind === 'tbd' || ms.kind === 'fuAwake') out.tbd = true;
+        if (ms.kind === 'none') out.msNone = true;   // B: 同じ形が3つそろわず、節目では何も起きない
       }
       return out;
     }
-    var N_MS = { change: '覚醒方面の変化', fuse: '融合方面の変化', awake: '覚醒', range: '範囲の大きな強化', tbd: '未定' };
-    function nMsName(d, kind) { return kind === 'change' ? d.awake.name : kind === 'fuse' ? d.fuse.name : kind === 'awake' ? d.awake.lv2.name : kind === 'range' ? '範囲の大きな強化' : '未定'; }
-    // 「覚醒方面の変化「炎」」「覚醒「業火」」「範囲の大きな強化」「未定」
-    function nMsText(d, kind) { return kind === 'range' || kind === 'tbd' ? N_MS[kind] : N_MS[kind] + '「' + nMsName(d, kind) + '」'; }
+    var N_MS = { change: '覚醒方面の変化', fuse: '融合方面の変化', awake: '覚醒', range: '範囲の大きな強化', tbd: '未定', none: '何も起きない', fuAwake: '覚醒（未定）' };
+    function nMsName(d, kind) { return kind === 'change' ? d.awake.name : kind === 'fuse' ? d.fuse.name : kind === 'awake' ? d.awake.lv2.name : kind === 'range' ? '範囲の大きな強化' : kind === 'none' ? 'なし' : '未定'; }
+    // 「覚醒方面の変化「炎」」「覚醒「業火」」「範囲の大きな強化」「未定」「何も起きない」「覚醒（未定）」
+    function nMsText(d, kind) { return kind === 'range' || kind === 'tbd' || kind === 'none' || kind === 'fuAwake' ? N_MS[kind] : N_MS[kind] + '「' + nMsName(d, kind) + '」'; }
     // 範囲の大きな強化で何が変わるか（p はその節目のあとの道）
     function nRangeInfo(d, p) {
       var R = LCH.RANGE || {}, f = p.form === 'fuse' ? d.fuse : null;
@@ -4125,6 +4275,7 @@
     function nSegNext(m, p0) {
       var d = nDef(m);
       if (!d || !nSegOn()) return null;
+      if (nBOn()) return nSegNextB(m, nNorm(m, p0), d);   // 道の決まり B
       var p = nNorm(m, p0), L = nSegLen(), n = p.road.length, inSeg = n % L, t = nSegTally(m, p.road.slice(n - inSeg)), left = L - inSeg;
       var at = function (win) { var k = nSegKindAt(p.form, p.awake, win); return { kind: k, name: nMsName(d, k), text: nMsText(d, k) }; };
       var lead = t.own > t.other ? 'own' : t.other > t.own ? 'other' : null;
@@ -4134,12 +4285,38 @@
         decided: t.own > t.other + left ? 'own' : t.other > t.own + left ? 'other' : null, onOwn: onOwn, onOther: onOther, same: onOwn.kind === onOther.kind,
         next: lead === 'own' ? onOwn : lead === 'other' ? onOther : null, steps: steps, form: p.form, awake: p.awake, range: p.range || 0, ms: p.ms };
     }
-    // 「倒す 2・ほか 1」
-    function nSegCount(d, x) { return nWantName(d.want) + ' ' + x.own + '・ほか ' + x.other + (x.star ? '・★ ' + x.star : ''); }
+    // B の見通し: 今の区切りの形ごとの数と、「あと何個で〇〇に変化」
+    //   goals [{ dir, kind（change／fuse／awake／fuAwake）, name, text, have, more（あと何個）, can（残りのマスで届くか） }]・win（もうそろって、節目で起きるもの）
+    function nSegNextB(m, p, d) {
+      var L = nSegLen(), need = nBNeed(), D = nBDirs(m), n = p.road.length, inSeg = n % L, left = L - inSeg, cnt = nBTally(m, p.road.slice(n - inSeg)), goals = [];
+      var add = function (dir, kind) { var have = cnt[dir] || 0, more = Math.max(0, need - have); goals.push({ dir: dir, kind: kind, name: nMsName(d, kind), text: nMsText(d, kind), have: have, more: more, can: more <= left }); };
+      if (!p.form) { add(D[0], 'change'); if (D[1] && D[1] !== D[0]) add(D[1], 'fuse'); }
+      else if (p.form === 'awake' && !p.awake) add(D[0], 'awake');
+      else if (p.form === 'fuse' && !p.fuAwake && D[1]) add(D[1], 'fuAwake');
+      var won = goals.filter(function (g) { return !g.more; }).sort(function (a, b) { return (b.have - a.have) || (D.indexOf(a.dir) - D.indexOf(b.dir)); })[0] || null;
+      var cells = nSmallCells(m, p.road), steps = {};
+      LCH.SORT_ORDER.forEach(function (w) { var col = nSmallCol(m, w); steps[w] = nSmallStep(m, col, cells.filter(function (c) { return c.col === col; }).length); });
+      var noneMs = { kind: 'none', name: nMsName(d, 'none'), text: nMsText(d, 'none') }, tbdMs = { kind: 'tbd', name: nMsName(d, 'tbd'), text: nMsText(d, 'tbd') };
+      var only = !goals.length ? tbdMs : null;
+      return { B: true, L: L, slot: n, seg: Math.floor(n / L) + 1, inSeg: inSeg, left: left, cnt: cnt, dirs: D, need: need, goals: goals, win: won, stuck: !!goals.length && !goals.some(function (g) { return g.can; }),
+        own: cnt[D[0]] || 0, other: inSeg - (cnt[D[0]] || 0), star: 0, lead: null, decided: null, same: !!only, onOwn: only || noneMs, onOther: only || noneMs, next: won,
+        steps: steps, form: p.form, awake: p.awake, fuAwake: !!p.fuAwake, range: p.range || 0, ms: p.ms };
+    }
+    // 「節目まであと3マス（◆1・▲1 → あと◆2つで変化「炎」／あと▲2つで融合方面の変化「火の渦」）」
+    function nSegNextTextB(m, x) {
+      var head = '節目まであと' + x.left + 'マス', cnt = x.inSeg ? nBCountText(x.cnt) + ' → ' : '';
+      if (!x.goals.length) return head + '（節目の中身は未定）';
+      if (x.win) return head + '（' + cnt + nShape(x.win.dir) + 'が' + x.need + 'つそろった → 節目で' + x.win.text + '）';
+      if (x.stuck) return head + '（' + cnt + 'この区切りでは' + x.goals.map(function (g) { return nShape(g.dir); }).join('か') + 'が' + x.need + 'つそろわない → 節目では何も起きない。小さな強化だけ）';
+      return head + '（' + cnt + x.goals.filter(function (g) { return g.can; }).map(function (g) { return 'あと' + nShape(g.dir) + g.more + 'つで' + g.text; }).join('／') + '）';
+    }
+    // 「倒す 2・ほか 1」（B は「◆3・▲1・●1」）
+    function nSegCount(d, x) { if (x && x.cnt) return nBCountText(x.cnt); return nWantName(d.want) + ' ' + x.own + '・ほか ' + x.other + (x.star ? '・★ ' + x.star : ''); }
     // 「節目まであと2マス（倒す 2・ほか 1 → このままなら覚醒方面の変化「炎」）」
     function nSegNextText(m, p0) {
       var d = nDef(m), x = nSegNext(m, p0), own = nShape(d.want);
       if (!x) return '';
+      if (x.B) return nSegNextTextB(m, x);
       var head = '節目まであと' + x.left + 'マス', cnt = x.inSeg ? nSegCount(d, x) + ' → ' : '';
       if (x.same) return head + '（' + (x.onOwn.kind === 'tbd' ? '節目の中身は未定' : 'どちらが多くても' + x.onOwn.text) + '）';
       if (x.decided) return head + '（' + cnt + (x.decided === 'own' ? x.onOwn.text : x.onOther.text) + 'に決まり）';
@@ -4150,10 +4327,12 @@
     function nGainTextSeg(m, w, g, before, d) {
       var nm = I.magicName(m), r = g.res, sh = nShape(w), wn = w === 'free' ? 'どれでも' : nWantName(w);
       if (r.noRoad) return sh + ' ' + nm + 'のやりたいことと合わない（' + wn + '）→ 道には入らない（N2）';
-      var head = r.kind === 'awake' ? sh + ' ' + nm + 'の形（' + (w === 'free' ? 'どれでも＝自分の方向' : wn) + '）'
+      var head = nBOn() ? sh + ' ' + (r.kind === 'awake' ? nm + 'の1つ目の方向（' + (w === 'free' ? 'どれでも＝1つ目' : wn) + '）' : r.kind === 'fuse' ? nm + 'の2つ目の方向（' + wn + '）' : nm + 'の方向ではない形（' + wn + '）')
+        : r.kind === 'awake' ? sh + ' ' + nm + 'の形（' + (w === 'free' ? 'どれでも＝自分の方向' : wn) + '）'
         : r.kind === 'star' ? sh + ' どれでも（どちらの方向にも数えない）' : sh + ' ほかの形（' + (w === 'free' ? 'どれでも＝ほかの方向' : wn) + '）';
       var parts = ['道の' + r.slot + 'マス目（区切り' + r.seg + 'の' + r.inSeg + '/' + r.segLen + '）', r.small ? '小さな強化「' + r.small.name + '」' : '小さな強化は未定'];
-      if (r.ms) parts.push('区切りがそろった（' + nSegCount(d, r.ms) + '）→ 節目: ' + nMsText(d, r.ms.kind) + (r.ms.kind === 'tbd' ? '' : '！'));
+      if (r.ms && r.ms.kind === 'none') { var bf = before ? nNorm(m, before) : null, BD = nBDirs(m); parts.push('区切りがそろった（' + nSegCount(d, r.ms) + '）→ ' + (!bf || !bf.form ? BD.map(nShape).join('か') : nShape(bf.form === 'awake' ? BD[0] : BD[1])) + 'が' + nBNeed() + 'つそろわず、節目では何も起きない（小さな強化だけ）'); }
+      else if (r.ms) parts.push('区切りがそろった（' + nSegCount(d, r.ms) + '）→ 節目: ' + nMsText(d, r.ms.kind) + (r.ms.kind === 'tbd' || r.ms.kind === 'fuAwake' ? '' : '！'));
       else parts.push(nSegNextText(m, g.after));
       return head + ' → ' + parts.join('。');
     }
@@ -4241,6 +4420,7 @@
     function nAdvance(p, m, w) {
       var d = nDef(m);
       if (!d || !p) return { none: true };
+      if (nBOn()) return nSegAdvance(p, m, w, d, 'awake');   // 道の決まり B: どの形も道に入る（数え方は区切りの中の形ごとの数）
       var kind = nKind(m, w);
       if (!kind) return { none: true, partner: true };
       if (nSegOn()) return nSegAdvance(p, m, w, d, kind);   // N7 区切りの道
@@ -4820,7 +5000,8 @@
       road: nRoadOn, roadLen: nRoadLen, roadAw: nRoadAw, shape: nShape, otherName: nOtherName, next: nNext, nextText: nNextText, TRAITS: LCH.TRAITS || {}, cardCells: nCardCells,   // N6 1本の道
       seg: nSegOn, segLen: nSegLen, star: nStar, awakeLater: nAwLater, fuseLater: nFuLater, segNext: nSegNext, segNextText: nSegNextText, segCount: nSegCount,   // N7 区切りの道
       smallCells: function (m, p) { return nDef(m) ? nSmallCells(m, nNorm(m, p).road) : []; }, segKind: nSegKind, msName: nMsName, msText: nMsText, MS: N_MS, rangeInfo: nRangeInfo, RANGE: LCH.RANGE || {}, SMALL: LCH.SMALL || {}, stepById: nStepById,
-      rangeOf: nRangeOf
+      rangeOf: nRangeOf,
+      rule: function () { return nBOn() ? 'B' : 'A'; }, bOn: nBOn, bDirs: nBDirs, bNeed: nBNeed, bCount: nBCountText, bTally: function (m, p) { return nDef(m) ? nBTally(m, nNorm(m, p).road) : {}; }, DIRS2: LCH.DIRS2 || {}   // 道の決まり B（10/19）
     };
 
     var LAPI = {
@@ -4829,7 +5010,7 @@
       pathMarks: pathMarks, outlook: outlook, projected: projected, fxOn: fxOn,
       stepOf: stepOf, awakeOf: awakeOf, formOf: formOf, formName: formName, shapeSteps: shapeSteps, dirName: dirName,
       questsOf: questsOf, questOf: questOf, DARK: LT.DARK || [], darkOf: darkOf, darkMax: darkMax, darkPower: darkPower, darkDots: darkDots,
-      targetDef: targetDef, openT: openT, handName: handName, foilPreview: foilPreview, redirectPreview: redirectPreview, thornCaged: thornCaged,
+      targetDef: targetDef, openT: openT, handName: handName, pickMode: pickMode, ROLE_NAME: ROLE_NAME, foilPreview: foilPreview, redirectPreview: redirectPreview, thornCaged: thornCaged,
       whoMode: whoMode, enemyMode: enemyMode, targetCount: targetCount, loseMode: loseMode, destMode: destMode,
       M: MAPI, N: NAPI, dirTable: function () { return non() ? LCH.WANTS : mon() ? LPW.DIRS : LT.DIRS; }, takerTable: function () { return mon() ? LPW.TAKERS : (LT.TAKERS || {}); }   // M のときは3つの方向（＋作る系）
     };
@@ -4844,7 +5025,7 @@
       if (s.labAge && old !== t && s.labAge[i] !== undefined) delete s.labAge[i];
       if (s.labLinger && old !== t && s.labLinger[i] !== undefined) delete s.labLinger[i];   // M5: もう1ターン残すマス
       if (s.labAwk && old !== t && s.labAwk[i] !== undefined) { delete s.labAwk[i]; if (!Object.keys(s.labAwk).length) delete s.labAwk; }   // N: 覚醒先の自然の印（自然が変わると消える）
-      if (lon()) makerSet(s, i, t);   // L: その自然を作った手
+      if (lon()) makerSet(s, i, t, old);   // L: その自然を作った手（クリア後に選ぶ: 手を入れた記録）
       return t;
     }
     // ダメージを入れる前に: 盾・バリア・大きい敵 など。null を返すとダメージなし

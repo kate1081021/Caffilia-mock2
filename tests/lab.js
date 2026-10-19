@@ -2584,6 +2584,107 @@ console.log('\n■ N 強化と変化（やりたいこと・印・間の強化�
     ok(N.seg() && N.segLen() === 5);
   });
 
+  // ---- 10/19「ミッションの組み直しと道の切り替え」: 道の決まり B・クリア後に選ぶ ----
+  test('N7 道の決まり B: 区切りに同じ形が3つ以上で、その方向に変化（1つ目 → 覚醒方面の変化・2つ目 → 融合先）。そろわなければ何も起きない', function () {
+    R.labApply(['N7'], { N7: { rule: 'B' } });
+    ok(N.bOn() && N.rule() === 'B');
+    eq(N.bDirs('fire'), ['defeat', 'move']);
+    var p = LL.newPath('fire'), g = feed(p, 'fire', ['defeat', 'spread', 'defeat', 'move', 'defeat']);
+    eq([p.form, g[4].res.ms.kind, g[4].res.change.name, p.ms[0].cnt], ['awake', 'change', '炎', { defeat: 3, spread: 1, move: 1 }], '◆3 → 炎');
+    var w = LL.newPath('wind');
+    feed(w, 'wind', ['defeat', 'defeat', 'spread', 'defeat', 'move']);
+    eq([w.form, w.ms[0].kind], ['fuse', 'fuse'], '風の2つ目の方向（◆）が3つ → 砂嵐');
+    var n = LL.newPath('water'), gn = feed(n, 'water', ['stop', 'stop', 'move', 'move', 'spread']);
+    eq([n.form, n.ms[0].kind, !!gn[4].res.msNone], [null, 'none', true], '■2・▲2・●1 → どの形も3つにならない → 何も起きない');
+    feed(n, 'water', ['free', 'stop', 'stop', 'spread', 'move']);
+    eq([n.form, n.ms[1].kind], ['awake', 'change'], '★は1つ目の方向（■）に数える → ■3 で湖');
+  });
+  test('N7 道の決まり B: 変化のあと、同じ方向の形が3つ以上の区切りで覚醒（2つ目の方向の覚醒は未定）。そろわなければ何も起きない。覚醒のあとは未定', function () {
+    R.labApply(['N7'], { N7: { rule: 'B' } });
+    var p = LL.newPath('fire');
+    feed(p, 'fire', ['defeat', 'defeat', 'defeat', 'spread', 'spread']);
+    feed(p, 'fire', ['move', 'move', 'move', 'spread', 'spread']);
+    eq([p.ms[1].kind, p.awake], ['none', false], '変化のあとは ◆ だけを数える（▲3 でも覚醒しない）');
+    var g = feed(p, 'fire', ['defeat', 'spread', 'defeat', 'spread', 'defeat']);
+    eq([p.ms[2].kind, p.awake, g[4].res.awake.name], ['awake', true, '業火']);
+    feed(p, 'fire', ['defeat', 'defeat', 'defeat', 'defeat', 'defeat']);
+    eq(p.ms[3].kind, 'tbd', '覚醒のあとは未定');
+    var w = LL.newPath('wind');
+    feed(w, 'wind', ['defeat', 'defeat', 'defeat', 'move', 'move']);
+    feed(w, 'wind', ['defeat', 'defeat', 'defeat', 'spread', 'spread']);
+    eq([w.form, w.ms[1].kind, !!w.fuAwake, w.range], ['fuse', 'fuAwake', true, 0], '砂嵐のあと ◆3 → 覚醒（未定）。B には範囲の大きな強化はない');
+    R.labApply(['N7'], { N7: { rule: 'A' } });
+    eq(LL.normPath('wind', w).ms.map(function (x) { return x.kind; }), ['fuse', 'range'], '同じ道を A で読み直すと、融合と範囲');
+  });
+  test('N7 道の決まり B の言葉: 区切りの中の形ごとの数と「あと何個で〇〇に変化」', function () {
+    R.labApply(['N7'], { N7: { rule: 'B' } });
+    var p = LL.newPath('fire');
+    feed(p, 'fire', ['defeat', 'move']);
+    var x = N.segNext('fire', p);
+    eq([x.B, x.left, x.cnt, x.goals.map(function (g) { return g.kind + ':' + g.more; })], [true, 3, { defeat: 1, move: 1 }, ['change:2', 'fuse:2']]);
+    var t = N.segNextText('fire', p);
+    ok(/◆1・▲1/.test(t) && /あと◆2つで覚醒方面の変化「炎」/.test(t) && /あと▲2つで融合方面の変化「火の渦」/.test(t), t);
+    feed(p, 'fire', ['spread', 'spread']);
+    ok(/そろわない/.test(N.segNextText('fire', p)), '残り1マスでは3つにならない → 節目では何も起きない');
+    ok(/1つ目の方向/.test(LL.outlook('fire', LL.newPath('fire'), 'defeat')) && /方向ではない形/.test(LL.outlook('fire', LL.newPath('fire'), 'spread')));
+  });
+  test('N7 クリア後に選ぶ（take: pick。初期）: 満たした1発を撃った魔法が候補。決め手は役ごと（材料・舞台・決め手）。1人なら自動', function () {
+    var Q = require('../lab_quest.js'), q = Q.quest('c1burn'), pr = Q.preset(q, ['grass', 'fire', 'wind'], R.findPreset, {});
+    eq(pr.labOpts.N7.take, 'pick');
+    R.LAB_PRESETS.push(pr);
+    try {
+      R.labApply(pr.lab, pr.labOpts);
+      ok(LL.pickMode());
+      var s = R.startBattle(R.loadPreset(pr.id)).state, evs = [];
+      [['P3', [2, 4], 'up'], ['P1', [3, 5], 'up'], ['P2', [1, 3], 'right']].forEach(function (a) { var r = R.act(s, a[0], { to: a[1], dir: a[2], shoot: true }); ok(r.ok, a[0]); s = r.state; evs = evs.concat(r.events); });
+      var T = {}; s.labTargets.forEach(function (t) { T[t.id] = t; });
+      eq(T.nextTo.got.cands.map(function (h) { return h.magic; }), ['wind', 'grass'], '同じミッションを2人が満たした → 2人とも候補');
+      eq([T.nextTo.got.by, T.kill.got.by.magic], [null, 'fire'], '候補が1人なら by に入る（育ちの画面で自動）');
+      eq(T.finKill.got.cands.map(function (h) { return h.magic; }).sort(), ['fire', 'grass', 'wind']);
+      var role = function (id) { return T.finKill.got.roles[id]; };
+      ok(role('P2').indexOf('trigger') >= 0 && role('P3').indexOf('mat') >= 0 && role('P1').indexOf('stage') >= 0, '火が決め手、風が材料（風）、草が舞台（草むら → 森）');
+      ok(evs.some(function (e) { return e.type === 'labTarget' && /この一手で、火（決め手）・風（材料）・草（舞台・材料）が候補に入る/.test(e.text); }), '撃つ前の予測と同じ一言');
+      eq(LL.gotOrder(s).map(function (t) { return t.id; }), ['nextTo', 'finKill', 'kill']);
+    } finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(pr), 1); }
+  });
+  test('N7 取り方 take: hand なら達成の一手が取る（10/19 までの形。候補はない）', function () {
+    var Q = require('../lab_quest.js'), q = Q.quest('c1burn');
+    var pr = Q.preset(q, ['grass', 'fire', 'wind'], R.findPreset, { seg: { take: 'hand' } });
+    R.LAB_PRESETS.push(pr);
+    try {
+      R.labApply(pr.lab, pr.labOpts);
+      ok(!LL.pickMode());
+      var s = R.startBattle(R.loadPreset(pr.id)).state;
+      [['P3', [2, 4], 'up'], ['P1', [3, 5], 'up'], ['P2', [1, 3], 'right']].forEach(function (a) { s = R.act(s, a[0], { to: a[1], dir: a[2], shoot: true }).state; });
+      var fk = s.labTargets.filter(function (t) { return t.id === 'finKill'; })[0];
+      eq([fk.got.by.magic, fk.got.cands], ['fire', undefined], 'hand: 決め手を起こした火だけ');
+    } finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(pr), 1); }
+  });
+  test('N7 動かす・止めるの新しいミッション（予定の道を変えさせる・馬車から遠ざける・予告を外させる）: 撃つ前と後をくらべ、その手の魔法が候補', function () {
+    var Q = require('../lab_quest.js'), q = Q.quest('c2cargo'), pr = Q.preset(q, ['earth', 'water', 'wind'], R.findPreset, {});
+    ok(pr.lab.indexOf('D2') >= 0, '予定の道のミッションがあると D2（敵の行き先）を入れる');
+    R.LAB_PRESETS.push(pr);
+    try {
+      R.labApply(pr.lab, pr.labOpts);
+      var s = R.startBattle(R.loadPreset(pr.id)).state, found = null;
+      eq(s.labTargets.map(function (t) { return t.id; }), ['reroute', 'lureInto', 'keepAway']);
+      ok(s.labLook && Object.keys(s.labLook.e).length > 0, '味方の番の始めに、敵の行き先と予告を覚える');
+      R.alliesOf(s).some(function (a) {
+        return Object.keys(R.reachableCells(s, a.id)).some(function (k) {
+          var to = k.split(',').map(Number);
+          return R.DIR_ORDER.some(function (d) {
+            var r = R.act(s, a.id, { to: to, dir: d, shoot: true });
+            var rr = r.ok && r.state.labTargets.filter(function (t) { return t.id === 'reroute' && t.got; })[0];
+            if (rr) found = { a: a, r: r, t: rr };
+            return !!rr;
+          });
+        });
+      });
+      ok(found, '1ターン目に、敵の予定の道を変えさせる手がある');
+      eq(found.t.got.cands.map(function (h) { return h.id; }), [found.a.id]);
+      ok(found.r.events.some(function (e) { return e.type === 'labTarget' && /敵の予定の道を変えさせる/.test(e.text) && /候補に入る/.test(e.text); }));
+    } finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(pr), 1); }
+  });
   // ---- 変化した魔法（覚醒方面・融合） ----
   test('N 森・炎・岩山: 空きにいきなり森（二段）／横3マスにいきなり炎／一発で岩山（山＋印）', function () {
     withGrow(function () {
@@ -2806,10 +2907,11 @@ console.log('\n■ N 強化と変化（やりたいこと・印・間の強化�
   });
 
   // ---- ミッション ----
-  test('N ミッション: 44（41＋魔法を1発撃つ・決められたマスに撃つ・決められたシナジー）。方向はやりたいこと。仕分けで変えられる', function () {
+  test('N ミッション: 51（41＋魔法を1発撃つ・決められたマスに撃つ・決められたシナジー＋10/19 の7つ）。方向はやりたいこと。仕分けで変えられる', function () {
     withGrow(function () {
       R.labApply(['N0']);
-      eq(N.MISSIONS().length, 44);
+      eq(N.MISSIONS().length, 51);
+      eq(['reroute', 'aimFoe', 'guardHit', 'keepAway', 'lureInto', 'guardAlly', 'guardObj'].map(function (id) { return LL.targetDef(id).dir; }), ['move', 'move', 'stop', 'move', 'move', 'stop', 'stop']);
       eq([LL.targetDef('finKill').dir, LL.targetDef('nextTo').dir, LL.targetDef('redirect').dir, LL.targetDef('held').dir, LL.targetDef('shot1').dir], ['defeat', 'spread', 'move', 'stop', 'free']);
       N.setSort({ farFin: 'defeat' });
       eq(LL.targetDef('farFin').dir, 'defeat');
@@ -2847,6 +2949,22 @@ console.log('\n■ N クエスト制（拠点のクエストボード・章・�
     finally { R.LAB_PRESETS.splice(R.LAB_PRESETS.indexOf(p), 1); }
   }
 
+  test('クエスト制（10/19 組み直し）: ミッションは強化につながるものだけ・目的に沿った形だけ（討伐 ◆●／防衛 ■●／護衛 ▲■）。3人の結果と、前回起きなかったものは置かない', function () {
+    R.labApply(['N0']);
+    var ALLOW = { annihilate: ['defeat', 'spread'], defense: ['stop', 'spread'], escort: ['move', 'stop'] };
+    var NO = ['villagesSafe', 'noLoss', 'turnWin', 'carry', 'noWalk', 'bump', 'push2'];
+    Q.QUESTS.forEach(function (q) {
+      if (q.kind === 'dark') return;
+      ok(q.missions.length >= 2 && q.missions.length <= 3 && q.rail && q.rail.length === q.missions.length, q.name + ': 2〜3つ・レール');
+      q.missions.forEach(function (id) {
+        ok(NO.indexOf(id) < 0, q.name + ': ' + id + ' は置かない');
+        var w = LL.targetDef(id).dir;
+        ok(ALLOW[q.purpose].indexOf(w) >= 0 || (q.railNote && w === 'move'), q.name + ': ' + id + '（' + w + '）は目的に沿う形');
+      });
+    });
+    var same = Q.QUESTS.filter(function (q) { var ws = q.missions.map(function (id) { return LL.targetDef(id).dir; }); return q.kind !== 'dark' && ws.every(function (w) { return w === ws[0]; }); });
+    ok(same.length >= 1, '同じ形だけのクエストが1つ以上: ' + same.map(function (q) { return q.name; }).join('・'));
+  });
   test('クエスト制: 最初は第1章だけ。いまの4つの盤面と裏クエストが、順番なしで並ぶ。仲間は草・火・風・水', function () {
     var c = Q.newCampaign();
     eq(Q.openChapter(c), 1);
@@ -2915,10 +3033,10 @@ console.log('\n■ N クエスト制（拠点のクエストボード・章・�
   });
   test('クエスト制: クエストの盤面は、クエストのミッションをその数だけ出す（2つ・3つ）。お題の中でのミッション選び（L6）はない', function () {
     var b = battle(Q.quest('c1field'), ['grass', 'fire', 'wind']);
-    eq(b.s.labTargets.map(function (t) { return t.id; }), ['bigFin', 'twoStage']);
+    eq(b.s.labTargets.map(function (t) { return t.id; }), ['twoStage', 'chain5', 'bigFin'], '同じ形だけのクエスト（10/19）');
     ok(b.p.lab.indexOf('L6') < 0 && !R.lab('L6'));
     b = battle(Q.quest('c1burn'), ['grass', 'fire', 'wind']);
-    eq(b.s.labTargets.map(function (t) { return t.id + ':' + t.dir; }), ['finKill:defeat', 'kill:defeat', 'nextTo:spread'], '倒す寄り');
+    eq(b.s.labTargets.map(function (t) { return t.id + ':' + t.dir; }), ['nextTo:spread', 'finKill:defeat', 'kill:defeat'], '討伐: 準備 → 決め手（10/19）');
   });
   test('クエスト制: 全部のクエストが、おすすめの仲間で読めて戦闘を始められる。裏クエストと闇の力を持つ仲間がいるときは L7 も', function () {
     var c = Q.newCampaign();

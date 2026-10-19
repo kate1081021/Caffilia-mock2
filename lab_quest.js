@@ -44,38 +44,49 @@
       text: { calm: '魔物を退けた村から、街へ荷を出すことになった。街道は丘を越えていく。', rough: '隣の村が焼けてから、街道は荒れている。荷を運ぶ話にも、黒衣の男が絡んでくる。' } }
   ];
 
+  // ミッション（10/19「ミッションの組み直しと道の切り替え」で組み直した【仮】）
+  //   強化につながるものだけ（3人の結果「村を守り切る」「誰も倒されずに勝つ」などは置かない）。誰でも取れるものを中心に、クエストの目的に沿った形だけ
+  //     討伐: ◆倒す が中心、準備に ●広げる ／防衛: ■止める が中心、準備に ●広げる（◆なし）／護衛・奪取: ▲動かす が中心、■止める も（◆なし）
+  //   並びはその盤面の勝ち方の順（レール: 準備 → 縛る・変える → 決め手や目的）。1つ目は1〜2ターン目に取れるもの。rail はその段の名前
+  //   同じ形だけのクエスト（1つの魔法を1回で何マスも育てられる）: 畑の森を育てて（●●●）・村を守れ（■■■）・荷を街まで運べ（▲▲▲）
+  //   10/19 までのミッションは missionsOld（記録）
   var QUESTS = [
     // ---- 第1章 森の村（いまの4つの盤面＋裏クエスト） ----
-    { id: 'c1burn', ch: 1, kind: 'key', name: '森の魔物を焼け', client: '村長', board: 'labN1',
+    { id: 'c1burn', ch: 1, kind: 'key', name: '森の魔物を焼け', client: '村長', board: 'labN1', purpose: 'annihilate',
       story: '北の森に、火を吐く魔物が2体住みついた。森ごと焼いてかまわない。',
-      missions: ['finKill', 'kill', 'nextTo'] },
-    { id: 'c1guard', ch: 1, kind: 'key', name: '村を守れ', client: '村長', board: 'labN2',
+      missions: ['nextTo', 'finKill', 'kill'], rail: ['準備', '決め手', '目的'], missionsOld: ['finKill', 'kill', 'nextTo'] },
+    { id: 'c1guard', ch: 1, kind: 'key', name: '村を守れ', client: '村長', board: 'labN2', purpose: 'defense',
       story: '森を焼かれて怒った魔物の仲間が、村へ下りてくる。下の段の家を守ってほしい。',
-      missions: ['foiled', 'villagesSafe', 'kinds3'] },
-    { id: 'c1lure', ch: 1, kind: 'side', name: '谷の魔物を誘い出せ', client: '土の魔法使い', board: 'labN3',
+      missions: ['guardAlly', 'guardObj', 'foiled'], rail: ['縛る', '縛る', '目的'], missionsOld: ['foiled', 'villagesSafe', 'kinds3'] },
+    { id: 'c1lure', ch: 1, kind: 'side', name: '谷の魔物を誘い出せ', client: '土の魔法使い', board: 'labN3', purpose: 'annihilate',
       story: '谷の3体を、互いの攻撃でつぶし合わせてみせてくれ。うまくいったら仲間になろう。',
-      missions: ['redirect', 'bump', 'finKill'], reward: { join: 'earth' } },
-    { id: 'c1field', ch: 1, kind: 'side', name: '畑の森を育てて', client: '村の農家', board: 'labN4', when: { order: 'calm' },
+      missions: ['nextTo', 'aimFoe', 'finKill'], rail: ['準備', '変える', '決め手'], reward: { join: 'earth' }, missionsOld: ['redirect', 'bump', 'finKill'],
+      railNote: '討伐だが、依頼が「互いの攻撃でつぶし合わせる」なので ▲ を1つ置いた（討伐の決まりからは外れる）' },
+    { id: 'c1field', ch: 1, kind: 'side', name: '畑の森を育てて', client: '村の農家', board: 'labN4', when: { order: 'calm' }, purpose: 'annihilate',
       story: '畑のまわりの草むらを森に育てたい。ついでに居座っている魔物も追い払って。お礼は少ないけれど。',
-      missions: ['bigFin', 'twoStage'] },
-    { id: 'c1dark', ch: 1, kind: 'dark', name: '守るはずの村', client: '黒衣の男', board: 'labND',
+      missions: ['twoStage', 'chain5', 'bigFin'], rail: ['準備', '準備', '決め手'], missionsOld: ['bigFin', 'twoStage'],
+      railNote: '同じ形だけのクエスト（●●●）。決め手のミッションが「5マスの自然を決め手に」（●）なので、討伐でも ● だけ' },
+    { id: 'c1dark', ch: 1, kind: 'dark', name: '守るはずの村', client: '黒衣の男', board: 'labND', purpose: 'annihilate',
       story: '隣の村を焼いてくれ。トロッコも、居座っている魔法使いもだ。礼ははずむ。',
-      missions: ['darkVillage', 'darkCart', 'darkWizard'], accept: { order: 'rough' },
+      missions: ['darkVillage', 'darkCart', 'darkWizard'], rail: ['闇', '闇', '闇'], accept: { order: 'rough' },
       acceptText: '黒衣の男の依頼を受けた。村の治安が「荒れている」になった（村の依頼が減り、街道の話が変わる）' },
     // ---- 第2章 街道（第1章のキークエストを全部クリアすると開く） ----
-    { id: 'c2cargo', ch: 2, kind: 'key', name: '荷を街まで運べ', client: '村長', board: 'labNe', slot: 'c2cargo', when: { order: 'calm' },
+    { id: 'c2cargo', ch: 2, kind: 'key', name: '荷を街まで運べ', client: '村長', board: 'labNe', slot: 'c2cargo', when: { order: 'calm' }, purpose: 'escort',
       story: '村の荷を積んだ馬車を、右の端（街の門）まで送り届けてほしい。',
-      missions: ['carry', 'noWalk', 'noLoss'] },
-    { id: 'c2loot', ch: 2, kind: 'key', name: '焼け跡の荷を運び出せ', client: '黒衣の男', board: 'labNe', slot: 'c2cargo', when: { order: 'rough' },
+      missions: ['reroute', 'lureInto', 'keepAway'], rail: ['変える', '変える', '目的'], missionsOld: ['carry', 'noWalk', 'noLoss'] },
+    { id: 'c2loot', ch: 2, kind: 'key', name: '焼け跡の荷を運び出せ', client: '黒衣の男', board: 'labNe', slot: 'c2cargo', when: { order: 'rough' }, purpose: 'escort',
       story: '焼けた村から持ち出した荷だ。街の門まで運べ。じゃまをする者は片づけていい。',
-      missions: ['carry', 'kill', 'push2'] },
-    { id: 'c2hill', ch: 2, kind: 'key', name: '丘の見張りを下ろせ', client: '街の門番', board: 'labNd',
-      story: '街道の丘に魔物が陣取って、通る者を狙っている。丘から下ろして、足を止めてくれ。',
-      missions: ['held', 'blocked', 'lower'] },
-    { id: 'c2grass', ch: 2, kind: 'side', name: '敵の草むらを使え', client: '森番', board: 'labNn',
+      missions: ['reroute', 'keepAway', 'guardHit'], rail: ['変える', '変える', '目的'], missionsOld: ['carry', 'kill', 'push2'] },
+    { id: 'c2hill', ch: 2, kind: 'key', name: '丘の見張りを追い払え', client: '街の門番', board: 'labNd', purpose: 'annihilate',
+      story: '街道の丘に魔物が陣取って、通る者を狙っている。追い払ってくれ。',
+      missions: ['nextTo', 'killBefore', 'finKill'], rail: ['準備', '目的', '決め手'], missionsOld: ['held', 'blocked', 'lower'] },
+    { id: 'c2grass', ch: 2, kind: 'side', name: '敵の草むらを使え', client: '森番', board: 'labNn', purpose: 'annihilate',
       story: '草の魔物が街道に草むらを敷いて回っている。その草むらごと燃やしてしまえ。',
-      missions: ['enemyNatFin', 'overwrite', 'enemyChange'] }
+      missions: ['nextTo', 'overwrite', 'enemyNatFin'], rail: ['準備', '準備', '決め手'], missionsOld: ['enemyNatFin', 'overwrite', 'enemyChange'] }
   ];
+  var PURPOSE = { annihilate: '討伐', defense: '防衛', escort: '護衛', retrieve: '奪取' };
+  // 敵の行き先（D2 の矢印）が見えないと取れないミッション。クエストに入っていれば、盤面で D2 を入れる
+  var NEEDS_PLAN = ['reroute', 'keepAway', 'lureInto', 'blocked'];
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function quest(id) { return QUESTS.filter(function (q) { return q.id === id; })[0] || null; }
@@ -167,6 +178,7 @@
     if (seg) { if (p.lab.indexOf('N7') < 0) p.lab.push('N7'); p.labOpts = Object.assign({}, p.labOpts || {}, { N7: seg }); }   // N7 区切りの道（10/19）
     else p.lab = p.lab.filter(function (x) { return x !== 'N7'; });
     if ((opts && opts.dark) || q.kind === 'dark') { if (p.lab.indexOf('L7') < 0) p.lab.push('L7'); }
+    if (q.missions.some(function (id) { return NEEDS_PLAN.indexOf(id) >= 0; }) && p.lab.indexOf('D2') < 0) p.lab.push('D2');   // 敵の行き先が見える（10/19）
     p.labState = Object.assign({}, p.labState || {}, { labTargetList: q.missions.slice(), labTargetCount: q.missions.length });
     p.allies = placeParty(base.allies, party);
     p.labQuestRun = q.id;
@@ -174,7 +186,8 @@
   }
 
   // N7 区切りの道の切り替え（クエスト制・強化ためしでは入が初期）。null は切（N6 のまま）
-  var SEG_DEFAULT = { len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range' };
+  //   rule 道の決まり（'A' 自分の方向かそれ以外か ／'B' 方向を2つ持つ）・take 誰が取るか（'pick' クリア後に選ぶ ／'hand' 達成の一手）。10/19「ミッションの組み直しと道の切り替え」
+  var SEG_DEFAULT = { len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range', rule: 'A', take: 'pick' };
   var SEG_LENS = [3, 5, 7];
   function segOpts(o) {
     if (o && o.on === false) return null;
@@ -182,6 +195,8 @@
     Object.keys(SEG_DEFAULT).forEach(function (k) { if (o && o[k] !== undefined && o[k] !== null) out[k] = o[k]; });
     if (SEG_LENS.indexOf(Number(out.len)) < 0) out.len = SEG_DEFAULT.len;
     out.len = Number(out.len);
+    if (out.rule !== 'B') out.rule = 'A';
+    if (out.take !== 'hand') out.take = 'pick';
     return out;
   }
 
@@ -226,7 +241,7 @@
   var api = { NAME: NAME, ROSTER_START: ROSTER_START, ROSTER_ORDER: ROSTER_ORDER, PARTY_SIZE: PARTY_SIZE, ORDER: ORDER, KIND: KIND, CHAPTERS: CHAPTERS, QUESTS: QUESTS,
     quest: quest, chapter: chapter, slotOf: slotOf, newCampaign: newCampaign, norm: norm, isKey: isKey, shows: shows, keySlots: keySlots, chapterDone: chapterDone,
     openChapter: openChapter, board: board, allDone: allDone, recommend: recommend, defaultParty: defaultParty, placeParty: placeParty, preset: preset,
-    accept: accept, finish: finish, setKey: setKey, segOpts: segOpts, SEG_DEFAULT: SEG_DEFAULT, SEG_LENS: SEG_LENS };
+    accept: accept, finish: finish, setKey: setKey, segOpts: segOpts, SEG_DEFAULT: SEG_DEFAULT, SEG_LENS: SEG_LENS, PURPOSE: PURPOSE, NEEDS_PLAN: NEEDS_PLAN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LAB_QUEST = api;
 })(this);

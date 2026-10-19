@@ -97,7 +97,7 @@
   function modesText() {
     if (isN()) {
       var N = LXL.N, ODD = { all: '全部融合方面', partner: '融合の相手と合うものだけ', step: '方面に数えない' };
-      if (isSeg()) return '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') + '／負けたら: ' + (LXL.loseMode() === 'keep' ? '残る' : 'なくなる') + '／' + segModesText() +
+      if (isSeg()) return (LXL.pickMode && LXL.pickMode() ? '' : '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') + '／') + '負けたら: ' + (LXL.loseMode() === 'keep' ? '残る' : 'なくなる') + '／' + segModesText() +
         '／合わないミッション: ' + ODD[N.odd()] + '／土: ' + dirInfo(N.earth()).name + '／融合: ' + (N.weak() ? '控えめ' : '仲間と同じ');
       return '取り方: ' + (LXL.whoMode() === 'choose' ? '一手と材料から、終わりに選ぶ' : '最後の一手') + '／負けたら: ' + (LXL.loseMode() === 'keep' ? '残る' : 'なくなる') +
         (isRoad() ? '／1本の道 ' + N.roadLen() + 'マス・覚醒 +' + N.awakeAt() : '／変化 ' + N.changeAt() + '・覚醒 +' + N.awakeAt()) + '／合わないミッション: ' + ODD[N.odd()] + '／土: ' + dirInfo(N.earth()).name + '／融合: ' + (N.weak() ? '控えめ' : '仲間と同じ') + '／間の強化: ' + (N.keep() ? '引き継ぐ' : '変化で0から');
@@ -377,7 +377,7 @@
     var work = clone(growth.start), out = [];
     growth.rows.forEach(function (r) {
       var h = r.by;
-      if (!h) { out.push({ need: 'who' }); return; }
+      if (!h) { out.push({ need: 'who', work: clone(work) }); return; }   // 選ぶ行: その時点の道（候補ごとの見通しに使う）
       var m = h.magic, d = LXL.pathDef(m);
       if (!work[m] && d) work[m] = LXL.newPath(m);
       var before = work[m] ? clone(work[m]) : null;
@@ -426,17 +426,52 @@
       (growth.applied ? '<p class="note">道は持ち越される（次に読むシナリオの味方に入る）。エディットで直接いじれる。</p>' : '') + '</div>';
     gbox.innerHTML = h;
   }
+  // ---- クリア後に選ぶ（10/19「ミッションの組み直しと道の切り替え」）----
+  //   ミッションごとに、候補（満たした1発を撃った魔法。決め手は役ごと）から1人選んで道に入れる。候補が1人なら自動で入る。
+  //   選ぶときに、だれに入れるとその魔法の区切りがどう傾くか、次に何の小さな強化が入るかを出す
+  function rolesOf(t, h) {
+    var rs = t.got && t.got.roles && h ? t.got.roles[h.id] || [] : [], N = LXL.ROLE_NAME || {};
+    var names = rs.map(function (k) { return N[k]; }).filter(Boolean);
+    return names.length ? names.join('・') : '';
+  }
+  // 候補 m に入れたら（p はその時点の道）: 「◆ 自分の方向・3マス目・＋直撃の威力 → 節目まであと2マス（倒す 2・ほか 1 → このままなら炎）」
+  function leanText(m, w, p0) {
+    var N = LXL.N, d = N.def(m);
+    if (!d) return '育ちの対象ではない';
+    var p = N.norm(m, p0 || LXL.newPath(m)), q = clone(p), g = LXL.gain(q, m, w), r = g.res || {}, bits = [];
+    bits.push(N.shape(w) + ' ' + (r.kind === 'awake' ? (N.bOn() ? '1つ目の方向' : '自分の方向') : r.kind === 'fuse' ? (N.bOn() ? '2つ目の方向' : 'ほかの方向') : r.kind === 'star' ? 'どちらにも数えない' : '方向ではない形'));
+    if (r.slot) bits.push(r.slot + 'マス目');
+    bits.push(r.small ? '＋' + r.small.name : '小さな強化は未定');
+    var tail = r.ms ? '節目: ' + (r.ms.kind === 'none' ? '何も起きない' : N.msText(d, r.ms.kind)) + (r.ms.kind === 'none' || r.ms.kind === 'tbd' || r.ms.kind === 'fuAwake' ? '' : '！') : N.segNextText(m, q);
+    return bits.join('・') + ' → ' + tail;
+  }
+  function pickHtml(r, i, work) {
+    return '<span class="lt-choose pk-choose"><b class="pk-q">だれの道に入れる？</b>' + r.cands.map(function (c, j) {
+      var role = rolesOf(r.t, c), path = work && work[c.magic] ? work[c.magic] : null;
+      return '<button type="button" class="pk-cand" data-pick="' + i + ':' + j + '"><b>' + esc(R.magicName(c.magic)) + '</b>' + (role ? '<small class="pk-role">（' + esc(role) + '）</small>' : '') +
+        '<small class="pk-lean">' + esc(leanText(c.magic, r.t.dir, path)) + '</small></button>';
+    }).join('') + '</span>';
+  }
+  function pickedNote(r) {
+    if (!r.cands || !r.cands.length || !r.by) return '';
+    var role = rolesOf(r.t, r.by);
+    if (r.cands.length === 1) return '<small class="pk-note">' + (role ? '（' + esc(role) + '）' : '') + '（候補は1人）</small>';
+    return '<small class="pk-note">' + (role ? '（' + esc(role) + '）' : '') + '（候補 ' + esc(r.cands.map(function (c) { return R.magicName(c.magic); }).join('・')) + ' から選んだ）</small>' +
+      (growth && !growth.applied ? '<button type="button" class="pk-re" data-repick="' + growth.rows.indexOf(r) + '">選び直す</button>' : '');
+  }
   // 1本の道（N6）の育ちの画面: 取ったミッションは選ばずに全部入る（クエスト制は勝った時点で入れてある）。魔法ごとに1本の軸で見せる
   function growthRoadHtml(pl, lost, allChosen) {
     var st = app.state, N = LXL.N, n = growth.rows.length, pre = app.scenario && R.findPreset(app.scenario), quest = !!(pre && pre.labQuestRun && window.LabQuest), trial = !!(pre && pre.labTrialRun && window.LabTrial);
-    var sub = growth.won ? 'ミッション ' + n + 'つ → ' + (growth.applied ? '全部、道に入った' : '全部、道に入る') : lost ? '取ったミッションはなくなる' : '取ったミッションは道に入る';
+    var needN = pl.rows.filter(function (r) { return r.need; }).length;
+    var sub = growth.won ? 'ミッション ' + n + 'つ → ' + (growth.applied ? '全部、道に入った' : needN ? '候補から' + needN + 'つ選んで道に入れる' : '全部、道に入る') : lost ? '取ったミッションはなくなる' : '取ったミッションは道に入る';
     var h = '<div class="lab-run-card lt-gcard nr-growth"><h2>' + (growth.won ? '勝った！' : '負けた…') + ' <small>' + esc(n ? sub : 'この戦いで取ったミッションはない') + '</small></h2>' +
       '<p class="x-more">取ったミッションは、選ばずに全部、取った魔法の道に入る。道は魔法ごとに1本: 小さいマスが印1つ（中はミッションの形、下はその印で付いた間の強化）、ひし形がチェックポイント。' +
       N.roadLen() + 'マスそろうと変化（' + '自分の形が多いと覚醒側、ほかの形が多いと融合側）、覚醒側はさらに自分の形' + N.awakeAt() + 'つで覚醒。</p>';
     if (n) h += '<ol class="lt-steps nr-gsteps">' + growth.rows.map(function (r, i) {
       var p = pl.rows[i], cls = 'lt-step d-' + dcls(r.t.dir) + (i < growth.shown ? ' show' : '') + (lost ? ' lost' : '');
       var line = shp(r.t.dir) + '<span class="nr-gname">' + esc(r.t.name) + '</span>';
-      if (p.need === 'who') {
+      if (p.need === 'who' && isSeg()) line += pickHtml(r, i, p.work);   // クリア後に選ぶ（10/19）: 候補ごとに、入れたら道がどうなるか
+      else if (p.need === 'who') {
         line += '<span class="lt-choose">だれが取る？ ' + r.cands.map(function (c, j) {
           return '<button type="button" data-pick="' + i + ':' + j + '">' + esc(R.magicName(c.magic)) + '</button>';
         }).join('') + '</span>';
@@ -446,7 +481,7 @@
         if (rs.slot) sb.push(rs.small ? '＋' + esc(rs.small.name) : '<small class="sg-tbd">小さな強化は未定</small>');
         if (rs.ms) sb.push('<b class="nr-gbig">節目: ' + esc(segMsBig(LXL.N.def(p.magic), rs.ms.kind)) + '</b>');
         if (!rs.ok || rs.noRoad) sb.push('<small>（道に入らない）</small>');
-        line += '<span class="nr-gwho">→ <b>' + esc(R.magicName(p.magic)) + '</b></span>' + sb.join(' ') + '<small class="x-more"> ' + esc(resText(p)) + '</small>';
+        line += '<span class="nr-gwho">→ <b>' + esc(R.magicName(p.magic)) + '</b>' + pickedNote(r) + '</span>' + sb.join(' ') + '<small class="x-more"> ' + esc(resText(p)) + '</small>';
       } else {
         var res = p.g.res || {}, bits = [];
         if (res.change) bits.push('<b class="nr-gbig">変化「' + esc(res.change.name) + '」！</b>');
@@ -528,6 +563,7 @@
     var b = e.target.closest('button');
     if (!b || !growth) { if (b && b.getAttribute('data-g') === 'close') gbox.hidden = true; return; }
     if (b.hasAttribute('data-pick')) { var pk = b.getAttribute('data-pick').split(':').map(Number); var r = growth.rows[pk[0]]; r.by = r.cands[pk[1]]; renderGrowth(); return; }
+    if (b.hasAttribute('data-repick') && !growth.applied) { var rr = growth.rows[Number(b.getAttribute('data-repick'))]; if (rr && rr.cands && rr.cands.length > 1) rr.by = null; renderGrowth(); return; }   // クリア後に選ぶ: 入れる前なら選び直せる
     var a = b.getAttribute('data-g');
     if (a === 'close') { gbox.hidden = true; return; }
     if (a === 'apply' && !growth.applied) { applyGrowth(); return; }
@@ -897,20 +933,21 @@
   }
   function showToast(list) {
     toast.innerHTML = list.map(function (t) {
-      var who = t.got.by ? R.magicName(t.got.by.magic) : '';
-      return '<div class="nr-toast-row"><span class="nr-toast-h">ミッション達成！</span>' + shp(t.dir) + '<b>' + esc(t.name) + '</b>' + (who ? '<span class="nr-toast-who">→ ' + esc(who) + 'の道へ</span>' : '') + '</div>';
+      var pk = LXL.pickMode && LXL.pickMode(), who = pk ? candNames(t) : t.got.by ? R.magicName(t.got.by.magic) : '';
+      return '<div class="nr-toast-row"><span class="nr-toast-h">ミッション達成！</span>' + shp(t.dir) + '<b>' + esc(t.name) + '</b>' + (who ? '<span class="nr-toast-who">→ ' + (pk ? '候補: ' + esc(who) + '（勝ったら1人選ぶ）' : esc(who) + 'の道へ') + '</span>' : '') + '</div>';
     }).join('');
     toast.hidden = false;
     toast.classList.remove('show'); void toast.offsetWidth; toast.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toast.hidden = true; toast.classList.remove('show'); }, 2600);
   }
+  function candNames(t) { return t.got ? (t.got.cands || (t.got.by ? [t.got.by] : [])).map(function (h) { return R.magicName(h.magic); }).join('・') : ''; }
   function missionStripHtml(st, fresh) {
     var ts = st.labTargets || [];
     if (!ts.length) return '';
     var got = ts.filter(function (t) { return t.got; }).length;
     return '<b class="nr-mhead">ミッション <span class="nr-mcount">' + got + ' / ' + ts.length + '</span></b>' + ts.map(function (t) {
-      var who = t.got ? (t.got.by ? '達成！ ' + R.magicName(t.got.by.magic) : '達成！ だれが取るか選ぶ') : '';
+      var who = t.got ? (LXL.pickMode && LXL.pickMode() ? '候補: ' + candNames(t) : t.got.by ? '達成！ ' + R.magicName(t.got.by.magic) : '達成！ だれが取るか選ぶ') : '';   // クリア後に選ぶ: 候補を出す
       var fl = fresh.some(function (x) { return x.id === t.id; });
       return '<span class="nr-m' + (t.got ? ' got' : '') + (fl ? ' flash' : '') + '" title="' + esc(t.text) + '">' + shp(t.dir) + '<span>' + esc(t.name) + '</span>' + (who ? '<small>' + esc(who) + '</small>' : '') + '</span>';
     }).join('');
@@ -1008,16 +1045,24 @@
   // ---- N7 区切りの道（10/19 オーナー「強化の組み直しと強化ためし」）----
   //   道は1本で、len マスごとの区切りと、区切りの終わりの節目（ひし形）。マスの下は、そのマスで入った小さな強化（未定なら「未」）
   function isSeg() { return isRoad() && !!(LXL.N.seg && LXL.N.seg()); }
-  var MS_LABEL = { change: '変化', fuse: '融合', awake: '覚醒', range: '範囲', tbd: '未定' };
+  var MS_LABEL = { change: '変化', fuse: '融合', awake: '覚醒', range: '範囲', tbd: '未定', none: 'なし', fuAwake: '覚醒' };
   var STAR_NAME = { own: '自分の方向', other: 'ほかの方向', none: 'どちらでもない' };
   function segModesText() {
-    var N = LXL.N;
-    return '区切りの道 ' + N.segLen() + 'マス・★は' + STAR_NAME[N.star()] + '・2つ目からの節目: ' + (N.awakeLater() === 'any' ? '覚醒方面は必ず覚醒' : '覚醒方面は自分が多ければ覚醒、ほかなら範囲') + '／' + (N.fuseLater() === 'range' ? '融合方面は範囲' : '融合方面は未定');
+    var N = LXL.N, take = LXL.pickMode && LXL.pickMode() ? '取り方: クリア後に選ぶ（候補から1人）／' : '';
+    if (N.bOn()) return take + '区切りの道 ' + N.segLen() + 'マス・道の決まり B（方向を2つ: 同じ形が' + N.bNeed() + 'つ以上で、その方向に変化・覚醒。★は1つ目）';
+    return take + '区切りの道 ' + N.segLen() + 'マス・道の決まり A・★は' + STAR_NAME[N.star()] + '・2つ目からの節目: ' + (N.awakeLater() === 'any' ? '覚醒方面は必ず覚醒' : '覚醒方面は自分が多ければ覚醒、ほかなら範囲') + '／' + (N.fuseLater() === 'range' ? '融合方面は範囲' : '融合方面は未定');
   }
   // 節目の短い名前（ひし形の下）
   function msShort(d, k, p) {
     if (k === 'range') return LXL.N.RANGE.place && p && p.form === 'fuse' && LXL.N.RANGE.place[d.fuse.id] ? '1段大きく' : '奥へ1列';
-    return k === 'tbd' ? '' : LXL.N.msName(d, k);
+    return k === 'tbd' || k === 'none' ? '' : k === 'fuAwake' ? '未定' : LXL.N.msName(d, k);
+  }
+  // B: 次の節目の短い言い方（「→炎」「炎 か 火の渦」「なし」）
+  function segNextShortB(d, x, q) {
+    if (!x.goals.length) return '未定';
+    if (x.win) return '→' + (msShort(d, x.win.kind, q) || '未定');
+    var can = x.goals.filter(function (g) { return g.can; });
+    return can.length ? can.map(function (g) { return msShort(d, g.kind, q) || '未定'; }).join(' か ') : 'なし';
   }
   function segCp(label, name, cls, isNew, tip) {
     return '<span class="ax-cp sg-cp' + (cls ? ' ' + cls : '') + (isNew ? ' new' : '') + '" title="' + esc(tip) + '"><i class="ax-dia"><b>' + esc(label) + '</b></i><small>' + esc(name) + '</small></span>';
@@ -1031,7 +1076,7 @@
       var seg = '';
       for (var i = g * L; i < (g + 1) * L; i++) {
         var c = cells[i], cls = !c ? (i === nq ? 'next' : '') : i < np ? 'on' : 'pend';
-        var tip = (i + 1) + 'マス目' + (c ? ' ' + N.shape(c.w) + '（' + (c.k === 'awake' ? '自分の方向' : c.k === 'star' ? 'どちらにも数えない' : 'ほかの方向') + '）: ' + (c.step ? '小さな強化「' + c.step.name + '」 ' + c.step.text : '小さな強化は未定') : '（まだ）');
+        var tip = (i + 1) + 'マス目' + (c ? ' ' + N.shape(c.w) + '（' + (N.bOn() ? (c.k === 'awake' ? '1つ目の方向' : c.k === 'fuse' ? '2つ目の方向' : '方向ではない形') : c.k === 'awake' ? '自分の方向' : c.k === 'star' ? 'どちらにも数えない' : 'ほかの方向') + '）: ' + (c.step ? '小さな強化「' + c.step.name + '」 ' + c.step.text : '小さな強化は未定') : '（まだ）');
         seg += '<span class="ax-cell' + (cls ? ' ' + cls : '') + (c && c.k === 'awake' ? ' own' : '') + (base && c && i >= nb && i < np ? ' new' : '') + '" title="' + esc(tip) + '">' +
           '<i class="ax-box">' + (c ? shp(c.w) : '') + '</i><small>' + (c ? (c.step ? esc(c.step.mark) : '<span class="sg-tbd">未</span>') : '&nbsp;') + '</small></span>';
       }
@@ -1039,7 +1084,7 @@
       if (mq) cp = segCp(MS_LABEL[mq.kind], msShort(d, mq.kind, q), (mp ? 'got' : 'pend') + ' k-' + mq.kind, !!base && !!mp && !base.ms[g], '節目' + (g + 1) + ': ' + N.msText(d, mq.kind) + '（' + N.segCount(d, mq) + '）');
       else {
         var x = N.segNext(m, q), sh = function (o) { return msShort(d, o.kind, q) || '未定'; };
-        var nm = x.same ? sh(x.onOwn) : x.decided ? sh(x.decided === 'own' ? x.onOwn : x.onOther) + '（決まり）' : x.lead ? '→' + sh(x.next) : sh(x.onOwn) + ' か ' + sh(x.onOther);
+        var nm = x.B ? segNextShortB(d, x, q) : x.same ? sh(x.onOwn) : x.decided ? sh(x.decided === 'own' ? x.onOwn : x.onOther) + '（決まり）' : x.lead ? '→' + sh(x.next) : sh(x.onOwn) + ' か ' + sh(x.onOther);
         cp = segCp('節目', nm, 'upcoming', false, N.segNextText(m, q));
       }
       h += '<span class="sg-seg">' + seg + '</span>' + cp;
@@ -1049,6 +1094,7 @@
   // 今の区切りの数と、このままならどちらの節目か（「区切り2 ◆倒す 2・ほか 1 → このままなら覚醒「業火」 あと2マスで節目」）
   function segCountHtml(m, q) {
     var N = LXL.N, d = N.def(m), x = N.segNext(m, q), own = N.shape(d.want);
+    if (x.B) return segCountHtmlB(m, d, x);
     var cnt = '<span class="sg-cnt own">' + shp(d.want) + ' ' + esc(dirInfo(d.want).name) + ' <b>' + x.own + '</b></span><span class="sg-cnt">ほか <b>' + x.other + '</b></span>' + (x.star ? '<span class="sg-cnt">★ <b>' + x.star + '</b></span>' : '');
     var to = x.same ? (x.onOwn.kind === 'tbd' ? '節目の中身は未定' : 'どちらが多くても <b>' + esc(x.onOwn.text) + '</b>')
       : x.decided ? '<b>' + esc((x.decided === 'own' ? x.onOwn : x.onOther).text) + '</b>に決まり'
@@ -1056,15 +1102,29 @@
       : esc(own) + 'が多いと <b>' + esc(x.onOwn.text) + '</b>／ほかが多いと <b>' + esc(x.onOther.text) + '</b>';
     return '<span class="sg-segno">区切り' + x.seg + '</span>' + cnt + '<span class="sg-to">→ ' + to + '</span><small class="sg-left">あと' + x.left + 'マスで節目</small>';
   }
+  // B: 区切りの中の形ごとの数（方向の形は色つき）と「あと何個で〇〇に変化」
+  function segCountHtmlB(m, d, x) {
+    var N = LXL.N, D = x.dirs, order = D.concat(N.CH.SORT_ORDER.filter(function (w) { return w !== 'free' && D.indexOf(w) < 0; }));
+    var cnt = order.map(function (w) {
+      var n = x.cnt[w] || 0, mine = D.indexOf(w);
+      if (mine < 0 && !n) return '';
+      return '<span class="sg-cnt' + (mine === 0 ? ' own' : mine === 1 ? ' two' : '') + '" title="' + esc(mine === 0 ? '1つ目の方向（★もここ）' : mine === 1 ? '2つ目の方向' : 'この魔法の方向ではない形') + '">' + shp(w) + ' <b>' + n + '</b></span>';
+    }).join('');
+    var to = !x.goals.length ? '節目の中身は未定'
+      : x.win ? esc(N.shape(x.win.dir)) + 'が' + x.need + 'つそろった → <b>' + esc(x.win.text) + '</b>'
+      : x.stuck ? 'この区切りでは' + x.goals.map(function (g) { return esc(N.shape(g.dir)); }).join('か') + 'が' + x.need + 'つそろわない → 節目では何も起きない（小さな強化だけ）'
+      : x.goals.filter(function (g) { return g.can; }).map(function (g) { return 'あと' + esc(N.shape(g.dir)) + '<b>' + g.more + '</b>つで <b>' + esc(g.text) + '</b>'; }).join('／');
+    return '<span class="sg-segno">区切り' + x.seg + '</span>' + cnt + '<span class="sg-to">→ ' + to + '</span><small class="sg-left">あと' + x.left + 'マスで節目</small>';
+  }
   // 節目の大きな言い方（「変化「炎」！」「範囲の大きな強化！」「未定」）
-  function segMsBig(d, k) { return k === 'change' ? '変化「' + d.awake.name + '」！' : k === 'fuse' ? '融合「' + d.fuse.name + '」！' : k === 'awake' ? '覚醒「' + d.awake.lv2.name + '」！' : k === 'range' ? '範囲の大きな強化！' : '未定'; }
+  function segMsBig(d, k) { return k === 'change' ? '変化「' + d.awake.name + '」！' : k === 'fuse' ? '融合「' + d.fuse.name + '」！' : k === 'awake' ? '覚醒「' + d.awake.lv2.name + '」！' : k === 'range' ? '範囲の大きな強化！' : k === 'none' ? '何も起きない' : k === 'fuAwake' ? '覚醒（未定）' : '未定'; }
   // 前の道 b → あとの道 a で届いた節目の札（育ちの画面・強化ためし）
   function segNewMs(b, a) { return a.ms.slice(b.ms.length); }
   function segBadges(m, b, a) {
     var d = LXL.N.def(m);
     return segNewMs(b, a).map(function (ms) {
       var t = ms.kind === 'change' ? '変化！ ' + R.magicName(m) + ' → ' + d.awake.name : ms.kind === 'fuse' ? '融合！ ' + R.magicName(m) + ' → ' + d.fuse.name
-        : ms.kind === 'awake' ? '覚醒！ ' + d.awake.name + ' → ' + d.awake.lv2.name : ms.kind === 'range' ? '範囲の大きな強化！' : '節目: 未定';
+        : ms.kind === 'awake' ? '覚醒！ ' + d.awake.name + ' → ' + d.awake.lv2.name : ms.kind === 'range' ? '範囲の大きな強化！' : ms.kind === 'none' ? '節目: 何も起きない' : ms.kind === 'fuAwake' ? '節目: 覚醒（未定）' : '節目: 未定';
       return '<span class="lt-awake sg-badge k-' + ms.kind + '">' + esc(t) + '</span>';
     }).join('');
   }
@@ -1074,7 +1134,9 @@
     return segNewMs(b, a).map(function (ms) {
       var t = ms.kind === 'change' ? d.awake.name + ': ' + d.awake.text : ms.kind === 'fuse' ? d.fuse.name + ': ' + d.fuse.text + '（' + (N.weak() ? '1人で出すと控えめ: ' + d.fuse.weak : d.fuse.same) + '）'
         : ms.kind === 'awake' ? d.awake.lv2.name + ': ' + d.awake.lv2.text + '。新しい組み合わせ: ' + d.awake.lv2.combo
-        : ms.kind === 'range' ? N.rangeInfo(d, a).text : a.awake ? '覚醒のあとの節目の中身は、まだない（未定）' : '融合方面の2つ目からの節目の中身は、まだない（未定）';
+        : ms.kind === 'range' ? N.rangeInfo(d, a).text : ms.kind === 'none' ? (a.form ? '変化した方向の形' : 'この魔法の方向の形') + 'が' + N.bNeed() + 'つそろわず、節目では何も起きない（小さな強化だけ）'
+        : ms.kind === 'fuAwake' ? '2つ目の方向（' + d.fuse.name + '）の形がそろった。その先の覚醒はまだない（未定）'
+        : a.awake ? '覚醒のあとの節目の中身は、まだない（未定）' : '融合方面の2つ目からの節目の中身は、まだない（未定）';
       return '<p class="sg-msd k-' + ms.kind + '">' + esc(t) + '</p>';
     }).join('');
   }
@@ -1082,6 +1144,15 @@
   function segRulesHtml(m, p) {
     var N = LXL.N, d = N.def(m), own = N.shape(d.want), aw = p.form === 'awake', fu = p.form === 'fuse';
     var li = function (cls, head, body) { return '<li class="' + cls + '"><span class="lt-mark">' + esc(head) + '</span> ' + body + '</li>'; };
+    if (N.bOn()) {   // 道の決まり B: 方向を2つ
+      var D = N.bDirs(m), need = N.bNeed(), s1 = N.shape(D[0]), s2 = D[1] ? N.shape(D[1]) : '';
+      var hb = li(aw ? 'on' : fu ? 'closed' : '', '1', '1つ目の方向 ' + esc(s1) + ' ' + esc(dirInfo(D[0]).name) + '（★もここ）: 区切りに' + esc(s1) + 'が' + need + 'つ以上 → 変化「' + esc(d.awake.name) + '」。そのあと、区切りに' + esc(s1) + 'が' + need + 'つ以上 → 覚醒「' + esc(d.awake.lv2.name) + '」' +
+        '<small>' + esc(d.awake.name) + ': ' + esc(d.awake.text) + '</small><small>' + esc(d.awake.lv2.name) + ': ' + esc(d.awake.lv2.text) + '</small>');
+      if (s2) hb += li(fu ? 'on' : aw ? 'closed' : '', '2', '2つ目の方向 ' + esc(s2) + ' ' + esc(dirInfo(D[1]).name) + '（融合の相手 ' + esc(R.magicName(d.partner)) + 'の方向）: 区切りに' + esc(s2) + 'が' + need + 'つ以上 → 変化「' + esc(d.fuse.name) + '」。その先の覚醒は未定' +
+        '<small>' + esc(d.fuse.name) + ': ' + esc(d.fuse.text) + '（' + esc(N.weak() ? '1人で出すと控えめ: ' + d.fuse.weak : d.fuse.same) + '）</small>');
+      hb += li('', '－', 'そろわなければ、節目では何も起きない（小さな強化だけ）。方向ではない形も道には入る（区切りのマスを使う）');
+      return '<ul class="lt-pc-dirs sg-rules">' + hb + '</ul>';
+    }
     var h = li(p.form ? 'on' : '', '1', '節目1: ' + esc(own) + 'が多い → 覚醒方面の変化「' + esc(d.awake.name) + '」／ほかが多い → 融合方面の変化「' + esc(d.fuse.name) + '」' +
       '<small>' + esc(d.awake.name) + ': ' + esc(d.awake.text) + '</small><small>' + esc(d.fuse.name) + ': ' + esc(d.fuse.text) + '（' + esc(N.weak() ? '1人で出すと控えめ: ' + d.fuse.weak : d.fuse.same) + '）</small>');
     h += li(aw ? (p.awake ? 'on' : '') : fu ? 'closed' : '', '2', '節目2から（覚醒方面）: ' + (N.awakeLater() === 'any' ? '多い方に関係なく覚醒「' + esc(d.awake.lv2.name) + '」' : esc(own) + 'が多い → 覚醒「' + esc(d.awake.lv2.name) + '」／ほかが多い → 範囲の大きな強化（覚醒は次の区切りで' + esc(own) + 'が多ければ）') +
@@ -1096,8 +1167,8 @@
   function segSmallHtml(m, p) {
     var N = LXL.N, d = N.def(m), list = (N.SMALL[m] || {})[d.want] || [], have = N.smallCells(m, p).filter(function (c) { return c.col === d.want; }).length;
     var lis = list.map(function (id, i) { var st = N.stepById(id); return '<li class="' + (i < have ? 'on' : '') + '" title="' + esc(st ? st.text : id) + '">' + esc(st ? st.name : id) + '</li>'; });
-    return '<div class="lt-nstepbox">小さな強化（1マスに1つ。' + esc(N.shape(d.want) + ' ' + dirInfo(d.want).name) + 'の欄' + (N.star() === 'own' ? '。★もここ' : '') + '）<ol>' + lis.join('') + '<li class="sg-tbdli">そのあとは未定</li></ol>' +
-      '<small>ほかの形の欄は未定（マスには形だけ入る）。範囲（形が増える）は、節目の範囲の大きな強化だけ。</small></div>';
+    return '<div class="lt-nstepbox">小さな強化（1マスに1つ。' + esc(N.shape(d.want) + ' ' + dirInfo(d.want).name) + 'の欄' + (N.bOn() || N.star() === 'own' ? '。★もここ' : '') + '）<ol>' + lis.join('') + '<li class="sg-tbdli">そのあとは未定</li></ol>' +
+      '<small>ほかの形の欄は未定（マスには形だけ入る）。' + (N.bOn() ? '道の決まり B には範囲の大きな強化はない。' : '範囲（形が増える）は、節目の範囲の大きな強化だけ。') + '</small></div>';
   }
   // 駒の下・ターゲットの欄: 今の区切りのマスと、次の節目
   function segSlots(m, p, q) {
@@ -1125,9 +1196,11 @@
   var SEG_STORE = 'cafilia-lab-seg', segMem = null;
   function segSettings() {
     if (!segMem) { try { segMem = JSON.parse(localStorage.getItem(SEG_STORE) || '{}') || {}; } catch (e) { segMem = {}; } }
-    var Q = window.LAB_QUEST, d = Q ? Q.SEG_DEFAULT : { len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range' }, out = { on: segMem.on !== false };
+    var Q = window.LAB_QUEST, d = Q ? Q.SEG_DEFAULT : { len: 5, star: 'own', awakeLater: 'own', fuseLater: 'range', rule: 'A', take: 'pick' }, out = { on: segMem.on !== false };
     Object.keys(d).forEach(function (k) { out[k] = segMem[k] !== undefined && segMem[k] !== null ? segMem[k] : d[k]; });
     out.len = [3, 5, 7].indexOf(Number(out.len)) >= 0 ? Number(out.len) : d.len;
+    if (out.rule !== 'B') out.rule = 'A';
+    if (out.take !== 'hand') out.take = 'pick';
     return out;
   }
   function setSegSettings(o) {
@@ -1139,7 +1212,7 @@
   }
   // 戦闘の外（拠点・強化ためし）の切り替え: N0・N6（＋N7 とその値）だけ。変えたら true
   function useN() {
-    var st = segSettings(), want = st.on ? ['N0', 'N6', 'N7'] : ['N0', 'N6'], keys = ['len', 'star', 'awakeLater', 'fuseLater'];
+    var st = segSettings(), want = st.on ? ['N0', 'N6', 'N7'] : ['N0', 'N6'], keys = ['len', 'star', 'awakeLater', 'fuseLater', 'rule', 'take'];
     var same = R.labOnList().join('+') === ['L0', 'M0'].concat(want).join('+') && (!st.on || keys.every(function (k) { return String(R.BALANCE.lab.N7[k]) === String(st[k]); }));
     if (same) return false;
     var o = {};

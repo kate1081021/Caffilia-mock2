@@ -65,7 +65,7 @@
     u.labPath = clone(p);
     var verb = f ? f.verb : (R.MAGIC_INFO[m] || {}).verb, trait = f ? f.text : (grow && tr.grow) || tr.text || '';
     var h = '<div class="nr-card tr-card"><div class="nr-head"><b class="nr-name">' + esc(f ? f.name : R.magicName(m)) + '</b>' + (f ? '<small>（' + esc(R.magicName(m)) + 'から' + (p.form === 'fuse' ? '融合' : p.awake ? '覚醒' : '変化') + '）</small>' : '') +
-      '<small>やりたいこと「' + esc((N.WANTS[d.want] || {}).name) + '」' + esc(N.shape(d.want)) + '</small><span class="nr-verb">' + esc(verb || '') + '</span>' + TUI().shapeGridHtml(u, s) + '</div>';
+      (N.bOn() ? '<small>方向 ' + esc(N.bDirs(m).map(function (w) { return N.shape(w) + (N.WANTS[w] || {}).name; }).join('・')) + '（B）</small>' : '<small>やりたいこと「' + esc((N.WANTS[d.want] || {}).name) + '」' + esc(N.shape(d.want)) + '</small>') + '<span class="nr-verb">' + esc(verb || '') + '</span>' + TUI().shapeGridHtml(u, s) + '</div>';
     if (trait) h += '<p class="nr-trait">' + esc(trait) + (f && f.combo ? '<br><b>新しい組み合わせ:</b> ' + esc(f.combo) : '') + '</p>';
     var base = last && !last.battle && last.magic === m ? last.before : last && last.battle ? N.norm(m, last.before[m] || null) : null;
     if (seg()) {
@@ -156,14 +156,20 @@
         return '<button type="button" class="tr-pick' + (on ? ' on' : '') + '" data-tr="pick" data-m="' + m + '">' + (on ? '✓ ' : '') + esc(TUI().magicLabel(m, pathOf(m))) + '</button>';
       }).join('') + '<button type="button" class="primary" data-tr="fight"' + (party.length === Q.PARTY_SIZE ? '' : ' disabled') + '>戦闘に入る</button></div></div>';
   }
+  // 道の決まり A／B（10/19「ミッションの組み直しと道の切り替え」）
+  var RULE_TIP = { A: '区切りの中で、自分の方向（やりたいこと）の形と、それ以外の形の多い方で節目が決まる（1つ目の節目で覚醒方面の変化か融合方面の変化）',
+    B: '各魔法が方向を2つ持つ。区切りの中で同じ形が3つ以上あり、それがその魔法の方向なら、その方向に変化。そろわなければ節目では何も起きない。変化のあと、同じ方向の形が3つ以上の区切りで覚醒' };
+  function B_DIRS_TEXT() { var D = N.DIRS2 || {}; return MAGICS.map(function (m) { var d = D[m] || []; return R.magicName(m) + ' ' + d.map(function (w) { return N.shape(w) + (N.WANTS[w] || {}).name; }).join('・'); }).join('／'); }
   function optsHtml() {
     var S = TUI().segSettings();
     var sel = function (k, vals) { return '<select data-tr="opt" data-k="' + k + '">' + Object.keys(vals).map(function (v) { return '<option value="' + v + '"' + (String(S[k]) === v ? ' selected' : '') + '>' + esc(vals[v]) + '</option>'; }).join('') + '</select>'; };
     return '<div class="tr-opts"><label class="tr-segon"><input type="checkbox" data-tr="segon"' + (S.on ? ' checked' : '') + '> 区切りの道（10/19）</label>' +
-      (S.on ? '<span class="tr-lens"><span class="lq-l">区切り</span>' + Q.SEG_LENS.map(function (n) { return '<button type="button" class="tr-len' + (S.len === n ? ' on' : '') + '" data-tr="len" data-n="' + n + '">' + n + 'マス</button>'; }).join('') + '</span>' +
-        '<details class="tr-more"><summary>ほかの切り替え</summary><label>★の数え方 ' + sel('star', { own: '自分の方向', other: 'ほかの方向', none: 'どちらでもない' }) + '</label>' +
+      (S.on ? '<span class="tr-lens tr-rule"><span class="lq-l">道の決まり</span>' + [['A', 'A 自分の方向か、それ以外か'], ['B', 'B 方向を2つ（同じ形が3つで変化）']].map(function (r) { return '<button type="button" class="tr-len' + (S.rule === r[0] ? ' on' : '') + '" data-tr="rule" data-r="' + r[0] + '" title="' + esc(RULE_TIP[r[0]]) + '">' + esc(r[1]) + '</button>'; }).join('') + '</span>' +
+        '<span class="tr-lens"><span class="lq-l">区切り</span>' + Q.SEG_LENS.map(function (n) { return '<button type="button" class="tr-len' + (S.len === n ? ' on' : '') + '" data-tr="len" data-n="' + n + '">' + n + 'マス</button>'; }).join('') + '</span>' +
+        '<details class="tr-more"><summary>ほかの切り替え</summary><label>戦闘で誰が取るか ' + sel('take', { pick: 'クリア後に選ぶ（候補から1人）', hand: '達成の一手を撃った魔法' }) + '</label>' +
+        (S.rule === 'B' ? '<p class="note">B: 方向は ' + B_DIRS_TEXT() + '。★は1つ目の方向。</p>' : '<label>★の数え方 ' + sel('star', { own: '自分の方向', other: 'ほかの方向', none: 'どちらでもない' }) + '</label>' +
         '<label>2つ目からの節目（覚醒方面） ' + sel('awakeLater', { own: '自分が多ければ覚醒・ほかなら範囲', any: '多い方に関係なく覚醒' }) + '</label>' +
-        '<label>2つ目からの節目（融合方面） ' + sel('fuseLater', { range: '範囲の大きな強化', none: '何もない（未定）' }) + '</label></details>'
+        '<label>2つ目からの節目（融合方面） ' + sel('fuseLater', { range: '範囲の大きな強化', none: '何もない（未定）' }) + '</label>') + '</details>'
         : '<small class="muted">切: 10/16 の3マスの道（変化までの3マスと覚醒までのマス）</small>') + '</div>';
   }
   function render() {
@@ -278,6 +284,7 @@
     else if (a === 'undo') undo();
     else if (a === 'reset') reset();
     else if (a === 'len') { TUI().setSegSettings({ len: Number(b.getAttribute('data-n')) }); last = null; useN(); app.addLog('【強化ためし】区切りを' + b.getAttribute('data-n') + 'マスに'); render(); }
+    else if (a === 'rule') { TUI().setSegSettings({ rule: b.getAttribute('data-r') }); last = null; useN(); app.addLog('【強化ためし】道の決まり ' + b.getAttribute('data-r') + '（同じ道を、この決まりで読み直す）'); render(); }
     else if (a === 'pick') {
       var m = b.getAttribute('data-m'), k = st.party.indexOf(m);
       if (k >= 0) st.party.splice(k, 1); else if (st.party.length < Q.PARTY_SIZE) st.party.push(m);

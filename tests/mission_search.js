@@ -26,7 +26,7 @@ function score(s) {
   if (s.result === 'win') return 1e9 - s.turn * 1000;
   if (s.result === 'lose') return -1e9;
   var type = (s.mission && s.mission.type) || 'annihilate';
-  var fc = R.forecast(s);
+  var fc = R.forecast(s, { noPaths: true });   // 点には敵の行き先（ラボ D2）を使わない（重いので数えない）
   var threat = {};
   fc.enemyDamage.concat(fc.burn).forEach(function (d) { threat[d.id] = (threat[d.id] || 0) + d.amount; });
   var v = 0;
