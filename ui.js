@@ -17,13 +17,21 @@
   // 行の「ターンの形」の指定が今の形に合うか（both / simul / single）
   function modeOk(line) { var m = (line && line.mode) || 'both'; return m === 'both' || m === (simul() ? 'simul' : 'single'); }
 
-  // 展示ステージ③（s.ex）: 画面の見せ方（形だけの予測・光るヒント・ミッション・ため・大きな絵・魔法の出し方）
+  // 展示モード（mode.js。URL に #dev がないとき）: 遊ぶのに要るものだけを出す。隠すのは style.css、キーと進み方はここ
+  var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
+  var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①から始まり、クリアすると次へ
+  var EXHIBIT_NEXT_MS = 2200;                     // クリアしてから次のステージを読むまでの間（会話の窓が出ていれば、閉じてから）
+
+  // 展示ステージ③（s.ex）: 画面の見せ方（ミッション・魔法の出し方）
   function exOf(st) { st = st || app.state; return (st && st.ex) || null; }
-  function shapeOnly() { var x = exOf(); return !!(x && x.shapeOnly) && !app.editMode; }
+  // 予測は魔法が届く形だけ（balance.js の preview.shapeOnly。前は展示ステージ③だけ、10/29 からどのシナリオでも）
+  function shapeOnly() { return !!(B.preview && B.preview.shapeOnly) && !app.editMode; }
   // 魔法の出し方: step ターンの終わりに1段ずつ（初期）／chain ターンの終わりにつながる／instant 撃った瞬間に発動。選んだ形は覚える
+  //   展示モードでは切り替えを出さず、いつも chain
   var EX_FIRE_KEY = 'caffilia-ex3-fire-mode';
   var EX_FIRE = [['step', 'exFireStep', 'ターンの終わりに1段ずつ'], ['chain', 'exFireChain', 'ターンの終わりにつながる'], ['instant', 'exFireInstant', '撃った瞬間に発動']];
   function exFireMode() {
+    if (EXHIBIT) return 'chain';
     var v = null;
     try { v = window.localStorage.getItem(EX_FIRE_KEY); } catch (e) { v = null; }
     return EX_FIRE.some(function (x) { return x[0] === v; }) ? v : 'step';
@@ -42,11 +50,12 @@
     app.exFire = null;
   }
 
-  // 【一斉】ターンの形。選んだ形は覚える（読み書きは try/catch。使えなければ毎回、一斉から）
+  // 【一斉】ターンの形。選んだ形は覚える（読み書きは try/catch。使えなければ毎回、一斉から）。展示モードはいつも一斉
   var TURN_KEY = 'caffilia-turn-mode';
   function simul() { return B.turnMode === 'simul'; }
   (function () {
     var saved = null;
+    if (EXHIBIT) { B.turnMode = 'simul'; return; }
     try { saved = window.localStorage.getItem(TURN_KEY); } catch (e) { saved = null; }
     B.turnMode = saved === 'single' || saved === 'simul' ? saved : 'simul';
   })();
@@ -491,6 +500,24 @@
     if (pb.done) pb.done();
     if (app.afterPlayback) app.afterPlayback();   // 進行モック: 戦闘の決着を見る
     exAfterPlayback();
+    exhibitAfterPlayback();
+  }
+  // 展示モード: ステージをクリアしたら、少し見せてから次のステージへ（会話の窓が出ていれば、閉じてから）。③のあとは止まる
+  function exhibitAfterPlayback() {
+    var st = app.state;
+    if (!EXHIBIT || app.demo || app.editMode || st.result !== 'win') return;
+    var next = EXHIBIT_STAGES[EXHIBIT_STAGES.indexOf(app.scenario) + 1];
+    if (!next || EXHIBIT_STAGES.indexOf(app.scenario) < 0) return;
+    clearTimeout(exhibitAfterPlayback.timer);
+    exhibitAfterPlayback.timer = setTimeout(function () {
+      var go = function () {
+        if (app.state !== st || app.busy || app.editMode) return;   // 待っている間に1手戻した・ほかを読んだ
+        loadScenario(next);
+        app.history = [];   // 前のステージには「1手戻す」で戻らない
+        render();
+      };
+      if (app.afterDialog) app.afterDialog(go); else go();
+    }, EXHIBIT_NEXT_MS);
   }
   // 展示ステージ③: 決着のあと。味方が倒れたら少し見せてからステージの頭からやり直す
   function exAfterPlayback() {
@@ -1073,8 +1100,8 @@
     }).join('');
     var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') + exm +
       '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
-      '<span class="m-rule x-more"><b>勝ち</b> ' + esc(info.win) + '</span>' +   // 勝ち方・負け方は「くわしく」で
-      '<span class="m-rule x-more"><b>負け</b> ' + esc(info.lose) + '</span>' +
+      '<span class="m-rule m-win x-more"><b>勝ち</b> ' + esc(info.win) + '</span>' +   // 勝ち方・負け方は「くわしく」で（展示モードは勝ち方を出す）
+      '<span class="m-rule m-lose x-more"><b>負け</b> ' + esc(info.lose) + '</span>' +
       '<span class="m-status">' + info.status.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>';
     if (html === missionSig) return;
     missionSig = html;
@@ -1483,8 +1510,8 @@
       if (R.lab('H6') && st.labChase) st.labChase.exits.forEach(function (c) { hExit[key(c[0], c[1])] = true; });
       if (R.lab('M5') && st.labTraps) st.labTraps.forEach(function (tr) { tr.cells.forEach(function (c) { mTrap[key(c[0], c[1])] = tr; }); });   // ラボ M5: 置いておいた魔法
     }
-    // チュートリアル②: 山の頂上と腕（どこが高いか）
-    var slopes = st.slopes || {};
+    // 山の頂上と斜面（どこが高いか）。山の魔法の頂上と腕に加えて、10/29 から土の山・もとからある山も（R.slopeMap）
+    var slopes = memo('slopes', [st], function () { return R.slopeMap(st); });
 
     var mi = st.mission || {};
 
@@ -2132,6 +2159,7 @@
   }
   (function () {
     var saved = null;
+    if (EXHIBIT) return;   // 展示モード: くわしくは出さない（覚えた形も書き換えない）
     try { saved = window.localStorage.getItem(MORE_KEY); } catch (e) { saved = null; }
     setMore(saved === '1');
   })();
@@ -2204,6 +2232,7 @@
     if (el.turnModeLabel) el.turnModeLabel.textContent = ui('turnMode', 'ターンの形');
   }
   function setTurnMode(m) {
+    if (EXHIBIT) return;   // 展示モードは一斉に決めてある
     if ((m !== 'simul' && m !== 'single') || m === B.turnMode) return;
     stopDemo();
     if (app.busy) skipPlayback();
@@ -2374,6 +2403,9 @@
       return;
     }
     if (app.runLock && /^[zZeE]$/.test(k)) return;   // 進行モックの戦闘中は、1手戻す・エディットを使わない
+    // 展示モード: 出しているものの操作だけ（味方 1〜、向き、構える Enter・その場で Space・待機 W、発動 T、1手戻す Z、クリアする C、取り消し Esc）。
+    //   エディット E・ラボの Q・B・K は使わない
+    if (EXHIBIT && !(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter| |w|W|t|T|z|Z|c|C|Escape)$/.test(k))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
@@ -2456,11 +2488,13 @@
     return p ? p.name : '標準';
   };
 
-  // 最初は遊び方が分かりやすいシナリオで始める【仮】
-  var FIRST_SCENARIO = 'spread';
+  // 最初は遊び方が分かりやすいシナリオで始める【仮】。展示モードはチュートリアル①から
+  var FIRST_SCENARIO = EXHIBIT ? EXHIBIT_STAGES[0] : 'spread';
   addLog('ようこそ。敵の予告（紫）を見てから、味方を選び、立ち位置と向きを決めて撃ってください', 'system');
-  if (R.PRESETS.some(function (p) { return p.id === FIRST_SCENARIO; })) loadScenario(FIRST_SCENARIO);
-  else {
+  if (R.findPreset(FIRST_SCENARIO)) {
+    loadScenario(FIRST_SCENARIO);
+    if (EXHIBIT) app.history = [];   // 始まりより前には戻らない
+  } else {
     app.state = begin(app.state);
     app.resetPoint = R.clone(app.state);
     render();

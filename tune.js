@@ -28,7 +28,8 @@
     _fav: 'よく触る', _top: 'そのほか',
     ally: '味方', enemy: '敵', mission: 'お題', fire: '炎', spread: '燃え広がり', shock: '感電',
     funka: '噴火', fireTornado: '火炎竜巻', sentakuki: 'センタクキ', dark: '闇', haunt: 'オバケヤシキ',
-    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方', shape: '形', simul: '一斉発動'
+    sakura: '桜', eruption: '桜吹雪', ideas: '小さなシナジー（入／切）', grow: '育つ（二段階）', fx: '見せ方', shape: '形', simul: '一斉発動',
+    preview: '予測の見せ方'
   };
 
   // 項目の日本語ラベル。ここにない項目は元の名前をそのまま出す
@@ -71,6 +72,10 @@
     'sakura.petals': '火山に風の桜吹雪は花びら（切ると元の火の粉）',
     'eruption.depth': '桜吹雪の奥行き（段）', 'eruption.base': '桜吹雪のダメージ', 'eruption.perVolcano': '桜吹雪: 火山1つごとの追加',
     'eruption.scale': '桜吹雪の扇はつながった火山の大きさで（切ると元の1・3・5）',
+    'eruption.toEdge': '桜吹雪の扇を盤の端まで（元の展示③の扇）',
+    'preview.shapeOnly': '予測は魔法が届く形だけ（切ると何が起きるかまで出す）',
+    'tutorial.slope': '山の頂上と腕（水が腕に当たると山肌を下って流れる）',
+    'stage3.heat': '火山の隣と上にいる者への熱のダメージ（ターン終了）',
     'ideas.iceSlide': '氷の上は滑る', 'ideas.wetlandForest': '水辺の森はよく育つ', 'ideas.earthSmother': '土をかぶせて火を消す',
     'ideas.windClearsMirage': '風で蜃気楼が晴れる', 'ideas.spreadMeltsIce': '燃え広がりは氷を溶かす'
   };
@@ -266,10 +271,12 @@
   Tune.defaults = clone(root.BALANCE);
   Tune.source = 'none';      // 'none' 初期値 / 'local' 保存した設定 / 'link' 共有リンクの設定
   Tune.ignored = [];
-  var fromLink = fromHash(root.location && root.location.hash);
+  // 展示モード（mode.js）: 保存した設定は重ねず、balance.js の値で動く（共有リンクは開発モードで開く）
+  var exhibit = root.CAFILIA_MODE === 'exhibit';
+  var fromLink = exhibit ? null : fromHash(root.location && root.location.hash);
   var start = null;
   if (fromLink) { start = fromLink; Tune.source = 'link'; }
-  else {
+  else if (!exhibit) {
     try {
       var raw = root.localStorage.getItem(STORE);
       if (raw) { start = JSON.parse(raw); Tune.source = 'local'; }

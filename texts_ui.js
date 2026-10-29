@@ -194,6 +194,8 @@
     }
   };
   app.onAct = function (u, shoot) { if (shoot) trigger(['stance:' + u.magic, 'stance']); };
+  // 窓が閉じたら fn（出ていなければすぐ）。展示モードで、クリアの文を読み終えてから次のステージへ進むのに使う
+  app.afterDialog = function (fn) { if (dlg.cur) dlg.done.push(fn); else fn(); };
   // 発動（ターン終了）を押したら、出ている文（始めの文など）は閉じて、すぐ発動する。
   //   開いたままだと窓を閉じるまで発動が待たされ、「魔法を撃ってくれない」に見えていた（10/17）。発動の前の文（beforeFire）があるときだけ、読み終えてから
   app.onBeforeFire = function (go) {

@@ -641,7 +641,7 @@
   // 【新案】桜吹雪: 風が火山に当たる（破壊3段目）
   //   花びら（sakura.petals が false なら火の粉）が風下へ扇形に舞い散る。つながった火山が多いほど強い。噴き終えた火山は冷えて山に戻る
   function doEruption(s, vx, vy, dir, ctx, ev) {
-    if (s.ex && getTile(s, vx, vy) === 'volcano') return doSakuraStorm(s, vx, vy, dir, ctx, ev);   // 展示ステージ③: 扇は火山の幅から盤の奥まで
+    if (B.eruption.toEdge && getTile(s, vx, vy) === 'volcano') return doSakuraStorm(s, vx, vy, dir, ctx, ev);   // 扇は火山の幅から盤の奥まで（前は展示ステージ③だけ。10/29 から切り替え。初期は切）
     var kind = getTile(s, vx, vy), pink = kind === 'sakura' || kind === 'hillsakura' || B.sakura.petals;   // 花びらか、元の火の粉（火山で sakura.petals が false のときだけ）
     // 【育つ】桜吹雪の奥行きは、桜が咲いた自然の大きさで決まる（丘は2列、山は3列）
     var depth = kind === 'hillsakura' ? B.grow.sakuraDepthHill : (B.grow.enabled && kind === 'sakura') ? B.grow.sakuraDepthMountain : B.eruption.depth;
@@ -712,7 +712,7 @@
     return fin;
   }
 
-  // 展示ステージ③: 桜吹雪（破壊3段目）。風が火山に当たると、つながった火山がまるごと吹き上がり、風の向きへ扇形に盤の奥まで舞う。
+  // 桜吹雪（eruption.toEdge が入のとき。前は展示ステージ③だけ）。風が火山に当たると、つながった火山がまるごと吹き上がり、風の向きへ扇形に盤の奥まで舞う。
   //   扇は火山の幅（風の向きと直角の幅）から始まり、stage3.fanSpread マス進むごとに左右へ1マスずつ広がる（山が大きいほど扇も広い）。
   //   届くのは stage3.fanReach マス（0 は盤の端まで）。扇と火山の上にいる者（浮いている者も）に決め手のダメージ。
   //   空きには花びらが積もる。吹き終えた火山は山に戻る
@@ -1332,37 +1332,112 @@
     return fin;
   }
 
-  // チュートリアル②: 山の腕か頂上に水が当たった。腕なら、その腕の次のマスから頂上と反対の向きへ盤の端まで川。
-  //   頂上なら、頂上から下る腕（その向きの印を持つ隣の山）すべてから、同じように川（十字なら4本）
-  //   川は空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。ユニット・置きもの（村など）の手前、ほかの自然で止まり、炎は消して止まる
-  function slopeRivers(s, x, y, ctx) {
-    var sl = s.slopes[idx(s, x, y)];
-    var arms = sl !== 'peak' ? [[x, y, sl]] : DIR_ORDER.map(function (d) {
-      var ax = x + DIRS[d].dx, ay = y + DIRS[d].dy;
-      return inBounds(s, ax, ay) && s.slopes[idx(s, ax, ay)] === d ? [ax, ay, d] : null;
-    }).filter(Boolean);
-    ctx.phrases.push(sl === 'peak' ? '山の頂上に当たって、' + arms.length + 'つの腕から川が流れ出した' : '山の腕に当たって、頂上と反対の' + DIRS[sl].name + 'へ川が流れ出した');
-    arms.forEach(function (a) {
-      var F = DIRS[a[2]], g = { origin: [a[0], a[1]], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null;
-      for (var i = 1; ; i++) {
-        var cx = a[0] + F.dx * i, cy = a[1] + F.dy * i;
-        if (!inBounds(s, cx, cy)) { stop = '盤の端まで流れた'; break; }
-        var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
-        if (o) { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
-        if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
-          setTile(s, cx, cy, 'river');
-          ctx.cells.push([cx, cy]);
-          g.cells.push([cx, cy]); g.tiles.push('river'); g.wave.push(i - 1);
-          continue;
-        }
-        if (t === 'river' || t === 'ice') continue;
-        if (t === 'fire' || t === 'smallfire') { setTile(s, cx, cy, 'empty'); stop = tileName(t) + 'を消して止まった'; break; }
-        stop = tileName(t) + 'で止まった';
-        break;
+  // 山の斜面（tutorial.slope。オーナー 10/29 から、どの山にも）
+  //   山の魔法（盛る）で盛った山は、盛ったときの頂上と腕（s.slopes の印）のまま。
+  //   ほかの山（土で盛った山・盤面にもとからある山・育って山になった丘・冷えた溶岩…）は、印のない山のつながったかたまりごとに、
+  //   かたまりの真ん中（マスの位置の平均）にいちばん近いマスを頂上にする（画面が山の頂を描くのと同じ決め方）。
+  //   同じ近さなら、隣にかたまりの山が多いマス → 上の段 → 左のマス。
+  //   頂上から山伝いに1マスずつたどったときの最後の1歩の向きが、そのマスの下り坂の向き（頂上の隣なら、頂上から見た向き。
+  //   同じ歩数で来られるなら 上・右・下・左 の順に先に見つけた道）。かたまりは、山の形が変わるたびに今の盤面から決め直す。
+  //   { peak: [x, y], dir: { "x,y": 'peak' | 向き }, dist: { "x,y": 頂上からの歩数 } }。(x, y) が印のない山でなければ null
+  function mountainSlopes(s, x, y) {
+    var isM = function (cx, cy) { return inBounds(s, cx, cy) && getTile(s, cx, cy) === 'mountain' && !(s.slopes && s.slopes[idx(s, cx, cy)] !== undefined); };
+    if (!isM(x, y)) return null;
+    var comp = [], seen = {}, stack = [[x, y]];
+    while (stack.length) {
+      var c = stack.pop(), k = key(c[0], c[1]);
+      if (seen[k] || !isM(c[0], c[1])) continue;
+      seen[k] = true;
+      comp.push(c);
+      neighbors(s, c[0], c[1]).forEach(function (nb) { stack.push([nb.x, nb.y]); });
+    }
+    var n = comp.length, sx = 0, sy = 0;
+    comp.forEach(function (q) { sx += q[0]; sy += q[1]; });
+    // 真ん中からの近さ（n 倍して整数で比べる）
+    var far = function (q) { return Math.abs(n * q[0] - sx) + Math.abs(n * q[1] - sy); };
+    var around = function (q) { return neighbors(s, q[0], q[1]).filter(function (nb) { return seen[key(nb.x, nb.y)]; }).length; };
+    var peak = comp.slice().sort(function (a, b) { return (far(a) - far(b)) || (around(b) - around(a)) || (a[1] - b[1]) || (a[0] - b[0]); })[0];
+    var dir = {}, dist = {}, queue = [peak];
+    dir[key(peak[0], peak[1])] = 'peak';
+    dist[key(peak[0], peak[1])] = 0;
+    while (queue.length) {
+      var p = queue.shift(), pd = dist[key(p[0], p[1])];
+      DIR_ORDER.forEach(function (d) {
+        var nx = p[0] + DIRS[d].dx, ny = p[1] + DIRS[d].dy, nk = key(nx, ny);
+        if (!seen[nk] || dist[nk] !== undefined) return;
+        dist[nk] = pd + 1;
+        dir[nk] = d;
+        queue.push([nx, ny]);
+      });
+    }
+    return { peak: peak, dir: dir, dist: dist };
+  }
+  // 盤面のすべての山の斜面（画面に頂上と斜面を描く用）: { マスの番号: 'peak' | 向き }。tutorial.slope が切なら、山の魔法の印だけ
+  function slopeMap(s) {
+    var out = {};
+    if (s.slopes) Object.keys(s.slopes).forEach(function (i) { out[i] = s.slopes[i]; });
+    if (!B.tutorial.slope) return out;
+    for (var y = 0; y < rowsOf(s); y++) {
+      for (var x = 0; x < s.size; x++) {
+        if (out[idx(s, x, y)] !== undefined) continue;
+        var m = mountainSlopes(s, x, y);
+        if (!m) continue;
+        Object.keys(m.dir).forEach(function (k) { var c = k.split(',').map(Number); out[idx(s, c[0], c[1])] = m.dir[k]; });
       }
-      if (g.cells.length) { ctx.grows.push(g); ctx.phrases.push(F.name + 'へ川が' + g.cells.length + 'マス流れた'); }
-      if (stop) ctx.phrases.push(stop);
-    });
+    }
+    return out;
+  }
+
+  // 1本の川: (sx, sy) の次のマスから d の向きへ。空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。
+  //   ユニット・置きもの（村など）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
+  function runRiver(s, sx, sy, d, ctx, overHill) {
+    var F = DIRS[d], g = { origin: [sx, sy], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null, prev = [sx, sy], over = 0;
+    for (var i = 1; ; i++) {
+      var cx = sx + F.dx * i, cy = sy + F.dy * i;
+      if (!inBounds(s, cx, cy)) { stop = '盤の端まで流れた'; break; }
+      if (overHill && overHill(cx, cy, prev)) { prev = [cx, cy]; over++; continue; }
+      prev = [cx, cy];
+      var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
+      if (o) { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
+      if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
+        setTile(s, cx, cy, 'river');
+        ctx.cells.push([cx, cy]);
+        g.cells.push([cx, cy]); g.tiles.push('river'); g.wave.push(i - 1 - over);
+        continue;
+      }
+      if (t === 'river' || t === 'ice') continue;
+      if (t === 'fire' || t === 'smallfire') { setTile(s, cx, cy, 'empty'); stop = tileName(t) + 'を消して止まった'; break; }
+      stop = tileName(t) + 'で止まった';
+      break;
+    }
+    if (g.cells.length) { ctx.grows.push(g); ctx.phrases.push(F.name + 'へ川が' + g.cells.length + 'マス流れた'); }
+    if (stop) ctx.phrases.push(stop);
+    return g.cells.length;
+  }
+
+  // 山に水が当たった（tutorial.slope）。高い所から低い所へ流れる
+  //   山の魔法の山（印あり）: 腕なら、その腕の次のマスから頂上と反対の向きへ盤の端まで川。
+  //     頂上なら、頂上から下る腕（その向きの印を持つ隣の山）すべてから、同じように川（十字なら4本）
+  //   ほかの山（mountainSlopes）: 斜面なら、そのマスから下り坂の向きへ。頂上なら、上・右・下・左の4方向へ。
+  //     どちらも、同じかたまりの山で頂上から遠くなる（下っている）マスは山のまま越え、ふもとから先が川になる
+  function slopeRivers(s, x, y, ctx) {
+    var mark = s.slopes && s.slopes[idx(s, x, y)];
+    if (mark !== undefined && mark !== null) {
+      var arms = mark !== 'peak' ? [[x, y, mark]] : DIR_ORDER.map(function (d) {
+        var ax = x + DIRS[d].dx, ay = y + DIRS[d].dy;
+        return inBounds(s, ax, ay) && s.slopes[idx(s, ax, ay)] === d ? [ax, ay, d] : null;
+      }).filter(Boolean);
+      ctx.phrases.push(mark === 'peak' ? '山の頂上に当たって、' + arms.length + 'つの腕から川が流れ出した' : '山の腕に当たって、頂上と反対の' + DIRS[mark].name + 'へ川が流れ出した');
+      arms.forEach(function (a) { runRiver(s, a[0], a[1], a[2], ctx); });
+      return;
+    }
+    var m = mountainSlopes(s, x, y), sl = m.dir[key(x, y)];
+    var down = function (cx, cy, prev) { var dc = m.dist[key(cx, cy)], dp = m.dist[key(prev[0], prev[1])]; return dc !== undefined && dp !== undefined && dc > dp; };
+    var at = ctx.phrases.length;
+    ctx.phrases.push('');
+    var ways = 0;
+    (sl === 'peak' ? DIR_ORDER : [sl]).forEach(function (d) { if (runRiver(s, x, y, d, ctx, down)) ways++; });
+    ctx.phrases[at] = sl === 'peak' ? '山の頂上に当たって、' + ways + '方向へ川が流れ出した' : '山の斜面に当たって、下りの' + DIRS[sl].name + 'へ川が流れ出した';
   }
 
   // 流れる（水）
@@ -1415,8 +1490,8 @@
         ctx.grows.push(river);
         continue;
       }
-      // チュートリアル②: 頂上か腕のある山に当たると、高い所から低い所へ流れる（腕から、頂上と反対の向きへ盤の端まで）
-      if (t === 'mountain' && !sourced && B.tutorial.slope && s.slopes && s.slopes[idx(s, x, y)] !== undefined) {
+      // 山の斜面（tutorial.slope。10/29 からどの山にも）: 山に当たると、高い所から低い所へ流れる（slopeRivers）
+      if (t === 'mountain' && !sourced && B.tutorial.slope) {
         if (made) ctx.phrases.push(pondName + 'ができた（' + made + 'マス）');
         pond = made; made = 0; sourced = true;
         slopeRivers(s, x, y, ctx);
@@ -2507,8 +2582,8 @@
         burnEv.push({ type: 'damage', id: u.id, side: u.side, amount: B.fireTileDamage, src: 'burn', cells: [[u.x, u.y]], text: '炎の上の' + unitLabel(s, u) + 'に' + B.fireTileDamage + 'ダメージ（残りHP ' + Math.max(0, u.hp) + '）' });
       }
     });
-    // 展示ステージ③: 火山の隣（と上）にいる者に熱のダメージ（敵にも味方にも。溶岩は火山のマスから出ない）
-    if (s.ex && B.stage3.heat > 0) s.units.forEach(function (u) {
+    // 火山の隣（と上）にいる者に熱のダメージ（敵にも味方にも。溶岩は火山のマスから出ない）。前は展示ステージ③だけ、10/29 からどのシナリオでも
+    if (B.stage3.heat > 0) s.units.forEach(function (u) {
       if (u.side === 'object' || u.hp <= 0) return;
       var hot = bodyCells(u).some(function (c) {
         return getTile(s, c[0], c[1]) === 'volcano' || neighbors(s, c[0], c[1]).some(function (nb) { return getTile(s, nb.x, nb.y) === 'volcano'; });
@@ -2911,7 +2986,9 @@
     var out = [];
     alliesOf(s).forEach(function (a) {
       if (!a.npc || !a.intent) return;
-      castCells(s, a, a.facing).forEach(function (c) { if (!inCells(out, c[0], c[1])) out.push(c); });
+      // 今の盤面で実際に撃ったときに届くマス（オーナー 10/29。前は魔法の形の決まりで、風は4マス光っていた）
+      var sim = clone(s), sa = findUnit(sim, a.id);
+      shoot(sim, sa, sa.facing, []).cells.forEach(function (c) { if (!inCells(out, c[0], c[1])) out.push(c); });
     });
     return out;
   }
@@ -3342,9 +3419,8 @@
       rows: ['...FF', '...FF', '.....', '.....', '.....'],
       allies: [['wind', 0, 1, { npc: true, facing: 'right' }], ['fire', 0, 2, { facing: 'right' }]],
       enemies: [['mount', 4, 1, { stand: 'march' }, 'left']],
-      enemyOnly: ['mount'],   // 山を盛る魔法は敵だけ
-      // 風は正面1マス（元の形・長さ1。風は残らない）、燃え広がりは3マス、移動2
-      overrides: { windMode: 'line', lineLength: 1, tornadoRecipe: 'off', 'spread.maxLength': 3, 'ally.move': 2 }
+      enemyOnly: ['mount']   // 山を盛る魔法は敵だけ
+      // オーナー 10/29: ルールの上書き（風は正面1マスで残らない・燃え広がり3マス・移動2）は外した。どのシナリオとも同じ値で動く
     },
     {
       id: 'tut2', tutorial: 2, name: '【チュートリアル】② 2人で守る', short: '② 2人で守る', mission: 'defense',
@@ -3359,21 +3435,22 @@
       villages: [[2, 5], [3, 5], [4, 5], [5, 5]],
       spawn: { x: 3, y: 0, facing: 'down', magic: 'earth', stand: 'rush' },   // 増援の出てくる所【仮】
       // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
-      // 水は正面1マス（水だけなら水たまり1マス）、山の頂上と腕、突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち。道をふさぎきったらキーでクリアにできる（オーナー 10/17）、移動2
-      overrides: { waterLength: 1, 'tutorial.slope': true, 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'mission.defense.sealWin': true, 'ally.move': 2 }
+      // 突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち。道をふさぎきったらキーでクリアにできる（オーナー 10/17）
+      //   オーナー 10/29: ルールの上書き（水は正面1マス・山の頂上と腕・移動2）は外した。どのシナリオとも同じ値で動く。残すのはステージの中身（敵の動き・勝ち方）だけ
+      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'mission.defense.sealWin': true }
     },
     {
       // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
       id: 'ex3', tutorial: 3, name: '【展示】③ 3人でつなぐ', short: '③ 3人でつなぐ',
       desc: '味方 山（土）・火（炎）・風の3人（①②の人たち。魔法は①②より強く、届く形が広い）。盤面は横長（12×7）。味方は左端、敵は右端から来る。' +
-        'ボス（3×3・HP40）は1ターンに1マス前へ進み、体の前の2列に一撃を予告する（当たった味方は倒れる）。普通の魔法はほとんど効かず、桜吹雪で倒れる。' +
+        'ボス（3×3・HP20。10/29 に40から）は1ターンに1マス前へ進み、体の前の2列に一撃を予告する（当たった味方は倒れる）。普通の魔法はほとんど効かず、桜吹雪で倒れる。' +
         '取り巻き（浮いている・HP1）は地形に関係なく風の人へまっすぐ進み、隣に来たら体当たり。ボスの後ろから2ターンごとに湧き続ける。' +
         '3段: 山の魔法でダイヤ型の山（13マス）→ 山に火で火山（溶岩は火山のマスだけ。隣にいる者はターン終了ごとに熱で2）→ 火山に風で桜吹雪' +
         '（火山の幅から、風の人の向きへ扇形に盤の奥まで。扇の中の敵を、浮いている敵も含めてまとめて倒す）。ボスを倒せば勝ち。味方が1人でも倒れたらステージの頭からやり直し。',
       rows: ['............', '............', '............', '............', '............', '............', '............'],
       allies: [['mount', 0, 6, { facing: 'up' }], ['fire', 2, 6, { facing: 'up' }], ['wind', 0, 0, { facing: 'down' }]],
       enemies: [
-        ['smash', 9, 2, { stand: 'boss', hp: 40, size: 3 }, 'left'],
+        ['smash', 9, 2, { stand: 'boss', hp: 20, size: 3 }, 'left'],   // オーナー 10/29: HP40 → 20（桜吹雪の威力20を1発で）
         ['bite', 11, 0, { stand: 'float', hp: 1, body: 'float' }, 'left'],
         ['bite', 11, 6, { stand: 'float', hp: 1, body: 'float' }, 'left']
       ],
@@ -3381,17 +3458,12 @@
       ex: {
         spawn: { magic: 'bite', hp: 1 },                                     // 湧く取り巻き（間隔と上限は stage3.spawnEvery・spawnMax）
         missions: [{ id: 'volcano', tile: 'volcano', name: '火山を作る' }],   // 最初から出すミッション（表示名は texts.js の stages.ex3.mission）
-        shapeOnly: true,     // 予測は魔法が届く形まで（何になるかは見せない）。構えは形の輪郭と向きで描く
-        fireModes: true      // 魔法の出し方（ターンの終わりに1段ずつ／ターンの終わりにつながる／撃った瞬間に発動）を画面で切り替える
+        fireModes: true      // 魔法の出し方（ターンの終わりに1段ずつ／ターンの終わりにつながる／撃った瞬間に発動）を画面で切り替える（開発モードだけ。展示モードはつながる）
         // 光るヒント・桜吹雪の前のため・倒したあとの大きな絵・ミッション達成の札と紙吹雪・桜吹雪の舞う花びらは、オーナー 10/17「いらない」で外した
-      },
-      // 山は1マス先から5マス先までのダイヤ型（3マス先が真ん中・13マス。オーナー 10/17: 十字から、同じ大きさのままダイヤ型に）、火は正面2マス、風は正面4マスを吹き抜ける（風は残らない）。
-      // 山に火で火山（溶岩はあふれない）、火山に風で桜吹雪。桜吹雪の威力60（ボスのHP40を1発で）。移動2
-      overrides: {
-        'shapes.mount': [[0, 1], [-1, 2], [0, 2], [1, 2], [-2, 3], [-1, 3], [0, 3], [1, 3], [2, 3], [-1, 4], [0, 4], [1, 4], [0, 5]], 'shapeCenter.mount': [0, 3],
-        'shapes.fire': [[0, 1], [0, 2]], windMode: 'line', lineLength: 4, tornadoRecipe: 'off',
-        'sakura.from': 'fire', 'funka.lava': false, 'eruption.base': 60, 'eruption.perVolcano': 0, 'ally.move': 2
+        // 予測を形だけにする shapeOnly は、オーナー 10/29 からどのシナリオでも（balance.js の preview.shapeOnly）
       }
+      // オーナー 10/29: ルールの上書き（山はダイヤ型13マス・火は正面2マス・風は正面4マスで残らない・桜吹雪の威力60・溶岩はあふれない・移動2）と、
+      //   ③だけの分岐（桜吹雪の扇を盤の端まで・火山の熱）は外した。どのシナリオとも同じ値・同じ動きで動く
     }
   ];
 
@@ -3627,6 +3699,7 @@
     // チュートリアル（構える味方・動かない敵・このシナリオだけの数値）
     TUTORIALS: TUTORIALS, findPreset: findPreset, isNpc: isNpc, controllableOf: controllableOf,
     npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, validOverrides: validOverrides,
+    slopeMap: withStage(slopeMap), mountainSlopes: withStage(mountainSlopes),   // 山の斜面（10/29 からどの山にも）
     // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
     sealReady: withStage(sealReady), claimSeal: withStage(claimSeal),   // ステージ②: ふさぎきったらキーでクリア
