@@ -267,6 +267,9 @@ body:not(.show-more) .preview-box.idle { display: none; }         /* 予測も�
   pointer-events: none;
 }
 .cell.plan-to::after { box-shadow: inset 0 0 0 4px #15803d; background: rgba(34, 197, 94, .38); }
+/* ほかの味方の移動の予定（オーナー 10/30）: 予定の移動先に薄く。そこには止まれない */
+.cell.plan-other { box-shadow: inset 0 0 0 2px rgba(37, 99, 235, .35); }
+.ghost.ally.plan-other { border-style: dashed; opacity: .4; font-size: .72em; }
 
 /* 立ち位置の導き */
 .b-guide {
@@ -1708,7 +1711,8 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
  * 展示モード（mode.js。URL に #dev がないとき。オーナー 10/29）
  *   見せるのは、盤面・味方の欄・向きと構える・待機の操作・発動の順番・敵の予告・会話の窓・
  *   上のバーの「発動」「1手戻す」「遊び方」・負けたときの「やり直す」、お題の帯（目標・勝ち方・残りの数）・案内の1行・
- *   ②で道をふさいだときの「クリアする」だけ（10/29 の続きで足した）。ほかは消さずに隠す（開発モード #dev では今までどおり）
+ *   ②で道をふさいだときの「クリアする」だけ（10/29 の続きで足した）・やり直したときのヒントの1行（10/30）。
+ *   ほかは消さずに隠す（開発モード #dev では今までどおり）
  * --------------------------------------------------------------- */
 html.mode-exhibit .topbar h1,
 html.mode-exhibit .topbar .status,
@@ -1720,7 +1724,6 @@ html.mode-exhibit #labRunBar,
 html.mode-exhibit #runBar,
 html.mode-exhibit #exBar,
 html.mode-exhibit #checkCaption,
-html.mode-exhibit #stageHint,
 html.mode-exhibit #preview,
 html.mode-exhibit #labTargetBox,
 html.mode-exhibit #btnSwap,

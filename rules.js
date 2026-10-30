@@ -170,7 +170,6 @@
     var i = idx(s, x, y), old = s.tiles[i];
     if (old !== t && s.fireAge && s.fireAge[i] !== undefined) delete s.fireAge[i];
     if (old !== t && s.fireLife && s.fireLife[i] !== undefined) delete s.fireLife[i];
-    if (old !== t && s.slopes && s.slopes[i] !== undefined) delete s.slopes[i];   // 山でなくなったら高さも消える
     if (old !== t && s.labBig && s.labBig[i]) delete s.labBig[i];               // ラボ C5: 大きな火の渦の印
     if (LX && old !== t && LX.onSetTile) t = LX.onSetTile(s, i, old, t);        // ラボ: 自然ごとの印・燃えると別のものになる自然
     // 【育つ】植物が燃えた炎は、燃え尽きるまでの長さが植物で決まる（森は長く、草むらはすぐ）
@@ -788,7 +787,7 @@
   //   見せ方のため ctx.grows に { origin, tile, cells, tiles, wave, blocked, pushed } を残す（cast の出来事に付く）
   function growNature(s, x, y, u, facing, size, from, to, ctx, ev, phrase, opts) {
     opts = opts || {};
-    var g = { origin: [x, y], tile: to, cells: [], tiles: [], wave: [], blocked: [], pushed: [] };
+    var g = { origin: [x, y], tile: to, cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, raised = [];
     var area = growArea(s, x, y, facing, size);
     function target(c) { return c.d > 0 && opts.slope ? opts.slope : to; }
     if (opts.push) {
@@ -806,17 +805,76 @@
     area.forEach(function (c) {
       var t = getTile(s, c.x, c.y), tt = target(c);
       if (t === tt || t === to) return;   // もう同じか、より高い（山のまわりの丘にしようとしたら山だった）
-      var under = B.ideas.natureUnderUnits && !lab('C1') && isPassable(tt);   // 人の足元にも、立てる自然（森）なら育つ
-      if (!from[t] || (unitAt(s, c.x, c.y) && !under)) { g.blocked.push([c.x, c.y]); return; }
+      var under = B.ideas.natureUnderUnits && !lab('C1');   // 人の足元にも育つ（オーナー 10/30: 山も。足元に山ができた人は、あとで押し出す）
+      var stand = unitAt(s, c.x, c.y);
+      if (!from[t] || (stand && !under)) { g.blocked.push([c.x, c.y]); return; }
       setTile(s, c.x, c.y, tt);
+      if (stand && !isPassable(tt) && raised.indexOf(stand) < 0) raised.push(stand);
       g.cells.push([c.x, c.y]);
       g.tiles.push(tt);
       g.wave.push(c.d);
       if (!inCells(ctx.cells, c.x, c.y)) ctx.cells.push([c.x, c.y]);
     });
+    raised.forEach(function (o) { pushOffMountain(s, o, [x, y], ev); });
     ctx.grows.push(g);
     if (g.cells.length) ctx.phrases.push(phrase + '（' + g.cells.length + 'マス）');
     return g;
+  }
+
+  // 魔法の中心（足元に山ができた人を押し出す向きの元）: 形に真ん中（shapeCenter）があればそこ。
+  //   なければ、形のマスの真ん中（位置の平均）にいちばん近いマス（山の頂上と同じ決め方。同じ近さなら 形の中の隣が多い → 上 → 左）。
+  //   一直線の形（1マスだけの形も）は中心がない（null）
+  function castCenter(s, u, facing) {
+    var o = castOrigin(s, u, facing), ctr = B.shapeCenter && B.shapeCenter[u.magic];
+    if (ctr) { var d0 = rotate(facing, ctr[0], ctr[1]); return [o.x + d0[0], o.y + d0[1]]; }
+    var shp = B.shape.frontOne && FRONT_ONE[u.magic] ? [[0, 1]] : B.shapes[u.magic];
+    if (!shp || !shp.length) return null;
+    var cells = shp.map(function (p) { var d = rotate(facing, p[0], p[1]); return [o.x + d[0], o.y + d[1]]; });
+    var line = cells.every(function (c) { return c[0] === cells[0][0]; }) || cells.every(function (c) { return c[1] === cells[0][1]; });
+    if (line) return null;
+    var n = cells.length, sx = 0, sy = 0;
+    cells.forEach(function (c) { sx += c[0]; sy += c[1]; });
+    var far = function (c) { return Math.abs(n * c[0] - sx) + Math.abs(n * c[1] - sy); };
+    var around = function (c) { return cells.filter(function (q) { return Math.abs(q[0] - c[0]) + Math.abs(q[1] - c[1]) === 1; }).length; };
+    return cells.slice().sort(function (a, b) { return (far(a) - far(b)) || (around(b) - around(a)) || (a[1] - b[1]) || (a[0] - b[0]); })[0];
+  }
+  // 足元に山（通れない自然）ができた人を、山の外へ押し出す（オーナー 10/30。ランダムにはしない）
+  //   向き: 魔法の中心 center から見て外側（縦と横でずれの大きい方。同じなら下）。中心がない（一直線の魔法）なら下。
+  //   その向きに進んで、最初の空きマス（通れる自然で、人も置きもの（村など）もいない）へ。人や村のいるマスは空きではないので、さらに先へ。
+  //   その向きで盤の端まで空きがなければ、下・左・右・上の順に同じように探す。どの向きにもなければ、その場（山の上）に残る。
+  //   大きい体は、体の全部が空きマスに入る所へ。押し出された先が泥沼なら、はまる
+  var PUSH_OFF_ORDER = ['down', 'left', 'right', 'up'];
+  function pushOffMountain(s, o, center, ev) {
+    if (!o || o.hp <= 0 || isFixed(o)) return false;
+    var n = o.size || 1, mx = o.x + (n - 1) / 2, my = o.y + (n - 1) / 2, first = 'down';
+    if (center) {
+      var dx = mx - center[0], dy = my - center[1];
+      if (Math.abs(dx) > Math.abs(dy)) first = dx > 0 ? 'right' : 'left';
+      else if (Math.abs(dy) > Math.abs(dx)) first = dy > 0 ? 'down' : 'up';
+    }
+    var order = [first].concat(PUSH_OFF_ORDER.filter(function (d) { return d !== first; }));
+    var fits = function (x, y) {
+      return bodyCells(o, x, y).every(function (c) {
+        if (!isPassable(getTile(s, c[0], c[1]))) return false;
+        var b = unitAt(s, c[0], c[1]);
+        return !b || b === o;
+      });
+    };
+    var inside = function (x, y) { return bodyCells(o, x, y).every(function (c) { return inBounds(s, c[0], c[1]); }); };
+    for (var i = 0; i < order.length; i++) {
+      var F = DIRS[order[i]];
+      for (var k = 1; inside(o.x + F.dx * k, o.y + F.dy * k); k++) {
+        var nx = o.x + F.dx * k, ny = o.y + F.dy * k;
+        if (!fits(nx, ny)) continue;
+        var from = [o.x, o.y];
+        o.x = nx; o.y = ny;
+        ev.push({ type: 'push', id: o.id, ok: true, from: from, to: [nx, ny], text: unitLabel(s, o) + 'は足元に盛り上がった山から' + F.name + 'へ押し出された（' + k + 'マス）' });
+        if (getTile(s, nx, ny) === 'mud') enterMud(s, o, ev);
+        return true;
+      }
+    }
+    ev.push({ type: 'push', id: o.id, ok: false, text: unitLabel(s, o) + 'は山の上に残った（押し出す先がない）' });
+    return false;
   }
 
   // 置く（草・土）・点ける（火）・【新案】走る（雷）
@@ -829,30 +887,10 @@
     return false;
   }
 
-  // チュートリアル②（tutorial.slope）: 山の魔法の十字で、真ん中が頂上（'peak'）、上下左右が腕（頂上から見た向き ＝ 下り坂の向き）。
-  //   s.slopes = { マスの番号: 'peak' | 向き }。山でなくなったマスからは消える（setTile）
-  function slopeCenter(s, u, facing) {
-    var ctr = B.shapeCenter && B.shapeCenter[u.magic];
-    if (!ctr) return null;
-    var o = castOrigin(s, u, facing), d = rotate(facing, ctr[0], ctr[1]);
-    return [o.x + d[0], o.y + d[1]];
-  }
-  function markSlope(s, ctr, x, y) {
-    if (!ctr || getTile(s, x, y) !== 'mountain') return;
-    var dx = x - ctr[0], dy = y - ctr[1], i = idx(s, x, y);
-    s.slopes = s.slopes || {};
-    if (!dx && !dy) { s.slopes[i] = 'peak'; return; }
-    DIR_ORDER.forEach(function (d) { if (DIRS[d].dx === dx && DIRS[d].dy === dy) s.slopes[i] = d; });
-  }
 
   function placeOrIgnite(s, u, facing, ctx, ev) {
-    var shocked = {}, erupted = {}, planted = [], growFrom = [], mountAfter = [];
-    var peak = u.magic === 'mount' && B.tutorial.slope ? slopeCenter(s, u, facing) : null;
-    if (u.magic === 'mount') ctx.after.push(function () {
-      var cells = mountAfter.filter(function (c) { return !unitAt(s, c[0], c[1]) && mountCell(s, c[0], c[1], newShot()); });
-      cells.forEach(function (c) { markSlope(s, peak, c[0], c[1]); });
-      if (cells.length) ev.push({ type: 'kindle', cells: cells, text: '倒れた者のいたマスにも山が盛り上がった（' + cells.length + 'マス）' });
-    });
+    var shocked = {}, erupted = {}, planted = [], growFrom = [], raised = [];   // raised: 足元に山ができた人（形のマスを全部済ませてから押し出す）
+    var raise = function (o, x, y) { if (o && !isPassable(getTile(s, x, y)) && raised.indexOf(o) < 0) raised.push(o); };
     castCells(s, u, facing).forEach(function (c) {
       var x = c[0], y = c[1];
       ctx.cells.push([x, y]);
@@ -862,26 +900,26 @@
       if (isFresh(s, x, y)) return;   // 展示ステージ③ 1段ずつ: できたばかりの自然には反応しない（人への直撃はそのまま）
       var t = getTile(s, x, y);
       if (LX && LX.placeCell(s, u, x, y, t, o, facing, ctx, ev)) return;   // ラボ: 置く・点ける魔法の、案ごとの作用（ほかの作用より先に見る）
-      // 人の足元にも自然ができる（ideas.natureUnderUnits）: 人がいても、立てる自然なら置く（ラボ C1 がオンなら今どおり置かない）
-      var free = function (to) { return !o || (B.ideas.natureUnderUnits && !lab('C1') && isPassable(to)); };
+      // 人の足元にも自然ができる（ideas.natureUnderUnits）: 人がいても置く（ラボ C1 がオンなら今どおり置かない）。
+      //   オーナー 10/30: 山（通れない）も足元に盛る。足元に山ができた人は、形のマスを全部済ませてから山の外へ押し出す（pushOffMountain）
+      var free = function () { return !o || (B.ideas.natureUnderUnits && !lab('C1')); };
       if (u.magic === 'grass') {
         // 【育つ】入のときは、空きに草で草むら、草むらに草で森に育つ
         var lowG = B.grow.enabled ? 'thicket' : 'forest';
         if (free(lowG) && t === 'empty') { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた' + (o ? '（' + unitLabel(s, o) + 'の足元）' : '')); planted.push([x, y, lowG]); }
         else if (free('forest') && t === 'thicket' && B.grow.enabled) growFrom.push([x, y]);
-        else if (!o && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); }
+        else if (free('sakura') && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); raise(o, x, y); }
         else if (free('hillsakura') && t === 'hill' && B.grow.enabled && B.sakura.from === 'grass') { setTile(s, x, y, 'hillsakura'); ctx.phrases.push('【育つ】丘に桜が咲いた'); }
       } else if (u.magic === 'earth') {
         // 【育つ】入のときは、空きに土で丘、丘に土で山に育つ。火を埋めても丘
         var low = B.grow.enabled ? 'hill' : 'mountain';
-        if (free(low) && t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた' + (o ? '（' + unitLabel(s, o) + 'の足元）' : '')); }
-        else if (!o && t === 'hill' && B.grow.enabled) growFrom.push([x, y]);   // 育つのは、形のほかのマスを済ませたあと（順番で結果が変わらないように）
+        if (free(low) && t === 'empty') { setTile(s, x, y, low); ctx.phrases.push(tileName(low) + 'ができた' + (o ? '（' + unitLabel(s, o) + 'の足元）' : '')); raise(o, x, y); }
+        else if (free('mountain') && t === 'hill' && B.grow.enabled) growFrom.push([x, y]);   // 育つのは、形のほかのマスを済ませたあと（順番で結果が変わらないように）
         else if (free('mud') && (t === 'river' || t === 'puddle')) { setTile(s, x, y, 'mud'); ctx.phrases.push(tileName(t) + 'が泥沼になった'); if (o) enterMud(s, o, ev); }
-        else if (free(low) && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); }
+        else if (free(low) && B.ideas.earthSmother && (t === 'fire' || t === 'smallfire')) { setTile(s, x, y, low); ctx.phrases.push('【新案】土をかぶせて' + tileName(t) + 'を消した（' + tileName(low) + 'になった）'); raise(o, x, y); }
       } else if (u.magic === 'mount') {
-        // 盛る（山）: 一度で山。ユニットのいるマスは直撃し、倒れたらそのマスにも山を盛る（倒れなければ盛らない。押し出すかは持ち帰り）
-        if (!o) { if (mountCell(s, x, y, ctx)) markSlope(s, peak, x, y); }
-        else mountAfter.push([x, y]);
+        // 盛る（山）: 一度で山。ユニットのいるマスは直撃し、足元にも山を盛る（オーナー 10/30。前は倒れたときだけ）。足元の山からは押し出す
+        if (free('mountain') && mountCell(s, x, y, ctx)) { raise(o, x, y); if (o && getTile(s, x, y) === 'mud') enterMud(s, o, ev); }
       } else if (u.magic === 'senpu') {
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
@@ -902,6 +940,7 @@
         }
       }
     });
+    if (raised.length) { var ctr = castCenter(s, u, facing); raised.forEach(function (o) { pushOffMountain(s, o, ctr, ev); }); }
     // 【育つ】草むらに草: 草むらを元に、まわりの空きと草むらが森に茂る（森は通れるので押し出さない）
     if (u.magic === 'grass') growFrom.forEach(function (c) {
       var g = growNature(s, c[0], c[1], u, facing, B.grow.forestSize, { empty: true, thicket: true }, 'forest', ctx, ev, '【育つ】草むらが森に育った');
@@ -1333,15 +1372,15 @@
   }
 
   // 山の斜面（tutorial.slope。オーナー 10/29 から、どの山にも）
-  //   山の魔法（盛る）で盛った山は、盛ったときの頂上と腕（s.slopes の印）のまま。
-  //   ほかの山（土で盛った山・盤面にもとからある山・育って山になった丘・冷えた溶岩…）は、印のない山のつながったかたまりごとに、
+  //   どの山も（山の魔法で盛った山・土で盛った山・盤面にもとからある山・育って山になった丘・冷えた溶岩…）、上下左右でつながったかたまりごとに、
   //   かたまりの真ん中（マスの位置の平均）にいちばん近いマスを頂上にする（画面が山の頂を描くのと同じ決め方）。
+  //   オーナー 10/30: 山の魔法の頂上と腕の印はやめた。くっついた山は、ひとつのかたまりとして頂上を1つ決め直す。
   //   同じ近さなら、隣にかたまりの山が多いマス → 上の段 → 左のマス。
   //   頂上から山伝いに1マスずつたどったときの最後の1歩の向きが、そのマスの下り坂の向き（頂上の隣なら、頂上から見た向き。
   //   同じ歩数で来られるなら 上・右・下・左 の順に先に見つけた道）。かたまりは、山の形が変わるたびに今の盤面から決め直す。
-  //   { peak: [x, y], dir: { "x,y": 'peak' | 向き }, dist: { "x,y": 頂上からの歩数 } }。(x, y) が印のない山でなければ null
+  //   { peak: [x, y], dir: { "x,y": 'peak' | 向き }, dist: { "x,y": 頂上からの歩数 } }。(x, y) が山でなければ null
   function mountainSlopes(s, x, y) {
-    var isM = function (cx, cy) { return inBounds(s, cx, cy) && getTile(s, cx, cy) === 'mountain' && !(s.slopes && s.slopes[idx(s, cx, cy)] !== undefined); };
+    var isM = function (cx, cy) { return inBounds(s, cx, cy) && getTile(s, cx, cy) === 'mountain'; };
     if (!isM(x, y)) return null;
     var comp = [], seen = {}, stack = [[x, y]];
     while (stack.length) {
@@ -1372,10 +1411,9 @@
     }
     return { peak: peak, dir: dir, dist: dist };
   }
-  // 盤面のすべての山の斜面（画面に頂上と斜面を描く用）: { マスの番号: 'peak' | 向き }。tutorial.slope が切なら、山の魔法の印だけ
+  // 盤面のすべての山の斜面（画面に頂上と斜面を描く用）: { マスの番号: 'peak' | 向き }。tutorial.slope が切なら空
   function slopeMap(s) {
     var out = {};
-    if (s.slopes) Object.keys(s.slopes).forEach(function (i) { out[i] = s.slopes[i]; });
     if (!B.tutorial.slope) return out;
     for (var y = 0; y < rowsOf(s); y++) {
       for (var x = 0; x < s.size; x++) {
@@ -1389,7 +1427,8 @@
   }
 
   // 1本の川: (sx, sy) の次のマスから d の向きへ。空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。
-  //   ユニット・置きもの（村など）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
+  //   人（味方・敵）のマスでは止まらずに流れ続け、その人の足元も川になる（オーナー 10/30。人へのダメージはない）。
+  //   置きもの（村など）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
   function runRiver(s, sx, sy, d, ctx, overHill) {
     var F = DIRS[d], g = { origin: [sx, sy], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null, prev = [sx, sy], over = 0;
     for (var i = 1; ; i++) {
@@ -1398,7 +1437,7 @@
       if (overHill && overHill(cx, cy, prev)) { prev = [cx, cy]; over++; continue; }
       prev = [cx, cy];
       var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
-      if (o) { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
+      if (o && o.side === 'object') { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
       if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
         setTile(s, cx, cy, 'river');
         ctx.cells.push([cx, cy]);
@@ -1415,22 +1454,10 @@
     return g.cells.length;
   }
 
-  // 山に水が当たった（tutorial.slope）。高い所から低い所へ流れる
-  //   山の魔法の山（印あり）: 腕なら、その腕の次のマスから頂上と反対の向きへ盤の端まで川。
-  //     頂上なら、頂上から下る腕（その向きの印を持つ隣の山）すべてから、同じように川（十字なら4本）
-  //   ほかの山（mountainSlopes）: 斜面なら、そのマスから下り坂の向きへ。頂上なら、上・右・下・左の4方向へ。
-  //     どちらも、同じかたまりの山で頂上から遠くなる（下っている）マスは山のまま越え、ふもとから先が川になる
+  // 山に水が当たった（tutorial.slope）。高い所から低い所へ流れる（mountainSlopes）
+  //   斜面なら、そのマスから下り坂の向きへ。頂上なら、上・右・下・左の4方向へ。
+  //   同じかたまりの山で頂上から遠くなる（下っている）マスは山のまま越え、ふもとから先が川になる
   function slopeRivers(s, x, y, ctx) {
-    var mark = s.slopes && s.slopes[idx(s, x, y)];
-    if (mark !== undefined && mark !== null) {
-      var arms = mark !== 'peak' ? [[x, y, mark]] : DIR_ORDER.map(function (d) {
-        var ax = x + DIRS[d].dx, ay = y + DIRS[d].dy;
-        return inBounds(s, ax, ay) && s.slopes[idx(s, ax, ay)] === d ? [ax, ay, d] : null;
-      }).filter(Boolean);
-      ctx.phrases.push(mark === 'peak' ? '山の頂上に当たって、' + arms.length + 'つの腕から川が流れ出した' : '山の腕に当たって、頂上と反対の' + DIRS[mark].name + 'へ川が流れ出した');
-      arms.forEach(function (a) { runRiver(s, a[0], a[1], a[2], ctx); });
-      return;
-    }
     var m = mountainSlopes(s, x, y), sl = m.dir[key(x, y)];
     var down = function (cx, cy, prev) { var dc = m.dist[key(cx, cy)], dp = m.dist[key(prev[0], prev[1])]; return dc !== undefined && dp !== undefined && dc > dp; };
     var at = ctx.phrases.length;
@@ -1464,8 +1491,11 @@
       if (LX && !growing && !sourced) { var lf = LX.flowCell(s, u, x, y, t, facing, ctx, ev, o); if (lf) { stop = lf; break; } }   // ラボ B: 草むら → 森・火山が冷える・花筏・雨・土石流（泥沼の上の者ごと）
       if (o) {
         addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
-        // 人の足元にも自然ができる: 水が立てる水たまりのとき（標準・育つ・②）だけ、当たった人の足元にも水たまり
-        if (B.ideas.natureUnderUnits && !lab('C1') && puddleOn && !sourced && !growing && t === 'empty') { setTile(s, x, y, 'puddle'); made++; }
+        // 人の足元にも自然ができる（オーナー 10/30: 人のいないマスと同じ作用）: 空き・水たまり・蜃気楼・草むらは水たまり（元の池なら川）、炎は消える
+        if (B.ideas.natureUnderUnits && !lab('C1') && !sourced && !growing) {
+          if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn && !twoStep ? 'puddle' : 'river'); made++; }
+          else if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); ctx.phrases.push('足元の' + tileName(t) + 'を消した'); }
+        }
         if (LX && LX.passUnit(s, u, o, ctx)) { stop = null; continue; }   // ラボ M: 人を貫いて流れ続ける
         break;
       }
@@ -1762,29 +1792,38 @@
   // 移動
   // ---------------------------------------------------------------
 
+  // 通り抜け（オーナー 10/30）: 味方・敵・村のいるマスは、味方も敵も通り抜けられる。ただし、そこに止まることはできない
+  //   （移動先の候補には出さず、通り道としてだけ使う）。馬車は今どおり通れない
+  function passThrough(o) { return !!o && (o.side === 'ally' || o.side === 'enemy' || (o.side === 'object' && o.kind === 'village')); }
+
   // 動けるマス: dist { "x,y": 距離 }（今の位置 0 を含む）と、見つけた順 order
-  // 通れるマス・ユニットがいないマスだけ（敵は個性で変わる）。泥沼に入ったらそこで止まる。泥沼にはまっていたら今の位置だけ
+  // 通れるマス・ユニットがいないマスだけ（敵は個性で変わる）。味方・敵・村のマスは通り抜けられる（dist には入れない）。
+  // 泥沼に入ったらそこで止まる（人のいる泥沼は止まれないので、その先へも行けない）。泥沼にはまっていたら今の位置だけ
   function reachInfo(s, u) {
     if (LX && LX.useLabReach(s, u)) return LX.reach(s, u);   // ラボ: 氷で滑る・森で止まる・浅瀬・追い風・大きい敵 …
-    var dist = {}, order = [];
+    var dist = {}, order = [], seen = {};
     dist[key(u.x, u.y)] = 0;
+    seen[key(u.x, u.y)] = 0;
     order.push([u.x, u.y]);
     if (u.stuck) return { dist: dist, order: order };
     var queue = [[u.x, u.y]];
     while (queue.length) {
       var c = queue.shift();
-      var cd = dist[key(c[0], c[1])];
+      var cd = seen[key(c[0], c[1])];
       if (cd >= u.move) continue;
       var ct = getTile(s, c[0], c[1]);
       if (cd > 0 && (ct === 'mud' || ct === 'hill')) continue;   // 泥沼・【育つ】丘に入ったらそこで止まる
       neighbors(s, c[0], c[1]).forEach(function (n) {
         var k = key(n.x, n.y);
-        if (dist[k] !== undefined) return;
+        if (seen[k] !== undefined) return;
         if (!canEnter(u, getTile(s, n.x, n.y))) return;
-        if (unitAt(s, n.x, n.y)) return;
+        var o = unitAt(s, n.x, n.y);
+        if (o && o !== u && !passThrough(o)) return;
+        seen[k] = cd + 1;
+        queue.push([n.x, n.y]);
+        if (o && o !== u) return;   // 通り抜けるだけ（止まれない）
         dist[k] = cd + 1;
         order.push([n.x, n.y]);
-        queue.push([n.x, n.y]);
       });
     }
     return { dist: dist, order: order };
@@ -1921,6 +1960,7 @@
   // ---------------------------------------------------------------
 
   // target のマスからの道のり（mover が自分の足で入れるマス・ユニットのいないマス。mover 自身のマスは通れる）
+  //   味方・敵・村のいるマスは通り抜けられる（オーナー 10/30）
   function distanceField(s, target, mover) {
     var field = {};
     field[key(target.x, target.y)] = 0;
@@ -1933,7 +1973,7 @@
         if (field[k] !== undefined) return;
         if (!canEnter(mover, getTile(s, n.x, n.y)) && !(LX && LX.crushable(mover, getTile(s, n.x, n.y)))) return;   // ラボ D4: 大きい敵は崩して通れる
         var occ = unitAt(s, n.x, n.y);
-        if (occ && occ !== mover) return;
+        if (occ && occ !== mover && !passThrough(occ)) return;
         field[k] = cd + 1;
         queue.push([n.x, n.y]);
       });
@@ -2042,7 +2082,7 @@
     // 進む: ターンの始めには何もしない（移動と魔法はセットで、敵の発動のときに行う。marchPhase）
     if (e.stand === 'march') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'march' };
     // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
-    if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.path.length ? rr.path[Math.min(B.enemy.rushMove, rr.path.length) - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
+    if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.stop ? rr.path[rr.stop - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
     // 展示ステージ③: ボスは前へ1マス進んで一撃を予告（ふさがれていたら進まない）。取り巻きは風の人へまっすぐ進み、隣に来たら体当たりを予告
     if (e.stand === 'boss') {
       var bs = e.stuck ? null : bossStep(s, e);
@@ -2238,7 +2278,9 @@
   // ---------------------------------------------------------------
   // 突進の敵（チュートリアル②）
   //   人は無視して、一番近い村へ、通れるマスだけを通る一番短い道を走る（1ターンに enemy.rushMove マス。ターンの始めの敵の移動のとき）。
-  //   山・川・水たまり・泥沼・ユニットのいるマス・盤の外は通らない。魔法は撃たない。走り終えて村の隣にいたら、体当たりで村を壊す（予告なし）。
+  //   山・川・水たまり・泥沼・盤の外は通らない。味方・敵・村のマスは通り抜けられるが、止まれない（オーナー 10/30）。
+  //   次の移動で止まるのは、rushMove マス以内で止まれるマスのうち、行き先までの道のりが一番短いマス（同じなら 動くのが短い → 見つけた順）。
+  //   魔法は撃たない。走り終えて村の隣にいたら、体当たりで村を壊す（予告なし）。
   //   村へ届く道がなければ、enemy.rushNoPath が 'approach' なら届くマスのうち村に一番近い（縦横の歩数）マスへ走って待つ（今いるマスが一番近ければ、その場で待つ）、
   //   'wait' ならその場で待つ
   // ---------------------------------------------------------------
@@ -2255,35 +2297,58 @@
     }
     return null;
   }
-  // 突進の道: { id, from, path（次のマスから終わりまで）, reach（村の隣まで届く）, village（届く村の id）, stop（次の移動で進むマス数） }。村がなければ null
+  // 突進の道: { id, from, path（次のマスから終わりまで）, reach（村の隣まで届く）, village（届く村の id）, stop（次の移動で進むマス数。path[stop - 1] で止まる） }。村がなければ null
   function rushRoute(s, e) {
     var vs = objectsOf(s, 'village');
     if (!vs.length) return null;
-    var dist = {}, prev = {}, order = [[e.x, e.y]], queue = [[e.x, e.y]];
-    dist[key(e.x, e.y)] = 0;
-    while (queue.length) {
-      var c = queue.shift();
-      neighbors(s, c[0], c[1]).forEach(function (n) {
-        var k = key(n.x, n.y);
-        if (dist[k] !== undefined || !rushOpen(s, e, n.x, n.y)) return;
-        dist[k] = dist[key(c[0], c[1])] + 1; prev[k] = c;
-        order.push([n.x, n.y]); queue.push([n.x, n.y]);
-      });
-    }
+    var stand = function (x, y) { var o = unitAt(s, x, y); return !o || o === e; };   // 止まれるマス
+    var open = function (x, y) { var o = unitAt(s, x, y); return rushOpen(s, e, x, y) || (passThrough(o) && rushOpen(s, o, x, y)); };   // 走れるマス（通り抜けも）
+    var bfs = function (sx, sy) {
+      var d = {}, prev = {}, order = [[sx, sy]], queue = [[sx, sy]];
+      d[key(sx, sy)] = 0;
+      while (queue.length) {
+        var c = queue.shift();
+        neighbors(s, c[0], c[1]).forEach(function (n) {
+          var k = key(n.x, n.y);
+          if (d[k] !== undefined || !open(n.x, n.y)) return;
+          d[k] = d[key(c[0], c[1])] + 1; prev[k] = c;
+          order.push([n.x, n.y]); queue.push([n.x, n.y]);
+        });
+      }
+      return { d: d, prev: prev, order: order };
+    };
+    var fromE = bfs(e.x, e.y), dist = fromE.d, order = fromE.order;
     var near = function (c) { return Math.min.apply(null, vs.map(function (v) { return Math.abs(v.x - c[0]) + Math.abs(v.y - c[1]); })); };
-    var goal = order.filter(function (c) { return !!villageNextTo(s, c[0], c[1]); })[0] || null;   // 見つけた順 ＝ 近い順
+    var goal = order.filter(function (c) { return stand(c[0], c[1]) && !!villageNextTo(s, c[0], c[1]); })[0] || null;   // 見つけた順 ＝ 近い順
     var reach = !!goal;
     if (!goal) {
       goal = order[0];
       if (B.enemy.rushNoPath !== 'wait') order.forEach(function (c) {
+        if (!stand(c[0], c[1])) return;
         var a = near(c), b = near(goal);
         if (a < b || (a === b && dist[key(c[0], c[1])] < dist[key(goal[0], goal[1])])) goal = c;
       });
     }
-    var path = [], cur = goal;
-    while (cur[0] !== e.x || cur[1] !== e.y) { path.unshift(cur); cur = prev[key(cur[0], cur[1])]; }
+    // 次の移動で止まるマス（rushMove マス以内で止まれるマスのうち、行き先までの道のりが一番短いマス。同じなら 動くのが短い → 見つけた順）
+    var toGoal = bfs(goal[0], goal[1]).d, stopAt = [e.x, e.y], best = toGoal[key(e.x, e.y)];
+    order.forEach(function (c) {
+      var g = toGoal[key(c[0], c[1])];
+      if (dist[key(c[0], c[1])] > B.enemy.rushMove || !stand(c[0], c[1]) || g === undefined) return;
+      if (best === undefined || g < best) { best = g; stopAt = c; }
+    });
+    // 道: 止まるマスまでの来た道 ＋ そこから行き先まで（道のりが1ずつ減るマスを 上・右・下・左 の順に）
+    var path = [], cur = stopAt;
+    while (cur[0] !== e.x || cur[1] !== e.y) { path.unshift(cur); cur = fromE.prev[key(cur[0], cur[1])]; }
+    var stop = path.length;
+    cur = stopAt;
+    while (toGoal[key(cur[0], cur[1])] > 0) {
+      var cd = toGoal[key(cur[0], cur[1])], nx = null;
+      DIR_ORDER.forEach(function (d) { var c2 = [cur[0] + DIRS[d].dx, cur[1] + DIRS[d].dy]; if (!nx && toGoal[key(c2[0], c2[1])] === cd - 1) nx = c2; });
+      if (!nx) break;
+      path.push(nx); cur = nx;
+    }
     var v = reach ? villageNextTo(s, goal[0], goal[1]) : null;
-    return { id: e.id, from: [e.x, e.y], path: path, reach: reach, village: v ? v.id : null, stop: Math.min(B.enemy.rushMove, path.length) };
+    return { id: e.id, from: [e.x, e.y], path: path, reach: reach, village: v ? v.id : null, stop: stop };
   }
   // ステージ②（mission.defense.sealWin）: 村への道をふさぎきったら、プレイヤーがキーでクリアにできる（勝手には勝たない。オーナー 10/17）
   function sealReady(s) { return !s.result && missionType(s) === 'defense' && !!B.mission.defense.sealWin && rushSealed(s); }
@@ -2347,7 +2412,7 @@
   // 展示ステージ③（3人。.claude/IMPROVE_stage3.md）
   //   s.ex（シナリオの ex を写したもの）があるときだけ動く。
   //   ボス: 大きい体（size×size）。1ターンに1マス、向いている方へ進み（体の全部が入れるときだけ）、体の前の stage3.bossReach 列に一撃を予告する。
-  //   取り巻き: 浮いている。地形に関係なく、風の人へまっすぐ進む（縦横で差の大きい方から。ユニットのいるマスには入らない）。
+  //   取り巻き: 浮いている。地形に関係なく、風の人へまっすぐ進む（縦横で差の大きい方から。味方・敵・村のマスは通り抜けるが、止まれない）。
   //            風の人の隣に来たら体当たりを予告する。ボスの後ろから stage3.spawnEvery ターンごとに湧き続ける（上限 stage3.spawnMax）
   //   火山の熱（timePasses）・桜吹雪の扇（doSakuraStorm）・ミッション（exMissions）・ヒントの数え（exTurnEnd）
   // ---------------------------------------------------------------
@@ -2388,6 +2453,7 @@
     var w = windOf(s), path = [], x = e.x, y = e.y;
     if (!w) return { path: path, to: [x, y], adjacent: false, target: null };
     var near = function (px, py) { return Math.abs(px - w.x) + Math.abs(py - w.y) === 1; };
+    var free = function (px, py) { var o = unitAt(s, px, py); return !o || o.id === e.id; };
     for (var k = 0; k < B.stage3.minionMove && !near(x, y); k++) {
       var dx = w.x - x, dy = w.y - y, sx = dx > 0 ? 1 : dx < 0 ? -1 : 0, sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
       var opts = Math.abs(dx) >= Math.abs(dy) ? [[sx, 0], [0, sy]] : [[0, sy], [sx, 0]];
@@ -2395,13 +2461,15 @@
       for (var i = 0; i < opts.length && !next; i++) {
         var nx = x + opts[i][0], ny = y + opts[i][1];
         if ((!opts[i][0] && !opts[i][1]) || !inBounds(s, nx, ny)) continue;
-        var o = unitAt(s, nx, ny);
-        if (!o || o.id === e.id) next = [nx, ny];
+        var o = unitAt(s, nx, ny), stopHere = k === B.stage3.minionMove - 1 || near(nx, ny);
+        if (free(nx, ny) || (passThrough(o) && !stopHere)) next = [nx, ny];   // 止まらないなら通り抜けられる
       }
       if (!next) break;
       x = next[0]; y = next[1];
       path.push(next);
     }
+    // 通り抜けの途中で進めなくなったら、止まれるマスまで戻る
+    while (path.length && !free(x, y)) { path.pop(); x = path.length ? path[path.length - 1][0] : e.x; y = path.length ? path[path.length - 1][1] : e.y; }
     return { path: path, to: [x, y], adjacent: near(x, y), target: w.id };
   }
   // ミッション（s.ex.missions: [{ id, tile }]）: その自然が盤面に初めてできたら達成
@@ -3442,17 +3510,20 @@
     {
       // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
       id: 'ex3', tutorial: 3, name: '【展示】③ 3人でつなぐ', short: '③ 3人でつなぐ',
-      desc: '味方 山（土）・火（炎）・風の3人（①②の人たち。魔法は①②より強く、届く形が広い）。盤面は横長（12×7）。味方は左端、敵は右端から来る。' +
-        'ボス（3×3・HP20。10/29 に40から）は1ターンに1マス前へ進み、体の前の2列に一撃を予告する（当たった味方は倒れる）。普通の魔法はほとんど効かず、桜吹雪で倒れる。' +
+      desc: '味方 山・火・風の3人（①②の人たち）。盤面は横長（10×7）。味方は左端、敵は右から来る。' +
+        'ボス（3×3・HP20）は1ターンに1マス前へ進み、体の前の2列に一撃を予告する（当たった味方は倒れる）。普通の魔法はほとんど効かず、桜吹雪で倒れる。' +
         '取り巻き（浮いている・HP1）は地形に関係なく風の人へまっすぐ進み、隣に来たら体当たり。ボスの後ろから2ターンごとに湧き続ける。' +
-        '3段: 山の魔法でダイヤ型の山（13マス）→ 山に火で火山（溶岩は火山のマスだけ。隣にいる者はターン終了ごとに熱で2）→ 火山に風で桜吹雪' +
-        '（火山の幅から、風の人の向きへ扇形に盤の奥まで。扇の中の敵を、浮いている敵も含めてまとめて倒す）。ボスを倒せば勝ち。味方が1人でも倒れたらステージの頭からやり直し。',
-      rows: ['............', '............', '............', '............', '............', '............', '............'],
-      allies: [['mount', 0, 6, { facing: 'up' }], ['fire', 2, 6, { facing: 'up' }], ['wind', 0, 0, { facing: 'down' }]],
+        '3段: 山の魔法で十字の山 → 山に火で火山（隣と上にいる者はターン終了ごとに熱で2）→ 火山に風で桜吹雪（火山の幅から風下へ扇形。扇の中の敵を、浮いている敵も含めてまとめて倒す）。' +
+        'ボスを倒せば勝ち。味方が1人でも倒れたらステージの頭からやり直し。' +
+        '【仮組み 10/30】一斉発動（つながる）の1ターン目に、山 → 火 → 風 の順に構えると、ボスと取り巻き2体をまとめて一掃できる配置。' +
+        '一掃の例: 山使いが (1,3) へ1歩出て右へ（十字の真ん中 (3,3)）→ 火使いが (2,4) から上へ（十字の左の腕に火）→ 風使いが (1,2) から右へ（十字の上の腕に風）。' +
+        '山使いが (1,4) から右へ盛る形でも一掃できる。山使いがその場から盛ると、扇がボスまでしか届かず、取り巻きが残る。手は tests/ex3_search.js で数える',
+      rows: ['..........', '..........', '..........', '..........', '..........', '..........', '..........'],
+      allies: [['mount', 0, 3, { facing: 'right' }], ['fire', 1, 5, { facing: 'right' }], ['wind', 0, 2, { facing: 'right' }]],
       enemies: [
-        ['smash', 9, 2, { stand: 'boss', hp: 20, size: 3 }, 'left'],   // オーナー 10/29: HP40 → 20（桜吹雪の威力20を1発で）
-        ['bite', 11, 0, { stand: 'float', hp: 1, body: 'float' }, 'left'],
-        ['bite', 11, 6, { stand: 'float', hp: 1, body: 'float' }, 'left']
+        ['smash', 7, 2, { stand: 'boss', hp: 20, size: 3 }, 'left'],   // オーナー 10/29: HP40 → 20（桜吹雪の威力20を1発で）。1ターン目の始めに (6,2) へ
+        ['bite', 9, 0, { stand: 'float', hp: 1, body: 'float' }, 'left'],   // 1ターン目の始めに風の人へ2マス進んで (7,0)
+        ['bite', 9, 6, { stand: 'float', hp: 1, body: 'float' }, 'left']    // 同じく (7,6)
       ],
       enemyOnly: ['smash', 'bite'],
       ex: {

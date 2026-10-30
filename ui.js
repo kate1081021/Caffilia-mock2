@@ -118,7 +118,8 @@
     history: [],          // [{ state, logLen }]
     log: [],              // [{ text, type }]
     sel: null,            // 選んでいる味方の id
-    plan: null,           // { to: [x,y], dir }
+    plan: null,           // 選んでいる味方の予定 { to: [x,y], dir, from: [x,y] }（plans の中の1つ）
+    plans: {},            // 味方ごとの移動の予定 { id: { to, dir, from } }。ほかの味方を選んでも捨てない（オーナー 10/30）。撃つ・構える・待機で消える
     hover: null,
     busy: false,          // 演出を再生中
     playback: null,
@@ -548,12 +549,42 @@
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
+  // 移動の予定（オーナー 10/30）: 移動先を決めただけで撃っていない味方の予定は、ほかの味方を選んでも味方ごとに残る。
+  //   選び直すと予定の続きから（向き・撃つ・構える・待機）。移動先を選び直すときの届く範囲は、元の位置から数える。
+  //   ほかの味方の予定の移動先には止まれない。予定が今の盤面で成り立たなくなったら（元の位置から動かされた・移動先へ届かない）、その予定は捨てる
+  function planOf(u) {
+    var p = u && app.plans[u.id];
+    if (!p) return null;
+    var ok = !u.acted && p.from[0] === u.x && p.from[1] === u.y &&
+      ((p.to[0] === u.x && p.to[1] === u.y) || R.reachableCells(app.state, u.id)[key(p.to[0], p.to[1])] !== undefined);
+    if (!ok) { delete app.plans[u.id]; return null; }
+    return p;
+  }
+  // ほかの味方の予定の移動先 { "x,y": 味方 }（元の位置から動く予定だけ）
+  function otherPlanTo(exceptId) {
+    var out = {};
+    R.controllableOf(app.state).forEach(function (a) {
+      if (a.id === exceptId) return;
+      var p = planOf(a);
+      if (p && (p.to[0] !== a.x || p.to[1] !== a.y)) out[key(p.to[0], p.to[1])] = a;
+    });
+    return out;
+  }
+  // 選んでいる味方が止まれるマス（ほかの味方の予定の移動先は除く）
+  function reachOf(u) {
+    var reach = R.reachableCells(app.state, u.id), taken = otherPlanTo(u.id), out = {};
+    Object.keys(reach).forEach(function (k) { if (!taken[k]) out[k] = reach[k]; });
+    return out;
+  }
+  function clearPlans() { app.plans = {}; app.plan = null; }
+
   function select(id) {
     var u = R.findUnit(app.state, id);
     if (!u || u.side !== 'ally' || u.npc) return;   // 構える味方は選べない
     if (u.acted && !R.restancing(u) && !(R.lab('F5') && u.labStance)) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }   // 【一斉】・ラボ F5: 構えた味方は構え直せる
     app.sel = id;
-    app.plan = { to: [u.x, u.y], dir: u.facing };
+    app.plan = planOf(u) || { to: [u.x, u.y], dir: u.facing, from: [u.x, u.y] };
+    if (!u.acted) app.plans[id] = app.plan;
     render();
   }
   function deselect() { app.sel = null; app.plan = null; render(); }
@@ -586,6 +617,8 @@
   function doAct(shoot, extra) {
     var u = selUnit();
     if (!u || !canControl()) return;
+    var taken = otherPlanTo(u.id)[key(app.plan.to[0], app.plan.to[1])];
+    if (taken) { say(R.unitLabel(app.state, taken) + 'の移動先の予定です（そこには止まれません）'); return; }
     var opts = { to: app.plan.to, dir: app.plan.dir, shoot: shoot };
     Object.keys(extra || {}).forEach(function (k) { opts[k] = extra[k]; });   // ラボ F6 壊す・F7 作業台
     var res = R.act(app.state, u.id, opts);
@@ -593,6 +626,7 @@
     pushHistory();
     var id = u.id;
     app.sel = null; app.plan = null;
+    delete app.plans[id];
     if (app.onAct) app.onAct(u, shoot !== false);   // 文章（きっかけ: 構えたとき）
     play(res.steps, res.state, function () {
       if (simul()) { if (!app.state.result) selectNext(id); return; }   // 【一斉】全員構えても、発動はボタンで
@@ -616,6 +650,7 @@
       if (app.state !== s0) return;   // 読んでいる間に盤面が変わった（1手戻す・読み直し）なら発動しない
       var t = R.endTurn(app.state);
       if (!t.ok) { say(t.error); return; }
+      clearPlans();   // ターンが終わったら、撃たなかった味方の予定も消える
       if (simul()) { app.chain = []; app.chainCombo = null; }
       play(t.steps, t.state, function () {
         if (R.sealReady(app.state)) { app.sel = null; app.plan = null; render(); }   // ステージ②: ふさぎきったら味方を選ばず、「クリアする」の案内を出す
@@ -632,7 +667,7 @@
     var r = R.claimSeal(app.state);
     if (!r.ok) { say(r.error); return; }
     pushHistory();
-    app.sel = null; app.plan = null;
+    app.sel = null; clearPlans();
     play(r.steps, r.state, function () { render(); });
   }
 
@@ -671,7 +706,7 @@
   function setState(s, logText) {
     pushHistory();
     app.state = s;
-    app.sel = null; app.plan = null; app.editPick = null;
+    app.sel = null; clearPlans(); app.editPick = null;
     if (logText) addLog(logText, 'system');
     render();
   }
@@ -701,7 +736,7 @@
   function setEditMode(on) {
     if (app.busy) skipPlayback();
     if (on === app.editMode) return;
-    app.sel = null; app.plan = null; app.editPick = null;
+    app.sel = null; clearPlans(); app.editPick = null;
     if (on) {
       app.editMode = true;
       addLog('エディットモード開始', 'system');
@@ -1010,17 +1045,21 @@
     var u = selUnit();
     var occ = R.unitAt(st, x, y);
     if (u) {
-      var reach = R.reachableCells(st, u.id);
+      var reach = reachOf(u);
       if (reach[key(x, y)] !== undefined) {
         app.plan.to = [x, y];
         render();
         return;
       }
       if (occ && occ.side === 'ally' && occ.id !== u.id) { select(occ.id); return; }
+      var planned = otherPlanTo(u.id)[key(x, y)];   // ほかの味方の予定の移動先を押したら、その味方を選ぶ
+      if (planned) { select(planned.id); return; }
       say(u.stuck ? '泥沼にはまっていて移動できません（その場で撃てます）' : '移動範囲の外です');
       return;
     }
     if (occ && occ.side === 'ally') { select(occ.id); return; }
+    var plannedAt = otherPlanTo(null)[key(x, y)];
+    if (plannedAt) { select(plannedAt.id); return; }
     say('味方をクリックして選んでください');
   }
 
@@ -1309,7 +1348,8 @@
 
     var u = (!app.editMode && !app.busy) ? selUnit() : null;
     var so = shapeOnly();   // 展示ステージ③: 予測は魔法が届く形まで（何になるかは見せない）
-    var reach = u ? R.reachableCells(st, u.id) : {};
+    var reach = u ? reachOf(u) : {};
+    var planElse = (!app.editMode && !st.result) ? otherPlanTo(u ? u.id : null) : {};   // ほかの味方の移動の予定（薄く描く）
     var guide = (u && !st.result && !so) ? guideNow(u) : {};
     var pv = (u && app.plan && !st.result) ? previewNow(u) : null;
     var fc = forecastNow();
@@ -1587,6 +1627,7 @@
         var cls = ['cell', 't-' + tile];
         if (reach[k] !== undefined) cls.push('reach');
         if (u && app.plan && app.plan.to[0] === x && app.plan.to[1] === y) cls.push('plan-to');
+        if (planElse[k]) cls.push('plan-other');
         if (guide[k] === 'finisher' && reach[k] !== undefined) cls.push('guide-finisher');
         if (shape[k]) cls.push('pv-shape');
         if (growPv[k]) cls.push('pv-grow');
@@ -1684,6 +1725,7 @@
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
         if (planGhost === k && !unit) inner += '<div class="ghost ally"></div>';
+        if (planElse[k] && !unit) { var pa = planElse[k], pp = app.plans[pa.id]; inner += '<div class="ghost ally plan-other" title="' + esc(R.unitLabel(st, pa) + 'の移動の予定') + '">' + esc(R.magicName(pa.magic)) + DIR_ARROW[pp.dir] + '</div>'; }
         if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」
           var sc = soCell[k];
           inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '"></span>';
@@ -1735,7 +1777,7 @@
     var st = app.state;
     var fc = forecastNow();
     var fcAll = forecastNow(true);
-    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer]);
+    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.plans, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer]);
     if (sig === sideSig) return;
     sideSig = sig;
     if (app.editMode) renderEditPanel(); else renderPlayPanel(fc);
@@ -2471,7 +2513,7 @@
     if (label) addLog(label, 'system');
     app.state = s;
     app.history = [];
-    app.sel = null; app.plan = null; app.editPick = null;
+    app.sel = null; clearPlans(); app.editPick = null;
     app.cache = {};
     sideSig = '';
     app.resetPoint = R.clone(app.state);
