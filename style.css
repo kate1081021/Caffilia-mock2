@@ -577,8 +577,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 #boardSize { width: 4em; }
 #saveName { flex: 1; min-width: 8em; }
 #savedList { flex: 1; min-width: 8em; }
-.file-label { font-size: 12px; color: var(--muted); }
-.file-label input { max-width: 180px; }
 .cell.picked { outline: 3px solid var(--gold); outline-offset: -3px; }
 
 /* 【新案・仮】あと一手のヒント（竜巻のマスは回る模様で重なり順が分かれるので、札を出すマスを上にする） */
@@ -998,6 +996,11 @@ html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 1
 .lu-name small.danger { color: #b91c1c; text-decoration: none; }
 .lu-out { font-size: 12px; padding: 2px 10px; }
 .lu-empty { padding: 4px 2px; }
+/* 共有（IMPROVE_v3 段4）: エディットの共有のようす・選ぶ窓のボタン */
+.share-note { margin: 0; }
+.share-note.danger { color: #b91c1c; font-weight: bold; }
+.choice-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.choice-buttons button { min-height: 44px; font-size: 15px; }
 
 /* ---------------------------------------------------------------
  * 展示モード（mode.js。URL に印がないとき。オーナー 10/29）

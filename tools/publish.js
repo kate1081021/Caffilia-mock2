@@ -20,6 +20,9 @@ var ROOT = path.join(__dirname, '..');
 var PUB = path.join(ROOT, 'publish');
 var SITE_URL = 'https://caffilia-jkwzvlbc7.kate108superstar.workers.dev';
 var NOINDEX = '<meta name="robots" content="noindex, nofollow">';
+// 共有の置き場所（IMPROVE_v3 段4）: Cloudflare の Workers KV の ID（オーナーが Cloudflare の画面で作ったもの）。
+//   空のあいだは置き場所をつながない（/api/ は「まだありません」と答え、画面は共有なしで動く）
+var KV_ID = 'd5599520f3704e42bd423293d1dc43ff';   // caffilia-stages（オーナー 10/30）
 
 // 公開してはいけないもの（index.html が読み込んでいても止める）
 function isForbidden(rel) {
@@ -140,13 +143,19 @@ function main() {
 
   fs.writeFileSync(path.join(PUB, 'index.html'), topPage());
   fs.writeFileSync(path.join(PUB, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
-  // Cloudflare（Workers の静的サイト）の設定。リポジトリの中身をそのまま配る。.git などは配らない
-  fs.writeFileSync(path.join(PUB, 'wrangler.jsonc'), JSON.stringify({
+  // Cloudflare（Workers の静的サイト）の設定。リポジトリの中身をそのまま配る。.git などは配らない。
+  //   /api/ は共有の置き場所のプログラム（tools/stage_worker.mjs を worker.mjs に写す。IMPROVE_v3 段4）が答える
+  fs.copyFileSync(path.join(ROOT, 'tools', 'stage_worker.mjs'), path.join(PUB, 'worker.mjs'));
+  var wrangler = {
     name: 'caffilia-jkwzvlbc7',
     compatibility_date: '2026-10-01',
-    assets: { directory: './' }
-  }, null, 2) + '\n');
-  fs.writeFileSync(path.join(PUB, '.assetsignore'), '.git\n.gitignore\n.assetsignore\nwrangler.jsonc\ntop.json\n');
+    main: 'worker.mjs',
+    assets: { directory: './', binding: 'ASSETS' }
+  };
+  if (KV_ID) wrangler.kv_namespaces = [{ binding: 'CAFILIA', id: KV_ID }];
+  else console.log('KV_ID が空なので、共有の置き場所はつながない（/api/ は「まだありません」と答える）');
+  fs.writeFileSync(path.join(PUB, 'wrangler.jsonc'), JSON.stringify(wrangler, null, 2) + '\n');
+  fs.writeFileSync(path.join(PUB, '.assetsignore'), '.git\n.gitignore\n.assetsignore\nwrangler.jsonc\ntop.json\nworker.mjs\n');
   fs.writeFileSync(path.join(PUB, '_headers'), '/*\n  X-Robots-Tag: noindex, nofollow\n\n/latest/*\n  Cache-Control: no-cache\n');
 
   console.log('版「' + name + '」を publish/' + name + '/ に置きました: ' + files.concat('version.js').join(', '));

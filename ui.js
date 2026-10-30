@@ -77,6 +77,7 @@
     layout0: null,        // 今のシナリオの遊び始める前の盤面（テストプレイ中でないときに E を押すと、ここから作り始める）
     home: false,          // 開発モードの最初の画面（ステージの一覧）を出している（IMPROVE_v3 段2）
     homeView: 'list',     // 最初の画面のどれを出しているか（開発: list・lineup／展示: title・pick・thanks・clear）
+    sharing: false,       // 共有している途中（段4）
     run: null,            // 展示モードで遊んでいる並び { kind: start（はじめから）か pick（選んで）, list, i }（IMPROVE_v3 段3）
     lineupDraft: null,    // 開発モードの「展示の並び」で並べ替え中の並び（「この並びで展示する」まで展示は変えない）
     flash: {},
@@ -92,7 +93,7 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
     'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnDownload', 'fileInput', 'btnHome', 'home',
+    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'btnRetry', 'btnSealWin', 'stageHint',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
@@ -649,14 +650,10 @@
     if (on === app.editMode) return;
     app.sel = null; clearPlans(); app.editPick = null;
     if (on) {
-      var back = testing();
+      var back = testing(), p0 = !back && app.scenario && R.findPreset(app.scenario);
+      if (p0 && p0.shared) { editShared(p0.name); return; }   // みんなのステージ: 自分のステージに写す（段4）
       if (!back) startDraft(draftFromScenario());
-      if (app.closeDialog) app.closeDialog();
-      app.editMode = true;
-      app.history = app.editHist;
-      app.state = R.clone(app.draft.state);
-      addLog(back ? 'エディットに戻った（「' + app.draft.name + '」）' : app.draft.key ? 'エディット開始（自分のステージ「' + app.draft.name + '」を開いた）' : 'エディット開始（「' + app.draft.name + '」を作る。自分のステージに自動で残る）', 'system');
-      render();
+      enterEdit(back);
     } else {
       app.draft.state = R.clone(app.state);
       app.editHist = app.history;
@@ -665,6 +662,16 @@
       keepDraft();
       testPlay();
     }
+  }
+  // app.draft をエディットで開く（back: テストプレイから戻ったとき）
+  function enterEdit(back) {
+    if (app.closeDialog) app.closeDialog();
+    app.editMode = true;
+    app.history = app.editHist;
+    app.state = R.clone(app.draft.state);
+    addLog(back ? 'エディットに戻った（「' + app.draft.name + '」）' : app.draft.key ? 'エディット開始（自分のステージ「' + app.draft.name + '」を開いた）' : 'エディット開始（「' + app.draft.name + '」を作る。自分のステージに自動で残る）', 'system');
+    render();
+    refreshShare();
   }
   function testing() { return !app.editMode && !!app.draft && !!app.draft.playId && app.scenario === app.draft.playId; }
 
@@ -705,7 +712,7 @@
     var b = rec && SIO.build(R, rec.def);
     if (!b || !b.ok) return null;
     delete b.state.stage;
-    return { state: b.state, name: name, key: name, texts: fillTexts(rec.texts, name), exKeep: rec.exKeep || null };
+    return { state: b.state, name: name, key: name, texts: fillTexts(rec.texts, name), exKeep: rec.exKeep || null, base: rec.base || null };
   }
   // 作るステージを d に替える。それまでのステージは自分のステージに残っている。新しく増えるものは名前が重ならないようにする
   function startDraft(d) {
@@ -730,7 +737,7 @@
   }
   function draftRecord() {
     var d = app.draft, s = app.editMode ? app.state : d.state;
-    return { def: SIO.toDef(R, s, d.name), texts: d.texts, exKeep: d.exKeep || null };
+    return { def: SIO.toDef(R, s, d.name), texts: d.texts, exKeep: d.exKeep || null, base: d.base || null };   // base: 最後に共有した（写した）ときの中身のしるし（段4）
   }
   function keepDraft() {
     var d = app.draft;
@@ -741,7 +748,7 @@
     if (d.key !== d.name && stages[d.name]) d.name = uniqueName(d.name, stages);   // ほかの自分のステージには上書きしない
     var rec = draftRecord(), moved = d.key !== d.name;
     keepDraft.last = JSON.stringify([d.name, rec]);
-    if (d.key && moved) { delete stages[d.key]; renameInLineup(d.key, d.name); }   // 展示の並びに入っていれば、そこの名前も付け替える
+    if (d.key && moved) { delete stages[d.key]; d.base = rec.base = null; }   // 名前を変えたら、共有の元は別のステージ
     rec.at = Date.now();
     stages[d.name] = rec;
     d.key = d.name;
@@ -920,6 +927,7 @@
     renderBoard(!!animate);
     renderSide();
     renderHint();
+    if (app.editMode) renderShare();   // 共有のようす（地形を塗っただけでも変わる）
   }
 
   // お題: 名前・勝ち方・負け方・残りの数を常に出す
@@ -1963,79 +1971,161 @@
   el.btnTestPlay.addEventListener('click', function () { setEditMode(false); });
   // 新しいステージ: 作り始めた時点で、自分のステージが1つ増える。味方3人（初期の魔法）と敵1体から（R.createState の初めの形）
   function newStage(size) { return { state: R.createState({ size: size }), name: '新しいステージ', texts: null }; }
-  // ファイルに書き出す・読み込む: 段4（共有）ができるまでの、ブラウザの外に逃がす道（段4でなくす）
-  function stageFile() {
-    return SIO.toFile({ name: app.draft.name, def: SIO.toDef(R, app.state, app.draft.name), texts: app.draft.texts, savedAt: new Date().toLocaleString('ja-JP') });
-  }
-  function fileSafe(t) { return String(t).replace(/[\\/:*?"<>|\s]+/g, '_'); }
-  el.btnDownload.addEventListener('click', function () {
-    try {
-      var blob = new Blob([stageFile()], { type: 'application/json' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'cafilia-stage-' + fileSafe(app.draft.name) + '.json';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-      say('「' + a.download + '」に書き出しました');
-    } catch (e) { say('ファイルに書き出せませんでした'); }
-  });
-  // ステージのファイル・前の「配置」の JSON のどちらも読める。読んだら自分のステージが1つ増える（名前が重なったら番号を付ける）
-  function importStage(text, fileName, fallbackName) {
-    var f = SIO.fromFile(R, text, fallbackName);
-    if (!f.ok) { say('読み込めません: ' + f.error); return; }
-    delete f.state.stage;
-    openDraft({ state: f.state, name: f.name, texts: f.texts }, function (nm) {
-      return 'ファイル「' + fileName + '」を、自分のステージ「' + nm + '」として読み込んだ（▶ テストプレイで遊べる）';
-    });
-  }
-  el.fileInput.addEventListener('change', function () {
-    var f = el.fileInput.files && el.fileInput.files[0];
-    if (!f) return;
-    var reader = new FileReader();
-    reader.onload = function () {
-      importStage(String(reader.result), f.name, f.name.replace(/\.json$/i, '').replace(/^cafilia-(stage|layout)-?/, ''));
-      el.fileInput.value = '';
-    };
-    reader.readAsText(f);
-  });
 
   // ---------------------------------------------------------------
-  // 展示の並び（IMPROVE_v3 段3）: 展示モードで遊ぶステージと順番。開発モードの「展示の並び」で決める
-  //   { start: はじめから遊ぶ の順番, pick: 選んで遊ぶ に出すもの }。中身は 'tut:tut1'（チュートリアル）か 'my:名前'（自分のステージ）。
-  //   段3 では、このブラウザ（localStorage）に残し、自分のステージから足す。段4 で共有（Cloudflare）に置き、みんなのステージから足す形に替える
+  // 共有（IMPROVE_v3 段4）: みんなのステージと展示の並びを Cloudflare（今の公開先）に置く。置き場所のプログラムは tools/stage_worker.mjs
+  //   http(s) で開いたときは同じところの /api/（公開した版・手元の tests/serve.js）、ファイルから開いたとき（file://）は公開先の /api/。
+  //   ネットにつながっていないときは、共有する・展示の並びは押せない。展示モードはチュートリアル①②③だけになる
   // ---------------------------------------------------------------
-  var LINEUP_KEY = 'cafilia-mock-exhibit-lineup';
+  var SITE_API = 'https://caffilia-jkwzvlbc7.kate108superstar.workers.dev/api/';
+  var API = window.CAFILIA_API || (/^https?:$/.test(window.location.protocol) ? '/api/' : SITE_API);
+  var NET_MS = 8000;   // これより待っても答えがなければ、つながっていないことにする
+  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, why: '' };
+  function api(method, path, body) {
+    return new Promise(function (resolve) {
+      var done = false, finish = function (r) { if (!done) { done = true; resolve(r); } };
+      setTimeout(function () { finish({ ok: false, offline: true }); }, NET_MS);
+      try {
+        fetch(API + path, { method: method, cache: 'no-store', headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined })
+          .then(function (r) {
+            return r.json().then(function (j) { return { ok: r.ok && !!j && j.ok !== false, status: r.status, data: j }; }, function () { return { ok: false, status: r.status, data: null }; });
+          })
+          .then(finish, function () { finish({ ok: false, offline: true }); });
+      } catch (e) { finish({ ok: false, offline: true }); }
+    });
+  }
+  function netWhy(res) {
+    return res.offline ? 'ネットにつながっていません' : '共有の置き場所につながりません' + (res.data && res.data.error ? '（' + res.data.error + '）' : res.status ? '（' + res.status + '）' : '');
+  }
+  // みんなのステージと展示の並びを読み直す
+  function fetchShared() {
+    return api('GET', 'all').then(function (res) {
+      app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, why: '' }
+        : { ok: false, loaded: true, stages: {}, lineup: null, why: netWhy(res) };
+      return app.shared;
+    });
+  }
+  function refreshShare() { fetchShared().then(renderShare); }
+  // ステージの中身のしるし（名前は除く）。共有のようすで、どちらが直したかを見分けるのに使う
+  function stageSig(rec) {
+    var x = SIO.clone(rec.def), t = rec.texts || {};
+    delete x.id; delete x.name;
+    var str = JSON.stringify([x, t.scenes || null, t.hint || null]), h = 5381;
+    for (var i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+    return h.toString(36) + ':' + str.length;
+  }
+  // 共有のようす: none まだない・same 同じ・mine 自分が直した・theirs ほかの人が直した・both 両方が直した
+  //   （一度も共有・写しをしていないのに同じ名前のものがあるときも both。共有すると、その人のものが消えるため）
+  var SHARE_TEXT = { none: 'みんなのステージにはまだありません', same: 'みんなのステージと同じです', mine: '共有したあとに直した所があります', theirs: 'ほかの人が直しています', both: '共有すると、ほかの人が直した所が消えます ⚠' };
+  function shareState(name, rec) {
+    var cloud = app.shared.stages[name];
+    if (!cloud) return 'none';
+    var mine = stageSig(rec), theirs = stageSig(cloud), base = rec.base;
+    if (mine === theirs) return 'same';
+    if (!base) return 'both';
+    if (theirs === base) return 'mine';
+    if (mine === base) return 'theirs';
+    return 'both';
+  }
+  function renderShare() {
+    var d = app.draft;
+    if (!d || !app.editMode) return;
+    el.btnShare.disabled = !app.shared.ok || !!app.sharing;
+    el.shareNote.textContent = app.sharing ? '共有しています…' : !app.shared.loaded ? '読み込み中…' : app.shared.ok ? SHARE_TEXT[shareState(d.name, draftRecord())] : app.shared.why;
+    el.shareNote.classList.toggle('danger', app.shared.ok && shareState(d.name, draftRecord()) === 'both');
+  }
+  // 共有する: 同じ名前があれば確かめてから上書き（ほかの人が直した所が消えるときは ⚠ を足す）
+  function shareDraft() {
+    var d = app.draft;
+    if (!d || app.sharing) return;
+    keepDraft();
+    app.sharing = true;
+    renderShare();
+    var stop = function (msg) { app.sharing = false; renderShare(); if (msg) window.alert(msg); };
+    fetchShared().then(function () {
+      if (!app.shared.ok) { stop(app.shared.why); return; }
+      var rec = draftRecord(), name = d.name, st = shareState(name, rec);
+      if (st === 'same') { stop('みんなのステージと同じです（共有しなくてよい）'); return; }
+      if (st !== 'none' && !window.confirm('同じ名前のステージがあります。上書きしますか？' + (st === 'both' || st === 'theirs' ? '\n⚠ ほかの人が直した所が消えます' : ''))) { stop(); return; }
+      api('PUT', 'stages/' + encodeURIComponent(name), { def: rec.def, texts: rec.texts }).then(function (res) {
+        if (!res.ok) { stop('共有できませんでした: ' + netWhy(res)); return; }
+        app.shared.stages[name] = { def: rec.def, texts: rec.texts, at: res.data.at };
+        d.base = stageSig(rec);
+        keepDraft();
+        app.sharing = false;
+        addLog('「' + name + '」を共有した（みんなのステージ）', 'system');
+        say('「' + name + '」を共有しました');
+        render();
+        renderShare();
+      });
+    });
+  }
+  el.btnShare.addEventListener('click', shareDraft);
+  // みんなのステージを R.PRESETS に足す（id は 'all:名前'。遊ぶ・展示の並びで読む）
+  function registerShared(name) {
+    var rec = app.shared.stages[name], def = SIO.clone(rec.def);
+    def.id = 'all:' + name; def.name = name; def.custom = true; def.tutorial = true; def.shared = true;
+    registerStage(def, fillTexts(rec.texts, name));
+    return def.id;
+  }
+  // みんなのステージを作る側にする: 自分のステージに同じ名前の写しを作る（共有するまで、みんなのステージは変わらない）。
+  //   自分のステージにもう同じ名前があるときは、選んでもらう
+  function editShared(name) {
+    var cloud = app.shared.stages[name], own = (stageStore() || {})[name];
+    var b = cloud && SIO.build(R, cloud.def);
+    if (!b || !b.ok) { window.alert('みんなのステージに「' + name + '」が見つかりません（消されたかもしれません）'); return; }
+    var fromCloud = function (key) {
+      var bs = SIO.build(R, cloud.def).state;
+      delete bs.stage;
+      return { state: bs, name: name, key: key, texts: fillTexts(cloud.texts, name), exKeep: null, base: stageSig(cloud) };
+    };
+    var go = function (d) { startDraft(d); enterEdit(false); };
+    if (!own) { go(fromCloud()); return; }
+    choose('自分のステージにも「' + name + '」があります', [
+      ['自分のステージを開く', function () { go(draftFromRecord(name, own)); }],
+      ['みんなのステージの形で置きかえる ⚠', function () {
+        if (window.confirm('自分のステージ「' + name + '」で直していた所は消えます。置きかえますか？')) go(fromCloud(name));
+      }]
+    ]);
+  }
+  // 選ぶ窓（遊び方の窓と同じ見た目）。options: [[ボタンの文, 押したとき], …]。「やめる」も出す
+  function choose(title, options) {
+    el.choiceTitle.textContent = title;
+    el.choiceButtons.innerHTML = options.map(function (o, i) { return '<button type="button" data-c="' + i + '"' + (i === 0 ? ' class="primary"' : '') + '>' + esc(o[0]) + '</button>'; }).join('') +
+      '<button type="button" data-c="-1">やめる</button>';
+    el.choice.hidden = false;
+    el.choiceButtons.onclick = function (e) {
+      var b = e.target.closest && e.target.closest('[data-c]');
+      if (!b) return;
+      el.choice.hidden = true;
+      var i = Number(b.getAttribute('data-c'));
+      if (i >= 0) options[i][1]();
+    };
+  }
+
+  // ---------------------------------------------------------------
+  // 展示の並び（IMPROVE_v3 段3・段4）: 展示モードで遊ぶステージと順番。開発モードの「展示の並び」で決める
+  //   { start: はじめから遊ぶ の順番, pick: 選んで遊ぶ に出すもの }。中身は 'tut:tut1'（チュートリアル）か 'all:名前'（みんなのステージ）。
+  //   共有の置き場所（Cloudflare）に置く（段4。段3 のこのブラウザの並び cafilia-mock-exhibit-lineup はもう読まない）
+  // ---------------------------------------------------------------
   function lineupDefault() { return { start: EXHIBIT_STAGES.map(function (id) { return 'tut:' + id; }), pick: [] }; }
   function lineupGet() {
-    var v = null;
-    try { v = JSON.parse(window.localStorage.getItem(LINEUP_KEY) || 'null'); } catch (e) { v = null; }
-    return v && Array.isArray(v.start) && Array.isArray(v.pick) ? v : lineupDefault();
+    var v = app.shared.lineup;
+    return v && Array.isArray(v.start) && Array.isArray(v.pick) ? { start: v.start.slice(), pick: v.pick.slice() } : lineupDefault();
   }
-  function lineupSet(v) { try { window.localStorage.setItem(LINEUP_KEY, JSON.stringify(v)); return true; } catch (e) { return false; } }
   function refKind(ref) { return String(ref).slice(0, String(ref).indexOf(':')); }
   function refId(ref) { return String(ref).slice(String(ref).indexOf(':') + 1); }
-  // 並びの1つが、今あるステージか（自分のステージは、消すと見つからない。名前を変えたときは並びも付け替える）
+  // 並びの1つが、今あるステージか（みんなのステージが読めないときは見つからない）
   function refOk(ref) {
     if (refKind(ref) === 'tut') return EXHIBIT_STAGES.indexOf(refId(ref)) >= 0;
-    var rec = refKind(ref) === 'my' ? (stageStore() || {})[refId(ref)] : null;
+    var rec = refKind(ref) === 'all' ? app.shared.stages[refId(ref)] : null;
     return !!(rec && SIO.build(R, rec.def).ok);
   }
   function refName(ref) { return refKind(ref) === 'tut' ? stageName(R.findPreset(refId(ref))) : refId(ref); }
   function inLineup(ref) { var v = lineupGet(); return v.start.indexOf(ref) >= 0 || v.pick.indexOf(ref) >= 0; }
-  function renameInLineup(from, to) {
-    var v = lineupGet(), a = 'my:' + from, b = 'my:' + to;
-    if (!inLineup(a)) return;
-    ['start', 'pick'].forEach(function (k) { v[k] = v[k].map(function (r) { return r === a ? b : r; }); });
-    lineupSet(v);
-  }
-  // 並びの1つを読む。自分のステージは、チュートリアルと同じ道で読む（R.PRESETS に足して loadScenario）
+  // 並びの1つを読む。みんなのステージは、チュートリアルと同じ道で読む（R.PRESETS に足して loadScenario）
   function loadRef(ref) {
-    if (refKind(ref) === 'tut') { loadScenario(refId(ref)); return; }
-    var name = refId(ref), rec = (stageStore() || {})[name], def = SIO.clone(rec.def);
-    def.id = SIO.PREFIX + name; def.name = name; def.custom = true; def.tutorial = true;
-    registerStage(def, fillTexts(rec.texts, name));
-    loadScenario(def.id);
+    loadScenario(refKind(ref) === 'tut' ? refId(ref) : registerShared(refId(ref)));
   }
 
   // ---------------------------------------------------------------
@@ -2046,6 +2136,7 @@
   // ---------------------------------------------------------------
   // 遊べる並び（見つからないものは飛ばす）。どちらも空なら、チュートリアル①②③を「はじめから」にする【仮】
   function exhibitLists() {
+    if (!app.shared.ok) { var tuts = lineupDefault().start; return { start: tuts, pick: tuts.slice() }; }   // つながっていないとき: チュートリアル①②③だけ（どちらも）
     var v = lineupGet(), start = v.start.filter(refOk), pick = v.pick.filter(refOk);
     if (!start.length && !pick.length) start = lineupDefault().start;
     return { start: start, pick: pick };
@@ -2062,6 +2153,8 @@
     } else if (view === 'thanks' || view === 'clear') {
       el.home.innerHTML = '<h2 class="ex-head big">' + esc(view === 'thanks' ? ui('exThanks', 'ここまで遊んでくれてありがとう！') : ui('exClear', 'クリア！')) + '</h2>' +
         '<div class="home-list ex-menu">' + back + other + '</div>';
+    } else if (!app.shared.loaded) {
+      el.home.innerHTML = '<h2 class="ex-head big">' + esc(ui('exTitle', 'カフィーリア')) + '</h2><p class="muted">' + esc(ui('exLoading', '読み込み中…')) + '</p>';
     } else {
       el.home.innerHTML = '<h2 class="ex-head big">' + esc(ui('exTitle', 'カフィーリア')) + '</h2>' +
         '<div class="home-list ex-menu">' +
@@ -2100,7 +2193,7 @@
       var ok = refOk(r);
       return '<li class="lu-item' + (ok ? '' : ' missing') + '" data-i="' + i + '">' +
         '<span class="lu-grip" data-grip="' + list + '" title="ドラッグで並び替え">≡</span>' +
-        '<span class="lu-name">' + esc(refName(r)) + '<small>' + (refKind(r) === 'tut' ? 'チュートリアル' : '自分のステージ') + '</small>' +
+        '<span class="lu-name">' + esc(refName(r)) + '<small>' + (refKind(r) === 'tut' ? 'チュートリアル' : 'みんなのステージ') + '</small>' +
         (ok ? '' : '<small class="danger">見つからない（展示では飛ばす）</small>') + '</span>' +
         '<button type="button" class="lu-out" data-out="' + list + '" data-i="' + i + '">外す</button></li>';
     };
@@ -2109,12 +2202,12 @@
         (d[list].length ? d[list].map(function (r, i) { return item(list, r, i); }).join('') : '<li class="lu-empty muted">まだありません（展示では、この段のボタンを出さない）</li>') + '</ol></section>';
     };
     var opts = EXHIBIT_STAGES.map(function (id) { return '<option value="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '（チュートリアル）</option>'; }).join('') +
-      ownList().map(function (nm) { return '<option value="my:' + esc(nm) + '">' + esc(nm) + '（自分のステージ）</option>'; }).join('');
+      sharedList().map(function (nm) { return '<option value="all:' + esc(nm) + '">' + esc(nm) + '（みんなのステージ）</option>'; }).join('');
     el.home.innerHTML = '<h2>展示の並び <small>展示モードで遊ぶステージと順番</small></h2>' +
-      '<p class="lu-warn">⚠ 注意！ここを変えると、展示モードの並びが変わります（今はこのブラウザの展示モード。共有ができたら、どのパソコンでも変わります）</p>' +
+      '<p class="lu-warn">⚠ 注意！ここを変えると、展示モードの並びがどのパソコンでも変わります</p>' +
       sec('start', 'はじめから遊ぶ の順番', 'ドラッグで並び替え') +
       sec('pick', '選んで遊ぶ に出すもの', '開発で選んだものだけが、展示の一覧に出る') +
-      '<section class="home-sec"><h3>＋ 足す <small>チュートリアル・自分のステージから（共有ができたら、みんなのステージから）</small></h3>' +
+      '<section class="home-sec"><h3>＋ 足す <small>チュートリアル・みんなのステージから（自分のステージは、共有してから）</small></h3>' +
       '<div class="row"><select id="luAdd" aria-label="足すステージ">' + opts + '</select>' +
       '<button type="button" data-add="start">はじめから に足す</button><button type="button" data-add="pick">選んで遊ぶ に足す</button></div></section>' +
       '<div class="home-list"><button type="button" class="primary" data-lu-save="1"' + (dirty ? '' : ' disabled') + '>この並びで展示する</button>' +
@@ -2134,11 +2227,15 @@
       return true;
     }
     if (b.hasAttribute('data-lu-save')) {
-      if (!window.confirm('本当に変えますか？\n展示モードの並びが、この並びに変わります。')) return true;
-      if (!lineupSet(d)) { window.alert('残せませんでした'); return true; }
-      app.lineupDraft = SIO.clone(d);
-      app.lineupSaved = true;
-      renderLineup();
+      if (!window.confirm('本当に変えますか？\n展示モードの並びが、どのパソコンでも、この並びに変わります。')) return true;
+      b.disabled = true;
+      api('PUT', 'lineup', { start: d.start, pick: d.pick }).then(function (res) {
+        if (!res.ok) { window.alert('変えられませんでした: ' + netWhy(res)); renderLineup(); return; }
+        app.shared.lineup = { start: d.start.slice(), pick: d.pick.slice(), at: res.data.at };
+        app.lineupDraft = SIO.clone(d);
+        app.lineupSaved = true;
+        if (app.homeView === 'lineup') renderLineup();
+      });
       return true;
     }
     if (b.hasAttribute('data-lu-back')) { app.homeView = 'list'; renderHome(); return true; }
@@ -2183,6 +2280,10 @@
     var stages = stageStore() || {};
     return Object.keys(stages).sort(function (a, b) { return (stages[b].at || 0) - (stages[a].at || 0); });   // 新しく直した順
   }
+  function sharedList() {
+    var st = app.shared.stages;
+    return Object.keys(st).sort(function (a, b) { return (st[b].at || 0) - (st[a].at || 0); });   // 新しく共有した順
+  }
   function renderHome() {
     if (EXHIBIT) { renderExhibitHome(app.homeView); return; }
     if (app.homeView === 'lineup') { renderLineup(); return; }
@@ -2191,16 +2292,23 @@
       '<section class="home-sec"><h3>チュートリアル <small>作る側にすると、写しが自分のステージにできる（元は変わらない）</small></h3><div class="home-list">' +
       EXHIBIT_STAGES.map(function (id) { return '<button type="button" class="home-stage" data-open="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '</button>'; }).join('') +
       '</div></section>' +
+      '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる</small></h3><div class="home-list">' +
+      (!app.shared.loaded ? '<p class="muted">読み込み中…</p>' : !app.shared.ok ? '<p class="note">' + esc(app.shared.why) + '</p>' :
+        sharedList().length ? sharedList().map(function (nm) {
+          return '<span class="home-own"><button type="button" class="home-stage" data-open="all:' + esc(nm) + '">' + esc(nm) + '</button>' +
+            '<button type="button" class="home-del" data-sdel="' + esc(nm) + '" title="みんなのステージ「' + esc(nm) + '」を消す">消す</button></span>';
+        }).join('') : '<p class="muted">まだありません（エディットの「共有する」で増える）</p>') +
+      '</div></section>' +
       '<section class="home-sec"><h3>自分のステージ <small>このブラウザに自動で残る。新しく直した順</small></h3><div class="home-list">' +
       (mine.length ? mine.map(function (nm) {
         return '<span class="home-own"><button type="button" class="home-stage" data-open="my:' + esc(nm) + '">' + esc(nm) + '</button>' +
           '<button type="button" class="home-del" data-del="' + esc(nm) + '" title="「' + esc(nm) + '」を消す">消す</button></span>';
       }).join('') : '<p class="muted">まだありません</p>') + '</div>' +
-      (stages === null ? '<p class="note">この環境ではブラウザに残せません。エディットの「ファイルに書き出す」を使ってください。</p>' : '') +
+      (stages === null ? '<p class="note">この環境ではブラウザに残せません。作ったら「共有する」で、みんなのステージに置いてください。</p>' : '') +
       (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
       '</section>' +
       '<div class="home-list"><button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>' +
-      '<button type="button" class="home-new" data-lineup="1">展示の並び</button></div>';
+      '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button></div>';
   }
   // 最初の画面を出す・しまう。view: 開発は 'list'（一覧）・'lineup'（展示の並び）、展示は 'title'・'pick'・'thanks'・'clear'
   function showHome(on, view) {
@@ -2208,7 +2316,25 @@
     if (on) app.homeView = view || (EXHIBIT ? 'title' : 'list');
     el.home.hidden = !on;
     document.body.classList.toggle('at-home', on);
-    if (on) renderHome();
+    if (on) {
+      renderHome();
+      if (app.homeView !== 'lineup') fetchShared().then(function () { if (app.home && app.homeView !== 'lineup') renderHome(); });   // みんなのステージ・展示の並びを読み直す
+    }
+  }
+  // みんなのステージを遊ぶ（E で作る側へ。自分のステージに写しができる）
+  function playShared(name) {
+    if (!app.shared.stages[name]) { window.alert('みんなのステージに「' + name + '」が見つかりません'); return; }
+    showHome(false);
+    loadScenario(registerShared(name));
+  }
+  // みんなのステージを消す: 展示の並びに入っていたら消せない。どのパソコンからも消えるので ⚠ で確かめる
+  function deleteShared(name) {
+    if (inLineup('all:' + name)) { window.alert('「' + name + '」は展示の並びに入っているので消せません。展示の並びから外すと消せます'); return; }
+    if (!window.confirm('みんなのステージ「' + name + '」を消します。\n⚠ どのパソコンからも消えます。元に戻せません。消しますか？')) return;
+    api('DELETE', 'stages/' + encodeURIComponent(name)).then(function (res) {
+      if (!res.ok) window.alert('消せませんでした: ' + netWhy(res));
+      fetchShared().then(function () { if (app.home) renderHome(); });
+    });
   }
   // 最初の画面に戻る。エディット中なら、その盤面を自分のステージに残してから
   function goHome() {
@@ -2246,12 +2372,12 @@
     addLog(label, 'system');
     say(label);
     render();
+    refreshShare();
   }
   // 自分のステージを消す: 確かめてから（元に戻せない）
   function deleteOwn(name) {
     var stages = stageStore();
     if (!stages || !stages[name]) return;
-    if (inLineup('my:' + name)) { window.alert('「' + name + '」は展示の並びに入っているので消せません。展示の並びから外すと消せます'); return; }
     if (!window.confirm('自分のステージ「' + name + '」を消します。元に戻せません。消しますか？')) return;
     delete stages[name];
     if (!stageStoreSet(stages)) { window.alert('消せませんでした'); return; }
@@ -2271,10 +2397,12 @@
     if (app.homeView === 'lineup') { lineupAction(b); return; }
     if (b.hasAttribute('data-lineup')) { app.lineupDraft = lineupGet(); app.lineupSaved = false; app.homeView = 'lineup'; renderLineup(); return; }
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
+    if (b.hasAttribute('data-sdel')) { deleteShared(b.getAttribute('data-sdel')); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }
     var open = b.getAttribute('data-open') || '', kind = open.slice(0, open.indexOf(':')), name = open.slice(open.indexOf(':') + 1);
     if (kind === 'tut') { showHome(false); loadScenario(name); }
     else if (kind === 'my') playOwn(name);
+    else if (kind === 'all') playShared(name);
   });
   el.btnHome.addEventListener('click', goHome);
 
