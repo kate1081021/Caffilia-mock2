@@ -2323,11 +2323,12 @@ test('桜吹雪: 山の桜は扇3列（9マス）、散ると山に戻る', func
 }, { sakuraDepthMountain: 3 }); });
 
 // ---------------------------------------------------------------
-console.log('\n■ 縮尺（IMPROVE_grow）: 形を正面1マス・広場・見本');
-var T = require('../tune.js');
+console.log('\n■ 縮尺（IMPROVE_grow）: 形を正面1マス・広場');
+// 縮尺の見本（tune.js の WORLDS）は、調整パネルと一緒に IMPROVE_v3 段1 でアーカイブした（テストは archive/開発モード_20261030/tests/run.js に残る）
+function getPath(o, k) { return k.split('.').reduce(function (a, p) { return a[p]; }, o); }
 function withSet(set, fn) {
   var saved = {};
-  Object.keys(set).forEach(function (k) { saved[k] = T.getPath(B, k); var ps = k.split('.'), last = ps.pop(); ps.reduce(function (o, p) { return o[p]; }, B)[last] = set[k]; });
+  Object.keys(set).forEach(function (k) { saved[k] = getPath(B, k); var ps = k.split('.'), last = ps.pop(); ps.reduce(function (o, p) { return o[p]; }, B)[last] = set[k]; });
   try { fn(); } finally { Object.keys(saved).forEach(function (k) { var ps = k.split('.'), last = ps.pop(); ps.reduce(function (o, p) { return o[p]; }, B)[last] = saved[k]; }); }
 }
 test('形を正面1マス: 草・土・火は正面1マス、水・風も1マス（雷は今のまま）', function () { withSet({ 'shape.frontOne': true }, function () {
@@ -2353,14 +2354,6 @@ test('広場: どの大きさでも、味方は下の段に3人・敵は上の�
 test('広場: 育つを切っているときは丘の代わりに山（魔法で作れるものだけ）', function () {
   withSet({ boardSize: 6, 'grow.enabled': false }, function () { ok(R.loadPreset('plaza').tiles.indexOf('hill') < 0 && R.loadPreset('plaza').tiles.indexOf('mountain') >= 0, '山'); });
   withSet({ boardSize: 6, 'grow.enabled': true }, function () { ok(R.loadPreset('plaza').tiles.indexOf('hill') >= 0, '丘'); });
-});
-test('見本: 5つとも、その設定で広場を始めて1ターン遊べる', function () {
-  T.WORLDS.forEach(function (w) { withSet(w.set, function () {
-    var st = R.startBattle(R.loadPreset('plaza')).state;
-    eq(st.size, w.set.boardSize, w.name);
-    R.alliesOf(st).forEach(function (a) { var r = R.act(st, a.id, { dir: 'up' }); ok(r.ok, w.name + ': ' + r.error); st = r.state; });
-    ok(st.turn === 2 || st.result || R.allAlliesActed(st), w.name + ': 1ターン進む');
-  }); });
 });
 
 // ---------------------------------------------------------------

@@ -6,7 +6,7 @@ var R = require('../rules.js');
 var B = require('../balance.js');
 var IO = require('../texts_io.js');
 var TEXTS = require('../texts.js');
-var DEMOS = require('../demos.js');
+var DEMOS = require('./data/demos.js');
 
 var passed = 0, failed = [];
 function test(name, fn) {

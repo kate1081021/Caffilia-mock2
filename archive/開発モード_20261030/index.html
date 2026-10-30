@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Caffilia シナジーモック</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="review.css">
+</head>
+<body>
+  <!-- 展示モードと開発モード（#dev）。ほかより先に決めて、<html> に印を付ける -->
+  <script>window.CAFILIA_DEV = true;   // アーカイブの写し: ダブルクリックで開発モードが開く</script>
+  <script src="mode.js"></script>
+  <header class="topbar">
+    <h1>Caffilia <span>シナジーモック</span></h1>
+    <div class="status">
+      <span id="turnLabel" class="pill">ターン 1</span>
+      <span id="modeLabel" class="pill mode">プレイ中</span>
+    </div>
+    <label class="scenario turnmode"><span id="turnModeLabel">ターンの形</span>
+      <select id="turnModeSelect" aria-label="ターンの形"></select>
+    </label>
+    <label class="scenario">シナリオ
+      <select id="scenarioSelect"></select>
+    </label>
+    <label class="scenario">見本（縮尺）
+      <select id="worldSelect" aria-label="縮尺の見本"></select>
+    </label>
+    <label class="scenario">風の形
+      <select id="windModeSelect">
+        <option value="line">元: 正面4マスを吹き抜ける</option>
+        <option value="breeze">標準: 正面2マス、風が残る（火で火の渦）</option>
+      </select>
+    </label>
+    <label class="scenario">桜吹雪の起こし方
+      <select id="sakuraSelect">
+        <option value="fire">標準: 山に火で火山 → 風で桜吹雪</option>
+        <option value="grass">元の試し: 山に草で桜 → 風で桜吹雪</option>
+      </select>
+    </label>
+    <label class="scenario" hidden>竜巻の作り方
+      <select id="recipeSelect">
+        <option value="off">なし（竜巻は起きない）</option>
+        <option value="windWater">新: 風→水で竜巻、火でセンタクキ</option>
+        <option value="windWind">元: 風→風で竜巻、火で火炎竜巻、水でセンタクキ</option>
+        <option value="senpu">試し: 旋風がつむじ風を巻く→水で竜巻、火でセンタクキ</option>
+      </select>
+    </label>
+    <div class="buttons">
+      <button id="btnRun" type="button" class="run-open">進行モック</button>
+      <button id="btnLab" type="button" class="lab" aria-expanded="false" aria-controls="labPanel">ラボ</button>
+      <span class="tut-pick">
+        <button id="btnTutorial" type="button" class="tutorial" aria-haspopup="true" aria-expanded="false" aria-controls="tutorialMenu">チュートリアル ▾</button>
+        <span id="tutorialMenu" class="tut-menu" role="menu" hidden></span>
+      </span>
+      <span class="demo-pick"><select id="demoSelect" aria-label="見るスーパープレイ"></select><button id="btnDemo" type="button" class="demo">スーパープレイを見る ▶</button></span>
+      <span class="demo-pick" id="checkPick" hidden><select id="checkSelect" aria-label="見る新案プレイ"></select><button id="btnCheck" type="button" class="check">新案プレイ ▶</button></span>
+      <button id="btnEndTurn" type="button">ターン終了 <kbd>T</kbd></button>
+      <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
+      <button id="btnReset" type="button">リセット</button>
+      <button id="btnEdit" type="button">エディット <kbd>E</kbd></button>
+      <button id="btnTune" type="button" aria-expanded="false" aria-controls="tunePanel">調整</button>
+      <button id="btnHowto" type="button">遊び方</button>
+      <button id="btnMore" type="button" aria-pressed="false" title="説明・補足・ログを出す／隠す（隠しているだけで、消してはいない）">くわしく</button>
+      <button id="btnTexts" type="button" aria-expanded="false" aria-controls="textsPanel">文章</button>
+      <span id="textsUnsaved" class="pill unsaved" hidden>未保存</span>
+    </div>
+  </header>
+  <div id="tuneBar" class="tune-bar" hidden></div>
+  <div id="labBar" class="lab-bar" hidden></div>
+
+  <main class="layout">
+    <section class="board-area">
+      <div id="runBar" class="run-bar" hidden></div>
+      <!-- 展示ステージ③: 魔法の出し方（ターンの終わりに1段ずつ／つながる／撃った瞬間）。中身は ui.js が作る -->
+      <div id="exBar" class="ex-bar" hidden></div>
+      <div id="missionBar" class="mission-bar" aria-live="polite"></div>
+      <div id="checkCaption" class="check-caption" aria-live="polite" hidden></div>
+      <div id="stageHint" class="stage-hint" aria-live="polite" hidden></div>
+      <div id="hint" class="hint" aria-live="polite"></div>
+      <button id="btnRetry" type="button" class="primary retry" hidden>やり直す</button>
+      <!-- ステージ②: 村への道をふさぎきったら、押してクリア（C キー） -->
+      <button id="btnSealWin" type="button" class="primary retry" hidden>クリアする <kbd>C</kbd></button>
+      <div id="boardWrap" class="board-wrap">
+        <div id="board" class="board" role="grid" aria-label="盤面"></div>
+        <div id="fx" class="fx-layer"></div>
+        <div id="banner" class="banner" aria-live="assertive"></div>
+      </div>
+      <div id="preview" class="preview-box"></div>
+      <label class="toggle small x-more"><input id="showForecast" type="checkbox" checked> 敵の予告・ターン終了の予告を表示</label>
+    </section>
+
+    <aside class="side">
+      <div id="playPanel" class="panel">
+        <h2>味方 <small class="x-more">クリックか 1〜3 キーで選ぶ</small></h2>
+        <div id="roster" class="roster"></div>
+        <div id="orderPanel" class="order-panel" hidden></div>
+
+        <div id="actPanel" class="act-panel">
+          <div id="actInfo" class="act-info"></div>
+          <div class="act-grid">
+            <div class="dirpad" role="group" aria-label="向き">
+              <button type="button" class="dir" data-dir="up" title="上を向く（↑）">↑</button>
+              <button type="button" class="dir" data-dir="left" title="左を向く（←）">←</button>
+              <span class="dir-center" id="dirCenter"></span>
+              <button type="button" class="dir" data-dir="right" title="右を向く（→）">→</button>
+              <button type="button" class="dir" data-dir="down" title="下を向く（↓）">↓</button>
+            </div>
+            <div class="act-buttons">
+              <button id="btnStay" type="button">その場で撃つ <kbd>Space</kbd></button>
+              <button id="btnShoot" type="button" class="primary">撃つ <kbd>Enter</kbd></button>
+              <button id="btnWait" type="button">待機 <kbd>W</kbd></button>
+              <button id="btnSwap" type="button" hidden>持ち替え <kbd>Q</kbd></button>
+            </div>
+          </div>
+        </div>
+
+        <h2>敵 <small class="x-more">予告は今の盤面での計算</small></h2>
+        <div id="enemyList" class="enemy-list"></div>
+      </div>
+
+      <div id="editPanel" class="panel edit-panel" hidden>
+        <h2>エディット <small>ステージを作って、すぐ遊んで確かめる</small></h2>
+        <button id="btnTestPlay" type="button" class="primary test-play">▶ テストプレイ <kbd>E</kbd></button>
+        <p class="note">テストプレイから E（「✎ エディットに戻る」）で、作っていた盤面のまま戻ります。</p>
+        <!-- ユニット（オーナー 10/30）: 置くものを選んでマスをクリック。駒をクリックすると、その1体の設定だけが下に出る -->
+        <div class="edit-group edit-units">
+          <h3>ユニット <small>駒をクリックで設定、ドラッグで移動</small></h3>
+          <div id="unitTools" class="unit-tools"></div>
+          <div id="unitList" class="unit-list"></div>
+        </div>
+        <div class="edit-group">
+          <h3>勝ち方</h3>
+          <div class="row">
+            <select id="winSelect" aria-label="勝ち方"></select>
+            <label id="winTurnsLabel">ターン <input id="winTurns" type="number" min="1" max="30" step="1" value="5"></label>
+          </div>
+          <p id="winNote" class="note"></p>
+        </div>
+        <div class="edit-group">
+          <h3>置きもの <small>クリックで置く（ゴール・帰り口はもう一度で外す）</small></h3>
+          <div id="missionTools" class="palette unit-tools"></div>
+        </div>
+        <div class="edit-group">
+          <h3>地形を塗る <small>ドラッグで続けて塗れる。山の頂上と斜面は自動で決まる</small></h3>
+          <div id="tilePalette" class="palette"></div>
+        </div>
+        <div class="edit-group row">
+          <label class="toggle check-only" title="ふつうは敵が動く。確かめたいときだけ、敵が動かない版を作れる（ステージと一緒に保存される）"><input id="enemyStill" type="checkbox"> 確認用: 敵を動かさない</label>
+        </div>
+        <div class="edit-group row">
+          <label>盤面 横 <input id="boardW" type="number" min="5" max="12" step="1" value="6"></label>
+          <label>× 縦 <input id="boardH" type="number" min="5" max="12" step="1" value="6"></label>
+          <button id="btnResize" type="button">変更</button>
+          <button id="btnClearTiles" type="button">地形を全部空きに</button>
+        </div>
+        <!-- ステージ（IMPROVE_v3 段0）: 保存ボタンはない。直すたびに、このブラウザの「自分のステージ」に自動で残る。
+             一覧・読み込む・削除・新しいステージは、開発の最初の画面ができたらそちらへ移す。ファイルの2つは段4（共有）でなくす -->
+        <div class="edit-group">
+          <h3>ステージ <small>直すたびに自動で残る</small></h3>
+          <div class="row">
+            <label>名前 <input id="saveName" type="text" placeholder="ステージの名前" maxlength="40"></label>
+          </div>
+          <div class="row">
+            <select id="savedList" aria-label="読み込むステージ"></select>
+            <button id="btnLoadSaved" type="button">読み込む</button>
+            <button id="btnDeleteSaved" type="button">削除</button>
+          </div>
+          <div class="row">
+            <button id="btnNewStage" type="button">新しいステージ</button>
+            <button id="btnDownload" type="button">ファイルに書き出す</button>
+            <label class="file-label">ファイルを読み込む <input id="fileInput" type="file" accept=".json,application/json"></label>
+          </div>
+          <p id="storeNote" class="note"></p>
+        </div>
+        <div class="edit-group stage-texts">
+          <h3>会話の窓の文 <small>1行が1つの文。「［一斉だけ］」「［1人ずつだけ］」で始めると、その形のときだけ。「話す人「文」」で話す人</small></h3>
+          <label>開始 <textarea id="txStart" rows="2" spellcheck="false"></textarea></label>
+          <label>クリア <textarea id="txWin" rows="2" spellcheck="false"></textarea></label>
+          <label>負け <textarea id="txLose" rows="2" spellcheck="false"></textarea></label>
+          <label>やり直しのヒント（一斉） <input id="txHintSimul" type="text"></label>
+          <label>やり直しのヒント（1人ずつ） <input id="txHintSingle" type="text"></label>
+        </div>
+        <p class="note">テストプレイを始めたときの盤面が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
+        <button id="btnEditDone" type="button" class="primary">▶ テストプレイ <kbd>E</kbd></button>
+      </div>
+
+      <div class="panel log-panel x-more">
+        <h2>ログ</h2>
+        <ol id="log" class="log"></ol>
+      </div>
+
+      <details class="panel help x-more">
+        <summary>遊び方・ルール早見</summary>
+        <ol class="howto">
+          <li>味方を選ぶ → 緑のマスをクリックで移動先を決める（最大2マス。動かないなら「その場で撃つ」）</li>
+          <li>向きを選ぶ（矢印キーか向きボタン）。盤面に結果の予測が出る</li>
+          <li>「撃つ」（Enter）で確定。撃ったらその味方の手番は終わり。撃たずに終えるなら「待機」</li>
+        </ol>
+        <p>魔法の着弾点は選べません。立ち位置と向きで決まります。緑のマスの ◆ ＝ そこから撃つと決め手が起きる、・ ＝ 変化が起きる。</p>
+        <table class="synergy">
+          <thead><tr><th>魔法</th><th>進み方</th><th>形・効果</th></tr></thead>
+          <tbody>
+            <tr><th>草</th><td>置く</td><td>2マス先＋3マス先の横3つ。空き→森。<span class="newtag">試し</span> 山に植えると<b>桜</b>が咲く（山1つからでも咲く）。桜に風で<b class="fin">桜吹雪</b></td></tr>
+            <tr><th>土</th><td>置く</td><td>2〜3マス先の左寄り3つ。空き→山、川・水たまり→泥沼</td></tr>
+            <tr><th>火</th><td>点ける</td><td>正面1マス。空き→小さな炎、森→炎。<span class="newtag">新案</span> <b>山に点くと、つながった山ごと火山</b>になる（<span class="newtag">試し</span> 溶岩はあふれない。桜吹雪の起こし方が元のときは、火山に風で<b class="fin">桜吹雪</b>）。水たまり→<b>蜃気楼</b>（中にいる者は敵から見つからない）</td></tr>
+            <tr><th>水</th><td>流れる</td><td>正面に小さな池（2マス）。炎を消す。<span class="newtag">新案</span> 山に当たると山を下って<b>盤の端まで川</b>になる（源流）</td></tr>
+            <tr><th>風</th><td>吹き抜ける</td><td>正面2マス。ユニットを1マス運ぶ。山の陰には届かない。<b class="fin">炎に当たると燃え広がり</b>。通り道の空きに<b>風</b>が残る（ターン終了で消える）。風が吹いている所に火を入れると<b class="fin">火の渦</b>（火が風を強くして2×2の渦に。火を入れた人から見て奥・右へ広がる）。火の渦に水で<b class="fin">センタクキ</b>。<span class="newtag">新案</span> 川の水を運んで<b>水たまり</b>にする。<b class="fin">桜に当たると桜吹雪</b>。</td></tr>
+            <tr><th>風（元: 4マス）</th><td>吹き抜ける</td><td>「風の形」を元にしたとき: 正面へ最大4マス吹き抜け、風は残らない（火の渦は起きない）</td></tr>
+            <tr><th>闇 <span class="newtag">試し</span></th><td>吸う</td><td>正面1マス。撃つと、まわり2マス以内の者をそのマスの方へ1マス<b>引き寄せる</b>（ダメージなし。自然は動かさない）。ユニットは直撃。<b>森</b>なら、つながった森がまとめて<b>死の森</b>。死の森に火で、その1マスが<b class="fin">オバケヤシキ</b>（仮: まわりを引き寄せて、中と隣の全員にダメージ）</td></tr>
+            <tr hidden><th>旋風 <span class="newtag">試し</span></th><td>巻く</td><td>風の強化系。正面の2×2に<b>つむじ風</b>を巻く（ユニットがいるマスは直撃だけ）。「竜巻の作り方」が旋風のとき: つむじ風に水を流すと、つながったつむじ風がまるごと<b>竜巻</b>に。竜巻に火で<b class="fin">センタクキ</b>。このとき風はつむじ風を残さない。<span class="newtag">試し</span> つむじ風に火を入れると<b class="fin">火の渦</b>（つながったつむじ風がまるごと炎に。火が先で風が後なら燃え広がり）</td></tr>
+            <tr><th>氷 <span class="newtag">新案</span></th><td>凍らせる</td><td>正面へ2マス、最初に当たったものに作用。<b class="fin">水（川・水たまり）なら、つながった水がまとめて凍る（凍結）</b>。凍った川は歩いて渡れる。炎は消える。ユニットは足が凍りつく（次の移動が1回できない）</td></tr>
+            <tr><th>雷 <span class="newtag">新案</span></th><td>走る</td><td>ジグザグに走り、<b>最初に当たった高いもの（森・山・ユニット）か水に落ちる</b>。森なら燃える。<b class="fin">水なら、つながった水全体に走って感電</b></td></tr>
+          </tbody>
+        </table>
+        <h3>お題</h3>
+        <ul class="howto">
+          <li><b>戦闘</b>: 敵を全員倒す（今までの遊び方）</li>
+          <li><b>防衛</b>: 決まったターンの終わりまで<b>村</b>を守る（敵の全滅でも勝ち）。村は動かず、味方の魔法でも壊れる</li>
+          <li><b>護衛</b>: <b>馬車</b>がゴールに入れば勝ち。馬車はターンの終わり（敵の魔法の発動のあと）に、ゴールへの一番短い道を1マス進む。危ない所（炎・小さな炎・泥沼・溶岩・火の渦）とユニットのいるマスは通らない。風で押される。点線が道筋、矢印が次の1マス</li>
+          <li><b>奪取</b>: <b>宝</b>のマスで移動を終えると宝を持つ（持っている間は撃てない）。持ったまま<b>帰り口</b>で移動を終えたら勝ち。倒れると宝はそのマスに落ちる</li>
+          <li>敵の狙い「<b>的</b>」: 村・馬車・宝を持つ味方に当たる手を一番に選び、当たる手がなければ一番近い的へ向かう</li>
+        </ul>
+        <p class="note">決め手（燃え広がり・感電・火の渦・桜吹雪・センタクキ・オバケヤシキ）の威力はどれも20で、敵を1発で倒せる。材料の大きさで変わるのは範囲だけ。</p>
+        <p class="note">形のマスにいるユニットには直撃（敵・味方の区別なし）。1発で同じユニットに当たるダメージは1回だけ（大きい方）。</p>
+        <p class="note"><span class="newtag">新案</span> が付いているものは、まだ試している新しい案です（ログにも【新案】と出ます）。水蒸気爆発は保留中です。</p>
+        <p class="note"><span class="newtag">新案</span> 小さなシナジー: 氷の上は滑る（風で押されると、氷が途切れるまで滑る）／水辺の森はよく育つ（水に接して植えると、水に沿って広がる）／土をかぶせて火を消す（炎に土で山）／風で蜃気楼が晴れる／燃え広がりは氷を溶かす。</p>
+        <p class="note">キー: <kbd>1</kbd>〜<kbd>3</kbd> 味方 / 矢印 向き / <kbd>Enter</kbd> 撃つ / <kbd>Space</kbd> その場で / <kbd>W</kbd> 待機 / <kbd>Esc</kbd> 取り消し / <kbd>T</kbd> ターン終了 / <kbd>Z</kbd> 1手戻す / <kbd>E</kbd> エディット</p>
+      </details>
+    </aside>
+  </main>
+
+  <aside id="tunePanel" class="tune-panel" hidden aria-label="調整">
+    <div class="tune-head">
+      <h2>調整 <small>数値をいじって遊べます</small></h2>
+      <button id="tuneClose" type="button" class="tune-x" aria-label="閉じる">×</button>
+    </div>
+    <div class="tune-actions">
+      <button id="tuneApply" type="button" class="primary">反映してやり直す</button>
+      <button id="tuneResetAll" type="button">全部初期値に戻す</button>
+    </div>
+    <p id="tuneNote" class="note"></p>
+    <div id="tuneList" class="tune-list"></div>
+    <div class="tune-share">
+      <h3>送る</h3>
+      <label class="tune-comment">ひとこと（空でもよい）
+        <textarea id="tuneComment" rows="2" maxlength="400" placeholder="例: 炎が強すぎたので弱めた"></textarea>
+      </label>
+      <div class="row">
+        <button id="tuneExport" type="button">設定を書き出す</button>
+        <button id="tuneLink" type="button">この設定のリンクをコピー</button>
+      </div>
+      <textarea id="tuneOut" rows="6" readonly hidden spellcheck="false"></textarea>
+      <h3>受け取る</h3>
+      <textarea id="tuneIn" rows="3" spellcheck="false" placeholder="書き出したテキストか、設定のリンクをまるごと貼る"></textarea>
+      <div class="row">
+        <button id="tuneImport" type="button">設定を読み込む</button>
+        <button id="tuneSave" type="button" hidden>この設定を保存</button>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="labPanel" class="lab-panel" hidden aria-label="試作ラボ"></aside>
+
+  <div id="howto" class="howto-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="howtoTitle">
+    <div class="howto-card">
+      <h2 id="howtoTitle"></h2>
+      <ol id="howtoList"></ol>
+      <button id="howtoClose" type="button" class="primary"></button>
+    </div>
+  </div>
+
+  <!-- 文章パネル（IMPROVE_simul）: 調整パネルと同じ作りで左から開く。中身は texts_ui.js が作る -->
+  <aside id="textsPanel" class="tune-panel texts-panel" hidden aria-label="文章"></aside>
+  <!-- 会話の窓（IMPROVE_simul）: 画面の下。押す（クリックかスペース）と次の文へ -->
+  <div id="dialog" class="dialog" hidden aria-live="polite"></div>
+
+  <!-- 進行モック（クエスト制とステージ制）: 戦闘以外の画面。中身は progress_ui.js が作る -->
+  <div id="runScreen" class="run-screen" hidden></div>
+  <div id="runModal" class="run-modal" hidden></div>
+
+  <div id="versionTag" class="version-tag">版 手元</div>
+  <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どのモードでも同じ位置・同じ見た目 -->
+  <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
+
+  <script src="balance.js"></script>
+  <script src="lab_cards.js"></script>
+  <script src="tune.js"></script>
+  <script src="texts.js"></script>
+  <script src="texts_io.js"></script>
+  <script src="stages_io.js"></script>
+  <script src="lab_targets.js"></script>
+  <script src="lab_paths.js"></script>
+  <script src="lab_power.js"></script>
+  <script src="lab_change.js"></script>
+  <script src="lab_quest.js"></script>
+  <script src="lab_rules.js"></script>
+  <script src="lab_scenarios.js"></script>
+  <script src="rules.js"></script>
+  <script src="demos.js"></script>
+  <script src="checks.js"></script>
+  <script src="ui.js"></script>
+  <script src="tune_ui.js"></script>
+  <script src="texts_ui.js"></script>
+  <script src="progress_data.js"></script>
+  <script src="progress.js"></script>
+  <script src="progress_ui.js"></script>
+  <script src="lab_ui.js"></script>
+  <script src="lab_run.js"></script>
+  <script src="lab_target_ui.js"></script>
+  <script src="lab_n_guide.js"></script>
+  <script src="lab_quest_ui.js"></script>
+  <script src="lab_trial_ui.js"></script>
+  <script src="today_guide.js"></script>
+  <script src="review.js"></script>
+</body>
+</html>

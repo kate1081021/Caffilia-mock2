@@ -389,7 +389,7 @@ scenario('13. ステージ② 2人で守る: 1ターン目は何もしない →
 
 // ---------------------------------------------------------------
 // デモ（demos.js）の手順が、今のルールでも最後まで通って勝てるか
-var DEMOS = require('../demos.js');
+var DEMOS = require('./data/demos.js');
 DEMOS.forEach(function (d) {
   scenario('デモ: ' + d.name, function () {
     B.tornadoRecipe = d.recipe || 'off';
@@ -417,7 +417,7 @@ DEMOS.forEach(function (d) {
 
 // ---------------------------------------------------------------
 // 新案プレイ（checks.js）の手順が今のルールで最後まで通り、見せたい盤面になるか
-var CHECKS = require('../checks.js');
+var CHECKS = require('./data/checks.js');
 function getPath(o, p) { return p.split('.').reduce(function (a, k) { return a[k]; }, o); }
 function setPath(o, p, v) { var ks = p.split('.'), last = ks.pop(); ks.reduce(function (a, k) { return a[k]; }, o)[last] = v; }
 CHECKS.forEach(function (c) {

@@ -10,7 +10,7 @@ var path = require('path');
 var crypto = require('crypto');
 var R = require('../rules.js');
 var B = require('../balance.js');
-var DEMOS = require('../demos.js');
+var DEMOS = require('./data/demos.js');
 
 var FILE = path.join(__dirname, 'snapshot_base.txt');
 

@@ -24,7 +24,7 @@ var NOINDEX = '<meta name="robots" content="noindex, nofollow">';
 // 公開してはいけないもの（index.html が読み込んでいても止める）
 function isForbidden(rel) {
   var p = rel.replace(/\\/g, '/');
-  return /\.md$/i.test(p) || /^(\.claude|tests|tools|publish|dist|v\d+)\//.test(p) || p.indexOf('..') !== -1;
+  return /\.md$/i.test(p) || /^(\.claude|tests|tools|publish|dist|archive|v\d+)\//.test(p) || p.indexOf('..') !== -1;
 }
 
 // index.html が読み込むファイル（script src と link href）を拾う
