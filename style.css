@@ -606,7 +606,6 @@ body:not(.show-more) .preview-box.idle { display: none; }         /* 予測も�
 #boardSize { width: 4em; }
 #saveName { flex: 1; min-width: 8em; }
 #savedList { flex: 1; min-width: 8em; }
-#jsonBox { width: 100%; font: 12px/1.4 ui-monospace, Consolas, monospace; margin: 6px 0; }
 .file-label { font-size: 12px; color: var(--muted); }
 .file-label input { max-width: 180px; }
 .cell.picked { outline: 3px solid var(--gold); outline-offset: -3px; }

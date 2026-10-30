@@ -153,11 +153,12 @@
           <button id="btnResize" type="button">変更</button>
           <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>
+        <!-- ステージ（IMPROVE_v3 段0）: 保存ボタンはない。直すたびに、このブラウザの「自分のステージ」に自動で残る。
+             一覧・読み込む・削除・新しいステージは、開発の最初の画面ができたらそちらへ移す。ファイルの2つは段4（共有）でなくす -->
         <div class="edit-group">
-          <h3>ステージ</h3>
+          <h3>ステージ <small>直すたびに自動で残る</small></h3>
           <div class="row">
             <label>名前 <input id="saveName" type="text" placeholder="ステージの名前" maxlength="40"></label>
-            <button id="btnSave" type="button">保存</button>
           </div>
           <div class="row">
             <select id="savedList" aria-label="読み込むステージ"></select>
@@ -179,14 +180,6 @@
           <label>やり直しのヒント（一斉） <input id="txHintSimul" type="text"></label>
           <label>やり直しのヒント（1人ずつ） <input id="txHintSingle" type="text"></label>
         </div>
-        <details class="edit-group">
-          <summary>JSON で書き出す・読み込む</summary>
-          <textarea id="jsonBox" rows="4" spellcheck="false" placeholder="ここに JSON を貼り付けて「JSON を読み込む」"></textarea>
-          <div class="row">
-            <button id="btnExport" type="button">JSON を書き出す</button>
-            <button id="btnImport" type="button">JSON を読み込む</button>
-          </div>
-        </details>
         <p class="note">テストプレイを始めたときの盤面が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
         <button id="btnEditDone" type="button" class="primary">▶ テストプレイ <kbd>E</kbd></button>
       </div>
