@@ -2796,6 +2796,30 @@
     return p ? p.name : '標準';
   };
 
+  // 展示モードとの切り替え（mode.js。オーナー 10/30）: 右下の点を2秒長押ししたときだけ効く。普通のクリックでは何も起きない。
+  //   押している間は .holding（細い線が伸びる）。離す・外れると取りやめ。印のない URL で開いた展示モードでは何もしない（線も出さない）。
+  //   切り替える前に、エディットの作りかけを残す（作るモードは開くと続きから。開発モードは一覧の「作りかけ」から）
+  var MODE_HOLD_MS = 2000;
+  (function () {
+    var b = $('modeSwitch'), M = window.CafiliaMode, timer = null;
+    if (!b || !M) return;
+    if (!EXHIBIT) b.title = '2秒長押しで展示モードへ';
+    function stop() { if (timer) clearTimeout(timer); timer = null; b.classList.remove('holding'); }
+    b.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      stop();
+      if (e.button > 0 || !M.canToggle()) return;
+      b.classList.add('holding');
+      timer = setTimeout(function () {
+        timer = null;
+        if (app.draft) keepDraft();
+        if (!M.toggle()) b.classList.remove('holding');
+      }, MODE_HOLD_MS);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { b.addEventListener(n, stop); });
+    b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  })();
+
   // 最初は遊び方が分かりやすいシナリオで始める【仮】。展示モードはチュートリアル①から
   var FIRST_SCENARIO = EXHIBIT ? EXHIBIT_STAGES[0] : 'spread';
   addLog('ようこそ。敵の予告（紫）を見てから、味方を選び、立ち位置と向きを決めて撃ってください', 'system');

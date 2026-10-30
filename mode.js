@@ -10,12 +10,17 @@
  *   作るモード: 展示モードと同じ見え方・同じ決まり（一斉・つながる・保存した調整は使わない）で、エディットとテストプレイ、
  *     ステージの保存・読み込み・書き出しだけを足す（style.css の html.mode-make）。開くとエディットから始まる。
  *   開発用の入口（#review・?review・#run・#q・#n・#trial・#today・#tune=… と、見て判定の Artifact の CAFILIA_REVIEW）は、今までどおり開くように開発モードにする。
+ *   展示モードへの切り替え（オーナー 10/30）: URL の印は書き換えずに、開発・作るモードから展示モードへ、展示モードから元のモードへ。
+ *     切り替えた元のモードは sessionStorage に覚える（このタブだけ。読み込み直しても続く。新しいタブ・開き直しは URL の印どおり）。
+ *     印のない URL で開いた展示モードでは、切り替えは何もしない。ボタン（右下の点・2秒長押し）は ui.js。
  *   ほかのファイルより先に読む（<body> の頭）。window.CAFILIA_MODE（'exhibit' / 'make' / 'dev'）と、<html> の class（mode-exhibit / mode-make / mode-dev）を決める。
  */
 (function (root) {
   'use strict';
   var loc = root.location || {};
-  function modeNow() {
+  var SWITCH_KEY = 'cafilia-mock-mode-switch';   // 展示モードに切り替えた元のモード（'make' / 'dev'）
+  // URL の印から決まるモード
+  function urlMode() {
     var hash = String(loc.hash || ''), search = String(loc.search || '');
     if (/(^|[#?&])make\b/i.test(hash + search)) return 'make';
     var dev = /(^|[#?&])dev\b/i.test(hash + search) ||
@@ -23,9 +28,31 @@
       !!root.CAFILIA_REVIEW || !!root.CAFILIA_DEV;
     return dev ? 'dev' : 'exhibit';
   }
+  function switchedFrom() { try { return root.sessionStorage.getItem(SWITCH_KEY) || ''; } catch (e) { return ''; } }
+  // 今のモード: URL の印どおり。ただし、そのモードから展示モードに切り替えてあれば展示モード
+  function modeNow() {
+    var u = urlMode();
+    return u !== 'exhibit' && switchedFrom() === u ? 'exhibit' : u;
+  }
   var mode = modeNow();
   root.CAFILIA_MODE = mode;
   if (root.document && root.document.documentElement) root.document.documentElement.classList.add('mode-' + mode);
   // 開いたまま URL の印を付け外ししたら、読み込み直してモードを切り替える
   if (root.addEventListener) root.addEventListener('hashchange', function () { if (modeNow() !== mode) loc.reload(); });
+
+  root.CafiliaMode = {
+    // 切り替えられるか（印のない URL で開いた展示モードでは切り替えない）
+    canToggle: function () { return urlMode() !== 'exhibit'; },
+    // 開発・作るモード → 展示モード、（切り替えた）展示モード → 元のモード。読み込み直して、そのモードの始まりから表示する
+    toggle: function () {
+      var u = urlMode();
+      if (u === 'exhibit') return false;
+      try {
+        if (mode === 'exhibit') root.sessionStorage.removeItem(SWITCH_KEY);
+        else root.sessionStorage.setItem(SWITCH_KEY, u);
+      } catch (e) { return false; }   // 覚えられない環境では切り替えない（読み込み直すと元に戻ってしまうため）
+      loc.reload();
+      return true;
+    }
+  };
 })(this);
