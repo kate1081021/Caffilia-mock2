@@ -23,7 +23,7 @@
   //   調整パネル・ターンの形・魔法の出し方の切り替えなどは IMPROVE_v3 段1（オーナー 10/30）でアーカイブした（archive/開発モード_20261030/）
   var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
   var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①②③（展示の並びの初めの形）
-  var EXHIBIT_NEXT_MS = 2200;                     // クリアしてから次のステージを読むまでの間（会話の窓が出ていれば、閉じてから）
+  var EXHIBIT_NEXT_MS = 400;                      // クリアしてから「クリックか Enter で次へ」を受け付けるまでの間（勢いの連打で飛ばさないように。会話の窓が出ていれば、閉じてから）
 
   // 展示ステージ③（s.ex）: 画面の見せ方（ミッション）
   function exOf(st) { st = st || app.state; return (st && st.ex) || null; }
@@ -63,8 +63,10 @@
     history: [],          // [{ state, logLen }]
     log: [],              // [{ text, type }]
     sel: null,            // 選んでいる味方の id
-    plan: null,           // 選んでいる味方の予定 { to: [x,y], dir, from: [x,y] }（plans の中の1つ）
-    plans: {},            // 味方ごとの移動の予定 { id: { to, dir, from } }。ほかの味方を選んでも捨てない（オーナー 10/30）。撃つ・構える・待機で消える
+    plan: null,           // 選んでいる味方の向き { dir }（移動は押した時点で本当に動く。R.move）
+    dirs: {},             // 味方ごとに選んだ向き { id: dir }。ほかの味方を選んでも捨てない（オーナー 10/30）。撃つ・構える・待機・ターンの終わりで消える
+    info: null,           // 押したマス [x, y]。盤面の左上に、そのマスの情報を出す（オーナー 10/30）
+    exNextGo: null,       // 展示: クリアしたあと、盤面のクリックか Enter で次へ進む（オーナー 10/30）
     busy: false,          // 演出を再生中
     playback: null,
     editMode: false,
@@ -92,10 +94,10 @@
   var el = {};
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
-    'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
+    'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
-    'missionBar', 'missionTools', 'btnRetry', 'btnSealWin', 'stageHint',
+    'missionBar', 'missionTools', 'btnRetry', 'btnSealWin', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
@@ -398,6 +400,7 @@
     var stance = st.events.some(function (e) { return e.type === 'cast' && e.order; });
     var wait = stance ? ((B.simul && B.simul.fireDelayMs) || 900) : B.stepDelayMs;
     if (st.events.every(function (e) { return e.type === 'stance'; })) wait = 120;   // 構えただけ（まだ何も起きない）は、すぐ次へ
+    else if (st.events.every(function (e) { return e.type === 'move' || e.type === 'mud' || e.type === 'treasure'; })) wait = 300;   // 歩いただけは、すべり終えたら次へ
     // 展示ステージ③: シナジー（火山・決め手）が起きたら、少し間を取る
     if (ex && st.events.some(function (e) { return e.type === 'finisher' || (e.type === 'kindle' && e.made === 'volcano') || e.type === 'mission'; })) wait += B.stage3.synergyPauseMs;
     pb.timer = setTimeout(nextStep, wait);
@@ -416,20 +419,25 @@
     exAfterPlayback();
     exhibitAfterPlayback();
   }
-  // 展示モード: ステージをクリアしたら、少し見せてから次へ（会話の窓が出ていれば、閉じてから）（IMPROVE_v3 段3）
+  // 展示モード: ステージをクリアしたら、盤面のクリックか Enter で次へ（会話の窓が出ていれば、閉じてから）（IMPROVE_v3 段3・オーナー 10/30）
   //   はじめから遊ぶ: 並びの次のステージへ。最後のあとは「ありがとう！」。選んで遊ぶ: 「クリア！」
   function exhibitAfterPlayback() {
     var st = app.state, run = app.run;
     if (!EXHIBIT || app.editMode || st.result !== 'win' || !run) return;
     clearTimeout(exhibitAfterPlayback.timer);
-    exhibitAfterPlayback.timer = setTimeout(function () {
-      var go = function () {
-        if (app.state !== st || app.busy || app.editMode || app.run !== run) return;   // 待っている間に1手戻した・ほかを読んだ
-        if (run.kind === 'start' && run.i + 1 < run.list.length) exhibitPlay('start', run.list, run.i + 1);
-        else exhibitScreen(run.kind === 'start' ? 'thanks' : 'clear');
-      };
-      if (app.afterDialog) app.afterDialog(go); else go();
-    }, EXHIBIT_NEXT_MS);
+    var go = function () {
+      if (app.state !== st || app.busy || app.editMode || app.run !== run) return;   // 待っている間に1手戻した・ほかを読んだ
+      if (run.kind === 'start' && run.i + 1 < run.list.length) exhibitPlay('start', run.list, run.i + 1);
+      else exhibitScreen(run.kind === 'start' ? 'thanks' : 'clear');
+    };
+    var wait = function () {
+      exhibitAfterPlayback.timer = setTimeout(function () {
+        if (app.state !== st || app.run !== run) return;
+        app.exNextGo = go;
+        renderHint();
+      }, EXHIBIT_NEXT_MS);
+    };
+    if (app.afterDialog) app.afterDialog(wait); else wait();
   }
   // 展示ステージ③: 決着のあと。味方が倒れたら少し見せてからステージの頭からやり直す
   function exAfterPlayback() {
@@ -460,94 +468,79 @@
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
-  // 移動の予定（オーナー 10/30）: 移動先を決めただけで撃っていない味方の予定は、ほかの味方を選んでも味方ごとに残る。
-  //   選び直すと予定の続きから（向き・撃つ・構える・待機）。移動先を選び直すときの届く範囲は、元の位置から数える。
-  //   ほかの味方の予定の移動先には止まれない。予定が今の盤面で成り立たなくなったら（元の位置から動かされた・移動先へ届かない）、その予定は捨てる
-  function planOf(u) {
-    var p = u && app.plans[u.id];
-    if (!p) return null;
-    var ok = !u.acted && p.from[0] === u.x && p.from[1] === u.y &&
-      ((p.to[0] === u.x && p.to[1] === u.y) || R.reachableCells(app.state, u.id)[key(p.to[0], p.to[1])] !== undefined);
-    if (!ok) { delete app.plans[u.id]; return null; }
-    return p;
-  }
-  // ほかの味方の予定の移動先 { "x,y": 味方 }（元の位置から動く予定だけ）
-  function otherPlanTo(exceptId) {
-    var out = {};
-    R.controllableOf(app.state).forEach(function (a) {
-      if (a.id === exceptId) return;
-      var p = planOf(a);
-      if (p && (p.to[0] !== a.x || p.to[1] !== a.y)) out[key(p.to[0], p.to[1])] = a;
-    });
-    return out;
-  }
-  // 選んでいる味方が止まれるマス（ほかの味方の予定の移動先は除く）
-  function reachOf(u) {
-    var reach = R.reachableCells(app.state, u.id), taken = otherPlanTo(u.id), out = {};
-    Object.keys(reach).forEach(function (k) { if (!taken[k]) out[k] = reach[k]; });
-    return out;
-  }
-  function clearPlans() { app.plans = {}; app.plan = null; }
+  // 移動（オーナー 10/30）: 緑のマスを押した時点で本当に動く（R.move）。撃つ・構える・待機までは、元の位置から数えて動き直せる
+  //   （元の位置を押すと取り消し）。ほかを押して選ぶのをやめても、動いた所に立ったまま。
+  //   向きは味方ごとに覚えておく（app.dirs。ほかの味方を選んでも捨てない）。撃つ・構える・待機・ターンの終わりで消える
+  function reachOf(u) { return R.reachableCells(app.state, u.id); }
+  function clearPlans() { app.dirs = {}; app.plan = null; }
 
+  // 遊ぶ側の最初は、誰も選んでいない（オーナー 10/30）。味方は押して（か 1〜3 キーで）選ぶ
   function select(id) {
     var u = R.findUnit(app.state, id);
-    if (!u || u.side !== 'ally' || u.npc) return;   // 構える味方は選べない
-    if (u.acted && !R.restancing(u)) { say(R.unitLabel(app.state, u) + 'はもう行動しました'); return; }   // 【一斉】構えた味方は構え直せる
+    if (!u || u.side !== 'ally' || u.npc) { deselect(); return; }   // 構える味方は選べない
+    if (u.acted && !R.restancing(u)) {   // 【一斉】構えた味方は構え直せる
+      app.sel = null; app.plan = null; render();
+      say(R.unitLabel(app.state, u) + 'はもう行動しました');
+      return;
+    }
     app.sel = id;
-    app.plan = planOf(u) || { to: [u.x, u.y], dir: u.facing, from: [u.x, u.y] };
-    if (!u.acted) app.plans[id] = app.plan;
+    app.plan = { dir: app.dirs[id] || u.facing };
     render();
   }
   function deselect() { app.sel = null; app.plan = null; render(); }
 
-  function selectNext(afterId) {
-    if (app.state.result) { app.sel = null; app.plan = null; render(); return; }
-    var al = R.controllableOf(app.state);
-    var start = 0;
-    al.forEach(function (a, i) { if (a.id === afterId) start = i + 1; });
-    for (var k = 0; k < al.length; k++) {
-      var a = al[(start + k) % al.length];
-      if (!a.acted) { select(a.id); return; }
-    }
-    app.sel = null; app.plan = null;
-    render();
-  }
-
   function setDir(d) {
     if (!selUnit() || !canControl()) return;
     app.plan.dir = d;
+    app.dirs[app.sel] = d;
     render();
   }
-  function stay() {
+
+  // 選んでいる味方を (x, y) へ動かす（本当に動く。元の位置なら移動の取り消し）
+  function doMove(x, y) {
     var u = selUnit();
     if (!u || !canControl()) return;
-    app.plan.to = [u.x, u.y];
-    render();
+    var res = R.move(app.state, u.id, [x, y]);
+    if (!res.ok) { say(res.error); return; }
+    pushHistory();
+    play(res.steps, res.state, function () {
+      if (app.state.result) { app.sel = null; app.plan = null; render(); }   // 奪取: 宝を持って帰り口に着いた
+    });
+  }
+  function cancelMove() {
+    var u = selUnit();
+    if (u && u.moved) doMove(u.moved.from[0], u.moved.from[1]);
   }
 
   function doAct(shoot) {
     var u = selUnit();
     if (!u || !canControl()) return;
-    var taken = otherPlanTo(u.id)[key(app.plan.to[0], app.plan.to[1])];
-    if (taken) { say(R.unitLabel(app.state, taken) + 'の移動先の予定です（そこには止まれません）'); return; }
-    var opts = { to: app.plan.to, dir: app.plan.dir, shoot: shoot };
-    var res = R.act(app.state, u.id, opts);
+    var res = R.act(app.state, u.id, { dir: app.plan.dir, shoot: shoot });
     if (!res.ok) { say(res.error); return; }
     pushHistory();
     var id = u.id;
     app.sel = null; app.plan = null;
-    delete app.plans[id];
+    delete app.dirs[id];
     if (app.onAct) app.onAct(u, shoot !== false);   // 文章（きっかけ: 構えたとき）
     play(res.steps, res.state, function () {
-      if (simul()) { if (!app.state.result) selectNext(id); return; }   // 【一斉】全員構えても、発動はボタンで
-      if (!app.state.result && R.allAlliesActed(app.state)) {
-        if (R.sealReady(app.state)) { selectNext(id); return; }   // ステージ②: ふさぎきったら、ターン終了は回さずに「クリアする」を待つ（続けるなら T）
+      if (simul() || app.state.result) return;   // 【一斉】全員構えても、発動は盤面のクリックか Enter で
+      if (R.allAlliesActed(app.state) && !R.sealReady(app.state)) {   // ステージ②: ふさぎきったら、ターン終了は回さずに「クリアする」を待つ
         addLog(R.controllableOf(app.state).length === 3 ? '3人とも行動したので、ターン終了' : '全員行動したので、ターン終了', 'system');
         runEndTurn();
-      } else {
-        selectNext(id);
       }
     });
+  }
+
+  // 盤面のクリックか Enter で進める（オーナー 10/30。T・C キーの代わり）:
+  //   展示でクリアしたら次へ／ステージ②でふさぎきったらクリア／【一斉】全員構えたら発動。味方を選んでいる間は進めない（Enter は「魔法」）
+  function advance() {
+    var go = app.exNextGo;
+    if (go) { app.exNextGo = null; go(); return true; }
+    if (!canControl() || app.sel || app.fireWaiting) return false;
+    var st = app.state;
+    if (R.sealReady(st)) { doSealWin(); return true; }
+    if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { doEndTurn(); return true; }
+    return false;
   }
 
   // ターン終了（1人ずつ）・発動（一斉）。発動の前の文章があれば、読み終えてから
@@ -562,15 +555,12 @@
       if (!t.ok) { say(t.error); return; }
       clearPlans();   // ターンが終わったら、撃たなかった味方の予定も消える
       if (simul()) { app.chain = []; app.chainCombo = null; }
-      play(t.steps, t.state, function () {
-        if (R.sealReady(app.state)) { app.sel = null; app.plan = null; render(); }   // ステージ②: ふさぎきったら味方を選ばず、「クリアする」の案内を出す
-        else selectNext(null);
-      });
+      play(t.steps, t.state, function () {});   // ターンが変わっても、誰も選ばない（オーナー 10/30）
     };
     if (app.onBeforeFire) app.onBeforeFire(go); else go();
   }
 
-  // ステージ②: 村への道をふさぎきったら、押して（C）クリア
+  // ステージ②: 村への道をふさぎきったら、盤面のクリックか Enter（advance）か「クリアする」でクリア
   function doSealWin() {
     if (!canControl() || !R.sealReady(app.state)) return;
     var r = R.claimSeal(app.state);
@@ -584,7 +574,7 @@
     if (app.busy || app.editMode || app.fireWaiting) return;
     if (app.state.result) { say('勝負はついています。「1手戻す」か「リセット」で続けられます'); return; }
     // 【一斉】発動は、動かせる味方が全員構え終えて（か待機して）から
-    if (simul() && !R.allAlliesActed(app.state) && R.controllableOf(app.state).length) { say(ui('notReady', 'まだ構えていない味方がいます（構えるか「待機」）')); return; }
+    if (simul() && !R.allAlliesActed(app.state) && R.controllableOf(app.state).length) { say(ui('notReady', 'まだ構えていない味方がいます（「魔法」か「待機」）')); return; }
     pushHistory();
     app.sel = null; app.plan = null;
     runEndTurn();
@@ -608,15 +598,21 @@
     app.state = h.state;
     if (app.editMode) { if (h.meta) setDraftMeta(h.meta); }   // エディット: ログは消さない（あいだのテストプレイのログが残る）
     else app.log.length = h.logLen;
-    app.sel = null; app.plan = null;
+    var keep = app.sel;   // 動かしたのを戻したときは、その味方を選んだまま
+    app.sel = null; app.plan = null; app.exNextGo = null;
+    if (keep && selectable(keep)) select(keep);
     if (!app.editMode) app.editPick = null;   // エディット: 選んでいた駒は、戻したあともいれば選んだまま
     render();
+  }
+  function selectable(id) {
+    var u = R.findUnit(app.state, id);
+    return !app.editMode && !!u && u.side === 'ally' && !u.npc && (!u.acted || R.restancing(u));
   }
 
   function setState(s, logText) {
     pushHistory();
     app.state = s;
-    app.sel = null; clearPlans(); app.editPick = null;
+    app.sel = null; clearPlans(); app.editPick = null; app.exNextGo = null; app.info = null;
     if (logText) addLog(logText, 'system');
     render();
   }
@@ -625,7 +621,6 @@
     if (app.editMode) return;   // エディット中の盤面は「1手戻す」で戻す（リセットはテストプレイの始めに戻すもの）
     if (app.busy) skipPlayback();
     setState(R.clone(app.resetPoint), 'リセット（最初の配置に戻した）');
-    if (isTutorial()) selectNext(null);
     if (app.onStage) app.onStage('start');
   }
 
@@ -638,7 +633,6 @@
     r.events.forEach(function (e) { if (e.text) addLog(e.text, logType(e)); });
     setState(r.state);
     app.resetPoint = R.clone(app.state);
-    selectNext(null);
     if (app.onStage) app.onStage('retry');   // 文章（きっかけ: やり直し）
   }
 
@@ -833,7 +827,6 @@
     app.layout0 = R.clone(s);   // E を押したら、ここから作り始める
     setState(begin(s));
     app.resetPoint = R.clone(app.state);
-    if (preset && preset.tutorial) selectNext(null);   // チュートリアル: 動かせる味方を最初から選んでおく
     render();
     if (app.onStage) app.onStage('start');   // 文章（きっかけ: ステージの始め）
   }
@@ -848,27 +841,20 @@
   function onPlayClick(x, y) {
     if (app.busy) { skipPlayback(); return; }
     if (app.editMode) return;
-    var st = app.state;
-    if (st.result) { say('勝負はついています。「1手戻す」か「リセット」で続けられます'); return; }
     var u = selUnit();
-    var occ = R.unitAt(st, x, y);
-    if (u) {
-      var reach = reachOf(u);
-      if (reach[key(x, y)] !== undefined) {
-        app.plan.to = [x, y];
-        render();
-        return;
-      }
-      if (occ && occ.side === 'ally' && occ.id !== u.id) { select(occ.id); return; }
-      var planned = otherPlanTo(u.id)[key(x, y)];   // ほかの味方の予定の移動先を押したら、その味方を選ぶ
-      if (planned) { select(planned.id); return; }
-      say(u.stuck ? '泥沼にはまっていて移動できません（その場で撃てます）' : '移動範囲の外です');
+    var occ = R.unitAt(app.state, x, y);
+    var ally = occ && occ.side === 'ally' ? occ : null;
+    // 誰も選んでいないとき、味方以外を押したら進める（展示でクリアしたら次へ・ふさぎきったらクリア・全員構えたら発動）
+    if ((app.exNextGo || (!u && !ally)) && advance()) return;
+    app.info = [x, y];   // 押したマスの情報を、盤面の左上に出す（オーナー 10/30）
+    if (app.state.result) { render(); return; }
+    if (ally) {
+      if (u && ally.id === u.id) { render(); return; }
+      select(ally.id);
       return;
     }
-    if (occ && occ.side === 'ally') { select(occ.id); return; }
-    var plannedAt = otherPlanTo(null)[key(x, y)];
-    if (plannedAt) { select(plannedAt.id); return; }
-    say('味方をクリックして選んでください');
+    if (u && reachOf(u)[key(x, y)] !== undefined && (x !== u.x || y !== u.y)) { render(); doMove(x, y); return; }
+    deselect();   // 味方以外（動けないマス・敵・置きもの）を押したら、選ぶのをやめる
   }
 
   function applyEdit(x, y, dragging) {
@@ -927,6 +913,7 @@
     renderBoard(!!animate);
     renderSide();
     renderHint();
+    renderCellInfo();
     if (app.editMode) renderShare();   // 共有のようす（地形を塗っただけでも変わる）
   }
 
@@ -965,11 +952,10 @@
     // 【一斉】「ターン終了」は「発動」になり、動かせる味方が全員構え終えたら押せる
     var ready = simul() && !st.result && R.controllableOf(st).length > 0 && R.allAlliesActed(st);
     el.btnEndTurn.disabled = app.editMode || app.busy || !!st.result || (simul() && !ready && R.controllableOf(st).length > 0);
-    el.btnEndTurn.innerHTML = esc(simul() ? ui('fire', '発動') : ui('endTurn', 'ターン終了')) + ' <kbd>T</kbd>';
+    el.btnEndTurn.innerHTML = esc(simul() ? ui('fire', '発動') : ui('endTurn', 'ターン終了')) + (simul() ? ' <kbd>Enter</kbd>' : '');
     el.btnEndTurn.classList.toggle('fire-ready', ready && !app.busy && !app.editMode);
     el.btnEndTurn.classList.toggle('primary', ready && !app.busy && !app.editMode);
-    el.btnShoot.innerHTML = esc(simul() ? ui('stance', '構える') : ui('shoot', '撃つ')) + ' <kbd>Enter</kbd>';
-    el.btnStay.innerHTML = esc(simul() ? ui('stayStance', 'その場で構える') : ui('stayShoot', 'その場で撃つ')) + ' <kbd>Space</kbd>';
+    el.btnShoot.innerHTML = esc(simul() ? ui('stance', '魔法') : ui('shoot', '撃つ')) + ' <kbd>Enter</kbd>';
     el.btnWait.innerHTML = esc(ui('wait', '待機')) + ' <kbd>W</kbd>';
     el.btnRetry.textContent = ui('retry', 'やり直す');
     el.btnUndo.disabled = app.history.length === 0;
@@ -981,7 +967,7 @@
     el.btnRetry.hidden = !(st.result === 'lose' && st.stage && !app.editMode && !app.busy);
     // ステージ②: 村への道をふさぎきったら「クリアする」（勝手には勝たない）
     el.btnSealWin.hidden = !(canControl() && R.sealReady(st));
-    el.btnSealWin.innerHTML = esc(ui('sealWin', 'クリアする')) + ' <kbd>C</kbd>';
+    el.btnSealWin.innerHTML = esc(ui('sealWin', 'クリアする')) + ' <kbd>Enter</kbd>';
     var sh = app.editMode ? null : R.stageHint(st);
     el.stageHint.hidden = !sh;
     if (sh && el.stageHint.textContent !== sh) el.stageHint.textContent = sh;
@@ -1008,14 +994,15 @@
   function guideNow(u) {
     return memo('guide', [app.state, u.id], function () { return R.guideMap(app.state, u.id); });
   }
+  // 今いるマスから、選んでいる向きで撃ったら（移動はもう済んでいる。R.move）
   function previewNow(u) {
-    var p = app.plan;
-    return memo('pv', [app.state, u.id, p.to[0], p.to[1], p.dir], function () {
-      if (R.canShoot(app.state, u, p.to)) return R.previewAct(app.state, u.id, p.to, p.dir);
-      // 奪取: 宝を持つ味方は撃てないので、移動して待機したときの盤面を予測にする
-      var r = R.act(app.state, u.id, { to: p.to, dir: p.dir, shoot: false });
+    var p = app.plan, at = [u.x, u.y];
+    return memo('pv', [app.state, u.id, p.dir], function () {
+      if (R.canShoot(app.state, u)) return R.previewAct(app.state, u.id, at, p.dir);
+      // 奪取: 宝を持つ味方は撃てないので、待機したときの盤面を予測にする
+      var r = R.act(app.state, u.id, { dir: p.dir, shoot: false });
       return { state: r.ok ? r.state : app.state, events: r.events, cells: [], tileChanges: [], damages: [], moves: [], finishers: [],
-        from: [u.x, u.y], to: p.to, dir: p.dir, waitOnly: true };
+        from: at, to: at, dir: p.dir, waitOnly: true };
     });
   }
 
@@ -1113,7 +1100,9 @@
     var u = (!app.editMode && !app.busy) ? selUnit() : null;
     var so = shapeOnly();   // 展示ステージ③: 予測は魔法が届く形まで（何になるかは見せない）
     var reach = u ? reachOf(u) : {};
-    var planElse = (!app.editMode && !st.result) ? otherPlanTo(u ? u.id : null) : {};   // ほかの味方の移動の予定（薄く描く）
+    // 動いたけれど、まだ撃っていない味方の元の位置（点線で薄く描く。オーナー 10/30）
+    var moveFrom = {};
+    if (!app.editMode && !st.result) R.controllableOf(st).forEach(function (a) { if (a.moved && !a.acted) moveFrom[key(a.moved.from[0], a.moved.from[1])] = a; });
     var guide = (u && !st.result && !so) ? guideNow(u) : {};
     var pv = (u && app.plan && !st.result) ? previewNow(u) : null;
     var fc = forecastNow();
@@ -1270,14 +1259,6 @@
 
     var mi = st.mission || {};
 
-    // 選んでいる味方は、移動先の候補に描く
-    var drawAt = {};
-    st.units.forEach(function (x) { drawAt[x.id] = [x.x, x.y]; });
-    var planGhost = null;
-    if (u && app.plan) {
-      drawAt[u.id] = app.plan.to;
-      if (app.plan.to[0] !== u.x || app.plan.to[1] !== u.y) planGhost = key(u.x, u.y);
-    }
     // 【新案】見た目: つながった山（火山も）を1つの大きな山として描く。頂上は、かたまりの真ん中のマスに大きく描く
     var isMount = function (x, y) { if (!R.inBounds(st, x, y)) return false; var tt = R.getTile(st, x, y); return tt === 'mountain' || tt === 'volcano' || tt === 'sakura'; };
     var isRiver = function (x, y) { return R.inBounds(st, x, y) && R.getTile(st, x, y) === 'river'; };
@@ -1331,7 +1312,7 @@
     }
 
     var unitByCell = {};
-    st.units.forEach(function (x) { unitByCell[key(drawAt[x.id][0], drawAt[x.id][1])] = x; });
+    st.units.forEach(function (x) { unitByCell[key(x.x, x.y)] = x; });
 
     for (var y = 0; y < rows; y++) {
       for (var x = 0; x < n; x++) {
@@ -1339,8 +1320,8 @@
         var tile = R.getTile(st, x, y);
         var cls = ['cell', 't-' + tile];
         if (reach[k] !== undefined) cls.push('reach');
-        if (u && app.plan && app.plan.to[0] === x && app.plan.to[1] === y) cls.push('plan-to');
-        if (planElse[k]) cls.push('plan-other');
+        if (moveFrom[k]) cls.push('move-from');
+        if (app.info && app.info[0] === x && app.info[1] === y && !app.editMode) cls.push('info-at');
         if (guide[k] === 'finisher' && reach[k] !== undefined) cls.push('guide-finisher');
         if (shape[k]) cls.push('pv-shape');
         if (growPv[k]) cls.push('pv-grow');
@@ -1417,8 +1398,7 @@
         if (fcShot[k]) badges += '<span class="enemy">' + esc(fcShot[k].join('')) + '</span>';
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
-        if (planGhost === k && !unit) inner += '<div class="ghost ally"></div>';
-        if (planElse[k] && !unit) { var pa = planElse[k], pp = app.plans[pa.id]; inner += '<div class="ghost ally plan-other" title="' + esc(R.unitLabel(st, pa) + 'の移動の予定') + '">' + esc(R.magicName(pa.magic)) + DIR_ARROW[pp.dir] + '</div>'; }
+        if (moveFrom[k] && !unit) inner += '<div class="ghost ally move-from" title="' + esc(R.unitLabel(st, moveFrom[k]) + 'の元の位置（押すと戻る）') + '"></div>';
         if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」
           var sc = soCell[k];
           inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '"></span>';
@@ -1470,7 +1450,7 @@
     var st = app.state;
     var fc = forecastNow();
     var fcAll = forecastNow(true);
-    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.plans, app.editTool, app.editPick, st.units, st.enemyActs, st.size, st.h, st.ex, st.spawn, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode,
+    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.dirs, app.editTool, app.editPick, st.units, st.enemyActs, st.size, st.h, st.ex, st.spawn, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode,
       app.editMode && app.draft ? [app.draft.name, app.draft.texts] : null]);
     if (app.editMode) keepDraft();   // 作りかけを残す（同じなら書かない）
     if (sig === sideSig) return;
@@ -1601,8 +1581,7 @@
       b.disabled = !u;
       b.classList.toggle('active', !!u && app.plan.dir === b.getAttribute('data-dir'));
     });
-    var shootOk = !!u && R.canShoot(app.state, u, app.plan.to);
-    el.btnStay.disabled = !u;
+    var shootOk = !!u && R.canShoot(app.state, u);
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
     if (!u) {
@@ -1610,13 +1589,14 @@
       el.dirCenter.textContent = '';
       return;
     }
-    var moved = app.plan.to[0] !== u.x || app.plan.to[1] !== u.y;
+    var mv = u.moved, canBack = !!mv && reachOf(u)[key(mv.from[0], mv.from[1])] !== undefined;
     el.dirCenter.textContent = R.magicName(u.magic);
     el.actInfo.innerHTML = '<b>' + esc(R.unitLabel(app.state, u)) + '</b>　' +
-      (moved ? '移動先 (' + app.plan.to[0] + ',' + app.plan.to[1] + ') <button type="button" id="btnCancelMove">移動を取り消す</button>' :
-        (R.restancing(u) ? '構え直し<span class="x-more">（移動は戻らない。向きと構えだけ）</span>' : u.stuck ? '泥沼で移動できない<span class="x-more">（その場で撃つ）</span>' : 'その場<span class="x-more">（緑のマスで移動先を選べる）</span>')) +
+      (R.restancing(u) ? '構え直し<span class="x-more">（移動は戻らない。向きと構えだけ）</span>' :
+        mv ? '(' + u.x + ',' + u.y + ') へ移動した' + (canBack ? ' <button type="button" id="btnCancelMove">移動を取り消す</button>' : u.stuck ? '<span class="x-more">（泥沼にはまって、もう動けない）</span>' : '<span class="x-more">（もう動けない）</span>') :
+        u.stuck ? '泥沼で移動できない<span class="x-more">（その場で撃つ）</span>' : 'その場<span class="x-more">（緑のマスを押すと動く）</span>') +
       '　向き ' + DIR_ARROW[app.plan.dir] +
-      (shootOk ? '' : '<br><span class="danger">宝を持つので撃てない（「待機」で移動を確定）</span>');
+      (shootOk ? '' : '<br><span class="danger">宝を持つので撃てない（「待機」だけ）</span>');
   }
 
   var storeVersion = 0;
@@ -1742,6 +1722,40 @@
     put(el.txHintSingle, hint.single || '');
   }
 
+  // 押したマスの情報（オーナー 10/30）: 地形の名前・座標・印と、そこにいる駒（HP・魔法・向き・ようす）。盤面が変わったら今の中身で出し直す
+  function renderCellInfo() {
+    var box = el.cellInfo;
+    box.hidden = app.editMode;
+    var st = app.state, c = app.info;
+    if (!c || !R.inBounds(st, c[0], c[1])) {
+      box.className = 'cell-info empty';
+      box.textContent = ui('cellInfoIdle', 'マスを押すと、ここにそのマスの情報');
+      return;
+    }
+    var x = c[0], y = c[1], tile = R.getTile(st, x, y), mi = st.mission || {}, tags = [];
+    if (!R.TILE_INFO[tile].passable) tags.push('通れない');
+    if (tile === 'mud' || tile === 'hill') tags.push('入ると止まる');
+    if (R.inCells(mi.goal, x, y)) tags.push('ゴール');
+    if (R.inCells(mi.exit, x, y)) tags.push('帰り口');
+    if (mi.treasure && mi.treasure[0] === x && mi.treasure[1] === y) tags.push('宝');
+    var u = R.unitAt(st, x, y), line = '';
+    if (u && u.side === 'object') line = esc(R.OBJECT_INFO[u.kind].name) + '　HP' + u.hp;
+    else if (u) {
+      var state = [];
+      if (u.side === 'ally' && !u.npc) state.push(u.stance ? '構えた' : u.acted ? '行動済み' : u.moved ? '移動した' : '');
+      if (u.stuck) state.push('泥沼で休み');
+      if (mi.carrier === u.id) state.push('宝を持つ');
+      if (u.burn > 0) state.push('火傷');
+      line = esc(R.unitLabel(st, u)) + '　HP' + u.hp + '/' + u.maxHp +
+        (u.stand === 'rush' ? '' : '　' + esc(R.magicName(u.magic))) + ' ' + DIR_ARROW[u.facing] +
+        state.filter(Boolean).map(function (t) { return '　' + esc(t); }).join('');
+    }
+    box.className = 'cell-info';
+    box.innerHTML = '<div class="ci-head"><b>' + esc(R.TILE_INFO[tile].name) + '</b><span class="ci-xy">(' + x + ',' + y + ')</span>' +
+      tags.map(function (t) { return '<span class="ci-tag">' + esc(t) + '</span>'; }).join('') + '</div>' +
+      (line ? '<div class="ci-unit ' + u.side + '">' + line + '</div>' : '');
+  }
+
   function renderHint() {
     var st = app.state;
     var h = el.hint;
@@ -1758,6 +1772,7 @@
       var stx = stageTexts(st.stage), own = stx && (st.result === 'win' ? stx.win : stx.lose);
       h.textContent = own || st.resultText || (st.result === 'win' ? '勝利！ 敵を全員倒しました' : '敗北… 味方が全員倒れました');
       if (own && st.resultText) h.title = st.resultText;
+      if (app.exNextGo) h.textContent += '　' + ui('exNext', '盤面をクリックか Enter で次へ');   // 展示: クリアしたら押して次へ
       h.classList.add('result');
       return;
     }
@@ -1775,9 +1790,9 @@
     }
     var u = selUnit();
     if (!u) {
-      if (R.sealReady(st)) { h.textContent = ui('sealReady', '村への道をふさいだ！「クリアする」（C）でクリアできる'); h.classList.add('ready'); return; }   // ステージ②
+      if (R.sealReady(st)) { h.textContent = ui('sealReady', '村への道をふさいだ！ 盤面をクリックか Enter でクリア'); h.classList.add('ready'); return; }   // ステージ②
       // 【一斉】全員構えたら発動へ
-      if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。「発動」（T）'); h.classList.add('ready'); return; }
+      if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。盤面をクリックか Enter で発動'); h.classList.add('ready'); return; }
       h.textContent = ui('pickAlly', '味方をクリック（または 1〜3 キー）で選ぶ'); h.classList.add('guide'); return;   // 操作の案内
     }
     h.textContent = R.restancing(u) ? ui('guideRestance') : simul() ? ui('guideSimul') : ui('guideSingle');
@@ -1824,9 +1839,8 @@
   el.actPanel.addEventListener('click', function (e) {
     var d = e.target.closest('.dir');
     if (d) { setDir(d.getAttribute('data-dir')); return; }
-    if (e.target.id === 'btnCancelMove') stay();
+    if (e.target.id === 'btnCancelMove') cancelMove();
   });
-  el.btnStay.addEventListener('click', stay);
   el.btnShoot.addEventListener('click', function () { doAct(true); });
   el.btnRetry.addEventListener('click', retry);
   el.btnSealWin.addEventListener('click', doSealWin);
@@ -2419,9 +2433,10 @@
       if (k !== 'Shift') { e.preventDefault(); skipPlayback(); }
       return;
     }
-    // 展示モード: 出しているものの操作だけ（味方 1〜、向き、構える Enter・その場で Space・待機 W、発動 T、1手戻す Z、クリアする C、取り消し Esc）。
+    // 展示モード: 出しているものの操作だけ（味方 1〜、向き、魔法 Enter・待機 W、1手戻す Z、取り消し Esc）。
+    //   誰も選んでいないときの Enter は、発動・クリアする・次のステージへ（advance。オーナー 10/30 で T・C・Space をなくした）
     //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete を足す
-    if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter| |w|W|t|T|z|Z|c|C|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
+    if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter|w|W|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
@@ -2431,20 +2446,17 @@
       if (app.editPick && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); editUnitAct('remove', app.editPick); }
       return;
     }
-    if (k === 't' || k === 'T') { doEndTurn(); return; }
-    if (k === 'c' || k === 'C') { doSealWin(); return; }   // ステージ②: ふさぎきったらクリア
     if (k >= '1' && k <= '9') {
       var a = R.controllableOf(app.state)[Number(k) - 1];
       if (a && canControl()) select(a.id);
       return;
     }
     if (KEY_DIR[k]) { e.preventDefault(); setDir(KEY_DIR[k]); return; }
-    if (k === 'Enter') { e.preventDefault(); doAct(true); return; }
-    if (k === ' ') { e.preventDefault(); stay(); return; }
+    if (k === 'Enter') { e.preventDefault(); if (!advance()) doAct(true); return; }
     if (k === 'w' || k === 'W') { doAct(false); return; }
     if (k === 'Escape') {
       var u = selUnit();
-      if (u && app.plan && (app.plan.to[0] !== u.x || app.plan.to[1] !== u.y)) stay();
+      if (u && u.moved && canControl() && reachOf(u)[key(u.moved.from[0], u.moved.from[1])] !== undefined) cancelMove();   // 動いていれば元の位置へ、そうでなければ選ぶのをやめる
       else deselect();
     }
   });

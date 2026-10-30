@@ -1168,6 +1168,71 @@ test('泥沼にはまっていると移動できない（撃つことはでき�
   var t2 = R.endTurn(r2.state);
   ok(R.reachableCells(t2.state, a.id)['2,3'] === 1, '次のターンは動ける');
 });
+// 移動だけ（オーナー 10/30）: 移動先を選んだ時点で本当に動く
+test('移動だけ: 本当にそこへ動き、まだ行動していない。そこから撃てる', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'fire', 2, 5, 'up');
+  var m = R.move(s, a.id, [2, 3]);
+  ok(m.ok, m.error);
+  var u = R.findUnit(m.state, a.id);
+  eq([u.x, u.y, u.acted], [2, 3, false]);
+  eq(u.moved, { from: [2, 5], to: [2, 3] });
+  ok(m.events.some(function (e) { return e.type === 'move'; }), '移動の出来事');
+  var r = R.act(m.state, a.id, { dir: 'up' });
+  ok(r.ok, r.error);
+  var u2 = R.findUnit(r.state, a.id);
+  eq([u2.x, u2.y, u2.acted], [2, 3, true], 'その場で撃った');
+});
+test('移動だけ: 動き直しは元の位置から数える。元の位置へ戻ると取り消し', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'fire', 2, 5, 'up');
+  var st = R.move(s, a.id, [2, 3]).state;
+  var reach = R.reachableCells(st, a.id);
+  ok(reach['2,1'] === undefined, '今の位置から2マスは数えない');
+  eq([reach['4,5'], reach['2,5']], [2, 0], '元の位置から2マスと、元の位置');
+  var back = R.move(st, a.id, [2, 5]);
+  ok(back.ok, back.error);
+  var u = R.findUnit(back.state, a.id);
+  eq([u.x, u.y, u.moved], [2, 5, undefined], '取り消し');
+  var again = R.move(st, a.id, [4, 5]);
+  ok(again.ok, again.error);
+  eq(R.findUnit(again.state, a.id).moved, { from: [2, 5], to: [4, 5] });
+  ok(R.act(st, a.id, { to: [3, 5], dir: 'up' }).ok, 'act も元の位置から数える');
+});
+test('移動だけ: 泥沼に入ったらはまって、もう動けない。休むのは次のターン', function () {
+  var s = board(['......', '......', '......', '......', '..D...', '......']);
+  var a = R.addAlly(s, 'fire', 2, 5);
+  var st = R.move(s, a.id, [2, 4]).state;
+  ok(R.findUnit(st, a.id).stuck, 'はまった');
+  eq(Object.keys(R.reachableCells(st, a.id)), ['2,4'], '今の位置だけ');
+  ok(!R.move(st, a.id, [2, 5]).ok, '元の位置へも戻れない');
+  var r = R.act(st, a.id, { dir: 'up' });
+  ok(r.ok && !r.events.some(function (e) { return e.type === 'mudSkip'; }), '撃てる（このターンは休まない）');
+  ok(R.findUnit(r.state, a.id).stuck, 'まだはまっている');
+  var t = R.endTurn(r.state);
+  eq(Object.keys(R.reachableCells(t.state, a.id)), ['2,4'], '次のターンは動けない');
+  // 動いて泥沼にはまったまま撃たずにターンを終えても、休むのは次のターン
+  var t2 = R.endTurn(st);
+  ok(R.findUnit(t2.state, a.id).stuck, '撃たずに終えても、はまったまま');
+});
+test('移動だけ: 動いたあとに魔法で動かされたら、もう動けない（撃つ・待機はできる）', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'fire', 2, 5, 'up');
+  var st = R.move(s, a.id, [2, 3]).state;
+  R.findUnit(st, a.id).x = 3;   // 風で運ばれたことにする
+  eq(Object.keys(R.reachableCells(st, a.id)), ['3,3'], '今の位置だけ');
+  ok(!R.move(st, a.id, [3, 4]).ok);
+  ok(R.act(st, a.id, { dir: 'up' }).ok);
+});
+test('移動だけ: 撃った味方は動かせない。ターンが変わると移動の印は消える', function () {
+  var s = R.createState({ enemyActs: false });
+  var r = R.act(s, 'P1', { dir: 'up' });
+  ok(!R.move(r.state, 'P1', [1, 3]).ok, '撃ったあと');
+  var m = R.move(s, 'P1', [1, 3]);
+  ok(m.ok, m.error);
+  var t = R.endTurn(m.state);
+  eq(R.findUnit(t.state, 'P1').moved, undefined, '印は消える');
+});
 test('泥沼は通り抜けられない', function () {
   var s = board(['......', '......', '......', '..D...', '......', '......']);
   var a = R.addAlly(s, 'fire', 2, 4);
@@ -1697,6 +1762,18 @@ test('宝を持っている間（宝のマスへ動くその手番も）は撃�
   s2 = R.endTurn(s2).state;
   ok(!R.act(s2, a.id, { dir: 'up' }).ok, '持ったあとも撃てない');
   ok(R.act(s2, a.id, { to: [2, 3], shoot: false }).ok, '移動と待機はできる');
+});
+test('移動だけ: 宝のマスに着いた時点で宝を持つ。持ったまま帰り口に着いたら勝ち', function () {
+  var s = retrieve([2, 2], [[2, 1]]);
+  var a = R.addAlly(s, 'grass', 2, 4, 'up');
+  var m = R.move(s, a.id, [2, 2]);
+  ok(m.ok, m.error);
+  eq(m.state.mission.carrier, a.id, '持った');
+  ok(!R.act(m.state, a.id, { dir: 'up' }).ok, '撃てない');
+  var t = R.endTurn(R.act(m.state, a.id, { shoot: false }).state).state;
+  var w = R.move(t, a.id, [2, 1]);
+  ok(w.ok, w.error);
+  eq(w.state.result, 'win', '帰り口で勝ち');
 });
 test('宝を持つ味方が倒れたら宝はそのマスに落ちて、ほかの味方が拾える', function () {
   var s = retrieve([2, 2], [[0, 4]]);

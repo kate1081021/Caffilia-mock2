@@ -100,6 +100,21 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .panel h2 small, .panel h3 small { font-weight: normal; color: var(--muted); font-size: 12px; margin-left: 4px; }
 .panel h3 { font-size: 13px; margin: 0 0 4px; }
 .hint { min-height: 1.5em; width: 100%; max-width: 640px; text-align: center; color: var(--muted); }
+/* 盤面の上の行: 左に押したマスの情報、右に操作の案内（オーナー 10/30） */
+.board-top { width: 100%; max-width: 640px; display: flex; align-items: center; gap: 10px; }
+.board-top .hint { flex: 1 1 auto; width: auto; }
+.cell-info {
+  flex: 0 0 220px; min-height: 2.9em; box-sizing: border-box;
+  padding: 3px 8px; font-size: 12px; line-height: 1.35;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.cell-info.empty { color: var(--muted); border-style: dashed; display: flex; align-items: center; }
+.cell-info .ci-head b { font-size: 14px; }
+.cell-info .ci-xy { color: var(--muted); margin-left: 4px; }
+.cell-info .ci-tag { margin-left: 4px; padding: 0 5px; border-radius: 5px; background: #f3efe6; }
+.cell-info .ci-unit.ally { color: #1d4ed8; }
+.cell-info .ci-unit.enemy { color: #b91c1c; }
+@media (max-width: 560px) { .board-top { flex-direction: column; align-items: stretch; } .cell-info { flex-basis: auto; } }
 .hint.warn { color: var(--accent); font-weight: bold; }
 .hint.result { color: var(--ink); font-size: 18px; font-weight: bold; }
 .hint.busy { color: #1d4ed8; }
@@ -252,10 +267,10 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   box-shadow: inset 0 0 0 3px rgba(22, 163, 74, .8);
   pointer-events: none;
 }
-.cell.plan-to::after { box-shadow: inset 0 0 0 4px #15803d; background: rgba(34, 197, 94, .38); }
-/* ほかの味方の移動の予定（オーナー 10/30）: 予定の移動先に薄く。そこには止まれない */
-.cell.plan-other { box-shadow: inset 0 0 0 2px rgba(37, 99, 235, .35); }
-.ghost.ally.plan-other { border-style: dashed; opacity: .4; font-size: .72em; }
+/* 動いたけれど、まだ撃っていない味方の元の位置（オーナー 10/30）: 点線の丸を薄く */
+.ghost.ally.move-from { opacity: .35; }
+/* 押したマス（オーナー 10/30）: 情報を左上に出しているマスに細い枠 */
+.cell.info-at { box-shadow: inset 0 0 0 2px rgba(28, 25, 23, .55); }
 
 /* 立ち位置の導き */
 .b-guide {

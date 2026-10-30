@@ -1723,13 +1723,15 @@
   // 動けるマス: dist { "x,y": 距離 }（今の位置 0 を含む）と、見つけた順 order
   // 通れるマス・ユニットがいないマスだけ（敵は個性で変わる）。味方・敵・村のマスは通り抜けられる（dist には入れない）。
   // 泥沼に入ったらそこで止まる（人のいる泥沼は止まれないので、その先へも行けない）。泥沼にはまっていたら今の位置だけ
-  function reachInfo(s, u) {
+  //   from: 数え始めるマス（省略で今の位置）。自分のいるマスは空きとして通る
+  function reachInfo(s, u, from) {
+    var sx = from ? from[0] : u.x, sy = from ? from[1] : u.y;
     var dist = {}, order = [], seen = {};
-    dist[key(u.x, u.y)] = 0;
-    seen[key(u.x, u.y)] = 0;
-    order.push([u.x, u.y]);
+    dist[key(sx, sy)] = 0;
+    seen[key(sx, sy)] = 0;
+    order.push([sx, sy]);
     if (u.stuck) return { dist: dist, order: order };
-    var queue = [[u.x, u.y]];
+    var queue = [[sx, sy]];
     while (queue.length) {
       var c = queue.shift();
       var cd = seen[key(c[0], c[1])];
@@ -1752,11 +1754,30 @@
     return { dist: dist, order: order };
   }
 
+  // 味方の動けるマス（オーナー 10/30）: 移動先を選んだ時点で本当に動く（move）。u.moved = { from: 元の位置, to: 動いた先 }
+  //   動いたあとも、元の位置から数えて届くマスへ動き直せる（元の位置へ戻るのは取り消し）。
+  //   泥沼にはまった・動いたあとに魔法で動かされたら、もう動けない（今の位置だけ）
+  function moveInfo(s, u) {
+    var mv = u.moved;
+    if (!mv) return reachInfo(s, u);
+    var here = { dist: {}, order: [[u.x, u.y]] };
+    here.dist[key(u.x, u.y)] = 0;
+    if (u.stuck || u.x !== mv.to[0] || u.y !== mv.to[1]) return here;
+    var r = reachInfo(s, u, mv.from), dist = {}, order = [];
+    r.order.forEach(function (c) {
+      var o = unitAt(s, c[0], c[1]);
+      if (o && o !== u) return;   // 元の位置に、もうほかの駒がいる
+      dist[key(c[0], c[1])] = r.dist[key(c[0], c[1])];
+      order.push(c);
+    });
+    return { dist: dist, order: order };
+  }
+
   function reachableCells(s, unitId) {
     var u = findUnit(s, unitId);
     if (!u) return {};
     if (restancing(u)) { var here = {}; here[key(u.x, u.y)] = 0; return here; }   // 【一斉】構え直しは動けない
-    return reachInfo(s, u).dist;
+    return u.side === 'ally' ? moveInfo(s, u).dist : reachInfo(s, u).dist;
   }
   // 【一斉】このターンもう構えた（か待機した）味方が、構え直すところか
   function restancing(u) { return simulOn() && !!u && u.side === 'ally' && !u.npc && u.acted; }
@@ -1766,6 +1787,34 @@
     u.x = x; u.y = y;
     ev.push({ type: 'move', id: u.id, side: u.side, from: from, to: [x, y], text: unitLabel(s, u) + 'が' + dist + 'マス移動した' });
     if (getTile(s, x, y) === 'mud') enterMud(s, u, ev);
+  }
+  // 味方を to へ動かす（dist: 元の位置からの歩数。0 は元の位置へ戻る＝移動の取り消し）
+  function allyStep(s, u, to, dist, ev) {
+    if (dist === 0) {
+      var back = [u.x, u.y];
+      u.x = to[0]; u.y = to[1];
+      delete u.moved;
+      ev.push({ type: 'move', id: u.id, side: u.side, from: back, to: [to[0], to[1]], text: unitLabel(s, u) + 'は元の位置に戻った' });
+      return;
+    }
+    var origin = u.moved ? u.moved.from : [u.x, u.y];
+    moveUnit(s, u, to[0], to[1], dist, ev);
+    u.moved = { from: origin, to: [to[0], to[1]] };
+  }
+  // 奪取: 宝のマスで止まると宝を持つ。持ったまま帰り口で止まったら勝ち（勝ったら true）
+  function arrive(s, u, ev) {
+    var m = s.mission;
+    if (!m || missionType(s) !== 'retrieve') return false;
+    if (!m.carrier && m.treasure && m.treasure[0] === u.x && m.treasure[1] === u.y) {
+      m.carrier = u.id; m.treasure = null;
+      ev.push({ type: 'treasure', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'が宝を持った（持っている間は撃てない）' });
+    }
+    if (m.carrier === u.id && inCells(m.exit, u.x, u.y)) {
+      ev.push({ type: 'treasure', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'が宝を持って帰り口に着いた' });
+      setResult(s, ev, 'win', '宝を持ち帰った！（勝利）');
+      return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------
@@ -1795,7 +1844,8 @@
     var to = opts.to || [u0.x, u0.y];
     var dir = opts.dir || u0.facing;
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
-    var dist = again ? (to[0] === u0.x && to[1] === u0.y ? 0 : undefined) : reachInfo(s0, u0).dist[key(to[0], to[1])];
+    var same = to[0] === u0.x && to[1] === u0.y;
+    var dist = same ? 0 : again ? undefined : moveInfo(s0, u0).dist[key(to[0], to[1])];
     if (dist === undefined) return fail(s0, again ? '構え直しでは動けない（向きと構えだけ）' : u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
     if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, '宝を持っている間は撃てない（待機だけ）');
 
@@ -1805,26 +1855,16 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
-    if (u.stuck && !again) {
+    if (u.stuck && !again && !u.moved) {   // このターンに動いて泥沼にはまったのなら、休むのは次のターン
       unstick(u);
       ev.push({ type: 'mudSkip', id: u.id, text: unitLabel(s, u) + 'は泥沼にはまっていて動けない（1回休み）' });
     }
     u.acted = true;
-    if (dist > 0) { moveUnit(s, u, to[0], to[1], dist, ev); step(); }
+    if (!same) { allyStep(s, u, to, dist, ev); step(); }
     u.facing = dir;
-    // 奪取: 宝のマスで移動を終えると宝を持つ。持ったまま帰り口で移動を終えたら勝ち
-    var m = s.mission;
-    if (m && missionType(s) === 'retrieve') {
-      if (!m.carrier && m.treasure && m.treasure[0] === u.x && m.treasure[1] === u.y) {
-        m.carrier = u.id; m.treasure = null;
-        ev.push({ type: 'treasure', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'が宝を持った（持っている間は撃てない）' });
-      }
-      if (m.carrier === u.id && inCells(m.exit, u.x, u.y)) {
-        ev.push({ type: 'treasure', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'が宝を持って帰り口に着いた' });
-        setResult(s, ev, 'win', '宝を持ち帰った！（勝利）');
-        step();
-        return { ok: true, state: s, events: ev, steps: steps };
-      }
+    if (arrive(s, u, ev)) {
+      step();
+      return { ok: true, state: s, events: ev, steps: steps };
     }
     if (opts.shoot === false) {
       if (u.stance) delete u.stance;         // 【一斉】待機にすると構えは消える
@@ -1841,6 +1881,25 @@
     }
     step();
     return { ok: true, state: s, events: ev, steps: steps };
+  }
+
+  // 移動だけ（オーナー 10/30）: 移動先を選んだ時点で本当に動く。まだ行動していない（撃っても待機してもいない）ことは変わらない。
+  //   着いた所で起きること（泥沼にはまる・宝を持つ・帰り口で勝つ）は、ここで起きる。to が元の位置なら移動の取り消し
+  function move(s0, unitId, to) {
+    if (s0.result) return fail(s0, '勝負はもうついている');
+    var u0 = findUnit(s0, unitId);
+    if (!u0 || u0.side !== 'ally') return fail(s0, '味方を選んでいない');
+    if (u0.npc) return fail(s0, '構える味方には指示できない');
+    if (u0.acted) return fail(s0, restancing(u0) ? '構え直しでは動けない（向きと構えだけ）' : 'この味方はもう行動した');
+    if (!to || (to[0] === u0.x && to[1] === u0.y)) return fail(s0, 'もうそこにいる');
+    var dist = moveInfo(s0, u0).dist[key(to[0], to[1])];
+    if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
+    var s = clone(s0);
+    var u = findUnit(s, unitId);
+    var ev = [];
+    allyStep(s, u, to, dist, ev);
+    arrive(s, u, ev);
+    return { ok: true, state: s, events: ev, steps: [{ state: clone(s), events: ev.slice() }] };
   }
 
   // 【一斉】構えた順を並べ替える（delta: -1 で1つ前へ、+1 で1つ後ろへ）。構える味方（いつも最後）は動かせない
@@ -2605,7 +2664,8 @@
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
-    alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck) unstick(a); });
+    //   （このターンに動いて泥沼にはまった味方は、次のターンに休む）
+    alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck && !a.moved) unstick(a); });
 
     // 3a. 構える味方の魔法の発動（敵より先）。【一斉】味方の構えを構えた順に発動（構える味方はその最後）
     if (simulOn()) {
@@ -2658,7 +2718,7 @@
     // 5. 次のターン: 構える味方が構え直す → 敵の移動と予告
     if (!s.result) {
       s.turn += 1;
-      alliesOf(s).forEach(function (a) { a.acted = false; });
+      alliesOf(s).forEach(function (a) { a.acted = false; delete a.moved; });
       ev.push({ type: 'turnStart', text: '── ターン' + s.turn + ' 開始 ──' });
       step();
       allyReadyPhase(s, ev, step);
@@ -2790,7 +2850,7 @@
       var n = {};
       return fins.some(function (f) { n[f.name] = (n[f.name] || 0) + 1; return n[f.name] > (baseFin[f.name] || 0); });
     };
-    var order = restancing(u) ? [[u.x, u.y]] : reachInfo(s, u).order;
+    var order = restancing(u) ? [[u.x, u.y]] : moveInfo(s, u).order;
     order.forEach(function (pos) {
       var best = null;
       if (!canShoot(s, u, pos)) return;
@@ -2829,7 +2889,7 @@
           alliesOf(s).forEach(function (a) {
             if (a.acted || a.npc || a.magic !== h.magic) return;
             var found = null;
-            reachInfo(s, a).order.some(function (pos) {
+            moveInfo(s, a).order.some(function (pos) {
               if (!canShoot(s, a, pos)) return false;
               return DIR_ORDER.some(function (dir) {
                 var p = previewAct(s, a.id, pos, dir);
@@ -3130,7 +3190,7 @@
       var conf = unitConf(u);
       u.maxHp = conf.hp; u.hp = conf.hp; u.power = conf.power; u.move = conf.move;
       u.stuck = false; u.acted = false;
-      delete u.stance;
+      delete u.stance; delete u.moved;
       if (u.side === 'enemy' || u.npc) u.intent = false;
     });
     return s;
@@ -3571,7 +3631,7 @@
     // 状態を受け取る関数は、その状態の overrides（このシナリオだけの数値）の中で動く
     rotate: rotate, shapeCells: withStage(shapeCells),
     createState: createState, addAlly: addAlly, addEnemy: addEnemy,
-    reachableCells: withStage(reachableCells), act: withStage(act), allAlliesActed: allAlliesActed, endTurn: withStage(endTurn), startBattle: withStage(startBattle),
+    reachableCells: withStage(reachableCells), act: withStage(act), move: withStage(move), allAlliesActed: allAlliesActed, endTurn: withStage(endTurn), startBattle: withStage(startBattle),
     planEnemy: withStage(planEnemy), previewAct: withStage(previewAct), guideMap: withStage(guideMap), nextHints: withStage(nextHints), forecast: withStage(forecast),
     editPaint: editPaint, editPlaceUnit: editPlaceUnit, editRemoveUnit: editRemoveUnit,
     editMoveUnit: editMoveUnit, editSetMagic: editSetMagic, editSetFacing: editSetFacing, editSetPersona: editSetPersona,
