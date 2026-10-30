@@ -3,7 +3,7 @@
  *   文の中身は texts.js（window.TEXTS）。ui.js のあとに読み込む。
  *
  *   会話の窓: ステージのきっかけ（始め・Nターン目・構えた・発動の前・決め手・敵の予告・クリア・負け・やり直し）で、
- *     そのきっかけの文を順に出す。押す（クリックかスペース）と次の文へ。窓は画面の下で、盤面は見えたまま。
+ *     そのきっかけの文を順に出す。押す（クリック・Enter・スペース）と次の文へ。窓は画面の下で、盤面は見えたまま。
  *     同じ場面は1回の挑戦で1度だけ（やり直すとまた流れる）。
  *   文章パネル（文を書き換えて texts.js に保存する）と、窓の ✎ は IMPROVE_v3 段1（オーナー 10/30）でアーカイブした。
  *     文を変えるときは texts.js を直す。エディットで作ったステージの文は、エディットの「会話の窓の文」で書く。
@@ -60,7 +60,7 @@
     el.dialog.hidden = false;
     el.dialog.innerHTML = (l.who ? '<div class="d-who">' + esc(l.who) + '</div>' : '') +
       '<div class="d-text">' + esc(l.text) + '</div>' +
-      '<div class="d-foot"><span>' + esc(((cur.ui || {}).dialogNext) || 'クリックかスペースで次へ') + '</span><span>' + (dlg.queue.length ? 'あと' + dlg.queue.length : '') + '</span></div>';
+      '<div class="d-foot"><span>' + esc(((cur.ui || {}).dialogNext) || 'クリックか Enter で次へ') + '</span><span>' + (dlg.queue.length ? 'あと' + dlg.queue.length : '') + '</span></div>';
   }
   function closeDialog() {
     el.dialog.hidden = true;
@@ -76,12 +76,12 @@
     if (!dlg.cur) showNext();
   }
   el.dialog.addEventListener('click', function () { showNext(); });
-  // スペースで次へ（窓が出ている間はゲームのキーより先に受け取る）
+  // Enter かスペースで次へ（窓が出ている間はゲームのキーより先に受け取る。Enter が魔法・発動に届かないように。オーナー 10/30）
   document.addEventListener('keydown', function (e) {
     if (el.dialog.hidden) return;
     var tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); e.stopPropagation(); showNext(); }
+    if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); showNext(); }
   }, true);
 
   // ---------------------------------------------------------------
