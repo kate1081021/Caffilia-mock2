@@ -129,12 +129,29 @@
           <div id="unitList" class="unit-list"></div>
         </div>
         <div class="edit-group">
+          <h3>勝ち方</h3>
+          <div class="row">
+            <select id="winSelect" aria-label="勝ち方"></select>
+            <label id="winTurnsLabel">ターン <input id="winTurns" type="number" min="1" max="30" step="1" value="5"></label>
+          </div>
+          <p id="winNote" class="note"></p>
+        </div>
+        <div class="edit-group">
           <h3>置きもの <small>クリックで置く／もう一度で外す</small></h3>
           <div id="missionTools" class="palette unit-tools"></div>
         </div>
         <div class="edit-group">
           <h3>地形を塗る <small>ドラッグで続けて塗れる。山の頂上と斜面は自動で決まる</small></h3>
           <div id="tilePalette" class="palette"></div>
+        </div>
+        <div class="edit-group row">
+          <label class="toggle"><input id="enemyActs" type="checkbox" checked> 敵が行動する</label>
+        </div>
+        <div class="edit-group row">
+          <label>盤面 横 <input id="boardW" type="number" min="5" max="12" step="1" value="6"></label>
+          <label>× 縦 <input id="boardH" type="number" min="5" max="12" step="1" value="6"></label>
+          <button id="btnResize" type="button">変更</button>
+          <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>
         <div class="edit-group">
           <h3>ステージ</h3>
@@ -153,23 +170,6 @@
             <label class="file-label">ファイルを読み込む <input id="fileInput" type="file" accept=".json,application/json"></label>
           </div>
           <p id="storeNote" class="note"></p>
-        </div>
-        <div class="edit-group">
-          <h3>勝ち方</h3>
-          <div class="row">
-            <select id="winSelect" aria-label="勝ち方"></select>
-            <label id="winTurnsLabel">ターン <input id="winTurns" type="number" min="1" max="30" step="1" value="5"></label>
-          </div>
-          <p id="winNote" class="note"></p>
-        </div>
-        <div class="edit-group row">
-          <label class="toggle"><input id="enemyActs" type="checkbox" checked> 敵が行動する</label>
-        </div>
-        <div class="edit-group row">
-          <label>盤面 横 <input id="boardW" type="number" min="5" max="12" step="1" value="6"></label>
-          <label>× 縦 <input id="boardH" type="number" min="5" max="12" step="1" value="6"></label>
-          <button id="btnResize" type="button">変更</button>
-          <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>
         <div class="edit-group stage-texts">
           <h3>会話の窓の文 <small>1行が1つの文。「［一斉だけ］」「［1人ずつだけ］」で始めると、その形のときだけ。「話す人「文」」で話す人</small></h3>
