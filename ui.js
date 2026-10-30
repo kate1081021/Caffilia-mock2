@@ -151,7 +151,7 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'preview', 'turnLabel', 'modeLabel', 'scenarioSelect',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
     'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'btnSwap', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyActs', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
+    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
     'btnDeleteSaved', 'btnNewStage', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
     'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
@@ -1190,40 +1190,32 @@
     var tool = app.editTool;
     var st = app.state;
     var res;
-    if (tool.indexOf('tile:') === 0) res = R.editPaint(st, x, y, tool.slice(5));
-    else if (tool === 'pick' || tool === 'enemy' || tool.indexOf('ally:') === 0) {
-      // 選ぶ・置く（オーナー 10/30）: 駒を押すと選んでドラッグで動かす。空きマスは、置く道具なら置く、選ぶ道具なら選ぶのをやめる
-      var drag = app.stroke && app.stroke.drag;
-      if (dragging) {
-        if (!drag) return;
-        var du = R.findUnit(st, drag.id);
-        if (!du || (du.x === x - drag.dx && du.y === y - drag.dy)) return;
-        res = R.editMoveUnit(st, drag.id, x - drag.dx, y - drag.dy);
-        var mv = res.ok && R.findUnit(res.state, drag.id);
-        if (mv && mv.size > 1 && SIO.fits(R, res.state, mv)) res = null;   // 大きい敵は体の全部が収まる所だけ
-        if (!res || !res.ok) return;
-      } else {
-        var at = R.unitAt(st, x, y);
-        if (at) {
-          app.editPick = at.id;
-          if (app.stroke) app.stroke.drag = { id: at.id, dx: x - at.x, dy: y - at.y };
-          render();
-          return;
-        }
-        if (tool === 'pick') { if (app.editPick) { app.editPick = null; render(); } return; }
-        res = tool === 'enemy' ? R.editPlaceUnit(st, 'enemy', x, y) : R.editPlaceUnit(st, 'ally', x, y, tool.slice(5));
-        if (res.ok) app.editPick = res.unit.id;   // 置いた駒をそのまま選ぶ（カードで設定できる）
-      }
+    // 駒（味方・敵・村・馬車）は、どの道具のときでも押すと選び、そのままドラッグで動かす（オーナー 10/30）
+    var drag = app.stroke && app.stroke.drag;
+    var at = dragging ? null : R.unitAt(st, x, y);
+    if (drag) {
+      var du = R.findUnit(st, drag.id);
+      if (!dragging || !du || (du.x === x - drag.dx && du.y === y - drag.dy)) return;
+      res = R.editMoveUnit(st, drag.id, x - drag.dx, y - drag.dy);
+      var mv = res.ok && R.findUnit(res.state, drag.id);
+      if (mv && mv.size > 1 && SIO.fits(R, res.state, mv)) res = null;   // 大きい敵は体の全部が収まる所だけ
+      if (!res || !res.ok) return;
+    } else if (at) {
+      app.editPick = at.id;
+      if (app.stroke) app.stroke.drag = { id: at.id, dx: x - at.x, dy: y - at.y };   // 大きい敵は、つかんだ所を保ったまま動く
+      render();
+      return;
     }
+    else if (tool.indexOf('tile:') === 0) res = R.editPaint(st, x, y, tool.slice(5));   // 空きマスから塗り始めれば、駒のいるマスも塗れる
     else if (dragging) return;
-    else if (tool === 'remove') {
-      var rm = R.unitAt(st, x, y);
-      res = R.editRemoveUnit(st, rm ? rm.x : x, rm ? rm.y : y);   // 大きい敵は体のどこを押しても消える
-      if (res.ok && rm && rm.id === app.editPick) app.editPick = null;
+    else if (tool === 'pick') { if (app.editPick) { app.editPick = null; render(); } return; }   // 道具を持っていない: 空きマスで選ぶのをやめる
+    else if (tool === 'enemy' || tool.indexOf('ally:') === 0) {
+      res = tool === 'enemy' ? R.editPlaceUnit(st, 'enemy', x, y) : R.editPlaceUnit(st, 'ally', x, y, tool.slice(5));
+      if (res.ok) app.editPick = res.unit.id;   // 置いた駒をそのまま選ぶ（カードで設定できる）
     }
     else if (tool.indexOf('obj:') === 0) {
-      var here = R.unitAt(st, x, y);
-      res = here && here.side === 'object' && here.kind === tool.slice(4) ? R.editRemoveUnit(st, x, y) : R.editPlaceObject(st, tool.slice(4), x, y);
+      res = R.editPlaceObject(st, tool.slice(4), x, y);
+      if (res.ok) app.editPick = res.unit.id;
     }
     else if (tool.indexOf('mark:') === 0) res = R.editToggleCell(st, tool.slice(5), x, y);
     else if (tool === 'treasure') res = R.editPlaceTreasure(st, x, y);
@@ -2013,7 +2005,7 @@
         (marchTo[e.id] ? '<span class="plan">ターンの終わりに ' + DIR_ARROW[marchTo[e.id].dir] + ' へ1マス進む' + (plans[e.id] ? '。そのまま撃つ' : '') + '</span>' : '') +
         (plans[e.id] ? '<span class="plan">' + esc(planText(plans[e.id], st)) + '</span>' : '') + '</div>';
     }).join('');
-    html += '<p class="note' + (st.enemyActs ? ' x-more' : '') + '">敵は' + (st.enemyActs ? '行動する' : '何もしない') + '設定（エディットで切り替え）</p>';   // いつもと違う（何もしない）ときだけ出したまま
+    html += '<p class="note' + (st.enemyActs ? ' x-more' : '') + '">' + (st.enemyActs ? '敵は行動する' : '確認用: 敵は動かない') + '設定（エディットで切り替え）</p>';   // いつもと違う（何もしない）ときだけ出したまま
     el.enemyList.innerHTML = en.length ? html : '<p class="muted">敵がいません（エディットで置けます）</p>';
 
     renderActPanel();
@@ -2090,6 +2082,8 @@
     try { window.localStorage.setItem(STORE_KEY, JSON.stringify(obj)); storeVersion++; return true; } catch (e) { return false; }
   }
 
+  // エディット: カードのゴミ箱（絵文字はフォントで小さく灰色になるので、線で描く）
+  var TRASH_SVG = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.8 9.5h6.4L12 4M6.6 6.5v4.5M9.4 6.5v4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   // エディット: 駒の一覧に出す短い名前（盤面の駒と同じ文字）
   function chipName(u) {
     if (u.side === 'object') return R.OBJECT_INFO[u.kind].name;
@@ -2102,7 +2096,7 @@
     var h = '<div class="u-card ' + u.side + '"><div class="u-card-head">' +
       '<span class="chip-piece ' + u.side + (u.side === 'object' ? ' ' + u.kind : '') + '">' + esc(chipName(u)) + '</span>' +
       '<b>' + esc(R.unitLabel(st, u)) + '</b><span class="muted">(' + u.x + ',' + u.y + ')</span>' +
-      '<button type="button" class="u-del" data-uact="remove" data-id="' + id + '" title="消す（Delete）">消す</button></div>';
+      '<button type="button" class="u-del" data-uact="remove" data-id="' + id + '" title="消す（Delete）" aria-label="消す">' + TRASH_SVG + '</button></div>';
     if (u.side === 'object') return h + '<div class="u-card-row muted">HP ' + u.maxHp + '</div></div>';
     h += '<div class="u-card-row"><span class="lbl">魔法</span>';
     if (u.side === 'ally') {
@@ -2142,12 +2136,11 @@
       return '<button type="button" class="' + (app.editTool === k ? 'active' : '') + '" data-tool="' + k + '">' +
         '<span class="swatch t-' + t + '">' + esc(R.TILE_INFO[t].label) + '</span>' + esc(R.TILE_INFO[t].name) + '</button>';
     }).join('');
-    // ユニットの道具（オーナー 10/30）: 選ぶ・消す、味方は魔法ごとの駒、敵は1つ（魔法はカードで変える）
+    // ユニットの道具（オーナー 10/30）: 味方は魔法ごとの駒、敵は1つ（魔法はカードで変える）。選ぶ・動かす・消すは盤面の駒とカードで
     var tb = function (tool, cls, label, title) {
       return '<button type="button" class="' + cls + (app.editTool === tool ? ' active' : '') + '" data-tool="' + tool + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
     };
     el.unitTools.innerHTML =
-      '<div class="ut-row">' + tb('pick', 'ut-btn', '選ぶ・動かす') + tb('remove', 'ut-btn', '消す') + '</div>' +
       '<div class="ut-row"><span class="ut-label">味方</span>' + R.allyMagics(st).map(function (m) {
         return tb('ally:' + m, 'ut-piece ally', esc(R.magicName(m)), '味方「' + R.magicName(m) + '」を置く');
       }).join('') + '</div>' +
@@ -2188,7 +2181,7 @@
       el.unitList.innerHTML += '<p class="note">このシナリオだけの数値（JSON の overrides）: ' +
         esc(Object.keys(st.overrides).map(function (p) { return setLabel(p, st.overrides[p]); }).join('・')) + '</p>';
     }
-    el.enemyActs.checked = st.enemyActs;
+    el.enemyStill.checked = !st.enemyActs;
     if (document.activeElement !== el.boardW) el.boardW.value = st.size;
     if (document.activeElement !== el.boardH) el.boardH.value = R.rowsOf(st);
 
@@ -2237,14 +2230,14 @@
     }
     if (app.editMode) {
       var tool = app.editTool;
-      if (tool.indexOf('tile:') === 0) h.textContent = 'マスをクリック（ドラッグ）で「' + R.TILE_INFO[tool.slice(5)].name + '」を塗る';
-      else if (tool === 'pick') h.textContent = app.editPick ? '駒をドラッグで動かす・矢印キーで向き・Delete で消す' : '設定する駒をクリック（ドラッグで動かす）';
-      else if (tool === 'remove') h.textContent = '消すユニットをクリック';
-      else if (tool.indexOf('ally:') === 0) h.textContent = '味方「' + R.magicName(tool.slice(5)) + '」を置くマスをクリック（駒はドラッグで動かせる）';
-      else if (tool.indexOf('obj:') === 0) h.textContent = '「' + R.OBJECT_INFO[tool.slice(4)].name + '」を置くマスをクリック（置いてある所をクリックで外す）';
+      var off = '（道具をもう一度押すとやめる）';
+      if (tool.indexOf('tile:') === 0) h.textContent = 'マスをクリック（ドラッグ）で「' + R.TILE_INFO[tool.slice(5)].name + '」を塗る。駒のマスは、となりからドラッグで塗れる';
+      else if (tool === 'pick') h.textContent = app.editPick ? '駒をドラッグで動かす・矢印キーで向き・ゴミ箱か Delete で消す' : '駒をクリックで選ぶ・ドラッグで動かす。右で置くものを選ぶと、マスに置ける';
+      else if (tool.indexOf('ally:') === 0) h.textContent = '味方「' + R.magicName(tool.slice(5)) + '」を置くマスをクリック' + off;
+      else if (tool.indexOf('obj:') === 0) h.textContent = '「' + R.OBJECT_INFO[tool.slice(4)].name + '」を置くマスをクリック' + off;
       else if (tool.indexOf('mark:') === 0) h.textContent = '「' + (tool === 'mark:goal' ? 'ゴール' : '帰り口') + '」の印をつけるマスをクリック（もう一度で外す）';
       else if (tool === 'treasure') h.textContent = '宝を置くマスをクリック（1つだけ。置き直すと移る）';
-      else h.textContent = '敵を置くマスをクリック（駒はドラッグで動かせる）';
+      else h.textContent = '敵を置くマスをクリック' + off;
       return;
     }
     var u = selUnit();
@@ -2551,7 +2544,8 @@
   function onToolClick(e) {
     var b = e.target.closest('[data-tool]');
     if (!b) return;
-    app.editTool = b.getAttribute('data-tool');
+    var t = b.getAttribute('data-tool');
+    app.editTool = app.editTool === t ? 'pick' : t;   // 持っている道具をもう一度押すと、道具なし（駒を選ぶ・動かすだけ）
     render();
   }
   el.tilePalette.addEventListener('click', onToolClick);
@@ -2601,9 +2595,10 @@
     if (act === 'remove') app.editPick = null;
     render();
   }
-  el.enemyActs.addEventListener('change', function () {
+  // 確認用: 敵を動かさない（ふつうは動く。オーナー 10/30）
+  el.enemyStill.addEventListener('change', function () {
     pushHistory();
-    app.state = R.editSetEnemyActs(app.state, el.enemyActs.checked).state;
+    app.state = R.editSetEnemyActs(app.state, !el.enemyStill.checked).state;
     render();
   });
   // 盤面の横・縦。置いた物は同じ位置のまま（はみ出した物は外す）
@@ -2782,7 +2777,7 @@
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
-      if (k === 'Escape') { app.editPick = null; render(); }
+      if (k === 'Escape') { if (app.editPick) app.editPick = null; else app.editTool = 'pick'; render(); }   // 選んだ駒を外す → 道具を外す
       // 選んだ駒: 矢印キーで向き、Delete で消す
       if (app.editPick && KEY_DIR[k]) { e.preventDefault(); editUnitAct('facing', app.editPick, KEY_DIR[k]); }
       if (app.editPick && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); editUnitAct('remove', app.editPick); }
