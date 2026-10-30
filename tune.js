@@ -34,8 +34,8 @@
 
   // 項目の日本語ラベル。ここにない項目は元の名前をそのまま出す
   var LABELS = {
-    'ally.hp': '味方のHP', 'ally.move': '味方の移動', 'ally.power': '味方の威力（直撃）', 'ally.count': '味方の人数の上限',
-    'enemy.hp': '敵のHP', 'enemy.move': '敵の移動', 'enemy.power': '敵の威力（直撃）', 'enemy.maxCount': '敵の数の上限',
+    'ally.hp': '味方のHP', 'ally.move': '味方の移動', 'ally.power': '味方の威力（直撃）',
+    'enemy.hp': '敵のHP', 'enemy.move': '敵の移動', 'enemy.power': '敵の威力（直撃）',
     'mission.village.hp': '村のHP', 'mission.wagon.hp': '馬車のHP',
     'mission.defense.turns': '防衛: 守るターン数', 'mission.defense.loseAt': '防衛: 負けになる村の壊れ数',
     'fireTileDamage': '炎の上にいる者へのダメージ（ターン終了）',
@@ -271,8 +271,8 @@
   Tune.defaults = clone(root.BALANCE);
   Tune.source = 'none';      // 'none' 初期値 / 'local' 保存した設定 / 'link' 共有リンクの設定
   Tune.ignored = [];
-  // 展示モード（mode.js）: 保存した設定は重ねず、balance.js の値で動く（共有リンクは開発モードで開く）
-  var exhibit = root.CAFILIA_MODE === 'exhibit';
+  // 展示モード・作るモード（mode.js）: 保存した設定は重ねず、balance.js の値で動く（共有リンクは開発モードで開く）
+  var exhibit = root.CAFILIA_MODE === 'exhibit' || root.CAFILIA_MODE === 'make';   // 作るモード（10/30）も展示と同じ値で動く
   var fromLink = exhibit ? null : fromHash(root.location && root.location.hash);
   var start = null;
   if (fromLink) { start = fromLink; Tune.source = 'link'; }

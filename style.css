@@ -1719,7 +1719,7 @@ button.td-open, button.td-open:hover:not(:disabled) { background: linear-gradien
 .lq-segrow label + label { margin-left: 10px; }
 
 /* ---------------------------------------------------------------
- * 展示モード（mode.js。URL に #dev がないとき。オーナー 10/29）
+ * 展示モード（mode.js。URL に印がないとき。オーナー 10/29）
  *   見せるのは、盤面・味方の欄・向きと構える・待機の操作・発動の順番・敵の予告・会話の窓・
  *   上のバーの「発動」「1手戻す」「遊び方」・負けたときの「やり直す」、お題の帯（目標・勝ち方・残りの数）・案内の1行・
  *   ②で道をふさいだときの「クリアする」だけ（10/29 の続きで足した）・やり直したときのヒントの1行（10/30）。
@@ -1748,6 +1748,32 @@ html.mode-exhibit #versionTag {
 /* 展示モード: お題の帯の勝ち方と、案内の1行の操作の案内（開発モードでは「くわしく」の中）も出す */
 html.mode-exhibit #missionBar .m-win.x-more { display: inline !important; }
 html.mode-exhibit .hint.guide { visibility: visible !important; }
+
+/* ---------------------------------------------------------------
+ * 作るモード（mode.js。URL に #make。オーナー 10/30）
+ *   展示モードと同じ見え方に、エディットの欄・上のバーの「エディット／テストプレイ」「リセット」・今のモードの札（エディット中・テストプレイ中）を足す。
+ *   調整パネル・ラボ・スーパープレイ・新案プレイ・シナリオの一覧・ターンの形・魔法の出し方・くわしく・ログ・文章パネルは出さない
+ * --------------------------------------------------------------- */
+html.mode-make .topbar h1,
+html.mode-make .topbar label.scenario,
+html.mode-make .topbar .buttons > :not(#btnEndTurn):not(#btnUndo):not(#btnReset):not(#btnEdit):not(#btnHowto),
+html.mode-make #tuneBar,
+html.mode-make #labBar,
+html.mode-make #labRunBar,
+html.mode-make #runBar,
+html.mode-make #exBar,
+html.mode-make #checkCaption,
+html.mode-make #preview,
+html.mode-make #labTargetBox,
+html.mode-make #btnSwap,
+html.mode-make .log-panel,
+html.mode-make .side .help,
+html.mode-make .x-more,
+html.mode-make #versionTag {
+  display: none !important;
+}
+html.mode-make #missionBar .m-win.x-more { display: inline !important; }
+html.mode-make .hint.guide { visibility: visible !important; }
 
 /* 盤面が横に並ぶ広さ（981px〜）では、横の欄（380px）と余白の分を引いた幅に収める（③ 12×7 が 1024px の画面で左にはみ出していた。10/29）
  *   6×6 などは今までと同じ大きさ（高さの決まりの方が小さい） */

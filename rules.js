@@ -751,10 +751,6 @@
   // 魔法を撃つ（術者の今の位置と向きから）
   // ---------------------------------------------------------------
 
-  // 展示ステージ③「ターンの終わりに1段ずつ」: このターンの発動でできたばかりの自然（s._fresh。発動の間だけある）は、
-  //   同じ発動のあとの構えには反応しない（火を点けても火山にならない、風が当たっても桜吹雪にならない。通れない自然なら、そこで止まる）
-  function isFresh(s, x, y) { return !!(s._fresh && s._fresh[idx(s, x, y)]); }
-
   // 【育つ】育つ範囲（(x,y) が元）。size: 1 そのマスだけ／4 2×2（元を角に、術者から見て奥・右へ）／5 十字／9 3×3
   //   ほかの数は、それ以下で一番近いもの。元に近い順（波の順）に並べ、d は元からの歩数
   function growArea(s, x, y, facing, size) {
@@ -897,7 +893,6 @@
       var o = unitAt(s, x, y);
       if (o) addHit(ctx, o, u.power, 'direct');
       if (ENEMY_ATTACK[u.magic]) { if (o) ctx.phrases.push(unitLabel(s, o) + 'に当たった'); return; }   // 展示ステージ③の敵の攻撃: 自然は作らない
-      if (isFresh(s, x, y)) return;   // 展示ステージ③ 1段ずつ: できたばかりの自然には反応しない（人への直撃はそのまま）
       var t = getTile(s, x, y);
       if (LX && LX.placeCell(s, u, x, y, t, o, facing, ctx, ev)) return;   // ラボ: 置く・点ける魔法の、案ごとの作用（ほかの作用より先に見る）
       // 人の足元にも自然ができる（ideas.natureUnderUnits）: 人がいても置く（ラボ C1 がオンなら今どおり置かない）。
@@ -1037,7 +1032,7 @@
       range.push(c);
       neighbors(s, c[0], c[1]).forEach(function (n) {
         var k = key(n.x, n.y);
-        if (seen[k] || getTile(s, n.x, n.y) !== 'mountain' || isFresh(s, n.x, n.y)) return;   // 展示ステージ③ 1段ずつ: できたばかりの山は火山にならない
+        if (seen[k] || getTile(s, n.x, n.y) !== 'mountain') return;
         seen[k] = true; dist[k] = dist[key(c[0], c[1])] + 1;
         queue.push([n.x, n.y]);
       });
@@ -1614,11 +1609,6 @@
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
-      if (isFresh(s, x, y)) {   // 展示ステージ③ 1段ずつ: できたばかりの自然には反応しない（通れない自然なら、そこで止まる）
-        if (!isPassable(t)) { ctx.phrases.push('できたばかりの' + tileName(t) + 'で風が止まった'); blocked = true; break; }
-        path.push([x, y]); ctx.cells.push([x, y]);
-        continue;
-      }
       // 【育つ】通り道に風が残っていれば、そこから奥が強風に育つ（術者の向きへ grow.galeLength マス）
       if (B.grow.enabled && breezeMode && galeAt < 0 && isWind(t)) {
         galeAt = path.length;
@@ -1746,7 +1736,6 @@
     var ctx = shoot(s, a, a.facing, ev);
     var changed = {};
     for (var i = 0; i < before.length; i++) if (before[i] !== s.tiles[i]) changed[i] = true;
-    if (s._fresh) Object.keys(changed).forEach(function (k) { s._fresh[k] = true; });   // 展示ステージ③ 1段ずつ: この発動でできた自然
     var extra = {};   // 決め手で変わったマスには、その決め手に関わった味方も残す（次の決め手へつながるように）
     for (var j = mark; j < ev.length; j++) {
       var e = ev[j];
@@ -1773,7 +1762,6 @@
   function fireStances(s, ev, step) {
     var ids = stanceList(s).map(function (a) { return a.id; });
     var links = newLinks();
-    if (B.simul.stepwise) s._fresh = {};   // 展示ステージ③ 1段ずつ
     ids.forEach(function (id, i) {
       if (s.result) return;
       var a = findUnit(s, id);
@@ -1784,7 +1772,6 @@
       if (ev[mark] && ev[mark].type === 'cast') ev[mark].order = i + 1;
       step();
     });
-    delete s._fresh;
     alliesOf(s).forEach(function (a) { delete a.stance; if (a.npc) a.intent = false; });
   }
 
@@ -2845,7 +2832,6 @@
     var sim = clone(s);
     var startUnits = clone(sim.units), startTiles = sim.tiles.slice();
     var ev = [], links = newLinks(), hit = {}, hitOrder = [], src = {}, finishers = [], grows = [], cells = {};
-    if (B.simul.stepwise) sim._fresh = {};   // 展示ステージ③ 1段ずつ
     stanceList(sim).forEach(function (a0) {
       if (sim.result) return;
       var a = findUnit(sim, a0.id);
@@ -2861,7 +2847,6 @@
       grows = grows.concat(ctx.grows);
       cells[a.id] = ctx.cells;
     });
-    delete sim._fresh;
     var tileChanges = [];
     for (var i = 0; i < sim.tiles.length; i++) {
       if (sim.tiles[i] !== startTiles[i]) tileChanges.push({ x: i % sim.size, y: Math.floor(i / sim.size), from: startTiles[i], to: sim.tiles[i] });
@@ -3001,10 +2986,8 @@
         combos: evs.filter(function (x) { return x.type === 'finisher' && x.combo; }).map(function (x) { return { name: x.name, ids: x.combo, magics: x.comboMagics }; }) });
     }
     if (LX && lab('F5')) LX.stancesOf(s).forEach(function (a0) { fire(out.allies, a0); });   // ラボ F5: 味方の構え（構えた順）
-    if (simulOn()) {   // 【一斉】味方の構え（構えた順。構える味方は最後）。展示ステージ③ 1段ずつ: できたばかりの自然には反応しない
-      if (B.simul.stepwise) sim._fresh = {};
+    if (simulOn()) {   // 【一斉】味方の構え（構えた順。構える味方は最後）
       stanceList(s).forEach(function (a0) { fire(out.allies, a0, true); });
-      delete sim._fresh;
     } else alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
     if (s.enemyActs) enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) { fire(out.enemies, e0); });
     if (sim.result) return out;
@@ -3082,14 +3065,12 @@
     if (!canStand(s0, x, y)) return fail(s0, '通れないマスには置けない');
     var s = clone(s0);
     if (side === 'ally') {
-      if (alliesOf(s).length >= B.ally.count) return fail(s0, '味方は' + B.ally.count + '人まで');
       var used = alliesOf(s).map(function (a) { return a.magic; });
       var mine = allyMagics(s);
       if (magic && mine.indexOf(magic) < 0) return fail(s0, magicName(magic) + 'は敵だけの魔法');
       var m = magic || B.ally.defaultMagics.filter(function (d) { return used.indexOf(d) < 0 && mine.indexOf(d) >= 0; })[0] || mine[0];
       return { ok: true, state: s, events: [], steps: [], unit: addAlly(s, m, x, y, 'up') };
     }
-    if (enemiesOf(s).length >= B.enemy.maxCount) return fail(s0, '敵は' + B.enemy.maxCount + '体まで');
     return { ok: true, state: s, events: [], steps: [], unit: addEnemy(s, magic || B.enemy.defaultMagic, x, y, 'down') };
   }
 
@@ -3529,7 +3510,7 @@
       ex: {
         spawn: { magic: 'bite', hp: 1 },                                     // 湧く取り巻き（間隔と上限は stage3.spawnEvery・spawnMax）
         missions: [{ id: 'volcano', tile: 'volcano', name: '火山を作る' }],   // 最初から出すミッション（表示名は texts.js の stages.ex3.mission）
-        fireModes: true      // 魔法の出し方（ターンの終わりに1段ずつ／ターンの終わりにつながる／撃った瞬間に発動）を画面で切り替える（開発モードだけ。展示モードはつながる）
+        fireModes: true      // 魔法の出し方（ターンの終わりにつながる／撃った瞬間に発動）を画面で切り替える（開発モードだけ。展示・作るモードはつながる）。「1段ずつ」はオーナー 10/30 で外した
         // 光るヒント・桜吹雪の前のため・倒したあとの大きな絵・ミッション達成の札と紙吹雪・桜吹雪の舞う花びらは、オーナー 10/17「いらない」で外した
         // 予測を形だけにする shapeOnly は、オーナー 10/29 からどのシナリオでも（balance.js の preview.shapeOnly）
       }

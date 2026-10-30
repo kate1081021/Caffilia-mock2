@@ -17,8 +17,12 @@
   // 行の「ターンの形」の指定が今の形に合うか（both / simul / single）
   function modeOk(line) { var m = (line && line.mode) || 'both'; return m === 'both' || m === (simul() ? 'simul' : 'single'); }
 
-  // 展示モード（mode.js。URL に #dev がないとき）: 遊ぶのに要るものだけを出す。隠すのは style.css、キーと進み方はここ
+  // 展示モード（mode.js。URL に印がないとき）: 遊ぶのに要るものだけを出す。隠すのは style.css、キーと進み方はここ
+  // 作るモード（#make。オーナー 10/30）: 展示と同じ決まり・同じ見え方で、エディット・テストプレイ・ステージの保存だけを足す。開くとエディットから
+  //   FIXED: 展示か作るモード。ターンの形は一斉、③の魔法の出し方はつながる、保存した調整は使わない（tune.js）
   var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
+  var MAKE = window.CAFILIA_MODE === 'make';
+  var FIXED = EXHIBIT || MAKE;
   var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①から始まり、クリアすると次へ
   var EXHIBIT_NEXT_MS = 2200;                     // クリアしてから次のステージを読むまでの間（会話の窓が出ていれば、閉じてから）
 
@@ -26,36 +30,34 @@
   function exOf(st) { st = st || app.state; return (st && st.ex) || null; }
   // 予測は魔法が届く形だけ（balance.js の preview.shapeOnly。前は展示ステージ③だけ、10/29 からどのシナリオでも）
   function shapeOnly() { return !!(B.preview && B.preview.shapeOnly) && !app.editMode; }
-  // 魔法の出し方: step ターンの終わりに1段ずつ（初期）／chain ターンの終わりにつながる／instant 撃った瞬間に発動。選んだ形は覚える
-  //   展示モードでは切り替えを出さず、いつも chain
+  // 魔法の出し方: chain ターンの終わりにつながる（初期）／instant 撃った瞬間に発動。選んだ形は覚える
+  //   展示・作るモードでは切り替えを出さず、いつも chain。「1段ずつ」（step）はオーナー 10/30 で外した（覚えていた step は chain になる）
   var EX_FIRE_KEY = 'caffilia-ex3-fire-mode';
-  var EX_FIRE = [['step', 'exFireStep', 'ターンの終わりに1段ずつ'], ['chain', 'exFireChain', 'ターンの終わりにつながる'], ['instant', 'exFireInstant', '撃った瞬間に発動']];
+  var EX_FIRE = [['chain', 'exFireChain', 'ターンの終わりにつながる'], ['instant', 'exFireInstant', '撃った瞬間に発動']];
   function exFireMode() {
-    if (EXHIBIT) return 'chain';
+    if (FIXED) return 'chain';
     var v = null;
     try { v = window.localStorage.getItem(EX_FIRE_KEY); } catch (e) { v = null; }
-    return EX_FIRE.some(function (x) { return x[0] === v; }) ? v : 'step';
+    return EX_FIRE.some(function (x) { return x[0] === v; }) ? v : 'chain';
   }
   // ステージ③を読むときだけ、ターンの形をその出し方にする（ステージ③を出たら元に戻す）
   function applyExFire(m) {
     if (!app.exTurnRestore) app.exTurnRestore = { turnMode: B.turnMode };
     B.turnMode = m === 'instant' ? 'single' : 'simul';
-    B.simul.stepwise = m === 'step';
     app.exFire = m;
     app.cache = {};
   }
   function restoreExFire() {
     if (app.exTurnRestore) { B.turnMode = app.exTurnRestore.turnMode; app.exTurnRestore = null; app.cache = {}; }
-    B.simul.stepwise = false;
     app.exFire = null;
   }
 
-  // 【一斉】ターンの形。選んだ形は覚える（読み書きは try/catch。使えなければ毎回、一斉から）。展示モードはいつも一斉
+  // 【一斉】ターンの形。選んだ形は覚える（読み書きは try/catch。使えなければ毎回、一斉から）。展示・作るモードはいつも一斉
   var TURN_KEY = 'caffilia-turn-mode';
   function simul() { return B.turnMode === 'simul'; }
   (function () {
     var saved = null;
-    if (EXHIBIT) { B.turnMode = 'simul'; return; }
+    if (FIXED) { B.turnMode = 'simul'; return; }
     try { saved = window.localStorage.getItem(TURN_KEY); } catch (e) { saved = null; }
     B.turnMode = saved === 'single' || saved === 'simul' ? saved : 'simul';
   })();
@@ -2359,7 +2361,7 @@
   }
   (function () {
     var saved = null;
-    if (EXHIBIT) return;   // 展示モード: くわしくは出さない（覚えた形も書き換えない）
+    if (FIXED) return;   // 展示・作るモード: くわしくは出さない（覚えた形も書き換えない）
     try { saved = window.localStorage.getItem(MORE_KEY); } catch (e) { saved = null; }
     setMore(saved === '1');
   })();
@@ -2449,7 +2451,7 @@
     if (el.turnModeLabel) el.turnModeLabel.textContent = ui('turnMode', 'ターンの形');
   }
   function setTurnMode(m) {
-    if (EXHIBIT) return;   // 展示モードは一斉に決めてある
+    if (FIXED) return;   // 展示・作るモードは一斉に決めてある
     if ((m !== 'simul' && m !== 'single') || m === B.turnMode) return;
     stopDemo();
     if (app.busy) skipPlayback();
@@ -2650,9 +2652,10 @@
     say('「' + name + '」を削除しました');
     render();
   });
+  // 新しいステージ: 今の盤面の大きさ（正方形）で、味方3人（初期の魔法）と敵1体から（R.createState の初めの形）
+  function newStage(size) { return { state: R.createState({ size: size }), name: '新しいステージ', texts: null }; }
   el.btnNewStage.addEventListener('click', function () {
-    var s = R.createState({ blank: true, size: app.state.size });
-    putDraft({ state: s, name: '新しいステージ', texts: null }, '空の盤面から作り始めた');
+    putDraft(newStage(app.state.size), '新しいステージから作り始めた（味方3人・敵1体）');
   });
   function stageFile() {
     return SIO.toFile({ name: app.draft.name, def: SIO.toDef(R, app.state, app.draft.name), texts: app.draft.texts, savedAt: new Date().toLocaleString('ja-JP') });
@@ -2708,8 +2711,8 @@
     }
     if (app.runLock && /^[zZeE]$/.test(k)) return;   // 進行モックの戦闘中は、1手戻す・エディットを使わない
     // 展示モード: 出しているものの操作だけ（味方 1〜、向き、構える Enter・その場で Space・待機 W、発動 T、1手戻す Z、クリアする C、取り消し Esc）。
-    //   エディット E・ラボの Q・B・K は使わない
-    if (EXHIBIT && !(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter| |w|W|t|T|z|Z|c|C|Escape)$/.test(k))) return;
+    //   エディット E・ラボの Q・B・K は使わない。作るモードは、これに エディット ⇄ テストプレイ の E を足す
+    if (FIXED && !(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter| |w|W|t|T|z|Z|c|C|Escape)$/.test(k) || (MAKE && /^[eE]$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
@@ -2796,7 +2799,17 @@
   // 最初は遊び方が分かりやすいシナリオで始める【仮】。展示モードはチュートリアル①から
   var FIRST_SCENARIO = EXHIBIT ? EXHIBIT_STAGES[0] : 'spread';
   addLog('ようこそ。敵の予告（紫）を見てから、味方を選び、立ち位置と向きを決めて撃ってください', 'system');
-  if (R.findPreset(FIRST_SCENARIO)) {
+  if (MAKE) {
+    // 作るモード: 開くとエディットから。前に作りかけがあればその続き、なければ新しいステージ
+    var last = draftSlot().cur, lb = last && SIO.build(R, last.def), nd = newStage(B.boardSize);
+    if (lb && lb.ok) { delete lb.state.stage; nd = { state: lb.state, name: last.name, texts: last.texts, exKeep: last.exKeep || null }; }
+    app.draft = { state: nd.state, name: nd.name, texts: fillTexts(nd.texts, nd.name), exKeep: nd.exKeep || null };
+    app.editHist = []; app.history = [];
+    app.editMode = true;
+    app.state = R.clone(app.draft.state);
+    addLog('作るモード: 「' + app.draft.name + '」' + (lb && lb.ok ? 'の続きから' : 'を作る') + '（E で ▶ テストプレイ）', 'system');
+    render();
+  } else if (R.findPreset(FIRST_SCENARIO)) {
     loadScenario(FIRST_SCENARIO);
     if (EXHIBIT) app.history = [];   // 始まりより前には戻らない
   } else {
