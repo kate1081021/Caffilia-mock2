@@ -22,7 +22,7 @@
   //   どちらのモードも、ターンの形は一斉（③も「つながる」）、数値は balance.js の値のまま。
   //   調整パネル・ターンの形・魔法の出し方の切り替えなどは IMPROVE_v3 段1（オーナー 10/30）でアーカイブした（archive/開発モード_20261030/）
   var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
-  var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①から始まり、クリアすると次へ
+  var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①②③（展示の並びの初めの形）
   var EXHIBIT_NEXT_MS = 2200;                     // クリアしてから次のステージを読むまでの間（会話の窓が出ていれば、閉じてから）
 
   // 展示ステージ③（s.ex）: 画面の見せ方（ミッション）
@@ -76,6 +76,9 @@
     editHist: [],         // エディットの「1手戻す」の履歴。テストプレイの履歴とは分けて、エディットに戻ると続きから戻せる
     layout0: null,        // 今のシナリオの遊び始める前の盤面（テストプレイ中でないときに E を押すと、ここから作り始める）
     home: false,          // 開発モードの最初の画面（ステージの一覧）を出している（IMPROVE_v3 段2）
+    homeView: 'list',     // 最初の画面のどれを出しているか（開発: list・lineup／展示: title・pick・thanks・clear）
+    run: null,            // 展示モードで遊んでいる並び { kind: start（はじめから）か pick（選んで）, list, i }（IMPROVE_v3 段3）
+    lineupDraft: null,    // 開発モードの「展示の並び」で並べ替え中の並び（「この並びで展示する」まで展示は変えない）
     flash: {},
     hl: {},
     message: null,
@@ -412,19 +415,17 @@
     exAfterPlayback();
     exhibitAfterPlayback();
   }
-  // 展示モード: ステージをクリアしたら、少し見せてから次のステージへ（会話の窓が出ていれば、閉じてから）。③のあとは止まる
+  // 展示モード: ステージをクリアしたら、少し見せてから次へ（会話の窓が出ていれば、閉じてから）（IMPROVE_v3 段3）
+  //   はじめから遊ぶ: 並びの次のステージへ。最後のあとは「ありがとう！」。選んで遊ぶ: 「クリア！」
   function exhibitAfterPlayback() {
-    var st = app.state;
-    if (!EXHIBIT || app.editMode || st.result !== 'win') return;
-    var next = EXHIBIT_STAGES[EXHIBIT_STAGES.indexOf(app.scenario) + 1];
-    if (!next || EXHIBIT_STAGES.indexOf(app.scenario) < 0) return;
+    var st = app.state, run = app.run;
+    if (!EXHIBIT || app.editMode || st.result !== 'win' || !run) return;
     clearTimeout(exhibitAfterPlayback.timer);
     exhibitAfterPlayback.timer = setTimeout(function () {
       var go = function () {
-        if (app.state !== st || app.busy || app.editMode) return;   // 待っている間に1手戻した・ほかを読んだ
-        loadScenario(next);
-        app.history = [];   // 前のステージには「1手戻す」で戻らない
-        render();
+        if (app.state !== st || app.busy || app.editMode || app.run !== run) return;   // 待っている間に1手戻した・ほかを読んだ
+        if (run.kind === 'start' && run.i + 1 < run.list.length) exhibitPlay('start', run.list, run.i + 1);
+        else exhibitScreen(run.kind === 'start' ? 'thanks' : 'clear');
       };
       if (app.afterDialog) app.afterDialog(go); else go();
     }, EXHIBIT_NEXT_MS);
@@ -740,7 +741,7 @@
     if (d.key !== d.name && stages[d.name]) d.name = uniqueName(d.name, stages);   // ほかの自分のステージには上書きしない
     var rec = draftRecord(), moved = d.key !== d.name;
     keepDraft.last = JSON.stringify([d.name, rec]);
-    if (d.key && moved) delete stages[d.key];
+    if (d.key && moved) { delete stages[d.key]; renameInLineup(d.key, d.name); }   // 展示の並びに入っていれば、そこの名前も付け替える
     rec.at = Date.now();
     stages[d.name] = rec;
     d.key = d.name;
@@ -2000,6 +2001,180 @@
   });
 
   // ---------------------------------------------------------------
+  // 展示の並び（IMPROVE_v3 段3）: 展示モードで遊ぶステージと順番。開発モードの「展示の並び」で決める
+  //   { start: はじめから遊ぶ の順番, pick: 選んで遊ぶ に出すもの }。中身は 'tut:tut1'（チュートリアル）か 'my:名前'（自分のステージ）。
+  //   段3 では、このブラウザ（localStorage）に残し、自分のステージから足す。段4 で共有（Cloudflare）に置き、みんなのステージから足す形に替える
+  // ---------------------------------------------------------------
+  var LINEUP_KEY = 'cafilia-mock-exhibit-lineup';
+  function lineupDefault() { return { start: EXHIBIT_STAGES.map(function (id) { return 'tut:' + id; }), pick: [] }; }
+  function lineupGet() {
+    var v = null;
+    try { v = JSON.parse(window.localStorage.getItem(LINEUP_KEY) || 'null'); } catch (e) { v = null; }
+    return v && Array.isArray(v.start) && Array.isArray(v.pick) ? v : lineupDefault();
+  }
+  function lineupSet(v) { try { window.localStorage.setItem(LINEUP_KEY, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  function refKind(ref) { return String(ref).slice(0, String(ref).indexOf(':')); }
+  function refId(ref) { return String(ref).slice(String(ref).indexOf(':') + 1); }
+  // 並びの1つが、今あるステージか（自分のステージは、消すと見つからない。名前を変えたときは並びも付け替える）
+  function refOk(ref) {
+    if (refKind(ref) === 'tut') return EXHIBIT_STAGES.indexOf(refId(ref)) >= 0;
+    var rec = refKind(ref) === 'my' ? (stageStore() || {})[refId(ref)] : null;
+    return !!(rec && SIO.build(R, rec.def).ok);
+  }
+  function refName(ref) { return refKind(ref) === 'tut' ? stageName(R.findPreset(refId(ref))) : refId(ref); }
+  function inLineup(ref) { var v = lineupGet(); return v.start.indexOf(ref) >= 0 || v.pick.indexOf(ref) >= 0; }
+  function renameInLineup(from, to) {
+    var v = lineupGet(), a = 'my:' + from, b = 'my:' + to;
+    if (!inLineup(a)) return;
+    ['start', 'pick'].forEach(function (k) { v[k] = v[k].map(function (r) { return r === a ? b : r; }); });
+    lineupSet(v);
+  }
+  // 並びの1つを読む。自分のステージは、チュートリアルと同じ道で読む（R.PRESETS に足して loadScenario）
+  function loadRef(ref) {
+    if (refKind(ref) === 'tut') { loadScenario(refId(ref)); return; }
+    var name = refId(ref), rec = (stageStore() || {})[name], def = SIO.clone(rec.def);
+    def.id = SIO.PREFIX + name; def.name = name; def.custom = true; def.tutorial = true;
+    registerStage(def, fillTexts(rec.texts, name));
+    loadScenario(def.id);
+  }
+
+  // ---------------------------------------------------------------
+  // 展示モードの流れ（IMPROVE_v3 段3）
+  //   最初の画面 → [はじめから遊ぶ] 並び（はじめから）の順に1つずつ → ありがとう！
+  //             → [ステージを選んで遊ぶ] 並び（選んで遊ぶ）の一覧から1つ → クリア！
+  //   ありがとう！・クリア！では [最初の画面に戻る] [ほかのステージで遊ぶ]。文は texts.js の ui に置けば替わる（なければ【仮】の文）
+  // ---------------------------------------------------------------
+  // 遊べる並び（見つからないものは飛ばす）。どちらも空なら、チュートリアル①②③を「はじめから」にする【仮】
+  function exhibitLists() {
+    var v = lineupGet(), start = v.start.filter(refOk), pick = v.pick.filter(refOk);
+    if (!start.length && !pick.length) start = lineupDefault().start;
+    return { start: start, pick: pick };
+  }
+  function renderExhibitHome(view) {
+    var L = exhibitLists();
+    var btn = function (attr, label, cls) { return '<button type="button" class="' + (cls || 'home-stage') + '" ' + attr + '>' + esc(label) + '</button>'; };
+    var back = btn('data-ex="title"', ui('exBackTitle', '最初の画面に戻る'));
+    var other = L.pick.length ? btn('data-ex="pick"', ui('exOther', 'ほかのステージで遊ぶ'), 'primary home-stage') : '';
+    if (view === 'pick') {
+      el.home.innerHTML = '<h2 class="ex-head">' + esc(ui('exPick', 'ステージを選んで遊ぶ')) + '</h2>' +
+        '<div class="home-list ex-menu">' + L.pick.map(function (r) { return btn('data-play="' + esc(r) + '"', refName(r)); }).join('') + '</div>' +
+        '<div class="home-list ex-menu">' + back + '</div>';
+    } else if (view === 'thanks' || view === 'clear') {
+      el.home.innerHTML = '<h2 class="ex-head big">' + esc(view === 'thanks' ? ui('exThanks', 'ここまで遊んでくれてありがとう！') : ui('exClear', 'クリア！')) + '</h2>' +
+        '<div class="home-list ex-menu">' + back + other + '</div>';
+    } else {
+      el.home.innerHTML = '<h2 class="ex-head big">' + esc(ui('exTitle', 'カフィーリア')) + '</h2>' +
+        '<div class="home-list ex-menu">' +
+        (L.start.length ? btn('data-ex="start"', ui('exStart', 'はじめから遊ぶ'), 'primary home-stage') : '') +
+        (L.pick.length ? btn('data-ex="pick"', ui('exPick', 'ステージを選んで遊ぶ')) : '') + '</div>';
+    }
+  }
+  // 並びの i 番目から遊ぶ（見つからなくなったものは飛ばす）
+  function exhibitPlay(kind, list, i) {
+    while (i < list.length && !refOk(list[i])) i++;
+    if (i >= list.length) { exhibitScreen(kind === 'start' ? 'thanks' : 'clear'); return; }
+    app.run = { kind: kind, list: list, i: i };
+    showHome(false);
+    loadRef(list[i]);
+    app.history = [];   // 前のステージには「1手戻す」で戻らない
+    render();
+  }
+  function exhibitScreen(view) {
+    if (app.busy) skipPlayback();
+    if (app.closeDialog) app.closeDialog();
+    app.run = null;
+    app.sel = null; clearPlans();
+    app.history = [];
+    showHome(true, view);
+    render();
+  }
+
+  // ---------------------------------------------------------------
+  // 開発モードの「展示の並び」（IMPROVE_v3 段3）: 開いたときに注意を出す。並べ替え（ドラッグ）・外す・足すは、
+  //   「この並びで展示する」→ 確かめで「はい」を押すまで展示モードを変えない（app.lineupDraft の中だけ）
+  // ---------------------------------------------------------------
+  function lineupDirty() { return JSON.stringify(app.lineupDraft) !== JSON.stringify(lineupGet()); }
+  function renderLineup() {
+    var d = app.lineupDraft, dirty = lineupDirty();
+    var item = function (list, r, i) {
+      var ok = refOk(r);
+      return '<li class="lu-item' + (ok ? '' : ' missing') + '" data-i="' + i + '">' +
+        '<span class="lu-grip" data-grip="' + list + '" title="ドラッグで並び替え">≡</span>' +
+        '<span class="lu-name">' + esc(refName(r)) + '<small>' + (refKind(r) === 'tut' ? 'チュートリアル' : '自分のステージ') + '</small>' +
+        (ok ? '' : '<small class="danger">見つからない（展示では飛ばす）</small>') + '</span>' +
+        '<button type="button" class="lu-out" data-out="' + list + '" data-i="' + i + '">外す</button></li>';
+    };
+    var sec = function (list, title, note) {
+      return '<section class="home-sec"><h3>' + esc(title) + ' <small>' + esc(note) + '</small></h3><ol class="lu-list" data-list="' + list + '">' +
+        (d[list].length ? d[list].map(function (r, i) { return item(list, r, i); }).join('') : '<li class="lu-empty muted">まだありません（展示では、この段のボタンを出さない）</li>') + '</ol></section>';
+    };
+    var opts = EXHIBIT_STAGES.map(function (id) { return '<option value="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '（チュートリアル）</option>'; }).join('') +
+      ownList().map(function (nm) { return '<option value="my:' + esc(nm) + '">' + esc(nm) + '（自分のステージ）</option>'; }).join('');
+    el.home.innerHTML = '<h2>展示の並び <small>展示モードで遊ぶステージと順番</small></h2>' +
+      '<p class="lu-warn">⚠ 注意！ここを変えると、展示モードの並びが変わります（今はこのブラウザの展示モード。共有ができたら、どのパソコンでも変わります）</p>' +
+      sec('start', 'はじめから遊ぶ の順番', 'ドラッグで並び替え') +
+      sec('pick', '選んで遊ぶ に出すもの', '開発で選んだものだけが、展示の一覧に出る') +
+      '<section class="home-sec"><h3>＋ 足す <small>チュートリアル・自分のステージから（共有ができたら、みんなのステージから）</small></h3>' +
+      '<div class="row"><select id="luAdd" aria-label="足すステージ">' + opts + '</select>' +
+      '<button type="button" data-add="start">はじめから に足す</button><button type="button" data-add="pick">選んで遊ぶ に足す</button></div></section>' +
+      '<div class="home-list"><button type="button" class="primary" data-lu-save="1"' + (dirty ? '' : ' disabled') + '>この並びで展示する</button>' +
+      '<button type="button" data-lu-back="1">' + (dirty ? 'やめて一覧に戻る（変えたところは捨てる）' : '一覧に戻る') + '</button></div>' +
+      (dirty ? '<p class="note">まだ展示モードは変わっていません。「この並びで展示する」を押すと変わります。</p>' : app.lineupSaved ? '<p class="note">展示モードの並びを、この並びにしました。</p>' : '');
+  }
+  function lineupAction(b) {
+    var d = app.lineupDraft;
+    app.lineupSaved = false;
+    if (b.hasAttribute('data-out')) { d[b.getAttribute('data-out')].splice(Number(b.getAttribute('data-i')), 1); renderLineup(); return true; }
+    if (b.hasAttribute('data-add')) {
+      var list = b.getAttribute('data-add'), ref = (el.home.querySelector('#luAdd') || {}).value;
+      if (!ref) return true;
+      if (d[list].indexOf(ref) >= 0) { window.alert('「' + refName(ref) + '」は、もうこの段に入っています'); return true; }
+      d[list].push(ref);
+      renderLineup();
+      return true;
+    }
+    if (b.hasAttribute('data-lu-save')) {
+      if (!window.confirm('本当に変えますか？\n展示モードの並びが、この並びに変わります。')) return true;
+      if (!lineupSet(d)) { window.alert('残せませんでした'); return true; }
+      app.lineupDraft = SIO.clone(d);
+      app.lineupSaved = true;
+      renderLineup();
+      return true;
+    }
+    if (b.hasAttribute('data-lu-back')) { app.homeView = 'list'; renderHome(); return true; }
+    return false;
+  }
+  // ドラッグで並び替え（≡ をつかむ。同じ段の中で動かす）
+  (function () {
+    var drag = null;
+    el.home.addEventListener('pointerdown', function (e) {
+      var g = e.target.closest && e.target.closest('[data-grip]');
+      if (!g || e.button > 0) return;
+      e.preventDefault();
+      var li = g.closest('.lu-item');
+      drag = { list: g.getAttribute('data-grip'), li: li, ol: li.parentNode };
+      li.classList.add('dragging');
+      try { g.setPointerCapture(e.pointerId); } catch (x) { /* つかめなくても、押した所までは動く */ }
+    });
+    el.home.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var items = Array.prototype.filter.call(drag.ol.children, function (x) { return x !== drag.li && x.classList.contains('lu-item'); });
+      var before = items.filter(function (x) { var r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; })[0] || null;
+      if (before !== drag.li.nextSibling) drag.ol.insertBefore(drag.li, before);
+    });
+    var end = function () {
+      if (!drag) return;
+      var d = app.lineupDraft, old = d[drag.list];
+      d[drag.list] = Array.prototype.map.call(drag.ol.querySelectorAll('.lu-item'), function (x) { return old[Number(x.getAttribute('data-i'))]; });
+      drag = null;
+      app.lineupSaved = false;
+      renderLineup();
+    };
+    el.home.addEventListener('pointerup', end);
+    el.home.addEventListener('pointercancel', end);
+  })();
+
+  // ---------------------------------------------------------------
   // 開発モードの最初の画面（IMPROVE_v3 段2）: チュートリアルと自分のステージの一覧
   //   ステージを押すと遊ぶ側で開く（E で作る側へ。チュートリアルは「〜のコピー」が自分のステージにできる）。
   //   「＋ 新しく作る」は作る側で開く。自分のステージは確かめてから消せる。⌂ で、いつでもここへ戻る（作っていた盤面は残る）
@@ -2009,6 +2184,8 @@
     return Object.keys(stages).sort(function (a, b) { return (stages[b].at || 0) - (stages[a].at || 0); });   // 新しく直した順
   }
   function renderHome() {
+    if (EXHIBIT) { renderExhibitHome(app.homeView); return; }
+    if (app.homeView === 'lineup') { renderLineup(); return; }
     var stages = stageStore(), mine = ownList(), mig = migrateInfo();
     el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
       '<section class="home-sec"><h3>チュートリアル <small>作る側にすると、写しが自分のステージにできる（元は変わらない）</small></h3><div class="home-list">' +
@@ -2022,10 +2199,13 @@
       (stages === null ? '<p class="note">この環境ではブラウザに残せません。エディットの「ファイルに書き出す」を使ってください。</p>' : '') +
       (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
       '</section>' +
-      '<button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>';
+      '<div class="home-list"><button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>' +
+      '<button type="button" class="home-new" data-lineup="1">展示の並び</button></div>';
   }
-  function showHome(on) {
+  // 最初の画面を出す・しまう。view: 開発は 'list'（一覧）・'lineup'（展示の並び）、展示は 'title'・'pick'・'thanks'・'clear'
+  function showHome(on, view) {
     app.home = on;
+    if (on) app.homeView = view || (EXHIBIT ? 'title' : 'list');
     el.home.hidden = !on;
     document.body.classList.toggle('at-home', on);
     if (on) renderHome();
@@ -2071,6 +2251,7 @@
   function deleteOwn(name) {
     var stages = stageStore();
     if (!stages || !stages[name]) return;
+    if (inLineup('my:' + name)) { window.alert('「' + name + '」は展示の並びに入っているので消せません。展示の並びから外すと消せます'); return; }
     if (!window.confirm('自分のステージ「' + name + '」を消します。元に戻せません。消しますか？')) return;
     delete stages[name];
     if (!stageStoreSet(stages)) { window.alert('消せませんでした'); return; }
@@ -2080,6 +2261,15 @@
   el.home.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('button');
     if (!b) return;
+    if (EXHIBIT) {   // 展示モードの最初の画面・ありがとう！・選んで遊ぶ
+      var ex = b.getAttribute('data-ex'), play = b.getAttribute('data-play');
+      if (ex === 'start') exhibitPlay('start', exhibitLists().start, 0);
+      else if (ex) exhibitScreen(ex);
+      else if (play) exhibitPlay('pick', [play], 0);
+      return;
+    }
+    if (app.homeView === 'lineup') { lineupAction(b); return; }
+    if (b.hasAttribute('data-lineup')) { app.lineupDraft = lineupGet(); app.lineupSaved = false; app.homeView = 'lineup'; renderLineup(); return; }
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }
     var open = b.getAttribute('data-open') || '', kind = open.slice(0, open.indexOf(':')), name = open.slice(open.indexOf(':') + 1);
@@ -2162,11 +2352,13 @@
     b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   })();
 
-  // 展示モードはチュートリアル①から。開発モードは最初の画面（ステージの一覧）から
+  // 展示モードは最初の画面（はじめから遊ぶ・ステージを選んで遊ぶ）から。開発モードは最初の画面（ステージの一覧）から
   addLog('ようこそ。敵の予告（紫）を見てから、味方を選び、立ち位置と向きを決めて撃ってください', 'system');
   if (EXHIBIT) {
-    loadScenario(EXHIBIT_STAGES[0]);
-    app.history = [];   // 始まりより前には戻らない
+    app.state = begin(app.state);
+    app.resetPoint = R.clone(app.state);
+    showHome(true, 'title');
+    render();
   } else {
     migrateOldStages();   // 段0: 前の作りかけ・前の保存を、自分のステージに一度だけ移す
     app.state = begin(app.state);

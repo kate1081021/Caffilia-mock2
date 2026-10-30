@@ -978,6 +978,26 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
 .home-own .home-stage { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .home-own .home-del { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; padding: 0 10px; color: var(--muted); font-size: 12px; }
 .home-new { align-self: flex-start; min-height: 44px; padding: 6px 20px; font-size: 15px; }
+/* 展示モードの最初の画面・ありがとう！・クリア！・選んで遊ぶ（IMPROVE_v3 段3）: 真ん中に大きく */
+html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 12vh; }
+.ex-head { margin: 0; font-size: 26px; }
+.ex-head.big { font-size: 34px; letter-spacing: .04em; }
+.ex-menu { justify-content: center; }
+.ex-menu .home-stage { min-height: 56px; min-width: 12em; padding: 8px 24px; font-size: 18px; }
+/* 開発モードの「展示の並び」（IMPROVE_v3 段3）: ≡ をつかんでドラッグで並び替え */
+.lu-warn { margin: 0; padding: 8px 12px; border: 2px solid #f59e0b; border-radius: 10px; background: #fef3c7; color: #92400e; font-weight: bold; }
+.lu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: lu; }
+.lu-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fffdf8; counter-increment: lu; }
+.lu-item::before { content: counter(lu); min-width: 1.4em; text-align: center; font-weight: bold; color: var(--muted); }
+.lu-item.dragging { box-shadow: 0 6px 16px rgba(0, 0, 0, .18); border-color: var(--ally); }
+.lu-item.missing .lu-name { color: var(--muted); text-decoration: line-through; }
+.lu-grip { cursor: grab; touch-action: none; user-select: none; font-size: 20px; line-height: 1; padding: 4px 6px; color: var(--muted); }
+.lu-item.dragging .lu-grip { cursor: grabbing; }
+.lu-name { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.lu-name small { color: var(--muted); font-size: 12px; }
+.lu-name small.danger { color: #b91c1c; text-decoration: none; }
+.lu-out { font-size: 12px; padding: 2px 10px; }
+.lu-empty { padding: 4px 2px; }
 
 /* ---------------------------------------------------------------
  * 展示モード（mode.js。URL に印がないとき。オーナー 10/29）
