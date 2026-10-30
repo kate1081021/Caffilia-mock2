@@ -550,9 +550,57 @@ body:not(.show-more) .preview-box.idle { display: none; }         /* 予測も�
   font-size: 10px; color: #fff; font-weight: bold;
   border: 1px solid rgba(0, 0, 0, .15);
 }
-.unit-list { display: flex; flex-direction: column; gap: 4px; }
-.unit-list .u-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
-.unit-list .u-row b { min-width: 6.5em; }
+/* ユニット（オーナー 10/30）: 置く道具は盤面の駒と同じ見た目。駒の一覧と、選んだ1体のカード */
+.unit-tools .ut-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.unit-tools .ut-label { width: 2.5em; font-size: 12px; color: var(--muted); }
+.unit-tools .ut-btn { padding: 4px 10px; font-size: 13px; }
+.ut-piece {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: bold; font-size: 14px; line-height: 1;
+}
+.ut-piece.ally { background: #fff; border: 3px solid var(--ally); color: var(--ally); }
+.ut-piece.enemy { background: var(--enemy); border: 3px solid #7f1010; color: #fff; }
+.ut-piece.active, .unit-tools .ut-btn.active { box-shadow: 0 0 0 3px var(--gold), 0 0 8px 2px rgba(245, 197, 24, .8); }
+.unit-tools .ut-btn.active { background: #fff7d6; border-color: #d4a017; color: #5b4300; font-weight: bold; }
+.ut-piece.ally.active { background: #fff; color: var(--ally); }
+.ut-piece.enemy.active { background: var(--enemy); color: #fff; }
+.unit-list { display: flex; flex-direction: column; gap: 8px; }
+.u-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.u-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px 2px 2px; border-radius: 16px; font-size: 12px; }
+.u-chip.on { background: #fff7d6; border-color: #d4a017; box-shadow: 0 0 0 2px var(--gold); }
+.u-chip .chip-dir { color: var(--muted); }
+.chip-piece {
+  min-width: 24px; height: 24px; padding: 0 4px; box-sizing: border-box; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: bold; font-size: 12px; line-height: 1; white-space: nowrap;
+}
+.chip-piece.ally { background: #fff; border: 2px solid var(--ally); color: var(--ally); }
+.chip-piece.enemy { background: var(--enemy); border: 2px solid #7f1010; color: #fff; }
+.chip-piece.object { border-radius: 5px; color: #fff; background: #0f766e; border: 2px solid #083c37; }
+.chip-piece.object.village { background: #b45309; border-color: #5b2a06; }
+.u-card { border: 2px solid #d4a017; border-radius: 8px; background: #fff; padding: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.u-card-head { display: flex; align-items: center; gap: 6px; }
+.u-card-head .chip-piece { min-width: 30px; height: 30px; border-radius: 15px; font-size: 14px; }
+.u-card-head .u-del { margin-left: auto; font-size: 12px; padding: 2px 8px; }
+.u-card-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.u-card .lbl { width: 3.5em; flex: 0 0 auto; font-size: 12px; color: var(--muted); }
+.u-card .u-magics { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+.u-card-row:has(.u-magics) { flex-wrap: nowrap; align-items: flex-start; }
+.u-card-row:has(.u-magics) .lbl { line-height: 30px; }
+.u-card .u-magics .ut-piece { width: 30px; height: 30px; font-size: 13px; }
+.u-card .u-dirs { display: flex; gap: 4px; }
+.u-card .u-dirs button { width: 32px; height: 28px; padding: 0; font-size: 15px; }
+.u-card .u-dirs button.active { background: var(--ally); border-color: var(--ally); color: #fff; }
+.u-card.enemy .u-dirs button.active { background: var(--enemy); border-color: var(--enemy); }
+.u-card-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 6px; align-items: center; }
+.u-card-grid select { min-width: 0; font-size: 12px; }
+.u-card select { max-width: 100%; }
+.u-card-empty { margin: 0; font-size: 12px; color: var(--muted); }
+/* エディット中は、パネルだけをスクロールして盤面を見たままにする（横に並ぶときだけ） */
+@media (min-width: 981px) {
+  .edit-panel { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto; box-sizing: border-box; }
+}
 #boardSize { width: 4em; }
 #saveName { flex: 1; min-width: 8em; }
 #savedList { flex: 1; min-width: 8em; }

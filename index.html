@@ -122,6 +122,20 @@
         <h2>エディット <small>ステージを作って、すぐ遊んで確かめる</small></h2>
         <button id="btnTestPlay" type="button" class="primary test-play">▶ テストプレイ <kbd>E</kbd></button>
         <p class="note">テストプレイから E（「✎ エディットに戻る」）で、作っていた盤面のまま戻ります。</p>
+        <!-- ユニット（オーナー 10/30）: 置くものを選んでマスをクリック。駒をクリックすると、その1体の設定だけが下に出る -->
+        <div class="edit-group edit-units">
+          <h3>ユニット <small>駒をクリックで設定、ドラッグで移動</small></h3>
+          <div id="unitTools" class="unit-tools"></div>
+          <div id="unitList" class="unit-list"></div>
+        </div>
+        <div class="edit-group">
+          <h3>置きもの <small>クリックで置く／もう一度で外す</small></h3>
+          <div id="missionTools" class="palette unit-tools"></div>
+        </div>
+        <div class="edit-group">
+          <h3>地形を塗る <small>ドラッグで続けて塗れる。山の頂上と斜面は自動で決まる</small></h3>
+          <div id="tilePalette" class="palette"></div>
+        </div>
         <div class="edit-group">
           <h3>ステージ</h3>
           <div class="row">
@@ -147,22 +161,6 @@
             <label id="winTurnsLabel">ターン <input id="winTurns" type="number" min="1" max="30" step="1" value="5"></label>
           </div>
           <p id="winNote" class="note"></p>
-        </div>
-        <div class="edit-group">
-          <h3>地形を塗る <small>ドラッグで続けて塗れる。山の頂上と斜面は自動で決まる</small></h3>
-          <div id="tilePalette" class="palette"></div>
-        </div>
-        <div class="edit-group">
-          <h3>ユニット</h3>
-          <div id="unitTools" class="palette unit-tools"></div>
-        </div>
-        <div class="edit-group">
-          <h3>置きもの <small>クリックで置く／もう一度で外す</small></h3>
-          <div id="missionTools" class="palette unit-tools"></div>
-        </div>
-        <div class="edit-group">
-          <h3>ユニットの魔法・向き・動き方・HP</h3>
-          <div id="unitList" class="unit-list"></div>
         </div>
         <div class="edit-group row">
           <label class="toggle"><input id="enemyActs" type="checkbox" checked> 敵が行動する</label>

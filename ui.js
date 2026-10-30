@@ -130,7 +130,7 @@
     busy: false,          // 演出を再生中
     playback: null,
     editMode: false,
-    editTool: 'tile:forest',
+    editTool: 'pick',
     editPick: null,
     stroke: null,
     // エディットとテストプレイ（オーナー 10/30）
@@ -712,7 +712,8 @@
     app.state = h.state;
     if (app.editMode) { if (h.meta) setDraftMeta(h.meta); }   // エディット: ログは消さない（あいだのテストプレイのログが残る）
     else app.log.length = h.logLen;
-    app.sel = null; app.plan = null; app.editPick = null;
+    app.sel = null; app.plan = null;
+    if (!app.editMode) app.editPick = null;   // エディット: 選んでいた駒は、戻したあともいれば選んだまま
     render();
   }
 
@@ -1190,32 +1191,42 @@
     var st = app.state;
     var res;
     if (tool.indexOf('tile:') === 0) res = R.editPaint(st, x, y, tool.slice(5));
+    else if (tool === 'pick' || tool === 'enemy' || tool.indexOf('ally:') === 0) {
+      // 選ぶ・置く（オーナー 10/30）: 駒を押すと選んでドラッグで動かす。空きマスは、置く道具なら置く、選ぶ道具なら選ぶのをやめる
+      var drag = app.stroke && app.stroke.drag;
+      if (dragging) {
+        if (!drag) return;
+        var du = R.findUnit(st, drag.id);
+        if (!du || (du.x === x - drag.dx && du.y === y - drag.dy)) return;
+        res = R.editMoveUnit(st, drag.id, x - drag.dx, y - drag.dy);
+        var mv = res.ok && R.findUnit(res.state, drag.id);
+        if (mv && mv.size > 1 && SIO.fits(R, res.state, mv)) res = null;   // 大きい敵は体の全部が収まる所だけ
+        if (!res || !res.ok) return;
+      } else {
+        var at = R.unitAt(st, x, y);
+        if (at) {
+          app.editPick = at.id;
+          if (app.stroke) app.stroke.drag = { id: at.id, dx: x - at.x, dy: y - at.y };
+          render();
+          return;
+        }
+        if (tool === 'pick') { if (app.editPick) { app.editPick = null; render(); } return; }
+        res = tool === 'enemy' ? R.editPlaceUnit(st, 'enemy', x, y) : R.editPlaceUnit(st, 'ally', x, y, tool.slice(5));
+        if (res.ok) app.editPick = res.unit.id;   // 置いた駒をそのまま選ぶ（カードで設定できる）
+      }
+    }
     else if (dragging) return;
-    else if (tool === 'ally') res = R.editPlaceUnit(st, 'ally', x, y);
-    else if (tool === 'enemy') res = R.editPlaceUnit(st, 'enemy', x, y);
-    else if (tool === 'remove') { var rm = R.unitAt(st, x, y); res = R.editRemoveUnit(st, rm ? rm.x : x, rm ? rm.y : y); }   // 大きい敵は体のどこを押しても消える
+    else if (tool === 'remove') {
+      var rm = R.unitAt(st, x, y);
+      res = R.editRemoveUnit(st, rm ? rm.x : x, rm ? rm.y : y);   // 大きい敵は体のどこを押しても消える
+      if (res.ok && rm && rm.id === app.editPick) app.editPick = null;
+    }
     else if (tool.indexOf('obj:') === 0) {
       var here = R.unitAt(st, x, y);
       res = here && here.side === 'object' && here.kind === tool.slice(4) ? R.editRemoveUnit(st, x, y) : R.editPlaceObject(st, tool.slice(4), x, y);
     }
     else if (tool.indexOf('mark:') === 0) res = R.editToggleCell(st, tool.slice(5), x, y);
     else if (tool === 'treasure') res = R.editPlaceTreasure(st, x, y);
-    else if (tool === 'rotate') {
-      var o = R.unitAt(st, x, y);
-      if (!o) { say('向きを変えるユニットをクリック'); return; }
-      var order = R.DIR_ORDER;
-      res = R.editSetFacing(st, o.id, order[(order.indexOf(o.facing) + 1) % 4]);
-    } else if (tool === 'move') {
-      if (!app.editPick) {
-        var occ = R.unitAt(st, x, y);
-        if (occ) { app.editPick = occ.id; render(); } else say('動かすユニットをクリック');
-        return;
-      }
-      res = R.editMoveUnit(st, app.editPick, x, y);
-      var mu = res.ok && R.findUnit(res.state, app.editPick);
-      if (mu && mu.size > 1) { var bad = SIO.fits(R, res.state, mu); if (bad) res = { ok: false, error: bad }; }   // 大きい敵は体の全部が収まる所だけ
-      app.editPick = null;
-    }
     if (!res) return;
     if (!res.ok) {
       if (res.error !== '同じ地形' && !dragging) say(res.error);
@@ -1865,7 +1876,7 @@
         }
         if (unit) {
           inner += unitHtml(unit, st, {
-            selected: u && unit.id === u.id,
+            selected: (u && unit.id === u.id) || (app.editMode && unit.id === app.editPick),
             facing: (u && unit.id === u.id) ? app.plan.dir : null,
             warn: warn[unit.id],
             dmg: dmg[unit.id],
@@ -1904,7 +1915,7 @@
     var st = app.state;
     var fc = forecastNow();
     var fcAll = forecastNow(true);
-    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.plans, app.editTool, st.units, st.enemyActs, st.size, st.h, st.ex, st.spawn, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer,
+    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.plans, app.editTool, app.editPick, st.units, st.enemyActs, st.size, st.h, st.ex, st.spawn, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer,
       app.editMode && app.draft ? [app.draft.name, app.draft.texts] : null]);
     if (app.editMode) keepDraft();   // 作りかけを残す（同じなら書かない）
     if (sig === sideSig) return;
@@ -2079,6 +2090,51 @@
     try { window.localStorage.setItem(STORE_KEY, JSON.stringify(obj)); storeVersion++; return true; } catch (e) { return false; }
   }
 
+  // エディット: 駒の一覧に出す短い名前（盤面の駒と同じ文字）
+  function chipName(u) {
+    if (u.side === 'object') return R.OBJECT_INFO[u.kind].name;
+    if (u.side === 'ally') return R.magicName(u.magic);
+    return u.stand === 'boss' ? 'ボス' : (u.stand === 'float' ? '取り巻き' : '敵') + u.letter;
+  }
+  // エディット: 選んだ1体の設定（魔法・向き・指示か動き方・HP）
+  function unitCardHtml(st, u) {
+    var id = u.id;
+    var h = '<div class="u-card ' + u.side + '"><div class="u-card-head">' +
+      '<span class="chip-piece ' + u.side + (u.side === 'object' ? ' ' + u.kind : '') + '">' + esc(chipName(u)) + '</span>' +
+      '<b>' + esc(R.unitLabel(st, u)) + '</b><span class="muted">(' + u.x + ',' + u.y + ')</span>' +
+      '<button type="button" class="u-del" data-uact="remove" data-id="' + id + '" title="消す（Delete）">消す</button></div>';
+    if (u.side === 'object') return h + '<div class="u-card-row muted">HP ' + u.maxHp + '</div></div>';
+    h += '<div class="u-card-row"><span class="lbl">魔法</span>';
+    if (u.side === 'ally') {
+      h += '<span class="u-magics">' + R.allyMagics(st).map(function (m) {
+        return '<button type="button" class="ut-piece ally' + (u.magic === m ? ' active' : '') + '" data-uact="magic" data-v="' + m + '" data-id="' + id + '">' + esc(R.magicName(m)) + '</button>';
+      }).join('') + '</span>';
+    } else {
+      h += '<select data-id="' + id + '" data-field="magic" aria-label="魔法">' + R.MAGICS.map(function (m) {
+        return '<option value="' + m + '"' + (u.magic === m ? ' selected' : '') + '>' + R.magicName(m) + '</option>';
+      }).join('') + '</select>';
+    }
+    h += '</div><div class="u-card-row"><span class="lbl">向き</span><span class="u-dirs">' + R.DIR_ORDER.map(function (d) {
+      return '<button type="button" class="' + (u.facing === d ? 'active' : '') + '" data-uact="facing" data-v="' + d + '" data-id="' + id + '" title="' + R.DIRS[d].name + '（矢印キー）">' + DIR_ARROW[d] + '</button>';
+    }).join('') + '</span></div>';
+    if (u.side === 'ally') {
+      h += '<div class="u-card-row"><span class="lbl">指示</span><select data-id="' + id + '" data-field="npc">' +
+        '<option value=""' + (u.npc ? '' : ' selected') + '>プレイヤーが動かす</option>' +
+        '<option value="1"' + (u.npc ? ' selected' : '') + '>構える味方（毎ターン今の向きで構えて撃つ）</option></select></div>';
+    } else {
+      h += '<div class="u-card-grid">' + Object.keys(R.PERSONA).map(function (f) {
+        var label = { aim: '狙い', avoid: '避ける', cross: '越える', stand: '動き' }[f] || f;
+        return '<span class="lbl">' + label + '</span><select data-id="' + id + '" data-field="' + f + '">' + Object.keys(R.PERSONA[f]).map(function (v) {
+          return '<option value="' + v + '"' + (u[f] === v ? ' selected' : '') + '>' + esc(R.PERSONA[f][v]) + '</option>';
+        }).join('') + '</select>';
+      }).join('') +
+        '<span class="lbl">HP</span><span><input type="number" class="hp-in" min="1" max="999" step="1" data-id="' + id + '" data-field="hp" value="' + (u.hpBase || u.maxHp) + '">' +
+        (u.size > 1 ? ' <span class="muted">体 ' + u.size + '×' + u.size + '</span>' : '') +
+        (u.body ? ' <span class="muted">' + (u.body === 'float' ? '浮いている' : esc(u.body)) + '</span>' : '') + '</span></div>';
+    }
+    return h + boostEditHtml(u) + '</div>';
+  }
+
   function renderEditPanel() {
     var st = app.state;
     el.tilePalette.innerHTML = R.TILES.map(function (t) {
@@ -2086,10 +2142,16 @@
       return '<button type="button" class="' + (app.editTool === k ? 'active' : '') + '" data-tool="' + k + '">' +
         '<span class="swatch t-' + t + '">' + esc(R.TILE_INFO[t].label) + '</span>' + esc(R.TILE_INFO[t].name) + '</button>';
     }).join('');
-    var tools = [['ally', '味方を置く'], ['enemy', '敵を置く'], ['move', '動かす'], ['rotate', '向きを回す'], ['remove', '消す']];
-    el.unitTools.innerHTML = tools.map(function (t) {
-      return '<button type="button" class="' + (app.editTool === t[0] ? 'active' : '') + '" data-tool="' + t[0] + '">' + t[1] + '</button>';
-    }).join('');
+    // ユニットの道具（オーナー 10/30）: 選ぶ・消す、味方は魔法ごとの駒、敵は1つ（魔法はカードで変える）
+    var tb = function (tool, cls, label, title) {
+      return '<button type="button" class="' + cls + (app.editTool === tool ? ' active' : '') + '" data-tool="' + tool + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
+    };
+    el.unitTools.innerHTML =
+      '<div class="ut-row">' + tb('pick', 'ut-btn', '選ぶ・動かす') + tb('remove', 'ut-btn', '消す') + '</div>' +
+      '<div class="ut-row"><span class="ut-label">味方</span>' + R.allyMagics(st).map(function (m) {
+        return tb('ally:' + m, 'ut-piece ally', esc(R.magicName(m)), '味方「' + R.magicName(m) + '」を置く');
+      }).join('') + '</div>' +
+      '<div class="ut-row"><span class="ut-label">敵</span>' + tb('enemy', 'ut-piece enemy', '敵', '敵を置く（魔法・動き方は置いたあとカードで）') + '</div>';
     // 勝ち方（ルールにある決まりから選ぶ）。足りない置きものがあれば書いておく
     var win = SIO.winOf(R, st);
     el.winSelect.innerHTML = SIO.WINS.map(function (w) {
@@ -2113,30 +2175,15 @@
     el.missionTools.innerHTML = mtools.map(function (t) {
       return '<button type="button" class="' + (app.editTool === t[0] ? 'active' : '') + '" data-tool="' + t[0] + '">' + t[1] + '</button>';
     }).join('');
-    el.unitList.innerHTML = st.units.length ? st.units.map(function (u) {
-      if (u.side === 'object') return '<div class="u-row"><b>' + esc(R.unitLabel(st, u)) + '</b><span class="muted">(' + u.x + ',' + u.y + ') HP' + u.maxHp + '</span></div>';
-      return '<div class="u-row"><b>' + esc(R.unitLabel(st, u)) + '</b>' +
-        '<select data-id="' + u.id + '" data-field="magic" aria-label="魔法">' + (u.side === 'ally' ? R.allyMagics(st) : R.MAGICS).map(function (m) {
-          return '<option value="' + m + '"' + (u.magic === m ? ' selected' : '') + '>' + R.magicName(m) + '</option>';
-        }).join('') + '</select>' +
-        '<select data-id="' + u.id + '" data-field="facing" aria-label="向き">' + R.DIR_ORDER.map(function (d) {
-          return '<option value="' + d + '"' + (u.facing === d ? ' selected' : '') + '>' + DIR_ARROW[d] + ' ' + R.DIRS[d].name + '</option>';
-        }).join('') + '</select>' +
-        '<span class="muted">(' + u.x + ',' + u.y + ')</span>' +
-        boostEditHtml(u) +
-        (u.side === 'ally' ? '<span class="persona-edit"><label>指示 <select data-id="' + u.id + '" data-field="npc">' +
-          '<option value=""' + (u.npc ? '' : ' selected') + '>プレイヤーが動かす</option>' +
-          '<option value="1"' + (u.npc ? ' selected' : '') + '>構える味方（毎ターン今の向きで構えて撃つ）</option></select></label></span>' : '') +
-        (u.side === 'enemy' ? '<span class="persona-edit">' + Object.keys(R.PERSONA).map(function (f) {
-          var label = { aim: '狙い', avoid: '避ける', cross: '越える', stand: '動き' }[f] || f;
-          return '<label>' + label + ' <select data-id="' + u.id + '" data-field="' + f + '">' + Object.keys(R.PERSONA[f]).map(function (v) {
-            return '<option value="' + v + '"' + (u[f] === v ? ' selected' : '') + '>' + esc(R.PERSONA[f][v]) + '</option>';
-          }).join('') + '</select></label>';
-        }).join('') +
-          '<label>HP <input type="number" class="hp-in" min="1" max="999" step="1" data-id="' + u.id + '" data-field="hp" value="' + (u.hpBase || u.maxHp) + '"></label>' +
-          (u.size > 1 ? '<span class="muted">体 ' + u.size + '×' + u.size + '</span>' : '') +
-          (u.body ? '<span class="muted">' + (u.body === 'float' ? '浮いている' : esc(u.body)) + '</span>' : '') + '</span>' : '') + '</div>';
-    }).join('') : '<p class="muted">ユニットがいません</p>';
+    // 置いた駒の一覧（押すと選ぶ）と、選んだ1体の設定のカード
+    var pick = app.editPick && R.findUnit(st, app.editPick);
+    if (!pick) app.editPick = null;
+    el.unitList.innerHTML = (st.units.length ? '<div class="u-chips">' + st.units.map(function (u) {
+      return '<button type="button" class="u-chip ' + u.side + (pick && u.id === pick.id ? ' on' : '') + '" data-pick="' + u.id + '" title="' + esc(R.unitLabel(st, u)) + '">' +
+        '<span class="chip-piece ' + u.side + (u.side === 'object' ? ' ' + u.kind : '') + '">' + esc(chipName(u)) + '</span>' +
+        (u.side === 'object' ? '' : '<span class="chip-dir">' + DIR_ARROW[u.facing] + '</span>') + '</button>';
+    }).join('') + '</div>' : '<p class="muted">ユニットがいません</p>') +
+      (pick ? unitCardHtml(st, pick) : st.units.length ? '<p class="u-card-empty">駒をクリックすると、ここで魔法・向き・動き方を変えられる</p>' : '');
     if (st.overrides) {
       el.unitList.innerHTML += '<p class="note">このシナリオだけの数値（JSON の overrides）: ' +
         esc(Object.keys(st.overrides).map(function (p) { return setLabel(p, st.overrides[p]); }).join('・')) + '</p>';
@@ -2191,13 +2238,13 @@
     if (app.editMode) {
       var tool = app.editTool;
       if (tool.indexOf('tile:') === 0) h.textContent = 'マスをクリック（ドラッグ）で「' + R.TILE_INFO[tool.slice(5)].name + '」を塗る';
-      else if (tool === 'move') h.textContent = app.editPick ? '置き先のマスをクリック' : '動かすユニットをクリック';
+      else if (tool === 'pick') h.textContent = app.editPick ? '駒をドラッグで動かす・矢印キーで向き・Delete で消す' : '設定する駒をクリック（ドラッグで動かす）';
       else if (tool === 'remove') h.textContent = '消すユニットをクリック';
-      else if (tool === 'rotate') h.textContent = 'クリックしたユニットの向きを時計回りに回す';
+      else if (tool.indexOf('ally:') === 0) h.textContent = '味方「' + R.magicName(tool.slice(5)) + '」を置くマスをクリック（駒はドラッグで動かせる）';
       else if (tool.indexOf('obj:') === 0) h.textContent = '「' + R.OBJECT_INFO[tool.slice(4)].name + '」を置くマスをクリック（置いてある所をクリックで外す）';
       else if (tool.indexOf('mark:') === 0) h.textContent = '「' + (tool === 'mark:goal' ? 'ゴール' : '帰り口') + '」の印をつけるマスをクリック（もう一度で外す）';
       else if (tool === 'treasure') h.textContent = '宝を置くマスをクリック（1つだけ。置き直すと移る）';
-      else h.textContent = (tool === 'ally' ? '味方' : '敵') + 'を置くマスをクリック';
+      else h.textContent = '敵を置くマスをクリック（駒はドラッグで動かせる）';
       return;
     }
     var u = selUnit();
@@ -2505,7 +2552,6 @@
     var b = e.target.closest('[data-tool]');
     if (!b) return;
     app.editTool = b.getAttribute('data-tool');
-    app.editPick = null;
     render();
   }
   el.tilePalette.addEventListener('click', onToolClick);
@@ -2535,6 +2581,26 @@
       : R.editSetPersona(app.state, id, field, s.value);
     if (res.ok) { pushHistory(); app.state = res.state; render(); } else { say(res.error); sideSig = ''; render(); }
   });
+  // 駒の一覧を押すと選ぶ。カードの魔法・向き・消す
+  el.unitList.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-pick], [data-uact]');
+    if (!b) return;
+    if (b.hasAttribute('data-pick')) { app.editPick = b.getAttribute('data-pick'); render(); return; }
+    editUnitAct(b.getAttribute('data-uact'), b.getAttribute('data-id'), b.getAttribute('data-v'));
+  });
+  function editUnitAct(act, id, v) {
+    var u = R.findUnit(app.state, id);
+    if (!u || (act === 'magic' && u.magic === v) || (act === 'facing' && u.facing === v)) return;
+    var res = act === 'magic' ? R.editSetMagic(app.state, id, v)
+      : act === 'facing' ? R.editSetFacing(app.state, id, v)
+      : act === 'remove' ? R.editRemoveUnit(app.state, u.x, u.y) : null;
+    if (!res) return;
+    if (!res.ok) { say(res.error); return; }
+    pushHistory();
+    app.state = res.state;
+    if (act === 'remove') app.editPick = null;
+    render();
+  }
   el.enemyActs.addEventListener('change', function () {
     pushHistory();
     app.state = R.editSetEnemyActs(app.state, el.enemyActs.checked).state;
@@ -2712,11 +2778,14 @@
     if (app.runLock && /^[zZeE]$/.test(k)) return;   // 進行モックの戦闘中は、1手戻す・エディットを使わない
     // 展示モード: 出しているものの操作だけ（味方 1〜、向き、構える Enter・その場で Space・待機 W、発動 T、1手戻す Z、クリアする C、取り消し Esc）。
     //   エディット E・ラボの Q・B・K は使わない。作るモードは、これに エディット ⇄ テストプレイ の E を足す
-    if (FIXED && !(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter| |w|W|t|T|z|Z|c|C|Escape)$/.test(k) || (MAKE && /^[eE]$/.test(k)))) return;
+    if (FIXED && !(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter| |w|W|t|T|z|Z|c|C|Escape)$/.test(k) || (MAKE && /^([eE]|Delete|Backspace)$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
       if (k === 'Escape') { app.editPick = null; render(); }
+      // 選んだ駒: 矢印キーで向き、Delete で消す
+      if (app.editPick && KEY_DIR[k]) { e.preventDefault(); editUnitAct('facing', app.editPick, KEY_DIR[k]); }
+      if (app.editPick && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); editUnitAct('remove', app.editPick); }
       return;
     }
     if (k === 't' || k === 'T') { doEndTurn(); return; }
