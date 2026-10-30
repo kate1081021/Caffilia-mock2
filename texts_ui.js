@@ -46,10 +46,18 @@
   })();
   window.TEXTS = cur;
 
-  function changes() { return IO.diff(FILE, cur); }
+  // エディットで作ったステージ（id が my: で始まる。ui.js が遊ぶときに cur.stages に足す）の文は、そのステージの保存に入る。
+  //   texts.js・書き換えの数・localStorage の書きかけには入れない（オーナー 10/30）
+  function isCustom(id) { return String(id).indexOf('my:') === 0; }
+  function own(t) {
+    var o = IO.clone(t);
+    Object.keys(o.stages || {}).forEach(function (k) { if (isCustom(k)) delete o.stages[k]; });
+    return o;
+  }
+  function changes() { return IO.diff(FILE, own(cur)); }
   function persist() {
     if (!changes().length && !downloaded) lsSet(null);
-    else lsSet({ base: base, texts: cur, downloaded: downloaded, at: IO.stamp() });
+    else lsSet({ base: base, texts: own(cur), downloaded: downloaded, at: IO.stamp() });
     renderUnsaved();
   }
   function renderUnsaved() {
@@ -196,6 +204,8 @@
   app.onAct = function (u, shoot) { if (shoot) trigger(['stance:' + u.magic, 'stance']); };
   // 窓が閉じたら fn（出ていなければすぐ）。展示モードで、クリアの文を読み終えてから次のステージへ進むのに使う
   app.afterDialog = function (fn) { if (dlg.cur) dlg.done.push(fn); else fn(); };
+  // エディットに入ったら、テストプレイで出ていた文は閉じる（盤面を隠さない）
+  app.closeDialog = function () { dlg.queue = []; if (dlg.cur && !dlg.editing) closeDialog(); };
   // 発動（ターン終了）を押したら、出ている文（始めの文など）は閉じて、すぐ発動する。
   //   開いたままだと窓を閉じるまで発動が待たされ、「魔法を撃ってくれない」に見えていた（10/17）。発動の前の文（beforeFire）があるときだけ、読み終えてから
   app.onBeforeFire = function (go) {
@@ -235,13 +245,13 @@
   function setNote(t) { note = t; var n = el.panel.querySelector('.tx-savenote'); if (n) n.textContent = t; }
 
   function fileText() {
-    var out = IO.clone(cur);
+    var out = own(cur);
     out.savedAt = IO.stamp();
     return { obj: out, text: IO.serialize(out) };
   }
   function savedOk(obj, how) {
     cur.savedAt = obj.savedAt;
-    FILE = IO.clone(cur);
+    FILE = own(cur);
     base = cur.savedAt;
     downloaded = false;
     stale = null;
@@ -364,7 +374,7 @@
   }
   function renderPanel() {
     if (el.panel.hidden) return;
-    var stages = Object.keys(cur.stages || {});
+    var stages = Object.keys(cur.stages || {}).filter(function (k) { return !isCustom(k); });   // 作ったステージの文はエディットで書き換える
     if (!view.stage || stages.indexOf(view.stage) < 0) view.stage = stages.indexOf(stageId()) >= 0 ? stageId() : stages[0];
     var st = stageOf(view.stage) || {};
     var scenes = Object.keys(st.scenes || {});

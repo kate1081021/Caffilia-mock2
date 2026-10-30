@@ -66,7 +66,11 @@
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
   var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
   Object.keys(R.TILE_INFO).forEach(function (t) { if (!SHORT[t]) SHORT[t] = R.TILE_INFO[t].name; });   // ラボで足した自然（葦原・雪山 など）
-  var STORE_KEY = 'cafilia-mock-v2-layouts';
+  var STORE_KEY = 'cafilia-mock-v2-layouts';   // 前の保存（配置だけ。R.exportLayout の JSON）。一覧に「前の保存」として出し、読める
+  // エディットで作ったステージ（オーナー 10/30）。中身は stages_io.js（チュートリアルと同じ形の定義＋会話の窓の文）
+  var SIO = window.StagesIO;
+  var STAGE_KEY = 'cafilia-mock-stages-v1';       // 名前を付けて保存したステージ { 名前: { def, texts, savedAt } }
+  var DRAFT_KEY = 'cafilia-mock-stage-draft';     // 作りかけの盤面 { cur, prev }（保存しないまま別のシナリオから作り始めても、1つ前に戻せる）
   // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
   var BIG = {
     forest: { cls: 'woods', name: '大森林', mark: '🌲' },
@@ -127,6 +131,10 @@
     editTool: 'tile:forest',
     editPick: null,
     stroke: null,
+    // エディットとテストプレイ（オーナー 10/30）
+    draft: null,          // 作っているステージ { state（遊び始める前の盤面）, name, texts（会話の窓の文）, exKeep（外したボスの決まり）, playId }
+    editHist: [],         // エディットの「1手戻す」の履歴。テストプレイの履歴とは分けて、エディットに戻ると続きから戻せる
+    layout0: null,        // 今のシナリオの遊び始める前の盤面（テストプレイ中でないときに E を押すと、ここから作り始める）
     showForecast: true,
     flash: {},
     hl: {},
@@ -141,10 +149,11 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'preview', 'turnLabel', 'modeLabel', 'scenarioSelect',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
     'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'btnSwap', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyActs', 'boardSize', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
-    'btnDeleteSaved', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
-    'btnEditDone', 'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
-    'missionBar', 'missionSelect', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption',
+    'enemyActs', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnSave', 'savedList', 'btnLoadSaved',
+    'btnDeleteSaved', 'btnNewStage', 'storeNote', 'jsonBox', 'btnExport', 'btnDownload', 'btnImport', 'fileInput',
+    'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
+    'log', 'showForecast', 'btnDemo', 'demoSelect', 'recipeSelect', 'windModeSelect', 'sakuraSelect',
+    'missionBar', 'missionTools', 'checkPick', 'checkSelect', 'btnCheck', 'checkCaption',
     'btnTutorial', 'tutorialMenu', 'btnRetry', 'btnSealWin', 'stageHint', 'exBar',
     'turnModeSelect', 'turnModeLabel', 'orderPanel', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
@@ -165,8 +174,9 @@
   // ---------------------------------------------------------------
   // 履歴・ログ・メッセージ
   // ---------------------------------------------------------------
+  // エディット中は、作っているステージの名前・会話の文も一緒に覚える（読み込みや文の書き換えも1つ戻せる）
   function pushHistory() {
-    app.history.push({ state: app.state, logLen: app.log.length });
+    app.history.push({ state: app.state, logLen: app.log.length, meta: app.editMode && app.draft ? draftMeta() : null });
     if (app.history.length > 500) app.history.shift();
   }
   function addLog(text, type) { app.log.push({ text: text, type: type || 'system' }); }
@@ -698,7 +708,8 @@
     var h = app.history.pop();
     if (!h) { say('これ以上戻せません'); return; }
     app.state = h.state;
-    app.log.length = h.logLen;
+    if (app.editMode) { if (h.meta) setDraftMeta(h.meta); }   // エディット: ログは消さない（あいだのテストプレイのログが残る）
+    else app.log.length = h.logLen;
     app.sel = null; app.plan = null; app.editPick = null;
     render();
   }
@@ -712,6 +723,7 @@
   }
 
   function reset() {
+    if (app.editMode) return;   // エディット中の盤面は「1手戻す」で戻す（リセットはテストプレイの始めに戻すもの）
     stopDemo();
     if (app.busy) skipPlayback();
     setState(R.clone(app.resetPoint), 'リセット（最初の配置に戻した）');
@@ -733,20 +745,127 @@
     if (app.onStage) app.onStage('retry');   // 文章（きっかけ: やり直し）
   }
 
+  // エディット ⇄ テストプレイ（オーナー 10/30。E かボタン1つで行き来する）
+  //   エディットに入る: テストプレイ中なら、作っていた盤面（app.draft）にそのまま戻る。そうでなければ、今のシナリオの遊び始める前の盤面から作り始める
+  //   エディットを抜ける: その盤面をステージとして読み込んで遊ぶ（チュートリアルを読むのと同じ道。ルールも同じ）
   function setEditMode(on) {
     if (app.busy) skipPlayback();
     if (on === app.editMode) return;
     app.sel = null; clearPlans(); app.editPick = null;
     if (on) {
+      var back = testing();
+      if (!back) startDraft(draftFromScenario());
+      if (app.closeDialog) app.closeDialog();
       app.editMode = true;
-      addLog('エディットモード開始', 'system');
+      app.history = app.editHist;
+      app.state = R.clone(app.draft.state);
+      addLog(back ? 'エディットに戻った（「' + app.draft.name + '」）' : 'エディット開始（「' + app.draft.name + '」を作る）', 'system');
       render();
     } else {
+      app.draft.state = R.clone(app.state);
+      app.editHist = app.history;
+      app.history = [];   // 読み込みの setState がエディットの履歴に積まないように
       app.editMode = false;
-      addLog('エディット終了。この配置が「リセット」の戻り先になった', 'system');
-      setState(begin(app.state));
-      app.resetPoint = R.clone(app.state);
+      keepDraft();
+      testPlay();
     }
+  }
+  function testing() { return !app.editMode && !!app.draft && !!app.draft.playId && app.scenario === app.draft.playId; }
+  // ほかのシナリオ・デモを読むときは、テストプレイせずにエディットを閉じる（作っていた盤面は、一覧の「作りかけ」から戻せる）
+  function quitEdit() {
+    if (!app.editMode) return;
+    app.draft.state = R.clone(app.state);
+    app.editHist = app.history;
+    app.history = [];
+    app.editMode = false;
+    keepDraft();
+  }
+
+  // 作っているステージ（app.draft）の名前・文。「1手戻す」で戻すために覚える
+  function draftMeta() { var d = app.draft; return { name: d.name, texts: SIO.clone(d.texts), exKeep: SIO.clone(d.exKeep) }; }
+  function setDraftMeta(m) { app.draft.name = m.name; app.draft.texts = SIO.clone(m.texts); app.draft.exKeep = SIO.clone(m.exKeep); }
+  function fillTexts(t, name) {
+    t = t ? SIO.clone(t) : SIO.blankTexts(name);
+    t.name = name;
+    t.hint = t.hint && typeof t.hint === 'object' ? t.hint : { simul: t.hint || '', single: t.hint || '' };
+    t.scenes = t.scenes || {};
+    ['start', 'win', 'lose'].forEach(function (k) { if (!t.scenes[k]) t.scenes[k] = []; });
+    return t;
+  }
+  // 今のシナリオから作り始める。チュートリアル①②③は写しを作る（元のチュートリアルと texts.js は書き換えない）
+  function draftFromScenario() {
+    var id = app.check ? '' : app.scenario, p = id ? R.findPreset(id) : null;
+    var s = app.layout0 ? R.clone(app.layout0) : R.normalizeForPlay(app.state);
+    delete s.stage; delete s.tries;
+    var T = TX().stages || {};
+    var name = p && p.custom ? p.name : (p ? (p.tutorial ? stageName(p) : p.name) : app.check ? app.check.name : '標準') + 'のコピー';
+    return { state: s, name: name, texts: fillTexts(p && T[p.id], name), exKeep: null };
+  }
+  // 新しく作り始める。それまでの作りかけ（読み込み直す前のものも）は「1つ前」に残す（一覧から戻せる）
+  function startDraft(d) {
+    if (app.draft) keepDraft();
+    var slot = draftSlot();
+    if (slot.cur) { slot.prev = slot.cur; slot.cur = null; draftSlotSet(slot); }
+    keepDraft.last = null;
+    app.draft = d;
+    app.editHist = [];
+  }
+  function draftSlot() { try { var r = window.localStorage.getItem(DRAFT_KEY); return (r && JSON.parse(r)) || {}; } catch (e) { return {}; } }
+  function draftSlotSet(v) { try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify(v)); } catch (e) { /* 残せなくても作れる */ } }
+  function draftRecord() {
+    var d = app.draft, s = app.editMode ? app.state : d.state;
+    return { name: d.name, def: SIO.toDef(R, s, d.name), texts: d.texts, exKeep: d.exKeep };
+  }
+  function keepDraft() {
+    if (!app.draft) return;
+    var rec = draftRecord(), txt = JSON.stringify(rec);
+    if (txt === keepDraft.last) return;
+    keepDraft.last = txt;
+    var slot = draftSlot(); slot.cur = rec; draftSlotSet(slot);
+  }
+
+  // 作ったステージを、シナリオの一覧（R.PRESETS）と文（TEXTS.stages）に足す。R.findPreset で見つかるので、
+  //   やり直し（R.retryStage）・ヒント（R.stageHint）・会話の窓・ボスの決まり（ex）が、チュートリアルと同じように動く
+  var customTexts = {};
+  function registerStage(def, texts) {
+    for (var i = R.PRESETS.length - 1; i >= 0; i--) if (R.PRESETS[i].id === def.id) R.PRESETS.splice(i, 1);
+    R.PRESETS.push(def);
+    customTexts[def.id] = texts;
+    injectTexts();
+    buildScenarioSelect();
+  }
+  // texts_ui.js は my: で始まるステージの文を texts.js に入れない（そのステージの保存に入る）
+  function injectTexts() {
+    var T = window.TEXTS;
+    if (!T) return;
+    T.stages = T.stages || {};
+    Object.keys(customTexts).forEach(function (id) { T.stages[id] = customTexts[id]; });
+  }
+  function testPlay() {
+    var d = app.draft, def = SIO.toDef(R, d.state, d.name);
+    d.texts.name = d.name;
+    d.playId = def.id;
+    registerStage(def, d.texts);
+    loadScenario(def.id);
+    app.history = [];   // テストプレイの「1手戻す」は、遊び始めより前（エディットの盤面）には戻らない
+    addLog('テストプレイ「' + d.name + '」（E でエディットに戻ると、作っていた盤面のまま）', 'system');
+    render();
+  }
+  // 保存したステージを読む（エディットの外でも。シナリオの一覧の「作ったステージ」から）
+  function stageStore() {
+    try { var raw = window.localStorage.getItem(STAGE_KEY); return raw ? JSON.parse(raw) : {}; } catch (e) { return null; }
+  }
+  function stageStoreSet(obj) {
+    try { window.localStorage.setItem(STAGE_KEY, JSON.stringify(obj)); storeVersion++; return true; } catch (e) { return false; }
+  }
+  function playSaved(name) {
+    var rec = (stageStore() || {})[name];
+    var b = rec && SIO.build(R, rec.def);
+    if (!b || !b.ok) { say('読めません: ' + (b ? b.error : '見つからない')); return; }
+    var def = SIO.clone(rec.def);
+    def.id = SIO.PREFIX + name; def.name = name; def.custom = true; def.tutorial = true;
+    registerStage(def, fillTexts(rec.texts, name));
+    loadScenario(def.id);
   }
 
   // opts.check: 新案プレイ（checks.js）の盤面を読む。それ以外を読むときは、新案プレイの切り替えを元に戻す
@@ -794,6 +913,7 @@
     if (check) addLog(check.desc, 'system');
     else if (id && !preset.tutorial) addLog(preset.desc, 'system');   // チュートリアルは説明を出さない（盤面と表示だけで伝わるかを見る）
     if (opts && opts.enemyActs === false) addLog('（このデモでは敵は何もしない設定）', 'system');
+    app.layout0 = R.clone(s);   // E を押したら、ここから作り始める
     setState(begin(s));
     app.resetPoint = R.clone(app.state);
     if (preset && preset.tutorial) selectNext(null);   // チュートリアル: 動かせる味方を最初から選んでおく
@@ -840,7 +960,7 @@
 
   function playDemo(demo) {
     stopDemo();
-    if (app.editMode) setEditMode(false);
+    quitEdit();
     setRecipe(demo.recipe || 'off');
     setWindMode(demo.windMode || 'breeze');
     app.demoLoading = true;   // デモでは文章（会話の窓）を出さない
@@ -900,7 +1020,7 @@
   }
   function playCheck(c) {
     stopDemo();
-    if (app.editMode) setEditMode(false);
+    quitEdit();
     setRecipe('off');
     setWindMode('breeze');
     applyCheckSet(c.set);
@@ -919,7 +1039,7 @@
   // 試作ラボ: ラボ用シナリオのデモ（スーパープレイ）。シナリオを読み（案をオンにして）、say を盤面の上に出しながら再生する
   function playLabDemo(p, labOff) {
     stopDemo();
-    if (app.editMode) setEditMode(false);
+    quitEdit();
     loadScenario(p.id, { labOff: labOff, demo: true });   // demo: ラボ L の道は、持ち越した道ではなくシナリオのものを使う
     var c = { id: 'lab:' + p.id, name: p.name, set: {}, labDemo: true };
     app.check = c;
@@ -1071,7 +1191,7 @@
     else if (dragging) return;
     else if (tool === 'ally') res = R.editPlaceUnit(st, 'ally', x, y);
     else if (tool === 'enemy') res = R.editPlaceUnit(st, 'enemy', x, y);
-    else if (tool === 'remove') res = R.editRemoveUnit(st, x, y);
+    else if (tool === 'remove') { var rm = R.unitAt(st, x, y); res = R.editRemoveUnit(st, rm ? rm.x : x, rm ? rm.y : y); }   // 大きい敵は体のどこを押しても消える
     else if (tool.indexOf('obj:') === 0) {
       var here = R.unitAt(st, x, y);
       res = here && here.side === 'object' && here.kind === tool.slice(4) ? R.editRemoveUnit(st, x, y) : R.editPlaceObject(st, tool.slice(4), x, y);
@@ -1090,6 +1210,8 @@
         return;
       }
       res = R.editMoveUnit(st, app.editPick, x, y);
+      var mu = res.ok && R.findUnit(res.state, app.editPick);
+      if (mu && mu.size > 1) { var bad = SIO.fits(R, res.state, mu); if (bad) res = { ok: false, error: bad }; }   // 大きい敵は体の全部が収まる所だけ
       app.editPick = null;
     }
     if (!res) return;
@@ -1171,9 +1293,10 @@
   function renderStatus() {
     var st = app.state;
     el.turnLabel.textContent = 'ターン ' + st.turn;
-    var mode = app.editMode ? 'エディット中' : app.demo ? 'デモ再生中' : app.busy ? '処理中…' : st.result === 'win' ? '勝利' : st.result === 'lose' ? '敗北' : 'プレイ中';
+    var test = testing();
+    var mode = app.editMode ? 'エディット中' : app.demo ? 'デモ再生中' : app.busy ? '処理中…' : st.result === 'win' ? '勝利' : st.result === 'lose' ? '敗北' : test ? 'テストプレイ中' : 'プレイ中';
     el.modeLabel.textContent = mode;
-    el.modeLabel.className = 'pill mode' + (app.editMode ? ' edit' : app.busy ? ' busy' : '');
+    el.modeLabel.className = 'pill mode' + (app.editMode ? ' edit' : app.busy ? ' busy' : test ? ' test' : '');
     // 【一斉】「ターン終了」は「発動」になり、動かせる味方が全員構え終えたら押せる
     var ready = simul() && !st.result && R.controllableOf(st).length > 0 && R.allAlliesActed(st);
     el.btnEndTurn.disabled = app.editMode || app.busy || !!st.result || (simul() && !ready && R.controllableOf(st).length > 0);
@@ -1190,7 +1313,9 @@
     if (el.turnModeSelect) { el.turnModeSelect.disabled = exFireOn; el.turnModeSelect.title = exFireOn ? 'このステージでは、盤面の上の「魔法の出し方」で切り替える' : ''; }
     el.btnUndo.disabled = app.history.length === 0;
     el.btnEdit.classList.toggle('active', app.editMode);
-    el.btnEdit.innerHTML = (app.editMode ? 'エディット終了' : 'エディット') + ' <kbd>E</kbd>';
+    el.btnEdit.classList.toggle('test', test);
+    el.btnEdit.innerHTML = (app.editMode ? '▶ テストプレイ' : test ? '✎ エディットに戻る' : 'エディット') + ' <kbd>E</kbd>';
+    el.btnReset.disabled = app.editMode;
     // チュートリアル: 負けたら「やり直す」。やり直したあと（2回目以降の開始時）は、盤面の上にヒントを1行
     el.btnRetry.hidden = !(st.result === 'lose' && st.stage && !app.editMode && !app.busy);
     // ステージ②: 村への道をふさぎきったら「クリアする」（勝手には勝たない）
@@ -1777,7 +1902,9 @@
     var st = app.state;
     var fc = forecastNow();
     var fcAll = forecastNow(true);
-    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.plans, app.editTool, st.units, st.enemyActs, st.size, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer]);
+    var sig = JSON.stringify([app.editMode, app.busy, app.sel, app.plan, app.plans, app.editTool, st.units, st.enemyActs, st.size, st.h, st.ex, st.spawn, st.result, st.mission, st.overrides, fc ? fc.enemies : null, fcAll ? fcAll.allies : null, fcAll ? fcAll.rushes : null, hintsNow(), storeVersion, B.turnMode, app.textsVer,
+      app.editMode && app.draft ? [app.draft.name, app.draft.texts] : null]);
+    if (app.editMode) keepDraft();   // 作りかけを残す（同じなら書かない）
     if (sig === sideSig) return;
     sideSig = sig;
     if (app.editMode) renderEditPanel(); else renderPlayPanel(fc);
@@ -1961,10 +2088,25 @@
     el.unitTools.innerHTML = tools.map(function (t) {
       return '<button type="button" class="' + (app.editTool === t[0] ? 'active' : '') + '" data-tool="' + t[0] + '">' + t[1] + '</button>';
     }).join('');
-    var mtype = (st.mission && st.mission.type) || 'annihilate';
-    el.missionSelect.innerHTML = R.MISSIONS.map(function (m) {
-      return '<option value="' + m + '"' + (m === mtype ? ' selected' : '') + '>' + esc(R.MISSION_INFO[m].name) + '</option>';
+    // 勝ち方（ルールにある決まりから選ぶ）。足りない置きものがあれば書いておく
+    var win = SIO.winOf(R, st);
+    el.winSelect.innerHTML = SIO.WINS.map(function (w) {
+      return '<option value="' + w.id + '"' + (w.id === win ? ' selected' : '') + '>' + esc(w.name) + '</option>';
     }).join('');
+    el.winTurnsLabel.hidden = !(win === 'defense' || win === 'seal');
+    if (document.activeElement !== el.winTurns) el.winTurns.value = SIO.turnsOf(R, st);
+    var mi = st.mission || {}, lack = [];
+    if (win === 'boss' && !R.enemiesOf(st).some(function (e) { return e.stand === 'boss'; })) lack.push('動きが「ボス」の敵がいない（どれか1体を倒しただけで勝ちになる）');
+    if ((win === 'defense' || win === 'seal') && !R.objectsOf(st, 'village').length) lack.push('村がない');
+    if (win === 'seal' && !R.enemiesOf(st).some(function (e) { return e.stand === 'rush'; }) && !(st.spawn && st.spawn.stand === 'rush')) lack.push('ふさぐ相手（動きが「突進」の敵）がいない');
+    if (win === 'escort' && !R.objectsOf(st, 'wagon').length) lack.push('馬車がない');
+    if (win === 'escort' && !(mi.goal || []).length) lack.push('ゴールがない');
+    if (win === 'retrieve' && !mi.treasure) lack.push('宝がない');
+    if (win === 'retrieve' && !(mi.exit || []).length) lack.push('帰り口がない');
+    if (!R.controllableOf(st).length) lack.push('動かせる味方がいない');
+    el.winNote.textContent = (win === 'boss' && st.ex && st.ex.spawn ? '取り巻きが湧く（③の決まり）。' : '') +
+      (st.spawn ? '増援が (' + st.spawn.x + ',' + st.spawn.y + ') から出る（②の決まり）。' : '') +
+      (lack.length ? '足りない: ' + lack.join('・') : '');
     var mtools = [['obj:village', '村を置く'], ['obj:wagon', '馬車を置く'], ['mark:goal', 'ゴール'], ['treasure', '宝を置く'], ['mark:exit', '帰り口']];
     el.missionTools.innerHTML = mtools.map(function (t) {
       return '<button type="button" class="' + (app.editTool === t[0] ? 'active' : '') + '" data-tool="' + t[0] + '">' + t[1] + '</button>';
@@ -1988,24 +2130,40 @@
           return '<label>' + label + ' <select data-id="' + u.id + '" data-field="' + f + '">' + Object.keys(R.PERSONA[f]).map(function (v) {
             return '<option value="' + v + '"' + (u[f] === v ? ' selected' : '') + '>' + esc(R.PERSONA[f][v]) + '</option>';
           }).join('') + '</select></label>';
-        }).join('') + '</span>' : '') + '</div>';
+        }).join('') +
+          '<label>HP <input type="number" class="hp-in" min="1" max="999" step="1" data-id="' + u.id + '" data-field="hp" value="' + (u.hpBase || u.maxHp) + '"></label>' +
+          (u.size > 1 ? '<span class="muted">体 ' + u.size + '×' + u.size + '</span>' : '') +
+          (u.body ? '<span class="muted">' + (u.body === 'float' ? '浮いている' : esc(u.body)) + '</span>' : '') + '</span>' : '') + '</div>';
     }).join('') : '<p class="muted">ユニットがいません</p>';
     if (st.overrides) {
       el.unitList.innerHTML += '<p class="note">このシナリオだけの数値（JSON の overrides）: ' +
         esc(Object.keys(st.overrides).map(function (p) { return setLabel(p, st.overrides[p]); }).join('・')) + '</p>';
     }
     el.enemyActs.checked = st.enemyActs;
-    el.boardSize.value = st.size;
+    if (document.activeElement !== el.boardW) el.boardW.value = st.size;
+    if (document.activeElement !== el.boardH) el.boardH.value = R.rowsOf(st);
 
-    var saved = storeGet();
-    if (saved === null) {
-      el.storeNote.textContent = 'この環境では保存（localStorage）が使えません。JSON の書き出しを使ってください。';
-      el.savedList.innerHTML = '';
-    } else {
-      var names = Object.keys(saved);
-      el.storeNote.textContent = names.length ? '' : 'まだ保存した配置はありません。';
-      el.savedList.innerHTML = names.map(function (nm) { return '<option value="' + esc(nm) + '">' + esc(nm) + '</option>'; }).join('');
-    }
+    // ステージの名前と会話の窓の文（打っている途中の欄は書き換えない）
+    var d = app.draft, tx = d.texts, hint = tx.hint || {};
+    var put = function (e, v) { if (document.activeElement !== e && e.value !== v) e.value = v; };
+    put(el.saveName, d.name);
+    put(el.txStart, SIO.linesToText(tx.scenes.start));
+    put(el.txWin, SIO.linesToText(tx.scenes.win));
+    put(el.txLose, SIO.linesToText(tx.scenes.lose));
+    put(el.txHintSimul, hint.simul || '');
+    put(el.txHintSingle, hint.single || '');
+
+    // 読み込める一覧: 作ったステージ・チュートリアル（写しを作る）・1つ前の作りかけ・前の保存（配置だけ）
+    var stages = stageStore(), olds = storeGet(), prev = draftSlot().prev;
+    var opt = function (v, label) { return '<option value="' + esc(v) + '"' + (v === app.savedPick ? ' selected' : '') + '>' + esc(label) + '</option>'; };
+    var mine = stages ? Object.keys(stages) : [];
+    el.savedList.innerHTML =
+      (mine.length ? '<optgroup label="作ったステージ">' + mine.map(function (nm) { return opt('my:' + nm, nm); }).join('') + '</optgroup>' : '') +
+      '<optgroup label="チュートリアル（写しを作る）">' + EXHIBIT_STAGES.map(function (id) { return opt('tut:' + id, stageName(R.findPreset(id))); }).join('') + '</optgroup>' +
+      (prev ? '<optgroup label="作りかけ">' + opt('draft:prev', '1つ前に作っていた「' + prev.name + '」') + '</optgroup>' : '') +
+      (olds && Object.keys(olds).length ? '<optgroup label="前の保存（配置だけ）">' + Object.keys(olds).map(function (nm) { return opt('old:' + nm, nm); }).join('') + '</optgroup>' : '');
+    if (stages === null) el.storeNote.textContent = 'この環境では保存（localStorage）が使えません。「ファイルに書き出す」を使ってください。';
+    else el.storeNote.textContent = mine.length ? '保存したステージ ' + mine.length + 'つ（シナリオの一覧の「作ったステージ」からも遊べる）' : 'まだ保存したステージはありません。';
   }
 
   function renderHint() {
@@ -2231,7 +2389,7 @@
     if (!b) return;
     openTutorialMenu(false);
     stopDemo();
-    if (app.editMode) setEditMode(false);
+    quitEdit();
     loadScenario(b.getAttribute('data-id'));
   });
   document.addEventListener('click', function (e) {
@@ -2253,11 +2411,28 @@
     (R.LAB.CATS || []).map(function (cat) {
       var list = R.LAB_PRESETS.filter(function (p) { return p.labCat === cat.id && !p.hidden; });
       return list.length ? '<optgroup label="ラボ ' + esc(cat.name) + '">' + list.map(presetOpt).join('') + '</optgroup>' : '';
-    }).join('');
+    }).join('') +
+    customOptions();
   el.scenarioSelect.value = app.scenario;
   }
+  // エディットで作ったステージ（開発モードだけ）。保存したものと、保存前にテストプレイしているもの
+  function customOptions() {
+    if (EXHIBIT) return '';
+    var stages = stageStore() || {}, ids = Object.keys(stages).map(function (nm) { return SIO.PREFIX + nm; });
+    R.PRESETS.forEach(function (p) { if (p.custom && ids.indexOf(p.id) < 0) ids.push(p.id); });
+    return ids.length ? '<optgroup label="作ったステージ">' + ids.map(function (id) {
+      var nm = id.slice(SIO.PREFIX.length);
+      return '<option value="' + esc(id) + '">' + esc(nm) + (stages[nm] ? '' : '（保存前）') + '</option>';
+    }).join('') + '</optgroup>' : '';
+  }
   buildScenarioSelect();
-  el.scenarioSelect.addEventListener('change', function () { loadScenario(el.scenarioSelect.value); el.scenarioSelect.blur(); });
+  el.scenarioSelect.addEventListener('change', function () {
+    var v = el.scenarioSelect.value;
+    quitEdit();
+    if (v.indexOf(SIO.PREFIX) === 0 && (stageStore() || {})[v.slice(SIO.PREFIX.length)] && !(app.draft && app.draft.playId === v)) playSaved(v.slice(SIO.PREFIX.length));
+    else loadScenario(v);
+    el.scenarioSelect.blur();
+  });
   el.recipeSelect.value = B.tornadoRecipe;
   el.windModeSelect.value = B.windMode;
   el.sakuraSelect.value = B.sakura.from;
@@ -2311,6 +2486,7 @@
   // 文章パネル（texts_ui.js）から: 文を書き換えたら、画面に出ている文をすぐ入れ替える
   app.textsVer = 0;
   app.refreshTexts = function () {
+    injectTexts();   // 文を捨てて読み直したときも、作ったステージの文を足し直す
     app.textsVer++;
     sideSig = '';
     missionSig = '';
@@ -2333,33 +2509,41 @@
   el.tilePalette.addEventListener('click', onToolClick);
   el.unitTools.addEventListener('click', onToolClick);
   el.missionTools.addEventListener('click', onToolClick);
-  el.missionSelect.addEventListener('change', function () {
-    var res = R.editSetMission(app.state, el.missionSelect.value);
-    if (res.ok) { pushHistory(); app.state = res.state; render(); } else say(res.error);
-  });
+  // 勝ち方（ボスの決まりを外すときは中身を覚えておき、ボスに戻したら使う）
+  function applyWin() {
+    var st = app.state;
+    if (st.ex) app.draft.exKeep = SIO.clone(st.ex);
+    pushHistory();
+    app.state = SIO.setWin(R, st, el.winSelect.value, el.winTurns.value, app.draft.exKeep);
+    render();
+  }
+  el.winSelect.addEventListener('change', applyWin);
+  el.winTurns.addEventListener('change', applyWin);
   el.unitList.addEventListener('change', function (e) {
-    var s = e.target.closest('select');
+    var s = e.target.closest('select, input');
     if (!s) return;
     var id = s.getAttribute('data-id');
     var field = s.getAttribute('data-field');
-    if (field.indexOf('lpath:') === 0) return;   // ラボ L: 道は lab_target_ui.js が受け取る
+    if (!field || field.indexOf('lpath:') === 0) return;   // ラボ L: 道は lab_target_ui.js が受け取る
     var res = field.indexOf('boost:') === 0 ? R.editSetBoost(app.state, id, field.slice(6), boostValue(field.slice(6), s.value))   // ラボ G
       : field === 'magic' ? R.editSetMagic(app.state, id, s.value)
       : field === 'facing' ? R.editSetFacing(app.state, id, s.value)
       : field === 'npc' ? R.editSetNpc(app.state, id, !!s.value)
+      : field === 'hp' ? SIO.setHp(R, app.state, id, s.value)
       : R.editSetPersona(app.state, id, field, s.value);
-    if (res.ok) { pushHistory(); app.state = res.state; render(); } else say(res.error);
+    if (res.ok) { pushHistory(); app.state = res.state; render(); } else { say(res.error); sideSig = ''; render(); }
   });
   el.enemyActs.addEventListener('change', function () {
     pushHistory();
     app.state = R.editSetEnemyActs(app.state, el.enemyActs.checked).state;
     render();
   });
+  // 盤面の横・縦。置いた物は同じ位置のまま（はみ出した物は外す）
   el.btnResize.addEventListener('click', function () {
-    var res = R.editResize(app.state, el.boardSize.value);
+    var r = SIO.resize(R, app.state, el.boardW.value, el.boardH.value);
     pushHistory();
-    app.state = res.state;
-    say('盤面を ' + res.state.size + '×' + res.state.size + ' にしました（味方は下の段、敵は上の段へ）');
+    app.state = r.state;
+    say('盤面を 横' + r.state.size + '×縦' + R.rowsOf(r.state) + ' にしました' + (r.dropped ? '（はみ出した ' + r.dropped + 'つを外した）' : ''));
     render();
   });
   el.btnClearTiles.addEventListener('click', function () {
@@ -2370,62 +2554,140 @@
     render();
   });
 
-  // 保存と読み込み
-  el.btnSave.addEventListener('click', function () {
-    var saved = storeGet();
-    if (saved === null) { say('この環境では保存できません。JSON の書き出しを使ってください'); return; }
-    var name = el.saveName.value.trim() || ('配置 ' + new Date().toLocaleString('ja-JP'));
-    saved[name] = R.exportLayout(app.state);
-    if (storeSet(saved)) { say('「' + name + '」を保存しました'); addLog('配置「' + name + '」を保存した', 'system'); }
-    else say('保存できませんでした');
+  // ステージの名前と会話の窓の文（欄を離れたら入る。1手戻すで戻せる）
+  el.saveName.addEventListener('change', function () {
+    var v = el.saveName.value.trim().replace(/^my:/, '');
+    if (!v || v === app.draft.name) { el.saveName.value = app.draft.name; return; }
+    pushHistory();
+    app.draft.name = v;
     render();
-    el.savedList.value = name;
   });
-  function loadLayout(json, label) {
-    var r = R.importLayout(json);
-    if (!r.ok) { say('読み込めません: ' + r.error); return false; }
-    if (app.editMode) setState(r.state, label);
-    else { addLog(label, 'system'); setState(begin(r.state)); app.resetPoint = R.clone(app.state); }
-    return true;
+  [['txStart', 'start'], ['txWin', 'win'], ['txLose', 'lose']].forEach(function (p) {
+    el[p[0]].addEventListener('change', function () {
+      var lines = SIO.textToLines(el[p[0]].value);
+      if (JSON.stringify(lines) === JSON.stringify(app.draft.texts.scenes[p[1]])) return;
+      pushHistory();
+      app.draft.texts.scenes[p[1]] = lines;
+      render();
+    });
+  });
+  [['txHintSimul', 'simul'], ['txHintSingle', 'single']].forEach(function (p) {
+    el[p[0]].addEventListener('change', function () {
+      var t = app.draft.texts;
+      if ((t.hint[p[1]] || '') === el[p[0]].value) return;
+      pushHistory();
+      t.hint[p[1]] = el[p[0]].value;
+      render();
+    });
+  });
+
+  // 保存と読み込み。保存は名前ごとに1つ（同じ名前なら上書き）。チュートリアルは写しを作るので、元は書き換わらない
+  el.btnTestPlay.addEventListener('click', function () { setEditMode(false); });
+  el.btnSave.addEventListener('click', function () {
+    var stages = stageStore();
+    if (stages === null) { say('この環境では保存できません。「ファイルに書き出す」を使ってください'); return; }
+    var name = app.draft.name, had = !!stages[name];
+    stages[name] = { def: SIO.toDef(R, app.state, name), texts: SIO.clone(app.draft.texts), savedAt: new Date().toLocaleString('ja-JP') };
+    if (!stageStoreSet(stages)) { say('保存できませんでした'); return; }
+    app.savedPick = 'my:' + name;
+    say('「' + name + '」を' + (had ? '上書き保存' : '保存') + 'しました');
+    addLog('ステージ「' + name + '」を保存した', 'system');
+    buildScenarioSelect();
+    render();
+  });
+  // 作っている盤面を d に入れ替える（1手戻すで前に戻せる）
+  function putDraft(d, label) {
+    pushHistory();
+    app.draft.name = d.name;
+    app.draft.texts = fillTexts(d.texts, d.name);
+    app.draft.exKeep = d.exKeep || null;
+    app.state = d.state;
+    app.editPick = null;
+    addLog(label, 'system');
+    say(label);
+    render();
   }
   el.btnLoadSaved.addEventListener('click', function () {
-    var saved = storeGet();
-    var name = el.savedList.value;
-    if (!saved || !saved[name]) { say('読み込む配置を選んでください'); return; }
-    loadLayout(saved[name], '配置「' + name + '」を読み込んだ');
+    var v = el.savedList.value || '', kind = v.slice(0, v.indexOf(':')), name = v.slice(v.indexOf(':') + 1), b;
+    app.savedPick = v;
+    if (kind === 'my') {
+      var rec = (stageStore() || {})[name];
+      b = rec && SIO.build(R, rec.def);
+      if (!b || !b.ok) { say('読み込めません: ' + (b ? b.error : '見つからない')); return; }
+      delete b.state.stage;
+      putDraft({ state: b.state, name: name, texts: rec.texts }, 'ステージ「' + name + '」を読み込んだ');
+    } else if (kind === 'tut') {
+      var p = R.findPreset(name), copy = stageName(p) + 'のコピー', s = R.loadPreset(name);
+      delete s.stage;
+      putDraft({ state: s, name: copy, texts: (TX().stages || {})[name] }, 'チュートリアル「' + stageName(p) + '」の写しを読み込んだ（元は書き換わらない。別の名前で保存できる）');
+    } else if (kind === 'draft') {
+      var prev = draftSlot().prev;
+      b = prev && SIO.build(R, prev.def);
+      if (!b || !b.ok) { say('読み込めません: ' + (b ? b.error : '見つからない')); return; }
+      delete b.state.stage;
+      putDraft({ state: b.state, name: prev.name, texts: prev.texts, exKeep: prev.exKeep }, '1つ前に作っていた「' + prev.name + '」に戻した');
+    } else if (kind === 'old') {
+      var f = SIO.fromFile(R, (storeGet() || {})[name], name);
+      if (!f.ok) { say('読み込めません: ' + f.error); return; }
+      delete f.state.stage;
+      putDraft({ state: f.state, name: f.name, texts: null }, '前の保存「' + name + '」を読み込んだ');
+    } else say('読み込むものを選んでください');
   });
   el.btnDeleteSaved.addEventListener('click', function () {
-    var saved = storeGet();
-    var name = el.savedList.value;
-    if (!saved || !saved[name]) return;
-    delete saved[name];
-    storeSet(saved);
+    var v = el.savedList.value || '', kind = v.slice(0, v.indexOf(':')), name = v.slice(v.indexOf(':') + 1);
+    if (kind === 'my') {
+      var stages = stageStore();
+      if (!stages || !stages[name]) return;
+      delete stages[name];
+      stageStoreSet(stages);
+      buildScenarioSelect();
+    } else if (kind === 'old') {
+      var saved = storeGet();
+      if (!saved || !saved[name]) return;
+      delete saved[name];
+      storeSet(saved);
+    } else { say('チュートリアルと作りかけは消せません'); return; }
     say('「' + name + '」を削除しました');
     render();
   });
+  el.btnNewStage.addEventListener('click', function () {
+    var s = R.createState({ blank: true, size: app.state.size });
+    putDraft({ state: s, name: '新しいステージ', texts: null }, '空の盤面から作り始めた');
+  });
+  function stageFile() {
+    return SIO.toFile({ name: app.draft.name, def: SIO.toDef(R, app.state, app.draft.name), texts: app.draft.texts, savedAt: new Date().toLocaleString('ja-JP') });
+  }
+  function fileSafe(t) { return String(t).replace(/[\\\/:*?"<>|\s]+/g, '_'); }
   el.btnExport.addEventListener('click', function () {
-    el.jsonBox.value = R.exportLayout(app.state);
+    el.jsonBox.value = stageFile();
     el.jsonBox.select();
   });
   el.btnDownload.addEventListener('click', function () {
     try {
-      var blob = new Blob([R.exportLayout(app.state)], { type: 'application/json' });
+      var blob = new Blob([stageFile()], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'cafilia-layout.json';
+      a.download = 'cafilia-stage-' + fileSafe(app.draft.name) + '.json';
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-    } catch (e) { say('ファイルに保存できませんでした。「JSON を書き出す」を使ってください'); }
+      say('「' + a.download + '」に書き出しました');
+    } catch (e) { say('ファイルに保存できませんでした。「JSON で書き出す・読み込む」を使ってください'); }
   });
-  el.btnImport.addEventListener('click', function () { loadLayout(el.jsonBox.value, 'JSON から配置を読み込んだ'); });
+  // ステージのファイル・前の「配置」の JSON のどちらも読める。読んだら作っている盤面になる（▶ テストプレイで遊べる）
+  function importStage(text, label, fallbackName) {
+    var f = SIO.fromFile(R, text, fallbackName);
+    if (!f.ok) { say('読み込めません: ' + f.error); return; }
+    delete f.state.stage;
+    putDraft({ state: f.state, name: f.name, texts: f.texts }, label + '（「' + f.name + '」。▶ テストプレイで遊べる）');
+  }
+  el.btnImport.addEventListener('click', function () { importStage(el.jsonBox.value, 'JSON から読み込んだ'); });
   el.fileInput.addEventListener('change', function () {
     var f = el.fileInput.files && el.fileInput.files[0];
     if (!f) return;
     var reader = new FileReader();
     reader.onload = function () {
-      el.jsonBox.value = String(reader.result);
-      loadLayout(el.jsonBox.value, 'ファイル「' + f.name + '」から配置を読み込んだ');
+      importStage(String(reader.result), 'ファイル「' + f.name + '」を読み込んだ', f.name.replace(/\.json$/i, '').replace(/^cafilia-(stage|layout)-?/, ''));
       el.fileInput.value = '';
     };
     reader.readAsText(f);
@@ -2479,7 +2741,7 @@
   window.CafiliaApp = app;
   app.render = render;
   // 試作ラボ（lab_ui.js）から使う
-  app.loadScenario = function (id, opts) { stopDemo(); if (app.editMode) setEditMode(false); endCheck(); loadScenario(id, opts); };
+  app.loadScenario = function (id, opts) { stopDemo(); quitEdit(); endCheck(); loadScenario(id, opts); };
   app.playLabDemo = playLabDemo;
   app.playCheckById = function (id) { var c = CHECKS.filter(function (x) { return x.id === id; })[0]; if (c) playCheck(c); };
   app.say = say;
@@ -2489,7 +2751,7 @@
   app.restart = function () {
     if (app.onRestart) { app.onRestart(); return; }   // 進行モック: 今の戦闘を最初からやり直す
     stopDemo();
-    if (app.editMode) setEditMode(false);
+    quitEdit();
     app.cache = {};
     sideSig = '';
     // 反映で値は全部入れ直されているので、新案プレイの前の値には戻さない。新案プレイの盤面なら、切り替えを重ね直して読み直す
@@ -2508,7 +2770,8 @@
     endCheck();
     restoreExFire();
     if (app.busy) skipPlayback();
-    if (app.editMode) { app.editMode = false; }
+    quitEdit();
+    app.layout0 = null;   // E を押したら今の盤面から作り始める
     app.scenario = '';
     if (label) addLog(label, 'system');
     app.state = s;

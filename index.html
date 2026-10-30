@@ -119,9 +119,37 @@
       </div>
 
       <div id="editPanel" class="panel edit-panel" hidden>
-        <h2>エディット</h2>
+        <h2>エディット <small>ステージを作って、すぐ遊んで確かめる</small></h2>
+        <button id="btnTestPlay" type="button" class="primary test-play">▶ テストプレイ <kbd>E</kbd></button>
+        <p class="note">テストプレイから E（「✎ エディットに戻る」）で、作っていた盤面のまま戻ります。</p>
         <div class="edit-group">
-          <h3>地形を塗る <small>ドラッグで続けて塗れる</small></h3>
+          <h3>ステージ</h3>
+          <div class="row">
+            <label>名前 <input id="saveName" type="text" placeholder="ステージの名前" maxlength="40"></label>
+            <button id="btnSave" type="button">保存</button>
+          </div>
+          <div class="row">
+            <select id="savedList" aria-label="読み込むステージ"></select>
+            <button id="btnLoadSaved" type="button">読み込む</button>
+            <button id="btnDeleteSaved" type="button">削除</button>
+          </div>
+          <div class="row">
+            <button id="btnNewStage" type="button">空の盤面から</button>
+            <button id="btnDownload" type="button">ファイルに書き出す</button>
+            <label class="file-label">ファイルを読み込む <input id="fileInput" type="file" accept=".json,application/json"></label>
+          </div>
+          <p id="storeNote" class="note"></p>
+        </div>
+        <div class="edit-group">
+          <h3>勝ち方</h3>
+          <div class="row">
+            <select id="winSelect" aria-label="勝ち方"></select>
+            <label id="winTurnsLabel">ターン <input id="winTurns" type="number" min="1" max="30" step="1" value="5"></label>
+          </div>
+          <p id="winNote" class="note"></p>
+        </div>
+        <div class="edit-group">
+          <h3>地形を塗る <small>ドラッグで続けて塗れる。山の頂上と斜面は自動で決まる</small></h3>
           <div id="tilePalette" class="palette"></div>
         </div>
         <div class="edit-group">
@@ -129,47 +157,40 @@
           <div id="unitTools" class="palette unit-tools"></div>
         </div>
         <div class="edit-group">
-          <h3>お題 <small>置きもの・印はクリックで置く／もう一度で外す</small></h3>
-          <div class="row"><label>種類 <select id="missionSelect"></select></label></div>
+          <h3>置きもの <small>クリックで置く／もう一度で外す</small></h3>
           <div id="missionTools" class="palette unit-tools"></div>
         </div>
         <div class="edit-group">
-          <h3>ユニットの魔法と向き</h3>
+          <h3>ユニットの魔法・向き・動き方・HP</h3>
           <div id="unitList" class="unit-list"></div>
         </div>
         <div class="edit-group row">
           <label class="toggle"><input id="enemyActs" type="checkbox" checked> 敵が行動する</label>
         </div>
         <div class="edit-group row">
-          <label>盤面サイズ <input id="boardSize" type="number" min="5" max="12" step="1" value="6"></label>
+          <label>盤面 横 <input id="boardW" type="number" min="5" max="12" step="1" value="6"></label>
+          <label>× 縦 <input id="boardH" type="number" min="5" max="12" step="1" value="6"></label>
           <button id="btnResize" type="button">変更</button>
           <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>
-        <div class="edit-group">
-          <h3>保存と読み込み</h3>
-          <div class="row">
-            <input id="saveName" type="text" placeholder="配置の名前" maxlength="40">
-            <button id="btnSave" type="button">保存</button>
-          </div>
-          <div class="row">
-            <select id="savedList"></select>
-            <button id="btnLoadSaved" type="button">読み込む</button>
-            <button id="btnDeleteSaved" type="button">削除</button>
-          </div>
-          <p id="storeNote" class="note"></p>
-          <details>
-            <summary>JSON の書き出し・読み込み</summary>
-            <textarea id="jsonBox" rows="4" spellcheck="false" placeholder="ここに JSON を貼り付けて「JSON を読み込む」"></textarea>
-            <div class="row">
-              <button id="btnExport" type="button">JSON を書き出す</button>
-              <button id="btnDownload" type="button">ファイルに保存</button>
-              <button id="btnImport" type="button">JSON を読み込む</button>
-              <label class="file-label">ファイルから <input id="fileInput" type="file" accept=".json,application/json"></label>
-            </div>
-          </details>
+        <div class="edit-group stage-texts">
+          <h3>会話の窓の文 <small>1行が1つの文。「［一斉だけ］」「［1人ずつだけ］」で始めると、その形のときだけ。「話す人「文」」で話す人</small></h3>
+          <label>開始 <textarea id="txStart" rows="2" spellcheck="false"></textarea></label>
+          <label>クリア <textarea id="txWin" rows="2" spellcheck="false"></textarea></label>
+          <label>負け <textarea id="txLose" rows="2" spellcheck="false"></textarea></label>
+          <label>やり直しのヒント（一斉） <input id="txHintSimul" type="text"></label>
+          <label>やり直しのヒント（1人ずつ） <input id="txHintSingle" type="text"></label>
         </div>
-        <p class="note">エディットを抜けたときの配置が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
-        <button id="btnEditDone" type="button" class="primary">エディット終了</button>
+        <details class="edit-group">
+          <summary>JSON で書き出す・読み込む</summary>
+          <textarea id="jsonBox" rows="4" spellcheck="false" placeholder="ここに JSON を貼り付けて「JSON を読み込む」"></textarea>
+          <div class="row">
+            <button id="btnExport" type="button">JSON を書き出す</button>
+            <button id="btnImport" type="button">JSON を読み込む</button>
+          </div>
+        </details>
+        <p class="note">テストプレイを始めたときの盤面が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
+        <button id="btnEditDone" type="button" class="primary">▶ テストプレイ <kbd>E</kbd></button>
       </div>
 
       <div class="panel log-panel x-more">
@@ -273,6 +294,7 @@
   <script src="tune.js"></script>
   <script src="texts.js"></script>
   <script src="texts_io.js"></script>
+  <script src="stages_io.js"></script>
   <script src="lab_targets.js"></script>
   <script src="lab_paths.js"></script>
   <script src="lab_power.js"></script>

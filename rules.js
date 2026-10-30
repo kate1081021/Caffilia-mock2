@@ -3747,7 +3747,7 @@
   // ---------------------------------------------------------------
   var api = {
     BALANCE: B,
-    TILE_INFO: TILE_INFO, TILES: TILES, MAGIC_INFO: MAGIC_INFO, MAGICS: MAGICS,
+    TILE_INFO: TILE_INFO, TILES: TILES, MAGIC_INFO: MAGIC_INFO, MAGICS: MAGICS, CH: CH,   // CH: シナリオの rows の1文字 → 地形（エディットのステージの書き出し stages_io.js が使う）
     DIRS: DIRS, DIR_ORDER: DIR_ORDER, PRESETS: PRESETS,
     hidden: hidden, PERSONA: PERSONA, canEnter: canEnter, enemyOnlyMagics: enemyOnlyMagics, allyMagics: allyMagics,
     clone: clone, inBounds: inBounds, getTile: getTile, setTile: setTile, isPassable: isPassable,
