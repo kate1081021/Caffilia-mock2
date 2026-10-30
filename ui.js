@@ -45,7 +45,6 @@
   var SIO = window.StagesIO;
   var STAGE_KEY = 'cafilia-mock-stages-v1';       // 自分のステージ { 名前: { def, texts, exKeep, at } }。直すたびに自動で残す（IMPROVE_v3 段0）
   var DRAFT_KEY = 'cafilia-mock-stage-draft';     // 前の作りかけ { cur, prev }。段0で自分のステージに移した（元は消さずに残す）
-  var OPEN_KEY = 'cafilia-mock-stage-open';       // 最後に開いていた自分のステージの名前（開発モードは、開くとその続きから）
   var MIGRATED_KEY = 'cafilia-mock-stages-migrated';   // 前の作りかけ・前の保存を移したしるし { at, moved, failed }
   // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
   var BIG = {
@@ -76,6 +75,7 @@
     draft: null,          // 作っているステージ { state（遊び始める前の盤面）, name, key（自分のステージに残している名前）, texts（会話の窓の文）, exKeep（外したボスの決まり）, playId }
     editHist: [],         // エディットの「1手戻す」の履歴。テストプレイの履歴とは分けて、エディットに戻ると続きから戻せる
     layout0: null,        // 今のシナリオの遊び始める前の盤面（テストプレイ中でないときに E を押すと、ここから作り始める）
+    home: false,          // 開発モードの最初の画面（ステージの一覧）を出している（IMPROVE_v3 段2）
     flash: {},
     hl: {},
     message: null,
@@ -89,8 +89,7 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
     'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
     'dirCenter', 'btnStay', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'savedList', 'btnLoadSaved',
-    'btnDeleteSaved', 'btnNewStage', 'storeNote', 'btnDownload', 'fileInput',
+    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnDownload', 'fileInput', 'btnHome', 'home',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'btnRetry', 'btnSealWin', 'stageHint',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
@@ -722,7 +721,6 @@
     app.history = app.editHist;
     app.state = R.clone(d.state);
     app.editPick = null;
-    app.savedPick = SIO.PREFIX + d.name;
     keepDraft();
     label = typeof label === 'function' ? label(d.name) : label;
     addLog(label, 'system');
@@ -747,15 +745,6 @@
     stages[d.name] = rec;
     d.key = d.name;
     stageStoreSet(stages, !moved);   // 中身だけ変わったときは、一覧を作り直さない
-    try { window.localStorage.setItem(OPEN_KEY, d.name); } catch (e) { /* 覚えられなくても作れる */ }
-  }
-  // 開発モードで開くステージ: 最後に開いていた自分のステージ。なければ、いちばん新しく直したもの
-  function lastOwn() {
-    var stages = stageStore() || {}, open = null;
-    try { open = window.localStorage.getItem(OPEN_KEY); } catch (e) { open = null; }
-    if (open && stages[open]) return open;
-    var names = Object.keys(stages).sort(function (a, b) { return (stages[b].at || 0) - (stages[a].at || 0); });
-    return names[0] || null;
   }
   // 段0: 保存ボタンをなくしたので、前の作りかけ（DRAFT_KEY）と前の保存（配置だけ。STORE_KEY）を、自分のステージに一度だけ移す。
   //   作りかけは「作りかけ」「1つ前の作りかけ」、前の保存はその名前で。中身が同じ自分のステージがあれば足さない。
@@ -1742,18 +1731,6 @@
     put(el.txLose, SIO.linesToText(tx.scenes.lose));
     put(el.txHintSimul, hint.simul || '');
     put(el.txHintSingle, hint.single || '');
-
-    // 開ける一覧: 自分のステージ・チュートリアル（写しを作る）
-    var stages = stageStore(), mig = migrateInfo();
-    var opt = function (v, label) { return '<option value="' + esc(v) + '"' + (v === app.savedPick ? ' selected' : '') + '>' + esc(label) + '</option>'; };
-    var mine = stages ? Object.keys(stages) : [];
-    el.savedList.innerHTML =
-      (mine.length ? '<optgroup label="自分のステージ">' + mine.map(function (nm) { return opt('my:' + nm, nm + (nm === d.key ? '（開いている）' : '')); }).join('') + '</optgroup>' : '') +
-      '<optgroup label="チュートリアル（写しを作る）">' + EXHIBIT_STAGES.map(function (id) { return opt('tut:' + id, stageName(R.findPreset(id))); }).join('') + '</optgroup>';
-    if (stages === null) el.storeNote.textContent = 'この環境ではブラウザに残せません。「ファイルに書き出す」を使ってください。';
-    else el.storeNote.textContent = '自分のステージ ' + mine.length + 'つ。直すたびに、このブラウザに自動で残ります' +
-      '。' +
-      (mig && mig.failed ? '前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。' : '');
   }
 
   function renderHint() {
@@ -1981,44 +1958,10 @@
     });
   });
 
-  // 開く・削除・新しいステージ・ファイル（オーナー 10/30、IMPROVE_v3 段0）。保存ボタンはない（直すたびに自分のステージに自動で残る）
-  //   開く: 自分のステージはそのまま開く（それまでのステージも残っている）。チュートリアルは写し（「〜のコピー」）を自分のステージに作る（元は変わらない）
+  // 保存ボタンはない（直すたびに自分のステージに自動で残る。IMPROVE_v3 段0）。開く・消す・新しく作るは、開発の最初の画面から（段2）
   el.btnTestPlay.addEventListener('click', function () { setEditMode(false); });
-  el.btnLoadSaved.addEventListener('click', function () {
-    var v = el.savedList.value || '', kind = v.slice(0, v.indexOf(':')), name = v.slice(v.indexOf(':') + 1);
-    app.savedPick = v;
-    if (kind === 'my') {
-      if (name === app.draft.key) { say('「' + name + '」はもう開いています'); return; }
-      var d = draftFromRecord(name, (stageStore() || {})[name]);
-      if (!d) { say('読み込めません: 「' + name + '」'); return; }
-      openDraft(d, 'ステージ「' + name + '」を開いた');
-    } else if (kind === 'tut') {
-      var p = R.findPreset(name), s = R.loadPreset(name);
-      delete s.stage;
-      openDraft({ state: s, name: stageName(p) + 'のコピー', texts: (TX().stages || {})[name] }, function (nm) {
-        return 'チュートリアル「' + stageName(p) + '」の写しを、自分のステージ「' + nm + '」に作った（元は変わらない）';
-      });
-    } else say('読み込むものを選んでください');
-  });
-  // 削除: 自分のステージだけ。確かめてから消す（元に戻せない）。開いているステージは消さない
-  el.btnDeleteSaved.addEventListener('click', function () {
-    var v = el.savedList.value || '', kind = v.slice(0, v.indexOf(':')), name = v.slice(v.indexOf(':') + 1);
-    if (kind !== 'my') { say('チュートリアルは消せません'); return; }
-    var stages = stageStore();
-    if (!stages || !stages[name]) return;
-    if (name === app.draft.key) { say('開いているステージは消せません。ほかのステージを開くか、新しいステージを作ってから消してください'); return; }
-    if (!window.confirm('自分のステージ「' + name + '」を消します。元に戻せません。消しますか？')) return;
-    delete stages[name];
-    if (!stageStoreSet(stages)) { say('消せませんでした'); return; }
-    app.savedPick = null;
-    say('「' + name + '」を消しました');
-    render();
-  });
-  // 新しいステージ: 押した時点で、自分のステージが1つ増える。今の盤面の大きさ（正方形）で、味方3人（初期の魔法）と敵1体から（R.createState の初めの形）
+  // 新しいステージ: 作り始めた時点で、自分のステージが1つ増える。味方3人（初期の魔法）と敵1体から（R.createState の初めの形）
   function newStage(size) { return { state: R.createState({ size: size }), name: '新しいステージ', texts: null }; }
-  el.btnNewStage.addEventListener('click', function () {
-    openDraft(newStage(app.state.size), function (nm) { return '新しいステージ「' + nm + '」を作った（味方3人・敵1体）'; });
-  });
   // ファイルに書き出す・読み込む: 段4（共有）ができるまでの、ブラウザの外に逃がす道（段4でなくす）
   function stageFile() {
     return SIO.toFile({ name: app.draft.name, def: SIO.toDef(R, app.state, app.draft.name), texts: app.draft.texts, savedAt: new Date().toLocaleString('ja-JP') });
@@ -2056,9 +1999,99 @@
     reader.readAsText(f);
   });
 
+  // ---------------------------------------------------------------
+  // 開発モードの最初の画面（IMPROVE_v3 段2）: チュートリアルと自分のステージの一覧
+  //   ステージを押すと遊ぶ側で開く（E で作る側へ。チュートリアルは「〜のコピー」が自分のステージにできる）。
+  //   「＋ 新しく作る」は作る側で開く。自分のステージは確かめてから消せる。⌂ で、いつでもここへ戻る（作っていた盤面は残る）
+  // ---------------------------------------------------------------
+  function ownList() {
+    var stages = stageStore() || {};
+    return Object.keys(stages).sort(function (a, b) { return (stages[b].at || 0) - (stages[a].at || 0); });   // 新しく直した順
+  }
+  function renderHome() {
+    var stages = stageStore(), mine = ownList(), mig = migrateInfo();
+    el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
+      '<section class="home-sec"><h3>チュートリアル <small>作る側にすると、写しが自分のステージにできる（元は変わらない）</small></h3><div class="home-list">' +
+      EXHIBIT_STAGES.map(function (id) { return '<button type="button" class="home-stage" data-open="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '</button>'; }).join('') +
+      '</div></section>' +
+      '<section class="home-sec"><h3>自分のステージ <small>このブラウザに自動で残る。新しく直した順</small></h3><div class="home-list">' +
+      (mine.length ? mine.map(function (nm) {
+        return '<span class="home-own"><button type="button" class="home-stage" data-open="my:' + esc(nm) + '">' + esc(nm) + '</button>' +
+          '<button type="button" class="home-del" data-del="' + esc(nm) + '" title="「' + esc(nm) + '」を消す">消す</button></span>';
+      }).join('') : '<p class="muted">まだありません</p>') + '</div>' +
+      (stages === null ? '<p class="note">この環境ではブラウザに残せません。エディットの「ファイルに書き出す」を使ってください。</p>' : '') +
+      (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
+      '</section>' +
+      '<button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>';
+  }
+  function showHome(on) {
+    app.home = on;
+    el.home.hidden = !on;
+    document.body.classList.toggle('at-home', on);
+    if (on) renderHome();
+  }
+  // 最初の画面に戻る。エディット中なら、その盤面を自分のステージに残してから
+  function goHome() {
+    if (app.busy) skipPlayback();
+    if (app.editMode) {
+      app.draft.state = R.clone(app.state);
+      app.editHist = app.history;
+      app.editMode = false;
+    }
+    keepDraft();
+    if (app.closeDialog) app.closeDialog();
+    app.sel = null; clearPlans(); app.editPick = null;
+    app.history = [];
+    showHome(true);
+    render();
+  }
+  // 自分のステージを遊ぶ（テストプレイ。E で、そのステージを作る側へ）
+  function playOwn(name) {
+    var d = draftFromRecord(name, (stageStore() || {})[name]);
+    if (!d) { window.alert('読めません: 「' + name + '」'); return; }
+    showHome(false);
+    if (!(app.draft && app.draft.key === name)) startDraft(d);   // 開いていたステージなら、作っていた盤面（1手戻すの履歴も）のまま
+    testPlay();
+  }
+  // 新しく作る: 作る側で開く（自分のステージが1つ増える）
+  function newFromHome() {
+    showHome(false);
+    startDraft(newStage(B.boardSize));   // エディットの外で替える（前のステージは、その盤面のまま残る）
+    app.editMode = true;
+    app.history = app.editHist;
+    app.state = R.clone(app.draft.state);
+    app.editPick = null;
+    keepDraft();
+    var label = '新しいステージ「' + app.draft.name + '」を作った（味方3人・敵1体）';
+    addLog(label, 'system');
+    say(label);
+    render();
+  }
+  // 自分のステージを消す: 確かめてから（元に戻せない）
+  function deleteOwn(name) {
+    var stages = stageStore();
+    if (!stages || !stages[name]) return;
+    if (!window.confirm('自分のステージ「' + name + '」を消します。元に戻せません。消しますか？')) return;
+    delete stages[name];
+    if (!stageStoreSet(stages)) { window.alert('消せませんでした'); return; }
+    if (app.draft && app.draft.key === name) app.draft = null;   // 前に開いていたステージなら、作っていた盤面も手放す
+    renderHome();
+  }
+  el.home.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button');
+    if (!b) return;
+    if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
+    if (b.hasAttribute('data-new')) { newFromHome(); return; }
+    var open = b.getAttribute('data-open') || '', kind = open.slice(0, open.indexOf(':')), name = open.slice(open.indexOf(':') + 1);
+    if (kind === 'tut') { showHome(false); loadScenario(name); }
+    else if (kind === 'my') playOwn(name);
+  });
+  el.btnHome.addEventListener('click', goHome);
+
   document.addEventListener('keydown', function (e) {
     var tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (app.home) return;   // 最初の画面では、盤面のキーは使わない
     if (e.ctrlKey || e.metaKey || e.altKey) {
       if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
       return;
@@ -2107,7 +2140,7 @@
 
   // 展示モードとの切り替え（mode.js。オーナー 10/30）: 右下の点を2秒長押ししたときだけ効く。普通のクリックでは何も起きない。
   //   押している間は .holding（細い線が伸びる）。離す・外れると取りやめ。印のない URL で開いた展示モードでは何もしない（線も出さない）。
-  //   切り替える前に、エディットの作りかけを残す（開発モードは、開くと続きから）
+  //   切り替える前に、エディットの作りかけを残す（開発モードは、開くと最初の画面から。作っていた盤面は自分のステージに残っている）
   var MODE_HOLD_MS = 2000;
   (function () {
     var b = $('modeSwitch'), M = window.CafiliaMode, timer = null;
@@ -2129,20 +2162,16 @@
     b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   })();
 
-  // 展示モードはチュートリアル①から。開発モードはエディットから（最後に開いていた自分のステージの続き。なければ新しいステージ）
+  // 展示モードはチュートリアル①から。開発モードは最初の画面（ステージの一覧）から
   addLog('ようこそ。敵の予告（紫）を見てから、味方を選び、立ち位置と向きを決めて撃ってください', 'system');
   if (EXHIBIT) {
     loadScenario(EXHIBIT_STAGES[0]);
     app.history = [];   // 始まりより前には戻らない
   } else {
     migrateOldStages();   // 段0: 前の作りかけ・前の保存を、自分のステージに一度だけ移す
-    var last = lastOwn(), d0 = last && draftFromRecord(last, (stageStore() || {})[last]);
-    startDraft(d0 || newStage(B.boardSize));
-    app.history = app.editHist;
-    app.editMode = true;
-    app.state = R.clone(app.draft.state);
-    keepDraft();
-    addLog('開発モード: 「' + app.draft.name + '」' + (d0 ? 'の続きから' : 'を作る') + '（E で ▶ テストプレイ）', 'system');
+    app.state = begin(app.state);
+    app.resetPoint = R.clone(app.state);
+    showHome(true);
     render();
   }
   if (!(function () { try { return window.localStorage.getItem(HOWTO_KEY); } catch (e) { return null; } })()) setHowto(true);

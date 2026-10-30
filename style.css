@@ -960,6 +960,26 @@ button.retry { margin: 2px auto 0; font-size: 16px; padding: 6px 22px; }
 .so-tag.planned { box-shadow: 0 0 0 2px #fff; }
 
 /* ---------------------------------------------------------------
+ * 開発モードの最初の画面（IMPROVE_v3 段2）: ステージの一覧。押すと遊ぶ側で開く（E で作る側へ）
+ *   出ている間は、盤面・横の欄・上のバーの遊ぶためのボタンを隠す（遊び方だけ残す）
+ * --------------------------------------------------------------- */
+body.at-home .layout,
+body.at-home .topbar .status,
+body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
+.home { max-width: 760px; margin: 16px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 14px; }
+.home[hidden] { display: none; }
+.home h2 { margin: 0; font-size: 20px; }
+.home h2 small, .home h3 small { font-weight: normal; color: var(--muted); font-size: 13px; margin-left: 6px; }
+.home-sec { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.home-sec h3 { margin: 0 0 8px; font-size: 15px; }
+.home-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-stage { min-height: 44px; padding: 6px 16px; font-size: 15px; }
+.home-own { display: inline-flex; align-items: stretch; }
+.home-own .home-stage { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.home-own .home-del { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; padding: 0 10px; color: var(--muted); font-size: 12px; }
+.home-new { align-self: flex-start; min-height: 44px; padding: 6px 20px; font-size: 15px; }
+
+/* ---------------------------------------------------------------
  * 展示モード（mode.js。URL に印がないとき。オーナー 10/29）
  *   見せるのは、盤面・味方の欄・向きと構える・待機の操作・発動の順番・敵の予告・会話の窓・
  *   上のバーの「発動」「1手戻す」「遊び方」・負けたときの「やり直す」、お題の帯（目標・勝ち方・残りの数）・案内の1行・

@@ -17,6 +17,8 @@
       <span id="modeLabel" class="pill mode">プレイ中</span>
     </div>
     <div class="buttons">
+      <!-- 開発モード: 最初の画面（ステージの一覧）に戻る（IMPROVE_v3 段2） -->
+      <button id="btnHome" type="button" title="最初の画面（ステージの一覧）に戻る。作っていた盤面は自分のステージに残る">⌂ 最初の画面</button>
       <button id="btnEndTurn" type="button">ターン終了 <kbd>T</kbd></button>
       <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
       <button id="btnReset" type="button">リセット</button>
@@ -24,6 +26,9 @@
       <button id="btnHowto" type="button">遊び方</button>
     </div>
   </header>
+
+  <!-- 開発モードの最初の画面（IMPROVE_v3 段2）: ステージの一覧。押すと遊ぶ側で開く（E で作る側へ）。中身は ui.js が作る -->
+  <section id="home" class="home" hidden aria-label="最初の画面"></section>
 
   <main class="layout">
     <section class="board-area">
@@ -103,24 +108,17 @@
           <button id="btnResize" type="button">変更</button>
           <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>
-        <!-- ステージ（IMPROVE_v3 段0）: 保存ボタンはない。直すたびに、このブラウザの「自分のステージ」に自動で残る。
-             一覧・読み込む・削除・新しいステージは、開発の最初の画面ができたらそちらへ移す。ファイルの2つは段4（共有）でなくす -->
+        <!-- ステージ（IMPROVE_v3 段0・段2）: 保存ボタンはない。直すたびに、このブラウザの「自分のステージ」に自動で残る。
+             一覧・開く・消す・新しく作るは、開発の最初の画面（⌂）にある。ファイルの2つは段4（共有）でなくす -->
         <div class="edit-group">
           <h3>ステージ <small>直すたびに自動で残る</small></h3>
           <div class="row">
             <label>名前 <input id="saveName" type="text" placeholder="ステージの名前" maxlength="40"></label>
           </div>
           <div class="row">
-            <select id="savedList" aria-label="読み込むステージ"></select>
-            <button id="btnLoadSaved" type="button">読み込む</button>
-            <button id="btnDeleteSaved" type="button">削除</button>
-          </div>
-          <div class="row">
-            <button id="btnNewStage" type="button">新しいステージ</button>
             <button id="btnDownload" type="button">ファイルに書き出す</button>
             <label class="file-label">ファイルを読み込む <input id="fileInput" type="file" accept=".json,application/json"></label>
           </div>
-          <p id="storeNote" class="note"></p>
         </div>
         <div class="edit-group stage-texts">
           <h3>会話の窓の文 <small>1行が1つの文。「［一斉だけ］」「［1人ずつだけ］」で始めると、その形のときだけ。「話す人「文」」で話す人</small></h3>
