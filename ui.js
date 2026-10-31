@@ -2181,8 +2181,11 @@
         '<div class="home-list ex-menu">' + L.pick.map(function (r) { return btn('data-play="' + esc(r) + '"', refName(r)); }).join('') + '</div>' +
         '<div class="home-list ex-menu">' + back + '</div>';
     } else if (view === 'thanks' || view === 'clear') {
+      // ありがとう！（チュートリアルを遊び終えたあと）だけ: 試遊アンケートの QR とひとこと（オーナー 10/31）
+      var survey = view === 'thanks' ? '<div class="ex-survey"><img src="survey_qr.png" alt="試遊アンケートの QR コード">' +
+        '<p>' + esc(ui('exSurvey', 'よかったらアンケートお願いします！')) + '</p></div>' : '';
       el.home.innerHTML = '<h2 class="ex-head big">' + esc(view === 'thanks' ? ui('exThanks', 'ここまで遊んでくれてありがとう！') : ui('exClear', 'クリア！')) + '</h2>' +
-        '<div class="home-list ex-menu">' + back + other + '</div>';
+        survey + '<div class="home-list ex-menu">' + back + other + '</div>';
     } else if (!app.shared.loaded) {
       el.home.innerHTML = logo + '<div class="ex-mid"><p class="muted">' + esc(ui('exLoading', '読み込み中…')) + '</p></div>';
     } else {

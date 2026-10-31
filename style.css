@@ -1018,6 +1018,10 @@ html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 1
 .ex-head.big { font-size: 34px; letter-spacing: .04em; }
 .ex-menu { justify-content: center; }
 .ex-menu .home-stage { min-height: 56px; min-width: 12em; padding: 8px 24px; font-size: 18px; }
+/* ありがとう！の画面の試遊アンケート（オーナー 10/31）: QR は暗い画面でも読めるよう白い台に載せる */
+.ex-survey { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ex-survey img { display: block; width: min(260px, 36vh); height: auto; padding: 10px; background: #fff; border-radius: 10px; }
+.ex-survey p { margin: 0; font-size: 20px; font-weight: bold; }
 /* 展示モードの最初の画面だけ（オーナー 10/31）: 題字は上に大きく、ボタンは真ん中に縦に大きく、「タッチでプレイ！！」は真ん中のちょい下 */
 html.mode-exhibit .home.ex-title-view { max-width: none; margin: 0; min-height: calc(100vh - 56px); padding: 5vh 16px; gap: 0; }
 .ex-head.ex-logo { font-size: clamp(48px, 9vw, 96px); letter-spacing: .1em; line-height: 1.15; }
