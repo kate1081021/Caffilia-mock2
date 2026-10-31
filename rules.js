@@ -423,7 +423,7 @@
     }
   }
 
-  var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）', ram: '（体当たり）', edge: '（決め手の外側）', weak: '（弱い）' };
+  var SRC_NOTE = { finisher: '', weakfire: '（弱い炎）', ram: '（体当たり）', edge: '（決め手の外側）', weak: '（弱い）', flood: '（川に押し流された）' };
   function applyHits(s, ctx, ev) {
     ctx.order.forEach(function (id) {
       var u = findUnit(s, id);
@@ -536,10 +536,12 @@
 
     var maxLen = B.spread.maxLength + (bonus || 0);
     var before = [];
+    var mountainAt = null;   // 風が運んだ炎が届いた山（火が山に点くのと同じく、山脈ごと火山になる。オーナー 10/31）
     for (var i = 1; i <= maxLen; i++) {
       var x = ox + F.dx * i, y = oy + F.dy * i;
       if (!inBounds(s, x, y)) break;
       var t = getTile(s, x, y);
+      if (t === 'mountain') { mountainAt = [x, y]; break; }
       if (SPREAD_BLOCKERS[t]) break;
       path.push([x, y]);
       before.push(t);
@@ -577,6 +579,7 @@
           : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
         (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '')
     });
+    if (mountainAt) { ctx.phrases.push('燃え広がりが山に届いて火が点いた'); doFunka(s, mountainAt[0], mountainAt[1], ctx, ev, {}); }
     return fin;
   }
 
@@ -1377,16 +1380,18 @@
 
   // 1本の川: (sx, sy) の次のマスから d の向きへ。空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。
   //   人（味方・敵）のマスでは止まらずに流れ続け、その人の足元も川になる（オーナー 10/30。人へのダメージはない）。
-  //   置きもの（村など）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
+  //   村には流れこんで村を押し流し（壊れる）、そのまま流れ続ける（オーナー 10/31）。
+  //   ほかの置きもの（馬車）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
   function runRiver(s, sx, sy, d, ctx, overHill) {
-    var F = DIRS[d], g = { origin: [sx, sy], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null, prev = [sx, sy], over = 0;
+    var F = DIRS[d], g = { origin: [sx, sy], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null, prev = [sx, sy], over = 0, flooded = [];
     for (var i = 1; ; i++) {
       var cx = sx + F.dx * i, cy = sy + F.dy * i;
       if (!inBounds(s, cx, cy)) { stop = '盤の端まで流れた'; break; }
       if (overHill && overHill(cx, cy, prev)) { prev = [cx, cy]; over++; continue; }
       prev = [cx, cy];
       var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
-      if (o && o.side === 'object') { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
+      if (o && o.kind === 'village') { addHit(ctx, o, o.hp, 'flood', [cx, cy]); flooded.push(unitLabel(s, o) + 'に川が流れこんだ'); }
+      else if (o && o.side === 'object') { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
       if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
         setTile(s, cx, cy, 'river');
         ctx.cells.push([cx, cy]);
@@ -1399,6 +1404,7 @@
       break;
     }
     if (g.cells.length) { ctx.grows.push(g); ctx.phrases.push(F.name + 'へ川が' + g.cells.length + 'マス流れた'); }
+    Array.prototype.push.apply(ctx.phrases, flooded);
     if (stop) ctx.phrases.push(stop);
     return g.cells.length;
   }

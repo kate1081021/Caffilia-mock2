@@ -347,6 +347,22 @@ test('川・山の手前で止まる', function () {
   var a2 = R.addAlly(s2, 'wind', 2, 5);
   eq(fire(s2, a2, 'up').events.filter(function (e) { return e.type === 'finisher'; })[0].cells.length, 2);
 });
+test('燃え広がりが山に届くと、山脈ごと火山になる（火が山に点くのと同じ。オーナー 10/31）', function () {
+  // 炎 (2,4) に下から風 → 上へ (2,3)(2,2) と走り、(2,1) の山に届く。山 (2,1)(3,1) はつながった山脈
+  var s = board(['......', '..MM..', '......', '......', '..X...', '......']);
+  var a = R.addAlly(s, 'wind', 2, 5);
+  var r = fire(s, a, 'up');
+  eq(names(r.events, 'finisher'), ['燃え広がり']);
+  eq([tile(r.state, 2, 1), tile(r.state, 3, 1)], ['volcano', 'volcano'], '山脈ごと火山');
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2)], ['smallfire', 'smallfire']);
+  var kinds = r.events.map(function (e) { return e.type; });
+  ok(kinds.indexOf('kindle') > kinds.indexOf('finisher'), '燃え広がりのあとに火山になる（連鎖が順に見える）');
+  ok(/燃え広がりが山に届いて火が点いた/.test(r.events[0].text), r.events[0].text);
+  // 届かない山（燃え広がりの長さの外）は山のまま
+  var s2 = board(['..M...', '......', '......', '......', '..X...', '......']);
+  var r2 = fire(s2, R.addAlly(s2, 'wind', 2, 5), 'up');
+  eq(tile(r2.state, 2, 0), B.spread.maxLength >= 4 ? 'volcano' : 'mountain');
+});
 test('つながった森が全部燃え、ダメージは一定（決め手20）、味方も巻き込む', function () {
   var s = board([
     '.......',
@@ -2753,21 +2769,28 @@ test('水: 山の頂上に当たると、すべての腕から川が流れる（
   eq(tile(r.state, 3, 6), 'river', '下の腕から下へ');
   eq(tile(r.state, 1, 4), 'hill', '左の腕からの川は、丘の上の自分の手前で止まる');
 });
-test('川はユニット・村の手前で止まる（ダメージはない）', function () {
-  // 上の腕 (3,3) から上へ: (3,1) に敵 → (3,2) まで
+test('川は人の足元も流れ続け（ダメージはない）、村は押し流して流れ続ける（オーナー 10/31）', function () {
+  // 上の腕 (3,3) から上へ: (3,1) に敵 → 敵の足元も川になって盤の端まで
   var st = crossBoard();
   var e = R.addEnemy(st, 'earth', 3, 1, 'down');
   var r = R.act(st, R.addAlly(st, 'water', 2, 3, 'right').id, { dir: 'right' });
-  eq([tile(r.state, 3, 2), tile(r.state, 3, 1)], ['river', 'empty']);
-  ok(/敵Aの手前で止まった/.test(r.events[0].text), r.events[0].text);
-  eq(hp(r.state, e.id), B.enemy.hp, 'ダメージはない');
-  // 右の腕 (4,4) から右へ: (6,4) に村 → (5,4) まで
+  eq([tile(r.state, 3, 2), tile(r.state, 3, 1), tile(r.state, 3, 0)], ['river', 'river', 'river']);
+  eq(hp(r.state, e.id), B.enemy.hp, '人にダメージはない');
+  // 右の腕 (4,4) から右へ: (5,4) に村 → 村は壊れ、(6,4) まで流れる
   var st2 = crossBoard();
-  R.addObject(st2, 'village', 6, 4);
+  R.addObject(st2, 'village', 5, 4);
   var r2 = R.act(st2, R.addAlly(st2, 'water', 4, 3, 'down').id, { dir: 'down' });
-  eq([tile(r2.state, 5, 4), tile(r2.state, 6, 4)], ['river', 'empty']);
-  ok(/村の手前で止まった/.test(r2.events[0].text), r2.events[0].text);
-  eq(R.objectsOf(r2.state, 'village')[0].hp, 1, '村は壊れない');
+  eq([tile(r2.state, 5, 4), tile(r2.state, 6, 4)], ['river', 'river']);
+  ok(/村.*に川が流れこんだ/.test(r2.events[0].text), r2.events[0].text);
+  eq(R.objectsOf(r2.state, 'village').length, 0, '村は壊れる');
+  ok(r2.events.some(function (ev) { return ev.type === 'death' && ev.kind === 'village'; }), '村が壊れた出来事');
+});
+test('馬車は今までどおり、川の手前で止まる', function () {
+  var st = crossBoard();
+  R.addObject(st, 'wagon', 5, 4);
+  var r = R.act(st, R.addAlly(st, 'water', 4, 3, 'down').id, { dir: 'down' });
+  eq(tile(r.state, 5, 4), 'empty');
+  ok(/馬車.*の手前で止まった/.test(r.events[0].text), r.events[0].text);
 });
 test('突進の敵: 人は無視して一番近い村へ、このステージでは1ターンに1マス。魔法は撃たず、予告も出さない', function () {
   var s = tut2();
