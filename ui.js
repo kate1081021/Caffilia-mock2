@@ -2166,6 +2166,9 @@
     var btn = function (attr, label, cls) { return '<button type="button" class="' + (cls || 'home-stage') + '" ' + attr + '>' + esc(label) + '</button>'; };
     var back = btn('data-ex="title"', ui('exBackTitle', '最初の画面に戻る'));
     var other = L.pick.length ? btn('data-ex="pick"', ui('exOther', 'ほかのステージで遊ぶ'), 'primary home-stage') : '';
+    var logo = '<h2 class="ex-head ex-logo">' + esc(ui('exTitle', 'カフィーリア')) + '</h2>';
+    // 最初の画面だけ: 題字を上に大きく、ボタンを真ん中に大きく、その下に「タッチでプレイ！！」（オーナー 10/31）
+    el.home.classList.toggle('ex-title-view', view !== 'pick' && view !== 'thanks' && view !== 'clear');
     if (view === 'pick') {
       el.home.innerHTML = '<h2 class="ex-head">' + esc(ui('exPick', 'ステージを選んで遊ぶ')) + '</h2>' +
         '<div class="home-list ex-menu">' + L.pick.map(function (r) { return btn('data-play="' + esc(r) + '"', refName(r)); }).join('') + '</div>' +
@@ -2174,12 +2177,13 @@
       el.home.innerHTML = '<h2 class="ex-head big">' + esc(view === 'thanks' ? ui('exThanks', 'ここまで遊んでくれてありがとう！') : ui('exClear', 'クリア！')) + '</h2>' +
         '<div class="home-list ex-menu">' + back + other + '</div>';
     } else if (!app.shared.loaded) {
-      el.home.innerHTML = '<h2 class="ex-head big">' + esc(ui('exTitle', 'カフィーリア')) + '</h2><p class="muted">' + esc(ui('exLoading', '読み込み中…')) + '</p>';
+      el.home.innerHTML = logo + '<div class="ex-mid"><p class="muted">' + esc(ui('exLoading', '読み込み中…')) + '</p></div>';
     } else {
-      el.home.innerHTML = '<h2 class="ex-head big">' + esc(ui('exTitle', 'カフィーリア')) + '</h2>' +
-        '<div class="home-list ex-menu">' +
+      el.home.innerHTML = logo + '<div class="ex-mid">' +
+        '<div class="home-list ex-menu ex-menu-big">' +
         (L.start.length ? btn('data-ex="start"', ui('exStart', 'はじめから遊ぶ'), 'primary home-stage') : '') +
-        (L.pick.length ? btn('data-ex="pick"', ui('exPick', 'ステージを選んで遊ぶ')) : '') + '</div>';
+        (L.pick.length ? btn('data-ex="pick"', ui('exPick', 'ステージを選んで遊ぶ')) : '') + '</div>' +
+        '<p class="ex-touch">' + esc(ui('exTouch', 'タッチでプレイ！！')) + '</p></div>';
     }
   }
   // 並びの i 番目から遊ぶ（見つからなくなったものは飛ばす）
