@@ -3580,8 +3580,8 @@
       var T = B.mission.defense.turns;
       info.win = 'ターン' + T + 'の終わりまで村を守る（' + (B.mission.defense.sealWin ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
       info.lose = '村が' + B.mission.defense.loseAt + 'つ壊れる／味方が全員倒れる';
-      info.status.push(s.result ? 'ターン' + s.turn + '/' + T : '残り' + Math.max(0, T - s.turn + 1) + 'ターン（今 ' + s.turn + '/' + T + '）');
-      info.status.push('村 ' + objectsOf(s, 'village').map(function (v) { return unitLabel(s, v) + ' HP' + v.hp; }).join('・') + (m.lost ? '（壊れた ' + m.lost + '）' : ''));
+      // 「ターン4/5」の形だけ（決着の前とあとで長さを変えない。村の行は出さない。村の HP は村のマスを押すと出る。IMPROVE_controls 3-1）
+      info.status.push('ターン' + Math.min(s.turn, T) + '/' + T);
     } else if (type === 'escort') {
       info.win = '馬車がゴールに入る';
       info.lose = '馬車が壊れる／味方が全員倒れる';

@@ -19,7 +19,6 @@
     <div class="buttons">
       <!-- 開発モード: 最初の画面（ステージの一覧）に戻る（IMPROVE_v3 段2） -->
       <button id="btnHome" type="button" title="最初の画面（ステージの一覧）に戻る。作っていた盤面は自分のステージに残る">⌂ 最初の画面</button>
-      <button id="btnEndTurn" type="button">ターン終了</button>
       <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
       <button id="btnReset" type="button">リセット</button>
       <button id="btnEdit" type="button">エディット <kbd>E</kbd></button>
@@ -39,9 +38,6 @@
         <div id="cellInfo" class="cell-info" aria-live="polite"></div>
         <div id="hint" class="hint" aria-live="polite"></div>
       </div>
-      <button id="btnRetry" type="button" class="primary retry" hidden>やり直す</button>
-      <!-- ステージ②: 村への道をふさぎきったら、押してクリア（盤面のクリックか Enter でも） -->
-      <button id="btnSealWin" type="button" class="primary retry" hidden>クリアする <kbd>Enter</kbd></button>
       <div id="boardWrap" class="board-wrap">
         <div id="board" class="board" role="grid" aria-label="盤面"></div>
         <div id="fx" class="fx-layer"></div>
@@ -49,31 +45,38 @@
       </div>
     </section>
 
-    <aside class="side">
-      <div id="playPanel" class="panel">
-        <h2>味方</h2>
-        <div id="roster" class="roster"></div>
-        <div id="orderPanel" class="order-panel" hidden></div>
+    <aside id="side" class="side">
+      <!-- 遊ぶとき（IMPROVE_controls 1章・5-3）: 右上は見るところ（味方・発動の順番・敵）、右下はさわるところ（向き・魔法・待機と、右下のボタン）。
+           右下の位置は、右上の中身が変わっても動かない（右上が長ければ右上だけスクロール） -->
+      <div id="playSide" class="play-side">
+        <div id="playPanel" class="panel play-top">
+          <h2>味方</h2>
+          <div id="roster" class="roster"></div>
+          <div id="orderPanel" class="order-panel" hidden></div>
 
-        <div id="actPanel" class="act-panel">
-          <div id="actInfo" class="act-info"></div>
-          <div class="act-grid">
-            <div class="dirpad" role="group" aria-label="向き">
-              <button type="button" class="dir" data-dir="up" title="上を向く（↑）">↑</button>
-              <button type="button" class="dir" data-dir="left" title="左を向く（←）">←</button>
-              <span class="dir-center" id="dirCenter"></span>
-              <button type="button" class="dir" data-dir="right" title="右を向く（→）">→</button>
-              <button type="button" class="dir" data-dir="down" title="下を向く（↓）">↓</button>
-            </div>
-            <div class="act-buttons">
-              <button id="btnShoot" type="button" class="primary">撃つ <kbd>Enter</kbd></button>
-              <button id="btnWait" type="button">待機 <kbd>W</kbd></button>
-            </div>
-          </div>
+          <h2>敵</h2>
+          <div id="enemyList" class="enemy-list"></div>
         </div>
 
-        <h2>敵</h2>
-        <div id="enemyList" class="enemy-list"></div>
+        <div id="ctrlPanel" class="panel ctrl-panel">
+          <div id="actPanel" class="act-panel">
+            <div class="act-grid">
+              <div class="dirpad" role="group" aria-label="向き">
+                <button type="button" class="dir" data-dir="up" title="上を向く">↑</button>
+                <button type="button" class="dir" data-dir="left" title="左を向く">←</button>
+                <span class="dir-center" id="dirCenter"></span>
+                <button type="button" class="dir" data-dir="right" title="右を向く">→</button>
+                <button type="button" class="dir" data-dir="down" title="下を向く">↓</button>
+              </div>
+              <div class="act-buttons">
+                <button id="btnShoot" type="button" class="primary">魔法</button>
+                <button id="btnWait" type="button">待機</button>
+              </div>
+            </div>
+          </div>
+          <!-- 右下のボタン（IMPROVE_controls 5-2）: 同じ場所で文字が変わる。発動／クリアする（②）／次へ（展示でクリアしたら）／やり直す（負けたら） -->
+          <button id="btnGo" type="button" class="go-btn">発動</button>
+        </div>
       </div>
 
       <div id="editPanel" class="panel edit-panel" hidden>

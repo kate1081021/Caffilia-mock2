@@ -66,7 +66,7 @@
     plan: null,           // 選んでいる味方の向き { dir }（移動は押した時点で本当に動く。R.move）
     dirs: {},             // 味方ごとに選んだ向き { id: dir }。ほかの味方を選んでも捨てない（オーナー 10/30）。撃つ・構える・待機・ターンの終わりで消える
     info: null,           // 押したマス [x, y]。盤面の左上に、そのマスの情報を出す（オーナー 10/30）
-    exNextGo: null,       // 展示: クリアしたあと、盤面のクリックか Enter で次へ進む（オーナー 10/30）
+    exNextGo: null,       // 展示: クリアしたあと、右下の「次へ」（か Enter）で次へ進む（IMPROVE_controls 5-2）
     busy: false,          // 演出を再生中
     playback: null,
     editMode: false,
@@ -93,11 +93,11 @@
   var $ = function (id) { return document.getElementById(id); };
   var el = {};
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
-    'btnEndTurn', 'btnUndo', 'btnReset', 'btnEdit', 'playPanel', 'editPanel', 'roster', 'actPanel', 'actInfo',
+    'btnGo', 'btnUndo', 'btnReset', 'btnEdit', 'side', 'playSide', 'playPanel', 'ctrlPanel', 'editPanel', 'roster', 'actPanel',
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
-    'missionBar', 'missionTools', 'btnRetry', 'btnSealWin', 'stageHint', 'cellInfo',
+    'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
@@ -419,7 +419,7 @@
     exAfterPlayback();
     exhibitAfterPlayback();
   }
-  // 展示モード: ステージをクリアしたら、盤面のクリックか Enter で次へ（会話の窓が出ていれば、閉じてから）（IMPROVE_v3 段3・オーナー 10/30）
+  // 展示モード: ステージをクリアしたら、右下の「次へ」（か Enter）で次へ（会話の窓が出ていれば、閉じてから）（IMPROVE_v3 段3・IMPROVE_controls 5-2）
   //   はじめから遊ぶ: 並びの次のステージへ。最後のあとは「ありがとう！」。選んで遊ぶ: 「クリア！」
   function exhibitAfterPlayback() {
     var st = app.state, run = app.run;
@@ -434,6 +434,7 @@
       exhibitAfterPlayback.timer = setTimeout(function () {
         if (app.state !== st || app.run !== run) return;
         app.exNextGo = go;
+        renderGo();
         renderHint();
       }, EXHIBIT_NEXT_MS);
     };
@@ -464,7 +465,7 @@
   function selUnit() {
     if (!app.sel) return null;
     var u = R.findUnit(app.state, app.sel);
-    return u && (!u.acted || R.restancing(u)) ? u : null;   // 【一斉】構えた味方は、発動の前なら構え直せる
+    return u && !u.acted ? u : null;   // 魔法で構えた・待機した味方は選べない（構え直しは画面からなくした。IMPROVE_controls 4-1）
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
@@ -475,14 +476,10 @@
   function clearPlans() { app.dirs = {}; app.plan = null; }
 
   // 遊ぶ側の最初は、誰も選んでいない（オーナー 10/30）。味方は押して（か 1〜3 キーで）選ぶ
+  //   構える味方と、魔法で構えた・待機した味方（薄い味方）は選べない。押しても選ぶのをやめるだけ（IMPROVE_controls 2章）
   function select(id) {
     var u = R.findUnit(app.state, id);
-    if (!u || u.side !== 'ally' || u.npc) { deselect(); return; }   // 構える味方は選べない
-    if (u.acted && !R.restancing(u)) {   // 【一斉】構えた味方は構え直せる
-      app.sel = null; app.plan = null; render();
-      say(R.unitLabel(app.state, u) + 'はもう行動しました');
-      return;
-    }
+    if (!u || u.side !== 'ally' || u.npc || u.acted) { deselect(); return; }
     app.sel = id;
     app.plan = { dir: app.dirs[id] || u.facing };
     render();
@@ -523,7 +520,7 @@
     delete app.dirs[id];
     if (app.onAct) app.onAct(u, shoot !== false);   // 文章（きっかけ: 構えたとき）
     play(res.steps, res.state, function () {
-      if (simul() || app.state.result) return;   // 【一斉】全員構えても、発動は盤面のクリックか Enter で
+      if (simul() || app.state.result) return;   // 【一斉】全員構えても、発動は右下のボタン（か Enter）で
       if (R.allAlliesActed(app.state) && !R.sealReady(app.state)) {   // ステージ②: ふさぎきったら、ターン終了は回さずに「クリアする」を待つ
         addLog(R.controllableOf(app.state).length === 3 ? '3人とも行動したので、ターン終了' : '全員行動したので、ターン終了', 'system');
         runEndTurn();
@@ -531,16 +528,10 @@
     });
   }
 
-  // 盤面のクリックか Enter で進める（オーナー 10/30。T・C キーの代わり）:
-  //   展示でクリアしたら次へ／ステージ②でふさぎきったらクリア／【一斉】全員構えたら発動。味方を選んでいる間は進めない（Enter は「魔法」）
+  // 誰も選んでいないときの Enter（おまけのキー）: 右下のボタンを押したのと同じ。味方を選んでいる間は進めない（Enter は「魔法」）
   function advance() {
-    var go = app.exNextGo;
-    if (go) { app.exNextGo = null; go(); return true; }
-    if (!canControl() || app.sel || app.fireWaiting) return false;
-    var st = app.state;
-    if (R.sealReady(st)) { doSealWin(); return true; }
-    if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { doEndTurn(); return true; }
-    return false;
+    if (selUnit()) return false;
+    return goPress();
   }
 
   // ターン終了（1人ずつ）・発動（一斉）。発動の前の文章があれば、読み終えてから
@@ -560,7 +551,7 @@
     if (app.onBeforeFire) app.onBeforeFire(go); else go();
   }
 
-  // ステージ②: 村への道をふさぎきったら、盤面のクリックか Enter（advance）か「クリアする」でクリア
+  // ステージ②: 村への道をふさぎきったら、右下の「クリアする」（か Enter）でクリア
   function doSealWin() {
     if (!canControl() || !R.sealReady(app.state)) return;
     var r = R.claimSeal(app.state);
@@ -606,7 +597,7 @@
   }
   function selectable(id) {
     var u = R.findUnit(app.state, id);
-    return !app.editMode && !!u && u.side === 'ally' && !u.npc && (!u.acted || R.restancing(u));
+    return !app.editMode && !!u && u.side === 'ally' && !u.npc && !u.acted;
   }
 
   function setState(s, logText) {
@@ -838,15 +829,15 @@
   // ---------------------------------------------------------------
   // 盤面のクリック
   // ---------------------------------------------------------------
+  // 盤面のクリックでできるのは、味方にさわる（選ぶ・緑のマスへ動く）と、押したマスを左上に出すことだけ（IMPROVE_controls 2章）。
+  //   発動・クリア・次へ・演出を飛ばすは、右下のボタン（とおまけのキー）で
   function onPlayClick(x, y) {
-    if (app.busy) { skipPlayback(); return; }
     if (app.editMode) return;
+    app.info = [x, y];   // 押したマスの情報を、盤面の左上に出す（オーナー 10/30）
+    if (app.busy) { renderCellInfo(); return; }   // 演出の途中は、マスを出すだけ
     var u = selUnit();
     var occ = R.unitAt(app.state, x, y);
     var ally = occ && occ.side === 'ally' ? occ : null;
-    // 誰も選んでいないとき、味方以外を押したら進める（展示でクリアしたら次へ・ふさぎきったらクリア・全員構えたら発動）
-    if ((app.exNextGo || (!u && !ally)) && advance()) return;
-    app.info = [x, y];   // 押したマスの情報を、盤面の左上に出す（オーナー 10/30）
     if (app.state.result) { render(); return; }
     if (ally) {
       if (u && ally.id === u.id) { render(); return; }
@@ -915,7 +906,19 @@
     renderHint();
     renderCellInfo();
     if (app.editMode) renderShare();   // 共有のようす（地形を塗っただけでも変わる）
+    fitBoard();
   }
+
+  // 盤面の大きさ: 盤面の上の段（目標の帯・マスの情報・案内）の高さはステージの中で変わらないので、
+  //   盤面の上端から画面の下までに収まる大きさにする（style.css の --above。ステージが変わったときと、画面の大きさを変えたときだけ動く）
+  function fitBoard() {
+    if (!el.boardWrap.offsetParent) return;
+    var above = Math.round(el.boardWrap.getBoundingClientRect().top + window.scrollY + 20);
+    if (above === app.aboveH) return;
+    app.aboveH = above;
+    document.documentElement.style.setProperty('--above', above + 'px');
+  }
+  window.addEventListener('resize', function () { app.aboveH = null; fitBoard(); });
 
   // お題: 名前・勝ち方・負け方・残りの数を常に出す
   var missionSig = '';
@@ -949,30 +952,50 @@
     var mode = app.editMode ? 'エディット中' : app.busy ? '処理中…' : st.result === 'win' ? '勝利' : st.result === 'lose' ? '敗北' : test ? 'テストプレイ中' : 'プレイ中';
     el.modeLabel.textContent = mode;
     el.modeLabel.className = 'pill mode' + (app.editMode ? ' edit' : app.busy ? ' busy' : test ? ' test' : '');
-    // 【一斉】「ターン終了」は「発動」になり、動かせる味方が全員構え終えたら押せる
-    var ready = simul() && !st.result && R.controllableOf(st).length > 0 && R.allAlliesActed(st);
-    el.btnEndTurn.disabled = app.editMode || app.busy || !!st.result || (simul() && !ready && R.controllableOf(st).length > 0);
-    el.btnEndTurn.innerHTML = esc(simul() ? ui('fire', '発動') : ui('endTurn', 'ターン終了')) + (simul() ? ' <kbd>Enter</kbd>' : '');
-    el.btnEndTurn.classList.toggle('fire-ready', ready && !app.busy && !app.editMode);
-    el.btnEndTurn.classList.toggle('primary', ready && !app.busy && !app.editMode);
-    el.btnShoot.innerHTML = esc(simul() ? ui('stance', '魔法') : ui('shoot', '撃つ')) + ' <kbd>Enter</kbd>';
-    el.btnWait.innerHTML = esc(ui('wait', '待機')) + ' <kbd>W</kbd>';
-    el.btnRetry.textContent = ui('retry', 'やり直す');
+    renderGo();
     el.btnUndo.disabled = app.history.length === 0;
     el.btnEdit.classList.toggle('active', app.editMode);
     el.btnEdit.classList.toggle('test', test);
     el.btnEdit.innerHTML = (app.editMode ? '▶ テストプレイ' : test ? '✎ エディットに戻る' : 'エディット') + ' <kbd>E</kbd>';
     el.btnReset.disabled = app.editMode;
-    // チュートリアル: 負けたら「やり直す」。やり直したあと（2回目以降の開始時）は、盤面の上にヒントを1行
-    el.btnRetry.hidden = !(st.result === 'lose' && st.stage && !app.editMode && !app.busy);
-    // ステージ②: 村への道をふさぎきったら「クリアする」（勝手には勝たない）
-    el.btnSealWin.hidden = !(canControl() && R.sealReady(st));
-    el.btnSealWin.innerHTML = esc(ui('sealWin', 'クリアする')) + ' <kbd>Enter</kbd>';
+    // チュートリアル: やり直したあと（2回目以降の開始時）は、盤面の上にヒントを1行。
+    //   ヒントのあるステージでは、出ていないときも場所をとっておく（やり直したときに盤面がずれないように。IMPROVE_controls 3-3）
     var sh = app.editMode ? null : R.stageHint(st);
-    el.stageHint.hidden = !sh;
-    if (sh && el.stageHint.textContent !== sh) el.stageHint.textContent = sh;
-    el.playPanel.hidden = app.editMode;
+    el.stageHint.hidden = app.editMode || !R.stageHint({ stage: st.stage, tries: 1 });
+    el.stageHint.classList.toggle('blank', !sh);
+    var shText = sh || '　';
+    if (el.stageHint.textContent !== shText) el.stageHint.textContent = shText;
+    el.playSide.hidden = app.editMode;
+    el.side.classList.toggle('split', !app.editMode);   // 遊ぶ間は、右の欄を右上と右下に分ける（エディットは今までどおり上から並べる）
     el.editPanel.hidden = !app.editMode;
+  }
+
+  // 右下のボタン（IMPROVE_controls 5-2）: 同じ場所で文字が変わる。押すと（誰も選んでいないときの Enter も）その時の働き
+  //   展示でクリアしたら「次へ」（会話の窓を閉じて少しあけてから押せる）／負けたら「やり直す」（チュートリアル）／
+  //   ②で村への道をふさいだら「クリアする」（勝手には勝たない）／ほかは「発動」（動かせる味方が全員構え終えたら押せる）
+  function goState() {
+    var st = app.state;
+    if (app.editMode) return null;
+    if (st.result === 'win' && EXHIBIT && app.run) return { label: ui('next', '次へ'), on: !!app.exNextGo, act: function () { var go = app.exNextGo; app.exNextGo = null; go(); } };
+    if (st.result === 'lose' && st.stage) return { label: ui('retry', 'やり直す'), on: !app.busy, act: retry };
+    if (canControl() && R.sealReady(st)) return { label: ui('sealWin', 'クリアする'), on: true, act: doSealWin, ready: true };
+    var ready = simul() && !st.result && R.controllableOf(st).length > 0 && R.allAlliesActed(st);
+    var on = !app.busy && !app.fireWaiting && !st.result && (!simul() || ready || !R.controllableOf(st).length);
+    return { label: simul() ? ui('fire', '発動') : ui('endTurn', 'ターン終了'), on: on, act: doEndTurn, ready: ready && on };
+  }
+  function renderGo() {
+    var g = goState();
+    if (!g) return;
+    el.btnGo.textContent = g.label;
+    el.btnGo.disabled = !g.on;
+    el.btnGo.classList.toggle('fire-ready', !!g.ready);   // 押せば進むときは光る
+    el.btnGo.classList.toggle('primary', g.on);
+  }
+  function goPress() {
+    var g = goState();
+    if (!g || !g.on) return false;
+    g.act();
+    return true;
   }
 
   // 敵の予告（エディット中・処理中は出さない）
@@ -1482,33 +1505,20 @@
       fc.burn.forEach(function (b) { warn[b.id] = (warn[b.id] || 0) + b.amount; });
       fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });
     }
-    // 構える味方は選べない札（予告の中身を出す）
-    var npcPlan = {};
-    if (fa) fa.allies.forEach(function (p) { npcPlan[p.id] = p; });
-    var npcHtml = R.alliesOf(st).filter(function (a) { return a.npc; }).map(function (a) {
-      return '<div class="ally-card npc"><span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
-        '<span class="info"><b>' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
-        '<span class="sub">' + (npcPlan[a.id] ? (npcPlan[a.id].order ? (ORDER_MARK[npcPlan[a.id].order] || '') + ' ' : '') + esc(planText(npcPlan[a.id], st)) : '<span class="x-more">構えていない</span>') +
-        (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
-        '</span></span></div>';
-    }).join('');
-    var al = R.controllableOf(st);
-    el.roster.innerHTML = (al.length ? al.map(function (a, i) {
-      var no = simul() ? R.stanceOrder(st, a.id) : 0;
-      var status = [!simul() ? (a.acted ? '行動済み' : '行動前') : a.stance ? (ORDER_MARK[no] || no) + ' 構えている（' + R.magicName(a.magic) + ' ' + DIR_ARROW[a.facing] + '）' : st.result ? '行動済み' : a.acted ? '待機' : 'まだ構えていない'];
-      if (a.stuck) status.push('泥沼: 次は移動できない');
-      if (a.burn > 0) status.push('火傷: あと' + a.burn + '回（水か氷で治る）');
-      if (st.mission && st.mission.carrier === a.id) status.push('宝を持っている（撃てない）');
-      // いつもの状態（行動前・まだ構えていない）は出さない
-      if (status[0] === '行動前' || status[0] === 'まだ構えていない') status.shift();
-      var cls = 'ally-card' + (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '') + (a.stance ? ' stanced' : '');
-      return '<button type="button" class="' + cls + '" data-id="' + a.id + '">' +
+    // 味方（IMPROVE_controls 4-1）: アイコンだけ。押すと、盤面のその味方のマスを押したのと同じ（選ぶ＋左上にマスの情報）。
+    //   魔法で構えた・待機した味方は薄く（選べない）。移動しただけなら薄くしない。構える味方は点線の丸（選べない。構えの中身は発動の順番に出る）。
+    //   名前・HP・ようすは、押すと左上に出る。予告でダメージを受ける味方だけ、アイコンに赤い印（倒れるなら「!」）【仮】
+    var icon = function (a, cls) {
+      var w = warn[a.id], tip = R.unitLabel(st, a) + (w ? '　予告: ' + w + 'ダメージを受ける' + (w >= a.hp ? '（倒れる）' : '') : '');
+      return '<button type="button" class="ally-icon' + cls + '" data-id="' + a.id + '" title="' + esc(tip) + '" aria-label="' + esc(tip) + '">' +
         '<span class="dot">' + esc(R.magicName(a.magic)) + '</span>' +
-        '<span class="info"><b>' + (i + 1) + '. ' + esc(R.unitLabel(st, a)) + '　HP ' + a.hp + '/' + a.maxHp + '　' + DIR_ARROW[a.facing] + '</b>' +
-        '<span class="sub">' + esc(status.join('・')) +
-        (warn[a.id] ? '　<span class="danger">予告: ' + warn[a.id] + 'ダメージを受ける' + (warn[a.id] >= a.hp ? '（倒れる）' : '') + '</span>' : '') +
-        '</span></span></button>';
-    }).join('') : '<p class="muted">味方がいません（エディットで置けます）</p>') + npcHtml;
+        (w ? '<span class="ai-warn' + (w >= a.hp ? ' dies' : '') + '">' + (w >= a.hp ? '!' : '-' + w) + '</span>' : '') + '</button>';
+    };
+    var al = R.controllableOf(st), npcs = R.alliesOf(st).filter(function (a) { return a.npc; });
+    el.roster.innerHTML = al.length || npcs.length
+      ? al.map(function (a) { return icon(a, (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '')); }).join('') +
+        npcs.map(function (a) { return icon(a, ' npc'); }).join('')
+      : '<p class="muted">味方がいません（エディットで置けます）</p>';
 
     renderOrderPanel(fa);
 
@@ -1574,6 +1584,8 @@
       (waiting ? '<p class="muted x-more">まだ構えていない味方: ' + waiting + '人</p>' : '');
   }
 
+  // 右下のコントローラー（IMPROVE_controls 5-1）: 十字の矢印（真ん中は「向き」）と「魔法」「待機」。
+  //   だれを動かしているかは、右上の光っているアイコンで見る。撃てないときは、魔法ボタンに理由を書く（宝を持つ味方）
   function renderActPanel() {
     var u = canControl() ? selUnit() : null;
     el.actPanel.classList.toggle('off', !u);
@@ -1584,19 +1596,9 @@
     var shootOk = !!u && R.canShoot(app.state, u);
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
-    if (!u) {
-      el.actInfo.innerHTML = app.busy ? '処理中…' : '<span class="x-more">' + esc(simul() ? ui('actIdleSimul', '味方を選ぶと、ここで向きを選んで構えられます') : ui('actIdleSingle', '味方を選ぶと、ここで向きを選んで撃てます')) + '</span>';
-      el.dirCenter.textContent = '';
-      return;
-    }
-    var mv = u.moved, canBack = !!mv && reachOf(u)[key(mv.from[0], mv.from[1])] !== undefined;
-    el.dirCenter.textContent = R.magicName(u.magic);
-    el.actInfo.innerHTML = '<b>' + esc(R.unitLabel(app.state, u)) + '</b>　' +
-      (R.restancing(u) ? '構え直し<span class="x-more">（移動は戻らない。向きと構えだけ）</span>' :
-        mv ? '(' + u.x + ',' + u.y + ') へ移動した' + (canBack ? ' <button type="button" id="btnCancelMove">移動を取り消す</button>' : u.stuck ? '<span class="x-more">（泥沼にはまって、もう動けない）</span>' : '<span class="x-more">（もう動けない）</span>') :
-        u.stuck ? '泥沼で移動できない<span class="x-more">（その場で撃つ）</span>' : 'その場<span class="x-more">（緑のマスを押すと動く）</span>') +
-      '　向き ' + DIR_ARROW[app.plan.dir] +
-      (shootOk ? '' : '<br><span class="danger">宝を持つので撃てない（「待機」だけ）</span>');
+    el.btnShoot.textContent = u && !shootOk ? ui('cantShoot', '宝を持つので撃てない') : simul() ? ui('stance', '魔法') : ui('shoot', '撃つ');
+    el.btnWait.textContent = ui('wait', '待機');
+    el.dirCenter.textContent = ui('dirCenter', '向き');
   }
 
   var storeVersion = 0;
@@ -1722,14 +1724,17 @@
     put(el.txHintSingle, hint.single || '');
   }
 
-  // 押したマスの情報（オーナー 10/30）: 地形の名前・座標・印と、そこにいる駒（HP・魔法・向き・ようす）。盤面が変わったら今の中身で出し直す
+  // 押したマスの情報（オーナー 10/30・IMPROVE_controls 3-2）: いつも2行。盤面が変わったら今の中身で出し直す
+  //   1行目: 地形の絵・名前・印（通れない・入ると止まる・ゴール・帰り口・宝）。2行目: 駒の絵・名前・HP・ようす（いなければ空ける）。
+  //   印・ようすは短い文のまま並べ、並びきらない分は切る（高さは変えない。盤面をずらさないため）。座標・魔法・向きは出さない
   function renderCellInfo() {
     var box = el.cellInfo;
     box.hidden = app.editMode;
     var st = app.state, c = app.info;
+    box.className = 'cell-info';
     if (!c || !R.inBounds(st, c[0], c[1])) {
-      box.className = 'cell-info empty';
-      box.textContent = ui('cellInfoIdle', 'マスを押すと、ここにそのマスの情報');
+      box.classList.add('empty');
+      box.innerHTML = '<div class="ci-row">' + esc(ui('cellInfoIdle', 'マスを押すと、ここにそのマスの情報')) + '</div><div class="ci-row"></div>';
       return;
     }
     var x = c[0], y = c[1], tile = R.getTile(st, x, y), mi = st.mission || {}, tags = [];
@@ -1738,22 +1743,22 @@
     if (R.inCells(mi.goal, x, y)) tags.push('ゴール');
     if (R.inCells(mi.exit, x, y)) tags.push('帰り口');
     if (mi.treasure && mi.treasure[0] === x && mi.treasure[1] === y) tags.push('宝');
-    var u = R.unitAt(st, x, y), line = '';
-    if (u && u.side === 'object') line = esc(R.OBJECT_INFO[u.kind].name) + '　HP' + u.hp;
-    else if (u) {
+    var tagHtml = function (list) { return list.filter(Boolean).map(function (t) { return '<span class="ci-tag">' + esc(t) + '</span>'; }).join(''); };
+    var u = R.unitAt(st, x, y), unit = '';
+    if (u && u.side === 'object') {
+      unit = '<span class="ci-piece obj">' + esc(R.OBJECT_INFO[u.kind].name.charAt(0)) + '</span><b>' + esc(R.unitLabel(st, u)) + '</b><span>HP ' + u.hp + '</span>';
+    } else if (u) {
       var state = [];
-      if (u.side === 'ally' && !u.npc) state.push(u.stance ? '構えた' : u.acted ? '行動済み' : u.moved ? '移動した' : '');
+      if (u.side === 'ally' && !u.npc && !st.result) state.push(u.stance ? '構えた' : u.acted ? '待機' : u.moved ? '移動した' : '');   // 決着のあとは出さない（発動した味方が「待機」に見えないように）
       if (u.stuck) state.push('泥沼で休み');
       if (mi.carrier === u.id) state.push('宝を持つ');
       if (u.burn > 0) state.push('火傷');
-      line = esc(R.unitLabel(st, u)) + '　HP' + u.hp + '/' + u.maxHp +
-        (u.stand === 'rush' ? '' : '　' + esc(R.magicName(u.magic))) + ' ' + DIR_ARROW[u.facing] +
-        state.filter(Boolean).map(function (t) { return '　' + esc(t); }).join('');
+      var mark = u.side === 'enemy' ? u.letter : R.magicName(u.magic);
+      unit = '<span class="ci-piece ' + u.side + (u.npc ? ' npc' : '') + '">' + esc(mark) + '</span><b>' + esc(R.unitLabel(st, u)) + '</b>' +
+        '<span>HP ' + u.hp + '/' + u.maxHp + '</span>' + tagHtml(state);
     }
-    box.className = 'cell-info';
-    box.innerHTML = '<div class="ci-head"><b>' + esc(R.TILE_INFO[tile].name) + '</b><span class="ci-xy">(' + x + ',' + y + ')</span>' +
-      tags.map(function (t) { return '<span class="ci-tag">' + esc(t) + '</span>'; }).join('') + '</div>' +
-      (line ? '<div class="ci-unit ' + u.side + '">' + line + '</div>' : '');
+    box.innerHTML = '<div class="ci-row"><span class="ci-tile t-' + tile + '"></span><b>' + esc(R.TILE_INFO[tile].name) + '</b>' + tagHtml(tags) + '</div>' +
+      '<div class="ci-row' + (u ? ' ' + u.side : '') + '">' + unit + '</div>';
   }
 
   function renderHint() {
@@ -1766,13 +1771,13 @@
       h.classList.add('warn');
       return;
     }
-    if (app.busy) { h.textContent = '処理中…（盤面のクリックかキーで飛ばせます）'; h.classList.add('busy'); return; }
+    if (app.busy) { h.textContent = '処理中…'; h.classList.add('busy'); return; }   // 盤面のクリックでは飛ばさない（キーはおまけで飛ばせる。IMPROVE_controls 2章）
     if (st.result && !app.editMode) {
       // チュートリアルのクリア・負けの文（texts.js）があればそれ、なければルールの文
       var stx = stageTexts(st.stage), own = stx && (st.result === 'win' ? stx.win : stx.lose);
       h.textContent = own || st.resultText || (st.result === 'win' ? '勝利！ 敵を全員倒しました' : '敗北… 味方が全員倒れました');
       if (own && st.resultText) h.title = st.resultText;
-      if (app.exNextGo) h.textContent += '　' + ui('exNext', '盤面をクリックか Enter で次へ');   // 展示: クリアしたら押して次へ
+      if (app.exNextGo) h.textContent += '　' + ui('exNext', '右下の「次へ」で先へ進む');   // 展示: クリアしたら右下の「次へ」
       h.classList.add('result');
       return;
     }
@@ -1790,12 +1795,12 @@
     }
     var u = selUnit();
     if (!u) {
-      if (R.sealReady(st)) { h.textContent = ui('sealReady', '村への道をふさいだ！ 盤面をクリックか Enter でクリア'); h.classList.add('ready'); return; }   // ステージ②
+      if (R.sealReady(st)) { h.textContent = ui('sealReady', '村への道をふさいだ！ 右下の「クリアする」を押す'); h.classList.add('ready'); return; }   // ステージ②
       // 【一斉】全員構えたら発動へ
-      if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。盤面をクリックか Enter で発動'); h.classList.add('ready'); return; }
-      h.textContent = ui('pickAlly', '味方をクリック（または 1〜3 キー）で選ぶ'); h.classList.add('guide'); return;   // 操作の案内
+      if (simul() && R.controllableOf(st).length && R.allAlliesActed(st)) { h.textContent = ui('readyToFire', '全員構えた。右下の「発動」を押す'); h.classList.add('ready'); return; }
+      h.textContent = ui('pickAlly', '味方をクリックして選ぶ'); h.classList.add('guide'); return;   // 操作の案内
     }
-    h.textContent = R.restancing(u) ? ui('guideRestance') : simul() ? ui('guideSimul') : ui('guideSingle');
+    h.textContent = simul() ? ui('guideSimul') : ui('guideSingle');
     h.classList.add('guide');
   }
 
@@ -1832,20 +1837,19 @@
     if (b) setTimeout(function () { b.blur(); }, 0);
   });
 
+  // 味方のアイコンは、盤面のその味方のマスを押したのと同じ（IMPROVE_controls 4-1）
   el.roster.addEventListener('click', function (e) {
     var b = e.target.closest('[data-id]');
-    if (b && canControl()) select(b.getAttribute('data-id'));
+    var u = b && R.findUnit(app.state, b.getAttribute('data-id'));
+    if (u) onPlayClick(u.x, u.y);
   });
   el.actPanel.addEventListener('click', function (e) {
     var d = e.target.closest('.dir');
-    if (d) { setDir(d.getAttribute('data-dir')); return; }
-    if (e.target.id === 'btnCancelMove') cancelMove();
+    if (d) setDir(d.getAttribute('data-dir'));
   });
   el.btnShoot.addEventListener('click', function () { doAct(true); });
-  el.btnRetry.addEventListener('click', retry);
-  el.btnSealWin.addEventListener('click', doSealWin);
   el.btnWait.addEventListener('click', function () { doAct(false); });
-  el.btnEndTurn.addEventListener('click', doEndTurn);
+  el.btnGo.addEventListener('click', goPress);
   el.btnUndo.addEventListener('click', undo);
   el.btnReset.addEventListener('click', reset);
   el.btnEdit.addEventListener('click', function () { setEditMode(!app.editMode); });
@@ -1858,9 +1862,13 @@
   // 遊び方（texts.js の操作の案内。ターンの形に合う行だけ）。初めて開いたときに1回だけ自動で出す（閉じたら覚える）
   var HOWTO_KEY = 'caffilia-howto-seen';
   function renderHowto() {
-    el.howtoTitle.textContent = ui('howtoTitle', '遊び方');
+    el.howtoTitle.textContent = ui('howtoTitle', 'あそびかた');
     el.howtoClose.textContent = ui('howtoStart', 'はじめる');
-    el.howtoList.innerHTML = ((TX().ui || {}).howto || []).filter(modeOk).map(function (l) { return '<li>' + esc(l.text) + '</li>'; }).join('');
+    // 「見出し：中身」の行は、見出しを太く（IMPROVE_controls 7-1）
+    el.howtoList.innerHTML = ((TX().ui || {}).howto || []).filter(modeOk).map(function (l) {
+      var m = /^([^：]{1,8})：(.*)$/.exec(l.text);
+      return '<li>' + (m ? '<b>' + esc(m[1]) + '</b>：' + esc(m[2]) : esc(l.text)) + '</li>';
+    }).join('');
   }
   function setHowto(on) {
     el.howto.hidden = !on;
@@ -2433,10 +2441,10 @@
       if (k !== 'Shift') { e.preventDefault(); skipPlayback(); }
       return;
     }
-    // 展示モード: 出しているものの操作だけ（味方 1〜、向き、魔法 Enter・待機 W、1手戻す Z、取り消し Esc）。
-    //   誰も選んでいないときの Enter は、発動・クリアする・次のステージへ（advance。オーナー 10/30 で T・C・Space をなくした）
-    //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete を足す
-    if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter|w|W|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
+    // キーはおまけ（IMPROVE_controls 6章）。展示モード: 味方 1〜、魔法 Enter・待機 W、1手戻す Z、取り消し Esc。
+    //   誰も選んでいないときの Enter は、右下のボタンと同じ（発動・クリアする・次へ・やり直す。advance）
+    //   開発モードは、これに 矢印キーの向き（展示ではボタンだけ）、エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete を足す
+    if (!(/^[1-9]$/.test(k) || (!EXHIBIT && KEY_DIR[k]) || /^(Enter|w|W|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {

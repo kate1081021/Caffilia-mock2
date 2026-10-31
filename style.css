@@ -90,6 +90,16 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   .layout { flex-direction: column; align-items: stretch; }
   .side { flex-basis: auto; }
 }
+/* 遊ぶ間の右の欄（IMPROVE_controls 1章・5-3）: 右上は見るところ、右下はさわるところ。
+ *   横に並ぶ広さでは、右の欄の高さを盤面の側にそろえ（最低 560px）、右下を欄の下にとめる。右上が長くなっても右下は動かず、右上だけスクロール */
+.play-side { display: flex; flex-direction: column; gap: 12px; }
+@media (min-width: 981px) {
+  .layout { align-items: stretch; }
+  .side.split { position: relative; min-height: 560px; }
+  .side.split .play-side { position: absolute; inset: 0; }
+  .side.split .play-top { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .side.split .ctrl-panel { flex: none; }
+}
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -100,23 +110,43 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .panel h2 small, .panel h3 small { font-weight: normal; color: var(--muted); font-size: 12px; margin-left: 4px; }
 .panel h3 { font-size: 13px; margin: 0 0 4px; }
 .hint { min-height: 1.5em; width: 100%; max-width: 640px; text-align: center; color: var(--muted); }
-/* 盤面の上の行: 左に押したマスの情報、右に操作の案内（オーナー 10/30） */
-.board-top { width: 100%; max-width: 640px; display: flex; align-items: center; gap: 10px; }
-.board-top .hint { flex: 1 1 auto; width: auto; }
+/* 盤面の上の行: 左に押したマスの情報、右に操作の案内（オーナー 10/30）。
+ *   盤面の上の段は、中身が変わっても高さを変えない（盤面がずれないように。IMPROVE_controls 3章） */
+.board-top { width: 100%; max-width: 640px; display: flex; align-items: center; gap: 10px; height: 54px; }
+.board-top .hint {
+  flex: 1 1 auto; width: auto; height: 100%; min-height: 0; overflow: hidden;
+  display: flex; align-items: safe center; justify-content: center; line-height: 1.4;
+}
 .cell-info {
-  flex: 0 0 220px; min-height: 2.9em; box-sizing: border-box;
+  flex: 0 0 240px; height: 100%; box-sizing: border-box; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
   padding: 3px 8px; font-size: 12px; line-height: 1.35;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
 }
-.cell-info.empty { color: var(--muted); border-style: dashed; display: flex; align-items: center; }
-.cell-info .ci-head b { font-size: 14px; }
-.cell-info .ci-xy { color: var(--muted); margin-left: 4px; }
-.cell-info .ci-tag { margin-left: 4px; padding: 0 5px; border-radius: 5px; background: #f3efe6; }
-.cell-info .ci-unit.ally { color: #1d4ed8; }
-.cell-info .ci-unit.enemy { color: #b91c1c; }
-@media (max-width: 560px) { .board-top { flex-direction: column; align-items: stretch; } .cell-info { flex-basis: auto; } }
+.cell-info.empty { color: var(--muted); border-style: dashed; }
+.cell-info.empty .ci-row:empty { display: none; }   /* 何も押していないときは、1行の案内を真ん中に（高さはそのまま） */
+/* 1行目: 地形の絵・名前・印。2行目: 駒の絵・名前・HP・ようす。並びきらない分は切る */
+.cell-info .ci-row { display: flex; align-items: center; gap: 6px; height: 20px; white-space: nowrap; overflow: hidden; }
+.cell-info .ci-row b { font-size: 13px; }
+.cell-info .ci-row.ally b { color: #1d4ed8; }
+.cell-info .ci-row.enemy b { color: #b91c1c; }
+.cell-info .ci-tag { padding: 0 5px; border-radius: 5px; background: #f3efe6; }
+.ci-tile { flex: none; width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, .15); }
+.ci-tile.t-mountain { background: var(--t-mountain); }
+.ci-tile.t-volcano { background: var(--t-volcano); }
+.ci-tile.t-river { background: var(--t-river); }
+.ci-tile.t-sakura { background: #f9a8d4; }
+.ci-piece {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: bold; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.ci-piece.ally { border: 2px solid var(--ally); color: var(--ally); background: #fff; }
+.ci-piece.ally.npc { border-style: dashed; }
+.ci-piece.enemy { background: var(--enemy); color: #fff; }
+.ci-piece.obj { border-radius: 4px; background: #a16207; color: #fff; }
+@media (max-width: 560px) { .board-top { flex-direction: column; align-items: stretch; height: 112px; } .cell-info { flex: 0 0 54px; } }
 .hint.warn { color: var(--accent); font-weight: bold; }
-.hint.result { color: var(--ink); font-size: 18px; font-weight: bold; }
+.hint.result { color: var(--ink); font-weight: bold; }   /* 勝ち負けの文も、ほかと同じ字の大きさ（高さを変えない） */
 .hint.busy { color: #1d4ed8; }
 .toggle { display: flex; gap: 6px; align-items: center; }
 .toggle.small { font-size: 12px; color: var(--muted); }
@@ -137,7 +167,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
   gap: 3px;
   padding: 6px;
-  width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - 230px) * var(--n) / var(--rows)));
+  width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)));
   min-width: 300px;
   aspect-ratio: var(--n) / var(--rows);
   background: #cfc5b2;
@@ -476,23 +506,29 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 }
 
 /* ---------- 味方・行動パネル・敵 ---------- */
-.roster { display: flex; flex-direction: column; gap: 6px; }
-.ally-card { display: flex; align-items: center; gap: 10px; text-align: left; width: 100%; padding: 6px 8px; }
-.ally-card.selected { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); background: #fffbea; }
-.ally-card .dot {
-  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
-  border: 3px solid var(--ally); color: var(--ally);
-  display: flex; align-items: center; justify-content: center; font-weight: bold;
+.roster { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+/* 味方のアイコン（IMPROVE_controls 4-1）: 丸に魔法の字だけ。選んでいる味方は光る、構えた・待機した味方は薄い、構える味方は点線 */
+.ally-icon { position: relative; padding: 3px; border: 2px solid transparent; border-radius: 50%; background: transparent; line-height: 1; }
+.ally-icon:hover:not(:disabled) { background: #fffaf0; border-color: var(--line); }
+.ally-icon .dot {
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 3px solid var(--ally); color: var(--ally); background: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px;
 }
-.ally-card .info { display: flex; flex-direction: column; line-height: 1.3; }
-.ally-card .sub { color: var(--muted); font-size: 12px; }
-.ally-card.acted .dot { opacity: .45; }
-.ally-card .danger { color: var(--enemy-fc); font-weight: bold; }
+.ally-icon.selected, .ally-icon.selected:hover:not(:disabled) { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); background: #fffbea; }
+.ally-icon.acted .dot { opacity: .35; }
+.ally-icon.acted, .ally-icon.npc { cursor: default; }
+.ally-icon.npc .dot { border-style: dashed; background: #f0f6ff; }
+.ai-warn {
+  position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  background: var(--enemy-fc); color: #fff; font-size: 11px; font-weight: bold; line-height: 18px; text-align: center;
+}
+.ai-warn.dies { background: var(--enemy); }
 
 .act-panel { margin: 10px 0 12px; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; }
 .act-panel.off { opacity: .5; }
-.act-info { font-size: 13px; margin-bottom: 6px; min-height: 1.4em; }
-.act-info button { padding: 1px 8px; font-size: 12px; margin-left: 4px; }
+/* 右下のコントローラー（IMPROVE_controls 5-1）: 十字の矢印（真ん中は「向き」）と「魔法」「待機」 */
+.ctrl-panel .act-panel { margin: 0; padding: 0; border: none; }
 .act-grid { display: flex; gap: 12px; align-items: center; }
 .dirpad { display: grid; grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 40px); gap: 3px; }
 .dirpad .dir { padding: 0; font-size: 20px; font-weight: bold; }
@@ -502,6 +538,11 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .dirpad [data-dir="right"] { grid-column: 3; grid-row: 2; }
 .dirpad [data-dir="down"] { grid-column: 2; grid-row: 3; }
 .act-buttons { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.ctrl-panel .dirpad { grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); }
+.ctrl-panel .dirpad .dir-center { font-size: 13px; }
+.ctrl-panel .act-buttons button { padding: 12px; font-size: 16px; }
+/* 右下のボタン（IMPROVE_controls 5-2）: 発動／クリアする／次へ／やり直す。同じ場所で文字が変わる */
+.go-btn { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; font-size: 18px; font-weight: bold; }
 
 .enemy-list { display: flex; flex-direction: column; gap: 6px; }
 .enemy-row { display: grid; grid-template-columns: 24px 1fr; gap: 2px 8px; align-items: center; }
@@ -630,7 +671,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   50% { transform: translate(-50%, -50%) scale(1.07); }
 }
 .unit.ally.next-ready:not(.selected) { box-shadow: 0 0 0 3px #fff, 0 0 12px 5px rgba(99, 102, 241, .9); }
-.ally-card .next { color: #4f46e5; font-weight: bold; }
 
 [hidden] { display: none !important; }
 
@@ -696,7 +736,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .mission-bar .m-name.m-escort { background: #bae6fd; }
 .mission-bar .m-name.m-retrieve { background: #fbcfe8; }
 .mission-bar .m-rule b { color: var(--muted); font-weight: bold; margin-right: 2px; }
-.mission-bar .m-status { display: flex; flex-wrap: wrap; gap: 4px; flex-basis: 100%; }
+.mission-bar .m-status { display: flex; flex-wrap: nowrap; gap: 4px; flex-basis: 100%; overflow: hidden; white-space: nowrap; }   /* 数が変わっても折り返さない */
 .mission-bar .m-status span { background: #f3efe6; border-radius: 6px; padding: 1px 6px; font-weight: bold; }
 
 /* 置きもの: 村は四角（動かない）、馬車は横長の角丸 */
@@ -816,8 +856,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 
 /* 構える味方（指示できない味方）: 薄い青で塗り、選べない */
 .unit.ally.npc { background: #dbeafe; border-style: double; border-width: 4px; }
-.ally-card.npc { cursor: default; border: 1px dashed var(--ally); border-radius: 6px; background: #f0f6ff; }
-.ally-card.npc .dot { background: #dbeafe; }
 
 /* 構える味方の予告（青。敵の予告の紫と同じ形で色だけ変える） */
 .cell.fa-shot { box-shadow: inset 0 0 0 3px rgba(29, 78, 216, .85); }
@@ -857,8 +895,8 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .wline.e.dot { background: rgba(185, 28, 28, .6); }
 .ghost.rush { border-color: var(--enemy); color: var(--enemy); }
 /* やり直したときのヒント（盤面の上に1行、控えめに） */
-.stage-hint { width: 100%; max-width: 640px; text-align: center; color: #1e3a8a; background: #eef4ff; border: 1px solid #c7d7f5; border-radius: 8px; padding: 3px 10px; font-size: 14px; }
-button.retry { margin: 2px auto 0; font-size: 16px; padding: 6px 22px; }
+.stage-hint { width: 100%; max-width: 640px; text-align: center; color: #1e3a8a; background: #eef4ff; border: 1px solid #c7d7f5; border-radius: 8px; padding: 3px 10px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage-hint.blank { visibility: hidden; }   /* ヒントのあるステージでは、出ていないときも場所をとっておく */
 
 /* ---------- 一斉発動・文章（IMPROVE_simul） ---------- */
 /* 構えの印: 敵の予告（紫）と同じ置き方で、色だけ青。マスの右上に「発動の順番＋魔法」 */
@@ -872,7 +910,6 @@ button.retry { margin: 2px auto 0; font-size: 16px; padding: 6px 22px; }
   background: var(--ally); color: #fff; border-radius: 999px; border: 2px solid #fff;
   z-index: 6; pointer-events: none;
 }
-.ally-card.stanced .dot { box-shadow: 0 0 0 2px var(--ally); }
 /* 発動の順番の一覧（▲▼はスマホでも押せる大きさ） */
 .order-panel { margin: 8px 0 10px; padding: 8px 10px; border: 2px solid #bfd3f7; border-radius: 10px; background: #f3f7ff; }
 .order-panel h3 { margin: 0 0 6px; color: #1e3a8a; }
@@ -887,8 +924,8 @@ button.retry { margin: 2px auto 0; font-size: 16px; padding: 6px 22px; }
 .order-row .o-move { display: flex; gap: 4px; }
 .o-btn { min-width: 44px; min-height: 44px; font-size: 18px; padding: 0; }
 .order-combo { margin: 8px 0 0; font-weight: bold; color: #be185d; }
-/* 発動ボタン: 全員構えたら光る */
-#btnEndTurn.fire-ready { animation: fireReady 1.2s ease-in-out infinite; }
+/* 右下のボタン: 押せば進むとき（全員構えた・②でふさいだ）は光る */
+#btnGo.fire-ready { animation: fireReady 1.2s ease-in-out infinite; }
 @keyframes fireReady {
   0%, 100% { box-shadow: 0 0 0 0 rgba(194, 65, 12, .0); }
   50% { box-shadow: 0 0 0 4px rgba(194, 65, 12, .25), 0 0 14px 4px rgba(245, 158, 11, .7); }
@@ -952,7 +989,7 @@ button.retry { margin: 2px auto 0; font-size: 16px; padding: 6px 22px; }
 /* ---------- 展示ステージ③（3人でつなぐ） ---------- */
 
 /* ミッション（最初から出す。達成で ✔） */
-.m-ex-mission { flex-basis: 100%; display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 8px; background: #f3efe6; border: 2px dashed #b9a77f; font-weight: bold; }
+.m-ex-mission { flex-basis: 100%; display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 8px; background: #f3efe6; border: 2px dashed #b9a77f; font-weight: bold; white-space: nowrap; overflow: hidden; }
 .m-ex-mission b { color: #7c5e10; }
 .m-ex-mission .m-check { color: var(--muted); }
 .m-ex-mission.done { border-style: solid; }
@@ -1025,7 +1062,7 @@ html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 1
  *   開発モード（#dev）は、これに今のモードの札・リセット・エディットを足す（IMPROVE_v3 段1。ほかはアーカイブした）
  * --------------------------------------------------------------- */
 html.mode-exhibit .topbar .status,
-html.mode-exhibit .topbar .buttons > :not(#btnEndTurn):not(#btnUndo):not(#btnHowto),
+html.mode-exhibit .topbar .buttons > :not(#btnUndo):not(#btnHowto),
 html.mode-exhibit #editPanel {
   display: none !important;
 }
@@ -1033,5 +1070,5 @@ html.mode-exhibit #editPanel {
 /* 盤面が横に並ぶ広さ（981px〜）では、横の欄（380px）と余白の分を引いた幅に収める（③ 12×7 が 1024px の画面で左にはみ出していた。10/29）
  *   6×6 などは今までと同じ大きさ（高さの決まりの方が小さい） */
 @media (min-width: 981px) {
-  .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - 230px) * var(--n) / var(--rows))); }
+  .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows))); }
 }
