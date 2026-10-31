@@ -99,7 +99,7 @@
     'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
-    'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
+    'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose', 'btnView'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
     return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -854,7 +854,7 @@
     var tool = app.editTool;
     var st = app.state;
     var res;
-    // 駒（味方・敵・村・馬車）は、どの道具のときでも押すと選び、そのままドラッグで動かす（オーナー 10/30）
+    // 駒（味方・敵・村・トロッコ）は、どの道具のときでも押すと選び、そのままドラッグで動かす（オーナー 10/30）
     var drag = app.stroke && app.stroke.drag;
     var at = dragging ? null : R.unitAt(st, x, y);
     if (drag) {
@@ -900,7 +900,24 @@
   // ---------------------------------------------------------------
   // 描画
   // ---------------------------------------------------------------
+  // 見た目（HD-2D の方針 10/31）: 真上 view-flat ／ 奥行き view-depth を <html> に付ける。エディットはいつも真上。
+  //   展示モードは mode.js の EXHIBIT_VIEW、開発モードは上のバーの「見た目」と V キーで切り替える（mode.js が覚える）
+  function viewNow() { return app.editMode || !window.CafiliaMode ? 'flat' : window.CafiliaMode.view(); }
+  function applyView() {
+    var h = document.documentElement, depth = viewNow() === 'depth';
+    h.classList.toggle('view-depth', depth);
+    h.classList.toggle('view-flat', !depth);
+    if (el.btnView && window.CafiliaMode) el.btnView.innerHTML = '見た目: ' + (window.CafiliaMode.view() === 'depth' ? '奥行き' : '真上') + ' <kbd>V</kbd>';
+  }
+  function toggleView() {
+    var M = window.CafiliaMode;
+    if (!M || !M.setView(M.view() === 'depth' ? 'flat' : 'depth')) return;
+    if (el.btnView) el.btnView.blur();
+    render();
+  }
+
   function render(animate) {
+    applyView();
     renderMission();
     renderStatus();
     renderBoard(!!animate);
@@ -909,6 +926,25 @@
     renderCellInfo();
     if (app.editMode) renderShare();   // 共有のようす（地形を塗っただけでも変わる）
     fitBoard();
+    fitDepth();
+  }
+
+  // 奥行きの見た目: 傾けると盤面の縦が縮むので、盤面の場所の横幅と画面の下に収まるまで大きくする（style.css の --fit）。
+  //   見た目・盤面の大きさ・画面の大きさが変わったときだけ測り直す
+  function fitDepth() {
+    var b = el.board, depth = viewNow() === 'depth';
+    // 山肌（slopeMesh）は描いたときのマスの大きさ（px）で作るので、マスの大きさが変わったら描き直す
+    var mc = depth && cellEls[0] && cellEls[0].el;
+    if (mc && mc.offsetWidth && [mc.offsetWidth, mc.offsetHeight, b.clientWidth].join('x') !== app.meshKey) renderBoard(false);
+    var sig = [depth, b.offsetWidth, b.offsetHeight, window.innerWidth, window.innerHeight, app.aboveH].join(',');
+    if (sig === app.depthSig) return;
+    app.depthSig = sig;
+    if (!depth || !b.offsetParent) { b.style.removeProperty('--fit'); return; }
+    b.style.setProperty('--fit', 1);
+    var r = b.getBoundingClientRect(), area = el.boardWrap.parentNode.getBoundingClientRect();
+    var availH = window.innerHeight - r.top - 16, s = area.width / r.width;
+    if (availH > 200) s = Math.min(s, availH / r.height);   // 縦に並ぶ狭い画面では、横だけで決める
+    b.style.setProperty('--fit', Math.max(0.5, s * 0.98).toFixed(3));
   }
 
   // 盤面の大きさ: 盤面の上の段（目標の帯・マスの情報・案内）の高さはステージの中で変わらないので、
@@ -920,13 +956,13 @@
     app.aboveH = above;
     document.documentElement.style.setProperty('--above', above + 'px');
   }
-  window.addEventListener('resize', function () { app.aboveH = null; fitBoard(); });
+  window.addEventListener('resize', function () { app.aboveH = null; fitBoard(); fitDepth(); });
 
   // お題: 名前・勝ち方・負け方・残りの数を常に出す
   var missionSig = '';
   function renderMission() {
     var info = R.missionInfo(app.state);
-    // 護衛: 味方の予測を出している間は、その手のあと（敵の発動のあと）の馬車の歩数も出す
+    // 護衛: 味方の予測を出している間は、その手のあと（敵の発動のあと）のトロッコの歩数も出す
     if (info.type === 'escort' && selUnit() && app.plan) {
       var fw = forecastNow(true);
       if (fw && fw.wagon) info.status.splice(2, 0, 'この手なら ' + (fw.wagon.steps === null ? '道がない' : (fw.wagon.steps + '歩')));
@@ -1033,6 +1069,48 @@
 
   var cellEls = [];
 
+  // 奥行きの見た目で駒をすべらせるとき: 傾ける前の盤面の上の位置（駒のいるマスの、レイアウトの位置）
+  function floorPos(t) {
+    var c = t.parentNode;
+    return { left: c.offsetLeft + t.offsetLeft, top: c.offsetTop + t.offsetTop };
+  }
+
+  // 駒の絵（HD-2D の方針 10/31）: img/ に決まった名前の画像を入れると、奥行きの見た目でその駒が絵に変わる。ないものは今の駒を立てる（仮置き）。
+  //   名前（.png）: 味方 ally_<魔法>（ally_fire など）／敵 enemy_<魔法> → なければ enemy／ボス boss／取り巻き minion／村 village／トロッコ trolley。
+  //   立ち絵と駒を分けたいときは、同じ名前に _koma を付けた画像を入れると、駒だけその絵になる（ally_fire_koma.png など）。
+  //   あるかどうかは、奥行きの見た目で駒を描くときに1枚ずつ確かめる（真上の見た目と展示モードの真上では読みに行かない）
+  var IMG_DIR = 'img/', imgState = {};   // 名前 → 'wait' | 'ok' | 'none'
+  function imgNames(u) {
+    var base = [];
+    if (u.side === 'object') base = [u.kind === 'wagon' ? 'trolley' : u.kind];
+    else if (u.side === 'ally') base = ['ally_' + u.magic];
+    else if (u.stand === 'boss') base = ['boss'];
+    else if (u.stand === 'float') base = ['minion'];
+    else base = ['enemy_' + u.magic, 'enemy'];
+    var names = [];
+    base.forEach(function (b) { names.push(b + '_koma', b); });
+    return names;
+  }
+  function probeImg(name) {
+    if (imgState[name]) return imgState[name];
+    imgState[name] = 'wait';
+    var im = new Image();
+    im.onload = function () { imgState[name] = 'ok'; renderBoard(false); };
+    im.onerror = function () { imgState[name] = 'none'; renderBoard(false); };
+    im.src = IMG_DIR + name + '.png';
+    return 'wait';
+  }
+  function unitImg(u) {
+    if (viewNow() !== 'depth') return null;
+    var names = imgNames(u);
+    for (var i = 0; i < names.length; i++) {
+      var s = probeImg(names[i]);
+      if (s === 'ok') return IMG_DIR + names[i] + '.png';
+      if (s === 'wait') return null;
+    }
+    return null;
+  }
+
   // 敵の個性: 駒の小さな印（狙い 人/近/自・危ない所も避ける 避・川を渡る 渡）と、一覧の説明
   var AIM_MARK = { count: '人', near: '近', nature: '自', target: '的' };
   function personaMark(u) {
@@ -1054,10 +1132,12 @@
 
   function unitHtml(u, st, view) {
     if (u.side === 'object') {
-      // お題の置きもの: 村（四角・動かない）・馬車（角丸・運べる）
-      var oc = ['unit', 'object', u.kind];
+      // お題の置きもの: 村（四角・動かない）・トロッコ（角丸・運べる）
+      var oc = ['unit', 'object', u.kind], oimg = unitImg(u);
       if (u.stuck) oc.push('stuck');
-      var oh = '<div class="' + oc.join(' ') + '" data-id="' + u.id + '"><span class="u-name">' + esc(R.OBJECT_INFO[u.kind].name) + '</span>' +
+      if (oimg) oc.push('has-img');
+      var oh = '<div class="' + oc.join(' ') + '" data-id="' + u.id + '"><span class="u-shadow"></span>' + (oimg ? '<img class="u-img" src="' + oimg + '" alt="">' : '') +
+        '<span class="u-name">' + esc(R.OBJECT_INFO[u.kind].name) + '</span>' +
         '<span class="u-hp">HP' + u.hp + '</span>';
       if (u.burn > 0) oh += '<span class="u-burn">火傷' + u.burn + '</span>';
       if (view.warn) oh += '<span class="u-warn">予告 -' + view.warn + (view.warn >= u.hp ? ' 壊れる' : '') + '</span>';
@@ -1073,6 +1153,7 @@
     if (view.next) cls.push('next-ready');
     if (view.order) cls.push('stanced');
     var facing = view.facing || u.facing;
+    cls.push('face-' + facing);   // 奥行きの見た目: 向きの三角を、立てた駒の頭の上・足もと・左右に出す（style.css）
     var name = u.side === 'ally' ? esc(R.magicName(u.magic)) : '敵<small>' + esc(u.letter) + '</small>';
     // 大きい敵（③のボス）・体（浮く）の見た目
     if (u.size > 1) cls.push('big');
@@ -1080,7 +1161,10 @@
     if (u.exBoss) cls.push('boss');
     if (u.side === 'enemy' && u.stand === 'boss') name = 'ボス';            // 展示ステージ③
     if (u.side === 'enemy' && u.stand === 'float') name = '取り巻き<small>' + esc(u.letter) + '</small>';
+    var img = unitImg(u);
+    if (img) cls.push('has-img');
     var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg' + (u.size > 1 ? ';--sz:' + u.size : '') + '">' +
+      '<span class="u-shadow"></span>' + (img ? '<img class="u-img" src="' + img + '" alt="">' : '') +
       '<span class="facing"></span><span class="u-name">' + name + '</span><span class="u-hp">HP' + u.hp + '</span>';
     if (u.side === 'enemy') {
       if (u.stand !== 'rush') h += '<span class="u-magic">' + esc(R.magicName(u.magic)) + '</span>';   // 突進の敵は魔法を撃たない
@@ -1095,17 +1179,103 @@
     return h + '</div>';
   }
 
+  // 奥行き: 山（火山・桜も）は、つながった山のかたまりを1つの山として、頂上から斜めにまっすぐ下る山肌で描く
+  //   （オーナー 10/31「山は山肌に。斜めに下、山だって感じに」「斜めにまっすぐで。今のは山脈っぽい。イメージは一つの山」）。
+  //   頂上は、かたまりの頂上のマスの真ん中（山だけのかたまりはルールの斜面 R.mountainSlopes と同じ頂上。火山・桜が混ざるときは画面の頂上 peakAt）。
+  //   かたまりのふち（隣が山でないマスの辺）の1辺ごとに、頂上とその辺を結ぶ三角を1枚張る（ふちは地面の高さ）。山の足もとは、通れないマスにぴったり合う。
+  //   高さはかたまりが大きいほど少し高い（3.5 + √マス数 段。7 段まで。1段 = マスの幅 × --lvh）。
+  //   三角は 100px の四角を matrix3d で3つの点へ写し、clip-path で三角に切る。光（左上の手前から）で明るさを変え、頂上に雪（火山は溶岩・桜は桃色の山）。
+  //   山の三角は頂上のマスの中にまとめて置く。山のマスの面（印・予測・押した枠を出す所）は、そのマスの山肌の一番高い所に浮かせる（--lv）
+  function slopeMesh(st, n, rows, peakAt, isMount) {
+    var mesh = {}, c0 = cellEls[0] && cellEls[0].el;
+    app.meshKey = '';
+    if (!c0 || !c0.offsetWidth) return mesh;
+    var cw = c0.offsetWidth, ch = c0.offsetHeight, g2 = 1.5;   // マスのすき間（3px）の半分だけ外へ広げる
+    var px = n > 1 ? cellEls[1].el.offsetLeft - c0.offsetLeft : cw + 3, py = rows > 1 ? cellEls[n].el.offsetTop - c0.offsetTop : ch + 3;
+    var zU = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lvh')) || 0.22) * (el.board.clientWidth - 12) / n;   // 1段の高さ（px。style.css の --lvh と同じ）
+    app.meshKey = [cw, ch, el.board.clientWidth].join('x');
+    var LIGHT = (function (v) { var l = Math.hypot(v[0], v[1], v[2]); return v.map(function (a) { return a / l; }); })([-0.45, 0.35, 0.82]);
+    var BASE = { mountain: [150, 132, 104], volcano: [118, 72, 52], sakura: [214, 164, 182] };
+    var num = function (a) { return +a.toFixed(4); };
+    var seen = {};
+    for (var sy = 0; sy < rows; sy++) {
+      for (var sx = 0; sx < n; sx++) {
+        if (!isMount(sx, sy) || seen[key(sx, sy)]) continue;
+        // かたまり
+        var comp = [], inC = {}, stack = [[sx, sy]];
+        while (stack.length) {
+          var q = stack.pop(), qk = key(q[0], q[1]);
+          if (inC[qk] || !isMount(q[0], q[1])) continue;
+          inC[qk] = seen[qk] = true;
+          comp.push(q);
+          stack.push([q[0] + 1, q[1]], [q[0] - 1, q[1]], [q[0], q[1] + 1], [q[0], q[1] - 1]);
+        }
+        // 頂上のマス
+        var pure = comp.every(function (c) { return R.getTile(st, c[0], c[1]) === 'mountain'; });
+        var ms = pure && B.tutorial.slope ? R.mountainSlopes(st, comp[0][0], comp[0][1]) : null;
+        var apex = ms ? ms.peak : comp.filter(function (c) { return peakAt[key(c[0], c[1])]; })[0] || comp[0];
+        var H = Math.min(7, 3.5 + Math.sqrt(comp.length)) * zU;
+        // 頂上のマスの左上を原点にした px の位置
+        var X = function (gx) { return (gx - apex[0]) * px; }, Y = function (gy) { return (gy - apex[1]) * py; };
+        var A = [cw / 2, ch / 2];
+        // ふちの辺ごとの三角（頂上 A・辺の両はし E1, E2。上から見て時計回り＝法線が上向き）
+        var faces = [];
+        comp.forEach(function (c) {
+          var x0 = X(c[0]) - g2, x1 = X(c[0]) + cw + g2, y0 = Y(c[1]) - g2, y1 = Y(c[1]) + ch + g2, tile = R.getTile(st, c[0], c[1]);
+          [[0, -1, [x0, y0], [x1, y0]], [1, 0, [x1, y0], [x1, y1]], [0, 1, [x1, y1], [x0, y1]], [-1, 0, [x0, y1], [x0, y0]]].forEach(function (d) {
+            if (inC[key(c[0] + d[0], c[1] + d[1])]) return;
+            var E1 = d[2], E2 = d[3];
+            if ((E1[0] - A[0]) * (E2[1] - A[1]) - (E1[1] - A[1]) * (E2[0] - A[0]) < 0) { var sw = E1; E1 = E2; E2 = sw; }
+            faces.push({ E1: E1, E2: E2, tile: tile });
+          });
+        });
+        // 点 (x, y) の山肌の高さ（px。どの三角にも入らなければ 0）
+        var hAt = function (x, y) {
+          var best = 0;
+          faces.forEach(function (f) {
+            var ux = f.E1[0] - A[0], uy = f.E1[1] - A[1], vx = f.E2[0] - A[0], vy = f.E2[1] - A[1], det = ux * vy - uy * vx;
+            if (!det) return;
+            var a = ((x - A[0]) * vy - (y - A[1]) * vx) / det, b = (ux * (y - A[1]) - uy * (x - A[0])) / det;
+            if (a >= -1e-6 && b >= -1e-6 && a + b <= 1 + 1e-6) best = Math.max(best, H * (1 - a - b));
+          });
+          return best;
+        };
+        var html = '';
+        faces.forEach(function (f) {
+          var e1 = [f.E1[0] - A[0], f.E1[1] - A[1], -H], e2 = [f.E2[0] - A[0], f.E2[1] - A[1], -H];
+          var nv = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], nl = Math.hypot(nv[0], nv[1], nv[2]) || 1;
+          nv = nv.map(function (a) { return a / nl; });
+          var shade = Math.min(1.15, 0.55 + 0.55 * Math.max(0, nv[0] * LIGHT[0] + nv[1] * LIGHT[1] + nv[2] * LIGHT[2]));
+          var base = BASE[f.tile] || BASE.mountain;
+          var rgb = 'rgb(' + base.map(function (a) { return Math.min(255, Math.round(a * shade)); }).join(',') + ')', bg = rgb;
+          if (f.tile === 'mountain') bg = 'radial-gradient(circle at 0 0, rgb(' + [245, 245, 244].map(function (a) { return Math.round(a * Math.min(1, shade + 0.1)); }).join(',') + ') 0 16%, ' + rgb + ' 24%)';
+          if (f.tile === 'volcano') bg = 'radial-gradient(circle at 0 0, #ffd166 0 6%, #f97316 13%, ' + rgb + ' 26%)';
+          html += '<span class="slope" style="background:' + bg + ';transform:matrix3d(' +
+            [num(e1[0] / 100), num(e1[1] / 100), num(e1[2] / 100), 0, num(e2[0] / 100), num(e2[1] / 100), num(e2[2] / 100), 0, num(nv[0]), num(nv[1]), num(nv[2]), 0, num(A[0]), num(A[1]), 0, 1].join(',') + ')"></span>';
+        });
+        // マスごとの面の高さ（そのマスの山肌の一番高い所。真ん中・辺の真ん中・角で測る）。頂上のマスは頂上の高さで、山肌はそこから下へ
+        comp.forEach(function (c) {
+          var isApex = c[0] === apex[0] && c[1] === apex[1], topPx = 0;
+          if (isApex) topPx = H;
+          else [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [0.5, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]].forEach(function (s) { topPx = Math.max(topPx, hAt(X(c[0]) + s[0] * cw, Y(c[1]) + s[1] * ch)); });
+          mesh[key(c[0], c[1])] = { top: num(topPx / zU), html: isApex ? html : '' };
+        });
+      }
+    }
+    return mesh;
+  }
+
   function renderBoard(animate) {
     var st = app.state;
     var n = st.size, rows = R.rowsOf(st);   // 横 n・縦 rows（チュートリアル②は 5×8）
     el.board.style.setProperty('--n', n);
     el.board.style.setProperty('--rows', rows);
 
-    // 動きのアニメーション用: 描き直す前の位置
-    var before = {};
+    // 動きのアニメーション用: 描き直す前の位置（奥行きの見た目では、傾ける前の盤面の上の位置）
+    var before = {}, depth = viewNow() === 'depth';
     if (animate) {
       Array.prototype.forEach.call(el.board.querySelectorAll('.unit[data-id]'), function (t) {
-        before[t.getAttribute('data-id')] = t.getBoundingClientRect();
+        before[t.getAttribute('data-id')] = depth ? floorPos(t) : t.getBoundingClientRect();
       });
     }
 
@@ -1240,7 +1410,7 @@
       fc.enemyDamage.forEach(function (d) { if (!npcIds[d.by]) warn[d.id] = (warn[d.id] || 0) + d.amount; });   // 構える味方の分は上で足した
     }
 
-    // 護衛: 馬車の道筋（薄い線）と次の1マス（矢印）。敵の予告と同じく、予測中は撃ったあとの盤面で計算し直す
+    // 護衛: トロッコの道筋（薄い線）と次の1マス（矢印）。敵の予告と同じく、予測中は撃ったあとの盤面で計算し直す
     var wLine = {}, wNext = null;
     var fcw = fc || forecastNow(true);
     if (fcw && fcw.wagon && fcw.wagon.next && !app.editMode) {
@@ -1308,6 +1478,19 @@
         peakAt[key(best[0], best[1])] = { size: Math.min(2.6, 0.75 + 0.4 * (comp.length - 1)), dx: ax - best[0], dy: ay - best[1], hot: hot };
       }
     }
+
+    // 奥行きの見た目の高さ（HD-2D の方針 10/31）: 丘は 1 段の台（崖つき）。山は山肌（slopeMesh）で描くので、ここでは 0（山の足もとは地面の高さ）。
+    //   真上の見た目では使わない（.cliff と --lv は style.css が隠す）
+    var heights = memo('heights', [st], function () {
+      var hs = [];
+      for (var hy = 0; hy < rows; hy++) {
+        for (var hx = 0; hx < n; hx++) { var ht = R.getTile(st, hx, hy); hs.push(ht === 'hill' || ht === 'hillsakura' ? 1 : 0); }
+      }
+      return hs;
+    });
+    var lvAt = function (ax, ay) { return R.inBounds(st, ax, ay) ? heights[ay * n + ax] : 0; };
+
+    var mesh = depth ? slopeMesh(st, n, rows, peakAt, isMount) : {};
 
     // 【育つ】見た目: つながった森・水たまり・氷・死の森も、1枚の大きな絵で描く（fx.bigPicture）。かたまりが大きいほど真ん中の絵も大きい
     var bigComp = {}, bigAt = {};
@@ -1388,6 +1571,13 @@
           if (pk && !sl) inner += '<span class="peak' + (pk.hot ? ' hot' : '') + '" style="--ps:' + pk.size.toFixed(2) + ';--pdx:' + pk.dx.toFixed(2) + ';--pdy:' + pk.dy.toFixed(2) + '"></span>';
           if (sl === 'peak') inner += '<span class="summit" title="山の頂上（一番高い）">▲</span>';
         }
+        // 奥行き: 山は山肌（マスの面は山肌の一番高い所に浮かせる）。丘は崖（手前・左・右。隣より高い分だけ）
+        var lvHere = heights[y * n + x];
+        if (mesh[k]) { inner += mesh[k].html; lvHere = mesh[k].top; }
+        else if (lvHere) [['f', x, y + 1], ['l', x - 1, y], ['r', x + 1, y]].forEach(function (a) {
+          var dh = lvHere - lvAt(a[1], a[2]);
+          if (dh > 0) inner += '<span class="cliff ' + a[0] + '" style="--ch:' + dh + '"></span>';
+        });
         if (bigComp[k] && bigComp[k] !== 'solo') {
           var bj = [];
           [['up', x, y - 1], ['right', x + 1, y], ['down', x, y + 1], ['left', x - 1, y]].forEach(function (a) { if (R.inBounds(st, a[1], a[2]) && R.getTile(st, a[1], a[2]) === tile) bj.push('j-' + a[0]); });
@@ -1404,7 +1594,7 @@
         if (wLine[k]) inner += wLine[k].map(function (d) { return '<span class="wline ' + d + '"></span>'; }).join('') + '<span class="wline dot"></span>';
         if (eLine[k]) inner += eLine[k].map(function (d) { return '<span class="wline e ' + d + '"></span>'; }).join('') + '<span class="wline e dot"></span>';
         if (eStop[k] && !unit) inner += '<div class="ghost rush">' + esc(eStop[k].letter) + DIR_ARROW[eStop[k].dir] + '</div>';
-        if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了で馬車が進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
+        if (wNext && wNext.k === k) inner += '<span class="wnext' + (wNext.stuck ? ' stuck' : '') + '" title="次のターン終了でトロッコが進むマス">' + DIR_ARROW[wNext.dir] + '</span>';
         if (guide[k] && reach[k] !== undefined) {
           inner += guide[k] === 'finisher' ? '<span class="b-guide finisher">◆</span>' : '<span class="b-guide change" title="変化が起きる"></span>';
         }
@@ -1449,6 +1639,7 @@
         var clsText = cls.join(' ');
         if (c.cls !== clsText) { c.el.className = clsText; c.cls = clsText; }
         if (c.html !== inner) { c.el.innerHTML = inner; c.html = inner; }
+        if (c.lv !== lvHere) { if (lvHere) c.el.style.setProperty('--lv', lvHere); else c.el.style.removeProperty('--lv'); c.lv = lvHere; }
       }
     }
 
@@ -1457,6 +1648,16 @@
       Array.prototype.forEach.call(el.board.querySelectorAll('.unit[data-id]'), function (t) {
         var b = before[t.getAttribute('data-id')];
         if (!b) return;
+        if (depth) {   // 奥行き: 立てた駒の向き（transform）は残したまま、盤面の上を translate ですべらせる
+          var f = floorPos(t), fx = b.left - f.left, fy = b.top - f.top;
+          if (Math.abs(fx) < 1 && Math.abs(fy) < 1) return;
+          t.style.transition = 'none';
+          t.style.translate = fx + 'px ' + fy + 'px';
+          void t.offsetWidth;
+          t.style.transition = 'translate .3s ease';
+          t.style.translate = '';
+          return;
+        }
         var a = t.getBoundingClientRect();
         var dx = b.left - a.left, dy = b.top - a.top;
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
@@ -1687,7 +1888,7 @@
     if (win === 'boss' && !R.enemiesOf(st).some(function (e) { return e.stand === 'boss'; })) lack.push('動きが「ボス」の敵がいない（どれか1体を倒しただけで勝ちになる）');
     if ((win === 'defense' || win === 'seal') && !R.objectsOf(st, 'village').length) lack.push('村がない');
     if (win === 'seal' && !R.enemiesOf(st).some(function (e) { return e.stand === 'rush'; }) && !(st.spawn && st.spawn.stand === 'rush')) lack.push('ふさぐ相手（動きが「突進」の敵）がいない');
-    if (win === 'escort' && !R.objectsOf(st, 'wagon').length) lack.push('馬車がない');
+    if (win === 'escort' && !R.objectsOf(st, 'wagon').length) lack.push('トロッコがない');
     if (win === 'escort' && !(mi.goal || []).length) lack.push('ゴールがない');
     if (win === 'retrieve' && !mi.treasure) lack.push('宝がない');
     if (win === 'retrieve' && !(mi.exit || []).length) lack.push('帰り口がない');
@@ -1695,7 +1896,7 @@
     el.winNote.textContent = (win === 'boss' && st.ex && st.ex.spawn ? '取り巻きが湧く（③の決まり）。' : '') +
       (st.spawn ? '増援が (' + st.spawn.x + ',' + st.spawn.y + ') から出る（②の決まり）。' : '') +
       (lack.length ? '足りない: ' + lack.join('・') : '');
-    var mtools = [['obj:village', '村を置く'], ['obj:wagon', '馬車を置く'], ['mark:goal', 'ゴール'], ['treasure', '宝を置く'], ['mark:exit', '帰り口']];
+    var mtools = [['obj:village', '村を置く'], ['obj:wagon', 'トロッコを置く'], ['mark:goal', 'ゴール'], ['treasure', '宝を置く'], ['mark:exit', '帰り口']];
     el.missionTools.innerHTML = mtools.map(function (t) {
       return '<button type="button" class="' + (app.editTool === t[0] ? 'active' : '') + '" data-tool="' + t[0] + '">' + t[1] + '</button>';
     }).join('');
@@ -1834,7 +2035,8 @@
   document.addEventListener('pointerdown', function (e) {
     var t = e.target;
     if (!app.sel || app.editMode || app.home || e.button !== 0 || !t.closest) return;
-    if (el.board.contains(t) || t.closest('#ctrlPanel, #roster, button, input, select, textarea, label, .howto-dialog')) return;
+    //   もう画面にない所: 盤面で押した駒が、その場で描き直されたとき（奥行きの見た目では、立てた駒そのものを押せる）
+    if (!t.isConnected || el.board.contains(t) || t.closest('#ctrlPanel, #roster, button, input, select, textarea, label, .howto-dialog')) return;
     deselect();
   });
 
@@ -2441,6 +2643,7 @@
     else if (kind === 'all') playShared(name);
   });
   el.btnHome.addEventListener('click', goHome);
+  if (el.btnView) el.btnView.addEventListener('click', toggleView);
   // 展示モードの左上「⌂ タイトル」: 確かめてから最初の画面へ（遊んでいたステージは続きから戻れない。オーナー 10/31）
   el.btnTitle.addEventListener('click', function () {
     el.btnTitle.blur();
@@ -2462,9 +2665,10 @@
     }
     // キーはおまけ（IMPROVE_controls 6章）。展示モード: 味方 1〜、向き 矢印・WASD、魔法 Enter、1手戻す Z、取り消し Esc（待機のキーはない。オーナー 10/31）。
     //   誰も選んでいないときの Enter は、右下のボタンと同じ（発動・クリアする・次へ・やり直す。advance）
-    //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete を足す
-    if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
+    //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete、見た目（真上 ⇄ 奥行き）の V を足す
+    if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|[vV]|Delete|Backspace)$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
+    if (k === 'v' || k === 'V') { toggleView(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
       if (k === 'Escape') { if (app.editPick) app.editPick = null; else app.editTool = 'pick'; render(); }   // 選んだ駒を外す → 道具を外す

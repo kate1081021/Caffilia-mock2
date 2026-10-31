@@ -90,7 +90,7 @@
   var ENEMY_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
   // お題（IMPROVE_mission）
-  //   annihilate: 敵の全滅（元の戦闘）／defense: 防衛（村を守る）／escort: 護衛（馬車をゴールへ）／retrieve: 奪取（宝を帰り口へ）
+  //   annihilate: 敵の全滅（元の戦闘）／defense: 防衛（村を守る）／escort: 護衛（トロッコをゴールへ）／retrieve: 奪取（宝を帰り口へ）
   var MISSION_INFO = {
     annihilate: { name: '戦闘' },
     defense:    { name: '防衛' },
@@ -101,7 +101,7 @@
   // 置きもの。fixed: 風で押されない・引き寄せられない
   var OBJECT_INFO = {
     village: { name: '村',   fixed: true },
-    wagon:   { name: '馬車', fixed: false }
+    wagon:   { name: 'トロッコ', fixed: false }
   };
 
 
@@ -218,7 +218,7 @@
     return n + 1;
   }
   function enemiesOf(s) { return s.units.filter(function (u) { return u.side === 'enemy'; }); }
-  // お題の置きもの（村・馬車）。自然ではなく、ユニットと同じ法則に従う（直撃・決め手・炎の上・風）
+  // お題の置きもの（村・トロッコ）。自然ではなく、ユニットと同じ法則に従う（直撃・決め手・炎の上・風）
   function objectsOf(s, kind) { return s.units.filter(function (u) { return u.side === 'object' && (!kind || u.kind === kind); }); }
   function neighbors(s, x, y) {
     var out = [];
@@ -369,7 +369,7 @@
   }
   function isFixed(u) { return u.side === 'object' && OBJECT_INFO[u.kind].fixed; }
 
-  // お題の状態。goal: 馬車のゴール、exit: 帰り口、treasure: 落ちている宝の位置（持たれていたら null）、carrier: 宝を持つ味方の id、lost: 壊れた村の数
+  // お題の状態。goal: トロッコのゴール、exit: 帰り口、treasure: 落ちている宝の位置（持たれていたら null）、carrier: 宝を持つ味方の id、lost: 壊れた村の数
   function newMission(type) {
     return { type: MISSION_INFO[type] ? type : 'annihilate', goal: [], exit: [], treasure: null, carrier: null, lost: 0 };
   }
@@ -485,11 +485,11 @@
     if (allyDied && controllableOf(s).length === 0) { setResult(s, ev, 'lose', '味方が全員倒れた…（敗北）'); return; }
     if (type === 'defense' && (m.lost || 0) >= B.mission.defense.loseAt) { setResult(s, ev, 'lose', '村が壊された…（敗北）'); return; }
     if (type === 'escort' && ev.some(function (e) { return e.type === 'death' && e.kind === 'wagon'; }) && !objectsOf(s, 'wagon').length) {
-      setResult(s, ev, 'lose', '馬車が壊された…（敗北）'); return;
+      setResult(s, ev, 'lose', 'トロッコが壊された…（敗北）'); return;
     }
     if (type === 'escort') {
       var w = objectsOf(s, 'wagon')[0];
-      if (w && inCells(m.goal, w.x, w.y)) { setResult(s, ev, 'win', '馬車がゴールに着いた！（勝利）'); return; }
+      if (w && inCells(m.goal, w.x, w.y)) { setResult(s, ev, 'win', 'トロッコがゴールに着いた！（勝利）'); return; }
     }
     if ((type === 'annihilate' || type === 'defense') && enemyDied && enemiesOf(s).length === 0) {
       setResult(s, ev, 'win', '敵を全員倒した！（勝利）');
@@ -1381,7 +1381,7 @@
   // 1本の川: (sx, sy) の次のマスから d の向きへ。空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。
   //   人（味方・敵）のマスでは止まらずに流れ続け、その人の足元も川になる（オーナー 10/30。人へのダメージはない）。
   //   村には流れこんで村を押し流し（壊れる）、そのまま流れ続ける（オーナー 10/31）。
-  //   ほかの置きもの（馬車）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
+  //   ほかの置きもの（トロッコ）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
   function runRiver(s, sx, sy, d, ctx, overHill) {
     var F = DIRS[d], g = { origin: [sx, sy], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null, prev = [sx, sy], over = 0, flooded = [];
     for (var i = 1; ; i++) {
@@ -1723,7 +1723,7 @@
   // ---------------------------------------------------------------
 
   // 通り抜け（オーナー 10/30）: 味方・敵・村のいるマスは、味方も敵も通り抜けられる。ただし、そこに止まることはできない
-  //   （移動先の候補には出さず、通り道としてだけ使う）。馬車は今どおり通れない
+  //   （移動先の候補には出さず、通り道としてだけ使う）。トロッコは今どおり通れない
   function passThrough(o) { return !!o && (o.side === 'ally' || o.side === 'enemy' || (o.side === 'object' && o.kind === 'village')); }
 
   // 動けるマス: dist { "x,y": 距離 }（今の位置 0 を含む）と、見つけた順 order
@@ -2006,7 +2006,7 @@
       if (t.side === 'enemy') { harm = true; return; }
       if (hidden(s, t, su)) return;
       if (isTarget[id]) targetIds.push(id);
-      if (t.side !== 'ally') return;     // 置きもの（村・馬車）は「人数」「近い人」には数えない
+      if (t.side !== 'ally') return;     // 置きもの（村・トロッコ）は「人数」「近い人」には数えない
       allyIds.push(id);
       allyDmg += h.amount;
     });
@@ -2016,7 +2016,7 @@
       harm: harm, changed: changed, cells: ctx.cells, ctx: ctx, before: before, after: sim.tiles };
   }
 
-  // お題の的: 村・馬車・宝を持っている味方（蜃気楼の中は見えない）。宝がまだ拾われていない奪取では、的はない
+  // お題の的: 村・トロッコ・宝を持っている味方（蜃気楼の中は見えない）。宝がまだ拾われていない奪取では、的はない
   function missionTargets(s) {
     var type = missionType(s), out = [];
     if (type === 'defense') out = objectsOf(s, 'village');
@@ -2501,7 +2501,7 @@
   }
 
   // ---------------------------------------------------------------
-  // 護衛: 馬車の道
+  // 護衛: トロッコの道
   //   ゴールまでの一番短い道（通れるマスだけ。危ない所（敵の「避」と同じ）とユニットのいるマスは通らない）
   //   同じ長さなら 上・右・下・左 の順。道がなければ null
   // ---------------------------------------------------------------
@@ -2538,7 +2538,7 @@
     return { id: w.id, from: [w.x, w.y], next: path[0] || null, path: path, steps: d };
   }
 
-  // 敵の魔法の発動のあと、ターン終了処理の前: 馬車がゴールへ1マス進む
+  // 敵の魔法の発動のあと、ターン終了処理の前: トロッコがゴールへ1マス進む
   function wagonPhase(s, ev, step) {
     var w = objectsOf(s, 'wagon')[0];
     if (!w || s.result || missionType(s) !== 'escort') return;
@@ -2697,7 +2697,7 @@
       marchPhase(s, ev, step);
     }
 
-    // 3c. 護衛: 馬車がゴールへ1マス進む
+    // 3c. 護衛: トロッコがゴールへ1マス進む
     if (!s.result) wagonPhase(s, ev, step);
 
     // 4. ターン終了処理
@@ -2961,7 +2961,7 @@
         function (e, from, to) { out.marches.push({ id: e.id, from: from, to: to, dir: e.facing }); },
         function (e) { fire(out.enemies, e); });
     }
-    // 護衛: 敵の魔法の発動のあとの盤面で、馬車の次の1マスとゴールまでの道筋
+    // 護衛: 敵の魔法の発動のあとの盤面で、トロッコの次の1マスとゴールまでの道筋
     if (missionType(sim) === 'escort') {
       out.wagon = wagonRoute(sim);
       if (out.wagon) out.wagon.stuck = !!findUnit(sim, out.wagon.id).stuck;
@@ -3035,13 +3035,13 @@
     return { ok: true, state: s, events: [], steps: [], unit: addEnemy(s, magic || B.enemy.defaultMagic, x, y, 'down') };
   }
 
-  // お題の置きもの（村・馬車）を置く。馬車は1台だけ
+  // お題の置きもの（村・トロッコ）を置く。トロッコは1台だけ
   function editPlaceObject(s0, kind, x, y) {
     if (!OBJECT_INFO[kind]) return fail(s0, '置きものがない');
     if (!inBounds(s0, x, y)) return fail(s0, '盤の外');
     if (unitAt(s0, x, y)) return fail(s0, 'もうユニットがいる');
     if (!canStand(s0, x, y)) return fail(s0, '通れないマスには置けない');
-    if (kind === 'wagon' && objectsOf(s0, 'wagon').length) return fail(s0, '馬車は1台まで');
+    if (kind === 'wagon' && objectsOf(s0, 'wagon').length) return fail(s0, 'トロッコは1台まで');
     var s = clone(s0);
     return { ok: true, state: s, events: [], steps: [], unit: addObject(s, kind, x, y) };
   }
@@ -3290,7 +3290,7 @@
     },
     {
       id: 'mEscort', name: '【お題】護衛', mission: 'escort',
-      desc: '【お題】護衛。味方 土・水・風、敵2体（A: 的＝馬車を狙う／B: 人数）。馬車はターンの終わりに、ゴール（右の端）への一番短い道を1マス進む（危ない所とユニットは避ける）。真ん中の川は切れ目からしか渡れない。山や川で道を変えられる。風で押すと馬車も運ばれる。',
+      desc: '【お題】護衛。味方 土・水・風、敵2体（A: 的＝トロッコを狙う／B: 人数）。トロッコはターンの終わりに、ゴール（右の端）への一番短い道を1マス進む（危ない所とユニットは避ける）。真ん中の川は切れ目からしか渡れない。山や川で道を変えられる。風で押すとトロッコも運ばれる。',
       rows: ['...R...', '...R...', '...R...', '...R...', '.......', '...R...', '...R...'],
       allies: [['earth', 0, 6], ['water', 2, 6], ['wind', 1, 4]],
       enemies: [['fire', 5, 0, { aim: 'target' }], ['fire', 6, 6, { aim: 'count' }]],
@@ -3589,15 +3589,15 @@
       // 「ターン4/5」の形だけ（決着の前とあとで長さを変えない。村の行は出さない。村の HP は村のマスを押すと出る。IMPROVE_controls 3-1）
       info.status.push('ターン' + Math.min(s.turn, T) + '/' + T);
     } else if (type === 'escort') {
-      info.win = '馬車がゴールに入る';
-      info.lose = '馬車が壊れる／味方が全員倒れる';
+      info.win = 'トロッコがゴールに入る';
+      info.lose = 'トロッコが壊れる／味方が全員倒れる';
       var w = objectsOf(s, 'wagon')[0];
       if (w) {
         var r = wagonRoute(s);
-        info.status.push('馬車 HP' + w.hp + '/' + w.maxHp);
+        info.status.push('トロッコ HP' + w.hp + '/' + w.maxHp);
         info.status.push(r && r.steps !== null ? 'ゴールまで ' + r.steps + '歩' : 'ゴールへの道がない（待つ）');
         if (w.stuck) info.status.push('泥沼: 次は進めない');
-      } else info.status.push('馬車がない');
+      } else info.status.push('トロッコがない');
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'retrieve') {
       info.win = '宝を持って帰り口で移動を終える';

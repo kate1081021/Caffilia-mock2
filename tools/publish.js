@@ -8,7 +8,7 @@
  *   --no-push                      … commit・push をしない（確かめる用）
  *
  * publish/ はこのモックとは別の git リポジトリ（private、Cloudflare（Workers の静的サイト）が main を公開する）。
- * 公開するのは index.html が読み込むファイルだけ。仕様・メモ・テスト・バックアップは出さない。
+ * 公開するのは index.html が読み込むファイルと、駒の絵のフォルダ img/ の画像だけ。仕様・メモ・テスト・バックアップは出さない。
  */
 'use strict';
 
@@ -39,6 +39,11 @@ function pageFiles(html) {
     if (/^[a-z]+:|^\/\//i.test(m[1])) continue; // 外部のものは扱わない
     if (files.indexOf(m[1]) === -1) files.push(m[1]);
   }
+  // 駒の絵（img/。HD-2D の方針 10/31）: 画面は名前で読みに行くので、フォルダの画像を全部出す
+  var imgDir = path.join(ROOT, 'img');
+  if (fs.existsSync(imgDir)) fs.readdirSync(imgDir).forEach(function (n) {
+    if (/\.(png|jpe?g|webp|gif)$/i.test(n) && files.indexOf('img/' + n) === -1) files.push('img/' + n);
+  });
   return files;
 }
 

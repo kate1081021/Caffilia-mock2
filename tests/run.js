@@ -1698,21 +1698,21 @@ function escort(rows, wagon, goal) {
   s.mission.goal = goal;
   return s;
 }
-test('馬車はターン終了でゴールへの一番短い道を1マス進む', function () {
+test('トロッコはターン終了でゴールへの一番短い道を1マス進む', function () {
   var s = escort(['.....', '.....', '.....', '.....', '.....'], [0, 2], [[4, 2]]);
   R.addAlly(s, 'fire', 0, 4, 'up');
   eq(R.wagonRoute(s).steps, 4);
   var r = R.endTurn(s);
   eq(wagonAt(r.state), [1, 2]);
 });
-test('馬車の道は危ない所とユニットのいるマスを通らない', function () {
+test('トロッコの道は危ない所とユニットのいるマスを通らない', function () {
   var s = escort(['.....', '.....', '.X...', '.....', '.....'], [0, 2], [[4, 2]]);
   R.addAlly(s, 'fire', 0, 1, 'up');
   var r = R.wagonRoute(s);
   eq(r.next, [0, 3], '炎の (1,2) と味方の (0,1) を避けて下へ');
   ok(!r.path.some(function (c) { return c[0] === 1 && c[1] === 2; }));
 });
-test('馬車は道がなければその場で待つ', function () {
+test('トロッコは道がなければその場で待つ', function () {
   var s = escort(['.....', 'M....', '.M...', 'M....', '.....'], [0, 2], [[4, 2]]);
   R.addAlly(s, 'fire', 4, 4, 'up');
   eq(R.wagonRoute(s).next, null);
@@ -1720,7 +1720,7 @@ test('馬車は道がなければその場で待つ', function () {
   eq(wagonAt(r.state), [0, 2]);
   ok(r.events.some(function (e) { return e.type === 'wagonWait'; }));
 });
-test('土で山を盛ると馬車の道が変わる', function () {
+test('土で山を盛るとトロッコの道が変わる', function () {
   var s = escort(['.....', '.....', '.....', '.....', '.....'], [0, 2], [[4, 2]]);
   var e = R.addAlly(s, 'earth', 2, 4, 'up');
   eq(R.wagonRoute(s).next, [1, 2]);
@@ -1728,22 +1728,22 @@ test('土で山を盛ると馬車の道が変わる', function () {
   eq(tile(r.state, 1, 2), 'mountain');
   eq(R.wagonRoute(r.state).next, [0, 3], '山をよけて回り道');
 });
-test('馬車がゴールに入ったら勝ち', function () {
+test('トロッコがゴールに入ったら勝ち', function () {
   var s = escort(['.....', '.....', '.....', '.....', '.....'], [3, 2], [[4, 2]]);
   R.addAlly(s, 'fire', 0, 4, 'up');
   var r = R.endTurn(s);
   eq(r.state.result, 'win');
 });
-test('馬車が壊れたら負け（味方の魔法でも）', function () {
+test('トロッコが壊れたら負け（味方の魔法でも）', function () {
   var s = escort(['.....', '.....', '.....', '.....', '.....'], [2, 2], [[4, 0]]);
   var a = R.addAlly(s, 'fire', 2, 3, 'up');
   R.addAlly(s, 'wind', 0, 4, 'up');
   R.objectsOf(s, 'wagon')[0].hp = 1;
   var r = fire(s, a, 'up');
   eq(r.state.result, 'lose');
-  ok(/馬車/.test(r.state.resultText));
+  ok(/トロッコ/.test(r.state.resultText));
 });
-test('馬車は風で押される（直撃1も入る）。押されてゴールに入っても勝ち', function () {
+test('トロッコは風で押される（直撃1も入る）。押されてゴールに入っても勝ち', function () {
   var s = escort(['.....', '.....', '.....', '.....', '.....'], [2, 2], [[2, 0]]);
   var w = R.addAlly(s, 'wind', 2, 4, 'up');
   var r = fire(s, w, 'up');
@@ -1818,13 +1818,13 @@ test('宝を持ったまま帰り口で移動を終えたら勝ち', function ()
 
 console.log('\n■ お題: 敵の「的」');
 
-test('的の敵は、味方より的（馬車）に当たる手を選ぶ。人数の敵は馬車を狙わない', function () {
+test('的の敵は、味方より的（トロッコ）に当たる手を選ぶ。人数の敵はトロッコを狙わない', function () {
   var s = escort(['.....', '.....', '.....', '.....', '.....'], [2, 2], [[0, 4]]);
   var a = R.addAlly(s, 'grass', 4, 1, 'up');
   var e = R.addEnemy(s, 'fire', 3, 0, 'down');
   var cellOf = function (p) { var d = R.DIRS[p.dir]; return [p.to[0] + d.dx, p.to[1] + d.dy]; };
   R.findUnit(s, e.id).aim = 'target';
-  eq(cellOf(R.planEnemy(s, R.findUnit(s, e.id))), [2, 2], '的は馬車');
+  eq(cellOf(R.planEnemy(s, R.findUnit(s, e.id))), [2, 2], '的はトロッコ');
   R.findUnit(s, e.id).aim = 'count';
   eq(cellOf(R.planEnemy(s, R.findUnit(s, e.id))), [a.x, a.y], '人数は味方');
 });
@@ -1836,7 +1836,7 @@ test('当たる手がないとき、的の敵は一番近い的へ向かう', fu
   var p = R.planEnemy(s, R.findUnit(s, e.id));
   var w = R.objectsOf(s, 'wagon')[0];
   eq(p.target, w.id);
-  ok(Math.abs(p.to[0] - 0) + Math.abs(p.to[1] - 6) < 3 + 6, '馬車に近づく');
+  ok(Math.abs(p.to[0] - 0) + Math.abs(p.to[1] - 6) < 3 + 6, 'トロッコに近づく');
 });
 test('宝がまだ拾われていない奪取では、的はなく「近い人」と同じ', function () {
   var s = retrieve([2, 0], [[0, 4]]);
@@ -1859,11 +1859,11 @@ test('お題の置きもの・印・宝は JSON の保存と読み込みで残�
   });
   ok(!R.importLayout({ size: 5, tiles: new Array(25).fill('empty'), mission: { type: 'party' } }).ok, '知らないお題');
 });
-test('エディットで置きもの・印・宝を置ける（馬車は1台まで、印はもう一度で外れる）', function () {
+test('エディットで置きもの・印・宝を置ける（トロッコは1台まで、印はもう一度で外れる）', function () {
   var s = R.createState({ size: 5, blank: true });
   s = R.editSetMission(s, 'escort').state;
   s = R.editPlaceObject(s, 'wagon', 0, 0).state;
-  ok(!R.editPlaceObject(s, 'wagon', 1, 0).ok, '馬車は1台');
+  ok(!R.editPlaceObject(s, 'wagon', 1, 0).ok, 'トロッコは1台');
   s = R.editPlaceObject(s, 'village', 1, 1).state;
   s = R.editToggleCell(s, 'goal', 4, 4).state;
   eq(s.mission.goal, [[4, 4]]);
@@ -2785,12 +2785,12 @@ test('川は人の足元も流れ続け（ダメージはない）、村は押�
   eq(R.objectsOf(r2.state, 'village').length, 0, '村は壊れる');
   ok(r2.events.some(function (ev) { return ev.type === 'death' && ev.kind === 'village'; }), '村が壊れた出来事');
 });
-test('馬車は今までどおり、川の手前で止まる', function () {
+test('トロッコは今までどおり、川の手前で止まる', function () {
   var st = crossBoard();
   R.addObject(st, 'wagon', 5, 4);
   var r = R.act(st, R.addAlly(st, 'water', 4, 3, 'down').id, { dir: 'down' });
   eq(tile(r.state, 5, 4), 'empty');
-  ok(/馬車.*の手前で止まった/.test(r.events[0].text), r.events[0].text);
+  ok(/トロッコ.*の手前で止まった/.test(r.events[0].text), r.events[0].text);
 });
 test('突進の敵: 人は無視して一番近い村へ、このステージでは1ターンに1マス。魔法は撃たず、予告も出さない', function () {
   var s = tut2();

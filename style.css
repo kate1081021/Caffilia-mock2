@@ -739,7 +739,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .mission-bar .m-status { display: flex; flex-wrap: nowrap; gap: 4px; flex-basis: 100%; overflow: hidden; white-space: nowrap; }   /* 数が変わっても折り返さない */
 .mission-bar .m-status span { background: #f3efe6; border-radius: 6px; padding: 1px 6px; font-weight: bold; }
 
-/* 置きもの: 村は四角（動かない）、馬車は横長の角丸 */
+/* 置きもの: 村は四角（動かない）、トロッコは横長の角丸 */
 .unit.object { border-radius: 8px; color: #fff; z-index: 3; }
 .unit.village { width: 72%; height: 66%; background: linear-gradient(180deg, #b45309, #92400e); border: 3px solid #5b2a06; clip-path: none; }
 .unit.village::before {
@@ -783,7 +783,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 }
 .m-treasure.under { left: auto; right: 2%; top: auto; bottom: 2%; transform: none; width: auto; height: auto; padding: 0 3px; font-size: .6em; z-index: 6; }
 
-/* 馬車の道筋（薄い点線）と次の1マス */
+/* トロッコの道筋（薄い点線）と次の1マス */
 .wline { position: absolute; pointer-events: none; z-index: 1; }
 .wline.up, .wline.down { left: calc(50% - 2px); width: 0; height: 50%; border-left: 4px dotted rgba(15, 118, 110, .55); }
 .wline.up { top: 0; }
@@ -1071,3 +1071,86 @@ body.at-home #btnTitle { display: none !important; }
 @media (min-width: 981px) {
   .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows))); }
 }
+
+/* ---------------------------------------------------------------
+ * 奥行き（HD-2D の方針 10/31。.claude/HD-2D_方針_20261031.md）
+ *   <html> が view-depth のときだけ効く。真上（view-flat）は今までの見た目のまま。エディットはいつも真上（ui.js）。
+ *   盤を手前から見下ろすように傾ける（--tilt・--persp）。絵は平らなまま、駒は起こして立てる（ビルボード）。カメラは回さない（画面の ↑ が盤面の奥）。
+ *   丘・山は高く（マスの --lv。ui.js が山の頂上からの歩数で決める。1段 = マスの幅 × --lvh）。隣より高い分だけ、手前・左・右の崖（.cliff）を見せる
+ * --------------------------------------------------------------- */
+:root { --tilt: 36deg; --persp: 1600px; --lvh: .22; }
+html:not(.view-depth) .cliff,
+html:not(.view-depth) .u-shadow,
+html:not(.view-depth) .u-img { display: none; }
+
+html.view-depth .board-wrap { perspective: var(--persp); perspective-origin: 50% 30%; }
+/* 奥の辺（上）を今の場所にとめて傾ける。傾けると縦が縮むので、盤面の場所と画面の下に収まるまで大きくする（--fit。ui.js の fitDepth） */
+html.view-depth .board { transform: scale(var(--fit, 1)) rotateX(var(--tilt)); transform-origin: 50% 0; transform-style: preserve-3d; }
+html.view-depth .cell {
+  transform-style: preserve-3d;
+  transform: translateZ(calc(var(--lv, 0) * var(--lvh) * 100cqi / var(--n)));
+}
+/* 立体を平らにつぶす filter は使わない（マウスを乗せたとき・光るとき） */
+html.view-depth .cell:hover { filter: none; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7); }
+html.view-depth .cell.flash { animation: flashDepth .9s ease-out; }
+@keyframes flashDepth {
+  0% { box-shadow: inset 0 0 0 200px rgba(255, 243, 176, .85), 0 0 22px 8px #fff3b0; }
+  60% { box-shadow: inset 0 0 0 200px rgba(255, 179, 71, .35), 0 0 14px 4px #ffb347; }
+  100% { box-shadow: none; }
+}
+/* 山（火山・桜も）は山肌（.slope。ui.js の slopeMesh）で見せるので、真上の見た目の山の絵（かたまり・頂の三角・桜の花・▲・「山」の字）は出さない。
+ *   マスの面は山肌の一番高い所に浮いている。地の色はつけず、印・予測・押した枠だけをそこに出す */
+html.view-depth .peak { display: none; }
+html.view-depth .t-mountain, html.view-depth .t-volcano, html.view-depth .t-sakura { background: transparent; }
+html.view-depth .t-mountain > .massif, html.view-depth .t-volcano > .massif, html.view-depth .t-sakura > .massif,
+html.view-depth .bloom, html.view-depth .summit,
+html.view-depth .t-mountain > .tile-label, html.view-depth .t-volcano > .tile-label, html.view-depth .t-sakura > .tile-label { display: none; }
+/* 山肌の三角1枚: 100px の四角を matrix3d で3つの点へ写し、三角に切る（ふちを少し広げて、となりの三角とすき間なく） */
+.slope { position: absolute; left: 0; top: 0; width: 100px; height: 100px; transform-origin: 0 0; clip-path: polygon(-1.5% -1.5%, 103% -1.5%, -1.5% 103%); pointer-events: none; }
+html:not(.view-depth) .slope { display: none; }
+/* 丘は低い台（盛り上がりの絵は出さず、高さと崖で見せる） */
+html.view-depth .t-hill { background: linear-gradient(160deg, #c4b294, #a8967a); }
+
+/* 崖（丘）: 隣より高い分（--ch 段）だけ、マスのふちから下へ垂らす */
+.cliff { position: absolute; pointer-events: none; background: #8f7d62; }
+.cliff.f { left: 0; top: 100%; width: 100%; height: calc(var(--ch) * var(--lvh) * 100cqi / var(--n)); transform-origin: 50% 0; transform: rotateX(-90deg); }
+.cliff.l { top: 0; right: 100%; height: 100%; width: calc(var(--ch) * var(--lvh) * 100cqi / var(--n)); transform-origin: 100% 50%; transform: rotateY(-90deg); }
+.cliff.r { top: 0; left: 100%; height: 100%; width: calc(var(--ch) * var(--lvh) * 100cqi / var(--n)); transform-origin: 0 50%; transform: rotateY(90deg); }
+.cliff.l, .cliff.r { background: #7a6950; }
+
+/* 駒を立てる: 足もと（下のふち）を軸に、画面と平行に起こす。足もとに影 */
+html.view-depth .unit {
+  position: absolute; left: 50%; bottom: 20%;
+  transform-origin: 50% 100%;
+  transform: translateX(-50%) rotateX(calc(-1 * var(--tilt)));
+  transform-style: preserve-3d;
+  pointer-events: auto;   /* 立てた駒の上の方は奥のマスに重なる。駒を押したら、その駒のいるマス */
+}
+/* 大きい敵（③のボス）: 体のマスの手前のふちに立てる。高さは体の幅より低くして、奥のマスを隠しすぎない */
+html.view-depth .unit.big {
+  left: 6%; top: auto; bottom: calc(6% - (var(--sz) - 1) * (100% + 3px));
+  height: calc(var(--sz) * 72%);
+  transform: rotateX(calc(-1 * var(--tilt)));
+}
+.u-shadow {
+  position: absolute; left: 5%; width: 90%; height: 40%; bottom: -20%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, .38), rgba(0, 0, 0, 0) 70%);
+  transform: rotateX(var(--tilt)) translateZ(1px);
+  pointer-events: none;
+}
+/* 絵が入った駒（img/。ui.js の unitImg）: 丸い駒の代わりに絵を立てる。名前は絵で分かるので出さず、HP は足もとの札 */
+html.view-depth .unit.has-img { width: 100%; height: 165%; background: none; border: 0; border-radius: 0; box-shadow: none; justify-content: flex-end; }
+html.view-depth .unit.object.has-img { height: 110%; }
+html.view-depth .unit.has-img::before, html.view-depth .unit.has-img::after { display: none; }
+html.view-depth .unit.has-img .u-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; pointer-events: none; }
+html.view-depth .unit.has-img .u-name { display: none; }
+html.view-depth .unit.has-img .u-hp { position: absolute; bottom: -4%; left: 50%; transform: translateX(-50%); margin: 0; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); color: #1c1917; opacity: 1; font-weight: bold; }
+/* 向き: 立てた駒の、向いている側のふちに三角（↑ 奥は頭の上、↓ 手前は足もと、← → は横）。床に寝かせると、↑ が駒の陰に隠れるため */
+html.view-depth .unit .facing { transform: translate(-50%, -50%) rotate(var(--rot)); }
+html.view-depth .unit.face-up .facing { left: 50%; top: -9%; }
+html.view-depth .unit.face-down .facing { left: 50%; top: 109%; }
+html.view-depth .unit.face-left .facing { left: -10%; top: 60%; }
+html.view-depth .unit.face-right .facing { left: 110%; top: 60%; }
+html.view-depth .unit.has-img.selected { box-shadow: none; }
+html.view-depth .unit.has-img.selected .u-img { filter: drop-shadow(0 0 3px #f5c518) drop-shadow(0 0 6px rgba(245, 197, 24, .9)); }

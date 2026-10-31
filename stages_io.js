@@ -30,7 +30,7 @@
     { id: 'boss', name: 'ボスを倒す（味方が1人でも倒れたら負け）' },
     { id: 'defense', name: '村を守る（決めたターンまで）' },
     { id: 'seal', name: '道をふさぐ（村を守る・ふさいだらクリアにできる）' },
-    { id: 'escort', name: '馬車をゴールへ' },
+    { id: 'escort', name: 'トロッコをゴールへ' },
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
   var OV_TURNS = 'mission.defense.turns', OV_SEAL = 'mission.defense.sealWin';
@@ -132,7 +132,7 @@
     if (d.allies.some(function (u) { return badUnit(u, 'ally'); })) return '味方の魔法・位置・向きが正しくない';
     if (d.enemies.some(function (u) { return badUnit(u, 'enemy'); })) return '敵の魔法・位置・向き・動き方・HP が正しくない';
     if (d.villages !== undefined && !(Array.isArray(d.villages) && d.villages.every(inside))) return '村の位置が正しくない';
-    if (d.wagon !== undefined && !inside(d.wagon)) return '馬車の位置が正しくない';
+    if (d.wagon !== undefined && !inside(d.wagon)) return 'トロッコの位置が正しくない';
     if ((d.goal && !(Array.isArray(d.goal) && d.goal.every(inside))) || (d.exit && !(Array.isArray(d.exit) && d.exit.every(inside))) || (d.treasure && !inside(d.treasure))) return 'ゴール・帰り口・宝の位置が正しくない';
     if (d.mission !== undefined && !R.MISSION_INFO[d.mission]) return '知らないお題がある';
     if (d.enemyOnly !== undefined && !(Array.isArray(d.enemyOnly) && d.enemyOnly.every(function (m) { return R.MAGIC_INFO[m]; }))) return '敵だけの魔法に知らない魔法がある';
