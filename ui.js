@@ -96,7 +96,7 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
     'btnGo', 'btnUndo', 'btnReset', 'btnEdit', 'side', 'playSide', 'playPanel', 'ctrlPanel', 'editPanel', 'roster', 'actPanel',
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'home', 'choice', 'choiceTitle', 'choiceButtons',
+    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
@@ -2109,11 +2109,13 @@
     ]);
   }
   // 選ぶ窓（遊び方の窓と同じ見た目）。options: [[ボタンの文, 押したとき], …]。「やめる」も出す
+  //   窓の外を押す・Esc は「やめる」。開いている間のキーは盤面に届かない（Enter で発動しない）
   function choose(title, options) {
     el.choiceTitle.textContent = title;
     el.choiceButtons.innerHTML = options.map(function (o, i) { return '<button type="button" data-c="' + i + '"' + (i === 0 ? ' class="primary"' : '') + '>' + esc(o[0]) + '</button>'; }).join('') +
       '<button type="button" data-c="-1">やめる</button>';
     el.choice.hidden = false;
+    el.choiceButtons.querySelector('button').focus();
     el.choiceButtons.onclick = function (e) {
       var b = e.target.closest && e.target.closest('[data-c]');
       if (!b) return;
@@ -2122,6 +2124,11 @@
       if (i >= 0) options[i][1]();
     };
   }
+  el.choice.addEventListener('click', function (e) { if (e.target === el.choice) el.choice.hidden = true; });
+  el.choice.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); el.choice.hidden = true; }
+  });
 
   // ---------------------------------------------------------------
   // 展示の並び（IMPROVE_v3 段3・段4）: 展示モードで遊ぶステージと順番。開発モードの「展示の並び」で決める
@@ -2429,6 +2436,11 @@
     else if (kind === 'all') playShared(name);
   });
   el.btnHome.addEventListener('click', goHome);
+  // 展示モードの左上「⌂ タイトル」: 確かめてから最初の画面へ（遊んでいたステージは続きから戻れない。オーナー 10/31）
+  el.btnTitle.addEventListener('click', function () {
+    el.btnTitle.blur();
+    choose(ui('exTitleAsk', 'タイトルに戻りますか？'), [[ui('exTitleGo', 'タイトルに戻る'), function () { exhibitScreen('title'); }]]);
+  });
 
   document.addEventListener('keydown', function (e) {
     var tag = (e.target && e.target.tagName) || '';
