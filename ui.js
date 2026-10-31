@@ -23,7 +23,7 @@
   //   調整パネル・ターンの形・魔法の出し方の切り替えなどは IMPROVE_v3 段1（オーナー 10/30）でアーカイブした（archive/開発モード_20261030/）
   var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
   var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①②③（展示の並びの初めの形）
-  var EXHIBIT_NEXT_MS = 400;                      // クリアしてから「クリックか Enter で次へ」を受け付けるまでの間（勢いの連打で飛ばさないように。会話の窓が出ていれば、閉じてから）
+  var EXHIBIT_NEXT_MS = 400;                      // クリアしてから右下の「次へ」を受け付けるまでの間（勢いの連打で飛ばさないように）
 
   // 展示ステージ③（s.ex）: 画面の見せ方（ミッション）
   function exOf(st) { st = st || app.state; return (st && st.ex) || null; }
@@ -37,7 +37,8 @@
   var DIR_ARROW = { up: '↑', right: '→', down: '↓', left: '←' };
   var DIR_ROT = { up: 0, right: 90, down: 180, left: 270 };
   var ORDER_MARK = ['', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];   // 【一斉】発動の順番
-  var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left' };
+  // 向きのキー: 矢印と WASD（展示も開発も。オーナー 10/31）。W はもう「待機」ではない
+  var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left', w: 'up', a: 'left', s: 'down', d: 'right', W: 'up', A: 'left', S: 'down', D: 'right' };
   var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
   Object.keys(R.TILE_INFO).forEach(function (t) { if (!SHORT[t]) SHORT[t] = R.TILE_INFO[t].name; });
   var STORE_KEY = 'cafilia-mock-v2-layouts';   // 前の保存（配置だけ。R.exportLayout の JSON）。段0で自分のステージに移した（元は消さずに残す）
@@ -96,7 +97,7 @@
     'btnGo', 'btnUndo', 'btnReset', 'btnEdit', 'side', 'playSide', 'playPanel', 'ctrlPanel', 'editPanel', 'roster', 'actPanel',
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'home', 'choice', 'choiceTitle', 'choiceButtons',
-    'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txStart', 'txWin', 'txLose', 'txHintSimul', 'txHintSingle',
+    'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose'].forEach(function (id) { el[id] = $(id); });
 
@@ -419,7 +420,8 @@
     exAfterPlayback();
     exhibitAfterPlayback();
   }
-  // 展示モード: ステージをクリアしたら、右下の「次へ」（か Enter）で次へ（会話の窓が出ていれば、閉じてから）（IMPROVE_v3 段3・IMPROVE_controls 5-2）
+  // 展示モード: ステージをクリアしたら、右下の「次へ」（か Enter）で次へ（IMPROVE_v3 段3・IMPROVE_controls 5-2）。
+  //   会話の窓はなくした（オーナー 10/31）。app.afterDialog などのきっかけは、窓を戻すときのために残している
   //   はじめから遊ぶ: 並びの次のステージへ。最後のあとは「ありがとう！」。選んで遊ぶ: 「クリア！」
   function exhibitAfterPlayback() {
     var st = app.state, run = app.run;
@@ -971,7 +973,7 @@
   }
 
   // 右下のボタン（IMPROVE_controls 5-2）: 同じ場所で文字が変わる。押すと（誰も選んでいないときの Enter も）その時の働き
-  //   展示でクリアしたら「次へ」（会話の窓を閉じて少しあけてから押せる）／負けたら「やり直す」（チュートリアル）／
+  //   展示でクリアしたら「次へ」（少しあけてから押せる）／負けたら「やり直す」（チュートリアル）／
   //   ②で村への道をふさいだら「クリアする」（勝手には勝たない）／ほかは「発動」（動かせる味方が全員構え終えたら押せる）
   function goState() {
     var st = app.state;
@@ -1556,7 +1558,8 @@
   function renderOrderPanel(fa) {
     if (!el.orderPanel) return;
     var st = app.state;
-    if (!simul() || app.editMode) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
+    // 展示モードでは出さない（並べ替えのボタンに気が散るため。順番は「魔法」を押した順で、盤面の構えの印の①②で分かる。オーナー 10/31）
+    if (!simul() || app.editMode || EXHIBIT) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
     // 予告（fa）の並び ＝ 盤面の番号と同じ。選んでいる味方の、まだ確定していない構えも入る
     var list = (fa ? fa.allies : []).map(function (p) { return { p: p, a: R.findUnit(st, p.id) }; }).filter(function (x) { return x.a; });
     var mine = R.stanceList(st).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });
@@ -1713,13 +1716,10 @@
     if (document.activeElement !== el.boardW) el.boardW.value = st.size;
     if (document.activeElement !== el.boardH) el.boardH.value = R.rowsOf(st);
 
-    // ステージの名前と会話の窓の文（打っている途中の欄は書き換えない）
+    // ステージの名前とやり直しのヒント（打っている途中の欄は書き換えない）。会話の窓の文の欄はなくした（オーナー 10/31）
     var d = app.draft, tx = d.texts, hint = tx.hint || {};
     var put = function (e, v) { if (document.activeElement !== e && e.value !== v) e.value = v; };
     put(el.saveName, d.name);
-    put(el.txStart, SIO.linesToText(tx.scenes.start));
-    put(el.txWin, SIO.linesToText(tx.scenes.win));
-    put(el.txLose, SIO.linesToText(tx.scenes.lose));
     put(el.txHintSimul, hint.simul || '');
     put(el.txHintSingle, hint.single || '');
   }
@@ -1830,6 +1830,13 @@
     if (c && app.editMode && app.stroke && (e.buttons & 1)) applyEdit(c.x, c.y, true);
   });
   window.addEventListener('pointerup', function () { app.stroke = null; });
+  // 盤面の外を押しても、選ぶのをやめる（オーナー 10/31）。右下の欄（十字・魔法・待機・右下のボタン）・味方のアイコン・ほかのボタンや欄は除く
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target;
+    if (!app.sel || app.editMode || app.home || e.button !== 0 || !t.closest) return;
+    if (el.board.contains(t) || t.closest('#ctrlPanel, #roster, button, input, select, textarea, label, .howto-dialog')) return;
+    deselect();
+  });
 
   // ボタンを押したらフォーカスを外す（Enter で押し直されないように）
   document.addEventListener('click', function (e) {
@@ -1961,7 +1968,7 @@
     render();
   });
 
-  // ステージの名前と会話の窓の文（欄を離れたら入る。1手戻すで戻せる）。自分のステージの中で名前が重なる変え方は受け付けない
+  // ステージの名前とやり直しのヒント（欄を離れたら入る。1手戻すで戻せる）。自分のステージの中で名前が重なる変え方は受け付けない
   el.saveName.addEventListener('change', function () {
     var v = el.saveName.value.trim().replace(/^my:/, '');
     if (!v || v === app.draft.name) { el.saveName.value = app.draft.name; return; }
@@ -1969,15 +1976,6 @@
     pushHistory();
     app.draft.name = v;
     render();
-  });
-  [['txStart', 'start'], ['txWin', 'win'], ['txLose', 'lose']].forEach(function (p) {
-    el[p[0]].addEventListener('change', function () {
-      var lines = SIO.textToLines(el[p[0]].value);
-      if (JSON.stringify(lines) === JSON.stringify(app.draft.texts.scenes[p[1]])) return;
-      pushHistory();
-      app.draft.texts.scenes[p[1]] = lines;
-      render();
-    });
   });
   [['txHintSimul', 'simul'], ['txHintSingle', 'single']].forEach(function (p) {
     el[p[0]].addEventListener('change', function () {
@@ -2441,15 +2439,15 @@
       if (k !== 'Shift') { e.preventDefault(); skipPlayback(); }
       return;
     }
-    // キーはおまけ（IMPROVE_controls 6章）。展示モード: 味方 1〜、魔法 Enter・待機 W、1手戻す Z、取り消し Esc。
+    // キーはおまけ（IMPROVE_controls 6章）。展示モード: 味方 1〜、向き 矢印・WASD、魔法 Enter、1手戻す Z、取り消し Esc（待機のキーはない。オーナー 10/31）。
     //   誰も選んでいないときの Enter は、右下のボタンと同じ（発動・クリアする・次へ・やり直す。advance）
-    //   開発モードは、これに 矢印キーの向き（展示ではボタンだけ）、エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete を足す
-    if (!(/^[1-9]$/.test(k) || (!EXHIBIT && KEY_DIR[k]) || /^(Enter|w|W|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
+    //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete を足す
+    if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|Delete|Backspace)$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
       if (k === 'Escape') { if (app.editPick) app.editPick = null; else app.editTool = 'pick'; render(); }   // 選んだ駒を外す → 道具を外す
-      // 選んだ駒: 矢印キーで向き、Delete で消す
+      // 選んだ駒: 矢印キー・WASD で向き、Delete で消す
       if (app.editPick && KEY_DIR[k]) { e.preventDefault(); editUnitAct('facing', app.editPick, KEY_DIR[k]); }
       if (app.editPick && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); editUnitAct('remove', app.editPick); }
       return;
@@ -2461,7 +2459,6 @@
     }
     if (KEY_DIR[k]) { e.preventDefault(); setDir(KEY_DIR[k]); return; }
     if (k === 'Enter') { e.preventDefault(); if (!advance()) doAct(true); return; }
-    if (k === 'w' || k === 'W') { doAct(false); return; }
     if (k === 'Escape') {
       var u = selUnit();
       if (u && u.moved && canControl() && reachOf(u)[key(u.moved.from[0], u.moved.from[1])] !== undefined) cancelMove();   // 動いていれば元の位置へ、そうでなければ選ぶのをやめる

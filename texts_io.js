@@ -1,6 +1,6 @@
 /*
  * texts_io.js — 画面に出る文章（texts.js）の読み書きの道具（IMPROVE_simul）
- *   画面に依存しない関数だけ（node でテストできる）。画面は texts_ui.js。
+ *   画面に依存しない関数だけ（node でテストできる）。画面（会話の窓）は texts_ui.js だったが、なくした（archive/会話の窓_20261031/）。
  *   ブラウザでは グローバル変数 TextsIO、node では module.exports で読める。
  *
  *   serialize(texts)      … texts.js の中身（ファイルまるごと）を作る

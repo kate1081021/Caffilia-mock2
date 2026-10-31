@@ -127,10 +127,8 @@
           </div>
         </div>
         <div class="edit-group stage-texts">
-          <h3>会話の窓の文 <small>1行が1つの文。「［一斉だけ］」「［1人ずつだけ］」で始めると、その形のときだけ。「話す人「文」」で話す人</small></h3>
-          <label>開始 <textarea id="txStart" rows="2" spellcheck="false"></textarea></label>
-          <label>クリア <textarea id="txWin" rows="2" spellcheck="false"></textarea></label>
-          <label>負け <textarea id="txLose" rows="2" spellcheck="false"></textarea></label>
+          <!-- 会話の窓の文の欄（開始・クリア・負け）は、会話の窓と一緒になくした（オーナー 10/31） -->
+          <h3>やり直しのヒント <small>やり直したとき、盤面の上に1行で出る</small></h3>
           <label>やり直しのヒント（一斉） <input id="txHintSimul" type="text"></label>
           <label>やり直しのヒント（1人ずつ） <input id="txHintSingle" type="text"></label>
         </div>
@@ -156,9 +154,6 @@
     </div>
   </div>
 
-  <!-- 会話の窓（IMPROVE_simul）: 画面の下。押す（クリック・Enter・スペース）と次の文へ -->
-  <div id="dialog" class="dialog" hidden aria-live="polite"></div>
-
   <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どちらのモードでも同じ位置・同じ見た目 -->
   <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
 
@@ -167,6 +162,6 @@
   <script src="stages_io.js"></script>
   <script src="rules.js"></script>
   <script src="ui.js"></script>
-  <script src="texts_ui.js"></script>
+  <!-- 会話の窓（texts_ui.js）は、じゃまなのでなくした（オーナー 10/31。archive/会話の窓_20261031/） -->
 </body>
 </html>

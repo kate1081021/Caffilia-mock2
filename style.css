@@ -942,22 +942,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 @media (max-width: 600px) { .banner { white-space: normal; text-align: center; width: 92vw; } }
 /* 目標（チュートリアル） */
 .m-goal-text { flex-basis: 100%; color: #1e3a8a; }
-/* 会話の窓: 画面の下。盤面は見えたまま */
-.dialog {
-  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
-  width: min(720px, calc(100vw - 32px)); z-index: 45;
-  background: rgba(30, 27, 22, .9); color: #fffaf0;
-  border: 2px solid #f5c518; border-radius: 14px; padding: 12px 16px 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .35);
-  cursor: pointer; user-select: none;
-}
-.dialog .d-who { display: inline-block; font-weight: bold; color: #1e1b16; background: #f5c518; border-radius: 6px; padding: 0 10px; margin-bottom: 6px; }
-.dialog .d-text { font-size: 17px; line-height: 1.6; white-space: pre-wrap; min-height: 1.6em; }
-.dialog .d-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: #d6cfc2; }
-@media (max-width: 600px) {
-  .dialog { padding: 8px 12px 6px; bottom: 8px; }
-  .dialog .d-text { font-size: 15px; }
-}
 /* 構えの発動: 当たったマスに浮かぶ札 */
 .cast-mark {
   position: absolute; transform: translate(-50%, -50%);
@@ -1056,7 +1040,7 @@ html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 1
 
 /* ---------------------------------------------------------------
  * 展示モード（mode.js。URL に印がないとき。オーナー 10/29）
- *   見せるのは、盤面・味方の欄・向きと構える・待機の操作・発動の順番・敵の予告・会話の窓・
+ *   見せるのは、盤面・味方の欄・向きと構える・待機の操作・敵の予告（発動の順番と会話の窓はなし。オーナー 10/31）・
  *   上のバーの「発動」「1手戻す」「遊び方」・負けたときの「やり直す」、お題の帯（目標・勝ち方・残りの数）・案内の1行・
  *   ②で道をふさいだときの「クリアする」・やり直したときのヒントの1行。
  *   開発モード（#dev）は、これに今のモードの札・リセット・エディットを足す（IMPROVE_v3 段1。ほかはアーカイブした）
