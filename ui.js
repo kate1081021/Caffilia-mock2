@@ -2350,6 +2350,8 @@
     if (on) app.homeView = view || (EXHIBIT ? 'title' : 'list');
     el.home.hidden = !on;
     document.body.classList.toggle('at-home', on);
+    // 前のシナジーの文（banner）をしまう。残っていると、盤面がまた見えた瞬間にアニメーションが最初から流れ直す
+    el.banner.classList.remove('show');
     if (on) {
       renderHome();
       if (app.homeView !== 'lineup') fetchShared().then(function () { if (app.home && app.homeView !== 'lineup') renderHome(); });   // みんなのステージ・展示の並びを読み直す
