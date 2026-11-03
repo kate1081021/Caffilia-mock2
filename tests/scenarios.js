@@ -76,7 +76,7 @@ function build(rows, enemyActs, allies, enemies) {
   rows.forEach(function (row, y) { for (var x = 0; x < row.length; x++) R.setTile(s, x, y, CH[row[x]]); });
   allies.forEach(function (a) { R.addAlly(s, a[0], a[1], a[2], 'up'); });
   enemies.forEach(function (e) { R.addEnemy(s, e[0], e[1], e[2], 'down'); });
-  return R.startBattle(s).state;   // 戦闘は敵の移動と予告が終わった状態から始まる
+  return R.startBattle(s).state;   // 戦闘は敵の予告が出た状態から始まる（1ターン目、敵は置いた所から動かない。オーナー 11/03）
 }
 
 // ---------------------------------------------------------------
@@ -120,9 +120,9 @@ scenario('2. 【新案】土で山 → 水が山の斜面に当たって、下�
 
 scenario('3. 火の敵が森に火をつける → こちらの風で燃え広がりを敵の方へ返す（敵の足元は森ではないので弱い炎）',
   function () {
-    // 味方 P1 風(4,5) / P2 水(0,5) / P3 火(5,5)。敵A（火）は (2,0) から行動する
+    // 味方 P1 風(4,5) / P2 水(0,5) / P3 火(5,5)。敵A（火）は (4,0) から行動する（前は (2,0) に置いて、1ターン目の頭に (4,0) へ動いていた。1ターン目は動かない 11/03）
     return build(['......', '....F.', '...FFF', '......', '......', '......'], true,
-      [['wind', 4, 5], ['water', 0, 5], ['fire', 5, 5]], [['fire', 2, 0]]);
+      [['wind', 4, 5], ['water', 0, 5], ['fire', 5, 5]], [['fire', 4, 0]]);
   },
   function (g) {
     // ターン1: 味方は何もしない。敵は一番近い味方（風）へ近づき、下を向いて正面1マスに火を撃つ
@@ -302,11 +302,11 @@ scenario('8. 【敵】敵の火を使う: 敵Aの予告先に風を吹かせる 
     check(R.alliesOf(g.state).length === 3, '味方は無事');
   });
 
-scenario('9. 【敵】罠に踏み込む: 避けない敵Aは炎を踏み越えて来る／避ける敵Bは炎の列がある間は出られない（炎は燃え尽きない。オーナー 11/03）',
+scenario('9. 【敵】罠に踏み込む: 避けない敵Aは炎を踏み越えて来た所から／避ける敵Bは炎の列がある間は出られない（炎は燃え尽きない。オーナー 11/03）',
   function () { return hp20(function () { return R.startBattle(R.loadPreset('trap')).state; }); },
   function (g) {
     var a = enemyAt(g, 'A'), b = enemyAt(g, 'B');
-    check(a.y === 3, '敵A（通れない所だけ避ける）は炎の列を越えて (1,3) へ');
+    check(a.y === 3, '敵A（通れない所だけ避ける）は炎の列を越えた (1,3) にいる');
     check(b.x === 4 && b.y === 1, '敵B（危ない所も避ける）は動けない');
     check(hp20(function () { return R.startBattle(R.loadPreset('trap')); }).events.some(function (e) { return e.text === '敵Bは味方への道がないので、その場で構える'; }), '敵Bは道がないので、その場で構える');
     g.act('P1', [0, 5], 'up', false);

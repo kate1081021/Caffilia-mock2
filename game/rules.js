@@ -2063,19 +2063,22 @@
   //   2. その時点の盤面で、自分や他の敵がダメージを受ける組み合わせは選ばない
   //   3. 残りから狙い（人数・近い人・自然）で選ぶ。同点なら 移動が短い → 見つけた順（上右下左の幅優先）→ 向き（上右下左）
   //   4. 狙いで点が付く組み合わせがなければ、一番近い味方へ最大2マス進んで、その方を向く
-  function planEnemy(s, e) {
+  //   noMove: 動かずに、今の位置で予告だけ決める（1ターン目。敵は置いた所から始まる。オーナー 11/03。IMPROVE_ターンの流れ 段1）
+  function planEnemy(s, e, noMove) {
     if (e.stand === 'still') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'still' };   // 動かない: 移動も予告もしない
     // 進む: ターンの始めには何もしない（移動と魔法はセットで、敵の発動のときに行う。marchPhase）
     if (e.stand === 'march') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'march' };
     // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
+    if (e.stand === 'rush' && noMove) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' };
     if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.stop ? rr.path[rr.stop - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
     // 展示ステージ③: ボスは前へ1マス進んで一撃を予告（ふさがれていたら進まない）。取り巻きは風の人へまっすぐ進み、隣に来たら体当たりを予告
     if (e.stand === 'boss') {
-      var bs = e.stuck ? null : bossStep(s, e);
-      return { to: bs || [e.x, e.y], dir: e.facing, dist: bs ? 1 : 0, kind: 'boss', blocked: !bs && !e.stuck };
+      var bs = e.stuck || noMove ? null : bossStep(s, e);
+      return { to: bs || [e.x, e.y], dir: e.facing, dist: bs ? 1 : 0, kind: 'boss', blocked: !bs && !e.stuck && !noMove };
     }
     if (e.stand === 'float') {
       var fr = floatRoute(s, e), ft = fr.target ? findUnit(s, fr.target) : null;
+      if (noMove && fr.path.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'float', noIntent: true };   // 動かない: 隣でなければ予告もしない
       var fdir = fr.adjacent && ft ? faceToward(fr.to[0], fr.to[1], ft) : e.facing;
       if (!fr.adjacent && fr.path.length) { var fl = fr.path.length > 1 ? fr.path[fr.path.length - 2] : [e.x, e.y]; fdir = stepDirOf(fl, fr.to); }
       return { to: fr.to, dir: fdir, dist: fr.path.length, kind: 'float', noIntent: !fr.adjacent };
@@ -2083,7 +2086,7 @@
     if (!alliesOf(s).length) return null;
     var allies = alliesOf(s).filter(function (a) { return !hidden(s, a, e); });
     if (!allies.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
-    var info = reachInfo(s, e);
+    var info = noMove ? { order: [[e.x, e.y]], dist: (function () { var d = {}; d[key(e.x, e.y)] = 0; return d; })() } : reachInfo(s, e);   // noMove: 今の位置だけ
     // 「的」: 的があれば一番近い的へ向かう。的がない（宝がまだ拾われていない・戦闘）なら「近い人」と同じ
     var targets = e.aim === 'target' ? missionTargets(s) : [];
     var aim = e.aim === 'target' && !targets.length ? 'near' : e.aim;
@@ -2147,17 +2150,18 @@
   }
 
   // 1. 敵の移動と予告（敵の順に1体ずつ）
-  function enemyPlanPhase(s, ev, step) {
+  // 敵の移動と予告。noMove: 動かずに予告だけ（1ターン目。オーナー 11/03「味方から動くのを基本に」。2ターン目からは前のターンの終わりに動く）
+  function enemyPlanPhase(s, ev, step, noMove) {
     var ids = enemiesOf(s).map(function (e) { return e.id; });
     ids.forEach(function (id) {
       if (s.result) return;
       var e = findUnit(s, id);
       if (!e) return;
       e.intent = false;
-      if (e.stand === 'rush') { rushMove(s, e, ev, step); return; }   // 突進: 村へ走って、隣なら体当たり
-      var plan = planEnemy(s, e);
+      if (e.stand === 'rush') { if (!noMove) rushMove(s, e, ev, step); return; }   // 突進: 村へ走って、隣なら体当たり（1ターン目は走らない）
+      var plan = planEnemy(s, e, noMove);
       if (!plan || plan.kind === 'still' || plan.kind === 'march') { e.intent = false; return; }
-      if (e.stuck) {
+      if (e.stuck && !noMove) {
         unstick(e);
         ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
       }
@@ -2750,14 +2754,19 @@
     // 4e. 展示ステージ③: ヒントの数えと、取り巻きが湧く
     if (!s.result && s.ex) exTurnEnd(s, ev, step);
 
-    // 5. 次のターン: 構える味方が構え直す → 敵の移動と予告
+    // 5. 次のターンの用意: 構える味方が構え直す → 敵の移動と予告（このターンの終わりに。オーナー 11/03「前のターンの終わり」）→ 次のターン開始
+    //   敵は置いた所から1ターン目を始め（startBattle）、2ターン目からは前のターンの終わりに動いて予告する。味方から動くのが基本
+    if (!s.result) {
+      alliesOf(s).forEach(function (a) { a.acted = false; delete a.moved; });
+      allyReadyPhase(s, ev, step);
+      if (s.enemyActs && enemiesOf(s).length) {
+        ev.push({ type: 'phase', text: '── 敵の移動と予告（ターン' + s.turn + 'の終わり） ──' });
+        enemyPlanPhase(s, ev, step);
+      }
+    }
     if (!s.result) {
       s.turn += 1;
-      alliesOf(s).forEach(function (a) { a.acted = false; delete a.moved; });
       ev.push({ type: 'turnStart', text: '── ターン' + s.turn + ' 開始 ──' });
-      step();
-      allyReadyPhase(s, ev, step);
-      if (s.enemyActs) enemyPlanPhase(s, ev, step);
     }
     step();
     return { ok: true, state: s, events: ev, steps: steps };
@@ -2771,7 +2780,7 @@
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
     allyReadyPhase(s, ev, step);
-    if (s.enemyActs) enemyPlanPhase(s, ev, step);
+    if (s.enemyActs) enemyPlanPhase(s, ev, step, true);   // 1ターン目: 敵は置いた所から動かずに予告（味方から動く。オーナー 11/03）
     step();
     return { ok: true, state: s, events: ev, steps: steps };
   }
@@ -3340,14 +3349,14 @@
       desc: '【敵】味方 草・水・風、敵2体（火・狙い 人数）。敵は動いてから予告（紫）を出し、ターンの最後に発動する。敵Bは森の上で構える。敵Aの火の予告先に風を吹かせておくと、敵Aの火で火の渦が起き、森の上の敵Bに強い炎（20）が入る。森でないマスは弱い炎（5＋火傷）。水で消す手もある。',
       rows: ['......', '......', '..F...', '..F...', '......', '......'],
       allies: [['grass', 0, 5], ['water', 5, 5], ['wind', 3, 5]],
-      enemies: [['fire', 3, 0], ['fire', 2, 1]]
+      enemies: [['fire', 3, 2, {}, 'down'], ['fire', 2, 3, {}, 'down']]   // 敵は前の「1ターン目の頭に動いたあと」の位置に置いた（1ターン目は動かない。オーナー 11/03）
     },
     {
       id: 'trap', name: '【敵】罠に踏み込む',
-      desc: '【敵】味方 草・火・風、敵2体（土）。敵Aは「通れない所だけ避ける」ので炎の列を踏み越えて来る。敵Bは「危ない所も避ける」ので炎の向こうから出られない。踏み込んできた敵Aを、火と風の燃え広がりで迎え撃つ（足元が森でないと弱い炎で、5＋火傷）。炎の列は燃え尽きない（オーナー 11/03）ので、敵Bは炎の列がある間は出てこない。敵Bの土の予告先に立つと倒れる。',
+      desc: '【敵】味方 草・火・風、敵2体（土）。敵Aは「通れない所だけ避ける」ので炎の列を踏み越えて来た所（(1,3)）から始まる。敵Bは「危ない所も避ける」ので炎の向こうから出られない。踏み込んできた敵Aを、火と風の燃え広がりで迎え撃つ（足元が森でないと弱い炎で、5＋火傷）。炎の列は燃え尽きない（オーナー 11/03）ので、敵Bは炎の列がある間は出てこない。敵Bの土の予告先に立つと倒れる。',
       rows: ['......', '......', 'XXXXXX', '......', '.FFFF.', '......'],
       allies: [['grass', 0, 5], ['fire', 2, 5], ['wind', 5, 5]],
-      enemies: [['earth', 1, 1, { avoid: 'wall' }], ['earth', 4, 1, { avoid: 'danger' }]]
+      enemies: [['earth', 1, 3, { avoid: 'wall' }, 'down'], ['earth', 4, 1, { avoid: 'danger' }, 'down']]   // 敵は前の「1ターン目の頭に動いたあと」の位置に置いた（1ターン目は動かない。オーナー 11/03）
     },
     {
       id: 'enemyThunder', name: '【敵】敵だけの雷', enemyOnly: ['thunder'],
@@ -3361,7 +3370,7 @@
       desc: '味方 草・火・風、敵1体（火）。森を並べて敵ごと燃やす練習。',
       rows: ['......', '.....M', '......', '......', '......', '......'],
       allies: [['grass', 1, 5], ['fire', 3, 5], ['wind', 4, 5]],
-      enemies: [['fire', 2, 0]]
+      enemies: [['fire', 2, 2, {}, 'down']]   // 敵は前の「1ターン目の頭に動いたあと」の位置に置いた（1ターン目は動かない。オーナー 11/03）
     },
     {
       id: 'fireEnemy', name: '火の敵',

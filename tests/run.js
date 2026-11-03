@@ -1421,14 +1421,27 @@ test('予告した敵は、味方の手番のあいだ自分では動かない',
   st = R.act(st, b.id, { shoot: false }).state;
   eq([pos(st, e.id), R.findUnit(st, e.id).facing], before);
 });
-test('味方に当たる位置があれば、そこへ動いて予告し、発動で当たる', function () {
+test('味方に当たる位置があれば、（前のターンの終わりに）そこへ動いて予告し、発動で当たる', function () {
   var s = empty(6, true);
   var e = R.addEnemy(s, 'fire', 2, 0);
   var a = R.addAlly(s, 'water', 2, 3);
-  var st = R.startBattle(s).state;
-  eq([pos(st, e.id), R.findUnit(st, e.id).facing], [[2, 2], 'down']);
+  var st0 = R.startBattle(s).state;
+  eq([pos(st0, e.id), R.findUnit(st0, e.id).facing], [[2, 0], 'down'], '1ターン目は置いた所から動かずに予告（味方から動く。オーナー 11/03）');
+  var st = R.endTurn(st0).state;
+  eq([pos(st, e.id), R.findUnit(st, e.id).facing], [[2, 2], 'down'], '1ターン目の終わりに、当たる位置へ動いて予告');
   var r = R.endTurn(st);
   ok(r.events.some(function (ev) { return ev.type === 'death' && ev.id === a.id; }), '味方に3ダメージで倒れる');
+});
+test('敵が動いて予告するのは前のターンの終わり: ログは「ターン1 終了」→「敵の移動と予告（ターン1の終わり）」→「ターン2 開始」の順（オーナー 11/03）', function () {
+  var s = empty(6, true);
+  R.addEnemy(s, 'fire', 0, 0);
+  R.addAlly(s, 'water', 5, 5);
+  var r = R.endTurn(R.startBattle(s).state);
+  var texts = r.events.map(function (e) { return e.text; });
+  var iEnd = texts.indexOf('── ターン1 終了 ──'), iMove = texts.indexOf('── 敵の移動と予告（ターン1の終わり） ──'), iStart = texts.indexOf('── ターン2 開始 ──');
+  ok(iEnd >= 0 && iEnd < iMove && iMove < iStart, JSON.stringify([iEnd, iMove, iStart]));
+  ok(r.events.slice(iMove, iStart).some(function (e) { return e.type === 'move'; }), '敵はターン1の終わりに動く');
+  eq(r.state.turn, 2);
 });
 test('予告を見て逃げれば、発動は空振りする', function () {
   var s = empty(6, true);
@@ -1554,10 +1567,12 @@ test('当たる組み合わせがなければ、一番近い味方へ近づい�
   var s = empty(6, true);
   var e = R.addEnemy(s, 'fire', 0, 0);
   R.addAlly(s, 'water', 5, 5);
-  var st = R.startBattle(s).state;
+  var st0 = R.startBattle(s).state;
+  eq([pos(st0, e.id), R.findUnit(st0, e.id).facing], [[0, 0], 'down'], '1ターン目は動かずに、味方の方を向くだけ（縦の差が大きい）');
+  var st = R.endTurn(st0).state;
   eq(R.findUnit(st, e.id).facing, 'down', '縦の差が大きい');
   var d = Math.abs(5 - pos(st, e.id)[0]) + Math.abs(5 - pos(st, e.id)[1]);
-  eq(d, 8, '2マス近づいた');
+  eq(d, 8, '1ターン目の終わりに2マス近づいた');
 });
 test('道がなければ、その場で一番近い味方の方を向いて予告する', function () {
   var s = board(['......', '......', '......', 'MMMMMM', '......', '......'], true);
@@ -2950,13 +2965,14 @@ test('トロッコは今までどおり、川の手前で止まる', function ()
 test('突進の敵: 人は無視して一番近い村へ、このステージでは1ターンに1マス。魔法は撃たず、予告も出さない', function () {
   var s = tut2();
   var es = R.enemiesOf(s);
-  eq(es.map(function (e) { return [e.x, e.y]; }), [[3, 1], [4, 1]], '最初の移動のあと（どちらもまっすぐ1マス）');
+  eq(es.map(function (e) { return [e.x, e.y]; }), [[3, 0], [4, 0]], '1ターン目は置いた所（走るのは1ターン目の終わりから。オーナー 11/03）');
   ok(es.every(function (e) { return !e.intent; }), '予告を出さない');
   eq(R.forecast(s).enemies, [], '魔法の予告はない');
   eq(R.planEnemy(s, es[0]).kind, 'rush');
   var t = R.endTurn(s);
   ok(!t.events.some(function (e) { return e.type === 'cast'; }), '撃たない');
   eq(t.events.filter(function (e) { return e.type === 'move'; })[0].text, '敵Aが村へ向かって1マス走った');
+  eq(R.enemiesOf(t.state).map(function (e) { return [e.x, e.y]; }), [[3, 1], [4, 1]], '1ターン目の終わりに、どちらもまっすぐ1マス');
 });
 test('突進の敵: 山・川・水たまり・泥沼は通らず、回り道する。ユニットのいるマスは通り抜ける（オーナー 10/30）', function () {
   ['mountain', 'river', 'puddle', 'mud'].forEach(function (wall) {
@@ -2980,8 +2996,8 @@ test('突進の敵: 道がなければ、届くマスのうち村に一番近い
   var st = t2Solved(tut2());
   var fc = R.forecast(st);
   var b = fc.rushes.filter(function (r) { return r.id === R.enemiesOf(st)[1].id; })[0];
-  eq([b.reach, b.path, b.stop], [false, [[4, 2]], 1], 'B は川の手前 (4,2) まで');
-  var st2 = R.endTurn(st).state;
+  eq([b.reach, b.path, b.stop], [false, [[4, 1], [4, 2]], 1], 'B は川の手前 (4,2) まで（1ターンに1マス）');
+  var st2 = R.endTurn(R.endTurn(st).state).state;
   eq(pos(st2, b.id), [4, 2]);
   var t = R.endTurn(st2);
   ok(t.events.some(function (e) { return e.text === '敵Bは村への道がないので、その場で待った'; }), '川の手前に着いたら、その場で待つ');
@@ -2991,14 +3007,15 @@ test('突進の敵: enemy.rushNoPath を wait にすると、道がなければ�
   var st = t2Solved(tut2With({ 'enemy.rushNoPath': 'wait' }));
   ok(R.forecast(st).rushes.every(function (r) { return !r.reach && r.path.length === 0; }), 'どの敵も走らない');
   var t = R.endTurn(st);
-  eq(R.enemiesOf(t.state).map(function (e) { return [e.x, e.y]; }), [[3, 1], [4, 1], [3, 0]], '増援も出てきた所で待つ');
+  eq(R.enemiesOf(t.state).map(function (e) { return [e.x, e.y]; }), [[3, 0], [4, 0]], 'どの敵も置いた所で待つ。増援は、出てくる所 (3,0) に敵Aが待っているので出られない');
+  ok(t.events.some(function (e) { return /増援は出られなかった/.test(e.text); }));
   eq(B.enemy.rushNoPath, 'approach', '標準は approach のまま');
 });
 test('突進の敵: 走り終えて村の隣にいたら、体当たりで村を壊す（予告なし）→ 防衛は負け', function () {
-  var st = t2Run(tut2(), 3);   // 何もしない
-  eq([st.result, st.turn], ['lose', 4], '4ターン目の敵の移動で負け');
+  var st = t2Run(tut2(), 4);   // 何もしない
+  eq([st.result, st.turn], ['lose', 4], '4ターン目の終わりの敵の移動で負け（1ターン目は置いた所から。前は4ターン目の始め）');
   ok(/村が壊された/.test(st.resultText));
-  var t = R.endTurn(R.endTurn(R.endTurn(tut2()).state).state);
+  var t = R.endTurn(R.endTurn(R.endTurn(R.endTurn(tut2()).state).state).state);
   var ram = t.events.filter(function (e) { return e.type === 'ram'; })[0];
   ok(ram && ram.text === '敵Aが村2に体当たりした', ram && ram.text);
 });
@@ -3007,7 +3024,7 @@ test('進む道: 村へ届く道なら村に印。撃ったあとの盤面で計
   var vs = R.objectsOf(s, 'village');
   var fc = R.forecast(s);
   eq(fc.rushes.filter(function (r) { return R.findUnit(s, r.id); }).map(function (r) { return [r.reach, r.village]; }), [[true, vs[1].id], [true, vs[2].id]], '最初は2体とも村へ届く');
-  eq(fc.rushes[1].path, [[4, 2], [4, 3], [4, 4]], 'B の道');
+  eq(fc.rushes[1].path, [[4, 1], [4, 2], [4, 3], [4, 4]], 'B の道（置いた所 (4,0) から）');
   var a = R.act(s, t2Mount(s).id, { dir: 'up' });
   ok(R.forecast(a.state).rushes.some(function (r) { return r.reach; }), '山だけではまだ届く');
   var pv = R.previewAct(a.state, t2Water(a.state).id, [1, 4], 'up');
@@ -3026,15 +3043,17 @@ test('山 → 水 でふさいだあと「クリア」しなくても、敵は�
   eq([st.result, st.turn], ['win', 5]);
   eq(R.objectsOf(st, 'village').length, 4, '村は全部残っている');
   ok(R.enemiesOf(st).every(function (e) { return e.y <= 2; }), '敵は全員4行目より上');
-  eq(R.enemiesOf(st).length, 6, '増援で6体に増えている（ターン1〜4の終わりに1体ずつ）');
+  eq(R.enemiesOf(st).length, 5, '増援で5体に増えている（ターン2〜4の終わりに1体ずつ。ターン1の終わりは、出てくる所 (3,0) にまだ敵Aがいて出られない）');
 });
-test('1ターン目に何もしなくても、2ターン目に同じ手順を打てば間に合って勝つ', function () {
+test('1ターン目に何もしなくても、2・3ターン目に同じ手順を打てば間に合って勝つ。4ターン目では遅い（敵は1ターン目に動かない。11/03）', function () {
   var st = R.endTurn(tut2()).state;
   eq([st.result, st.turn], [null, 2]);
   ok(R.enemiesOf(st).every(function (e) { return e.y < 3 && !R.inCells(T2_WALL, e.x, e.y); }), '2ターン目の始めも、敵は山・川を置くマスをふさいでいない');
   eq(t2Run(t2Solved(st), 5).result, 'win');
   var st3 = R.endTurn(st).state;
-  eq(t2Run(t2Solved(st3), 5).result, 'lose', '3ターン目では遅い（先頭の敵が川を置くマスにいる）');
+  eq(t2Run(t2Solved(st3), 5).result, 'win', '3ターン目でも間に合う');
+  var st4 = R.endTurn(st3).state;
+  eq(t2Run(t2Solved(st4), 5).result, 'lose', '4ターン目では遅い（先頭の敵が川を置くマスにいる）');
 });
 test('1ターン目の敵の移動のあと、先頭の敵は山・川を置くマスをふさいでいない', function () {
   var s = tut2();
@@ -3059,7 +3078,7 @@ test('水 → 山の順: 腕のマスが水たまり → 泥沼（腕になら�
   eq(t2Run(b.state, 5).result, 'win', '2ターン目に立て直して勝つ');
 });
 test('増援: 毎ターンの終わりに上の端 (3,0) から1体。ふさがっていたら出られない。overrides で切れる', function () {
-  var t = R.endTurn(t2Solved(tut2()));
+  var t = R.endTurn(R.endTurn(t2Solved(tut2())).state);   // 2ターン目の終わり（1ターン目の終わりは、出てくる所に敵Aがまだいる）
   var sp = t.events.filter(function (e) { return e.type === 'spawn'; });
   eq(sp.length, 1);
   eq(sp[0].cells, [[3, 0]]);
@@ -3114,7 +3133,7 @@ test('村を守るは、どの防衛でもふさいだらクリアにできる�
 test('やり直し: 負けたあと最初からやり直すと、盤面が最初に戻り、ヒントが1文出る（最初の挑戦では出ない）', function () {
   var s = tut2();
   eq(R.stageHint(s), null, '最初は出ない');
-  var lost = t2Run(s, 3);
+  var lost = t2Run(s, 4);
   eq(lost.result, 'lose');
   var r = R.retryStage(lost);
   ok(r && r.ok);
