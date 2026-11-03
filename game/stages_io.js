@@ -34,6 +34,14 @@
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
   var OV_TURNS = 'mission.defense.turns', OV_SEAL = 'mission.defense.sealWin';
+  // 難易度（オーナー 11/03。IMPROVE_ステージ一覧 段1）: 定義の difficulty に持つ。ないものは「なし」。内蔵の①②③はチュートリアル
+  var DIFFICULTIES = [
+    { id: 'tutorial', name: 'チュートリアル' },
+    { id: 'easy', name: 'やさしい' },
+    { id: 'normal', name: 'ふつう' },
+    { id: 'hard', name: 'むずかしい' }
+  ];
+  function diffOf(def) { return def && DIFFICULTIES.some(function (d) { return d.id === def.difficulty; }) ? def.difficulty : ''; }
 
   function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
   function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
@@ -135,6 +143,7 @@
     if (d.wagon !== undefined && !inside(d.wagon)) return 'トロッコの位置が正しくない';
     if ((d.goal && !(Array.isArray(d.goal) && d.goal.every(inside))) || (d.exit && !(Array.isArray(d.exit) && d.exit.every(inside))) || (d.treasure && !inside(d.treasure))) return 'ゴール・帰り口・宝の位置が正しくない';
     if (d.mission !== undefined && !R.MISSION_INFO[d.mission]) return '知らないお題がある';
+    if (d.difficulty !== undefined && !diffOf(d)) return '知らない難易度がある';
     if (d.enemyOnly !== undefined && !(Array.isArray(d.enemyOnly) && d.enemyOnly.every(function (m) { return R.MAGIC_INFO[m]; }))) return '敵だけの魔法に知らない魔法がある';
     if (d.overrides !== undefined && !R.validOverrides(d.overrides)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
     if (d.spawn !== undefined) {
@@ -255,6 +264,61 @@
   }
 
   // ---------------------------------------------------------------
+  // 一覧の1行（オーナー 11/03。IMPROVE_ステージ一覧 段2）: 定義から、使う魔法とクリア方法を出す
+  // ---------------------------------------------------------------
+  // 使う魔法: 味方の魔法を並びの順に（同じ魔法は1つ）。構える味方（指示できない仲間）の魔法には「（仲間）」
+  function magicsOf(R, def) {
+    var seen = {}, out = [];
+    (def && def.allies || []).forEach(function (a) {
+      var npc = !!(a[3] && a[3].npc), k = a[0] + (npc ? '*' : '');
+      if (seen[k] || !R.MAGIC_INFO[a[0]]) return;
+      seen[k] = true;
+      out.push(R.MAGIC_INFO[a[0]].name + (npc ? '（仲間）' : ''));
+    });
+    return out.join('・');
+  }
+  // クリア方法: 勝ち方の短い名前（村を守るはターン数も）
+  function winLabel(R, def) {
+    if (!def) return '';
+    if (def.ex) return 'ボスを倒す';
+    if (def.mission === 'defense') {
+      var ov = def.overrides || {};
+      return '村を守る（' + (ov[OV_TURNS] !== undefined ? ov[OV_TURNS] : R.BALANCE.mission.defense.turns) + 'ターン）';
+    }
+    if (def.mission === 'escort') return 'トロッコをゴールへ';
+    if (def.mission === 'retrieve') return '宝を持ち帰る';
+    return '敵を全員倒す';
+  }
+  // 名前に入っている区分の印（【チュートリアル】など）は、一覧では難易度の札に任せて外す
+  function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
+
+  // ---------------------------------------------------------------
+  // 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）。stages・trash はこのブラウザの入れ物（{ 名前: 中身 }）
+  //   消す → ゴミ箱へ（中身はそのまま。消した時刻を足す）。戻す → 同じ名前があれば「名前（2）」。どちらも新しい入れ物を返す
+  // ---------------------------------------------------------------
+  function freeName(name, taken) {
+    if (!taken[name]) return name;
+    for (var i = 2; ; i++) { var n = name + '（' + i + '）'; if (!taken[n]) return n; }
+  }
+  function trashPut(stages, trash, name, now) {
+    stages = clone(stages || {}); trash = clone(trash || {});
+    if (!stages[name]) return { stages: stages, trash: trash, key: null };
+    var key = freeName(name, trash);
+    trash[key] = { name: name, rec: stages[name], deletedAt: now || Date.now() };
+    delete stages[name];
+    return { stages: stages, trash: trash, key: key };
+  }
+  function trashRestore(stages, trash, key) {
+    stages = clone(stages || {}); trash = clone(trash || {});
+    var item = trash[key];
+    if (!item) return { stages: stages, trash: trash, name: null };
+    var name = freeName(item.name || key, stages);
+    stages[name] = item.rec;
+    delete trash[key];
+    return { stages: stages, trash: trash, name: name };
+  }
+
+  // ---------------------------------------------------------------
   // ファイル
   // ---------------------------------------------------------------
   function toFile(stage) {
@@ -284,7 +348,8 @@
   }
 
   var api = {
-    PREFIX: PREFIX, WINS: WINS, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
+    PREFIX: PREFIX, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, plainTitle: plainTitle,
+    trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
   };
