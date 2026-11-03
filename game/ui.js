@@ -469,7 +469,7 @@
   function selUnit() {
     if (!app.sel) return null;
     var u = R.findUnit(app.state, app.sel);
-    return u && !u.acted ? u : null;   // 魔法で構えた・待機した味方は選べない（構え直しは画面からなくした。IMPROVE_controls 4-1）
+    return u && (!u.acted || simul()) ? u : null;   // 【一斉】構えた・待機した味方も、発動まではいつでも選べる（オーナー 11/03）。1人ずつでは行動した味方は選べない
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
@@ -480,10 +480,11 @@
   function clearPlans() { app.dirs = {}; app.plan = null; }
 
   // 遊ぶ側の最初は、誰も選んでいない（オーナー 10/30）。味方は押して（か 1〜3 キーで）選ぶ
-  //   構える味方と、魔法で構えた・待機した味方（薄い味方）は選べない。押しても選ぶのをやめるだけ（IMPROVE_controls 2章）
+  //   構える味方（指示できない仲間）は選べない。押しても選ぶのをやめるだけ（IMPROVE_controls 2章）。
+  //   【一斉】構えた・待機した味方も選べる（発動までは何度でも動き直し・向き・構え ⇄ 待機を直せる。オーナー 11/03）
   function select(id) {
     var u = R.findUnit(app.state, id);
-    if (!u || u.side !== 'ally' || u.npc || u.acted) { deselect(); return; }
+    if (!u || u.side !== 'ally' || u.npc || (u.acted && !simul())) { deselect(); return; }
     app.sel = id;
     app.plan = { dir: app.dirs[id] || u.facing };
     render();
@@ -491,9 +492,15 @@
   function deselect() { app.sel = null; app.plan = null; render(); }
 
   function setDir(d) {
-    if (!selUnit() || !canControl()) return;
+    var u = selUnit();
+    if (!u || !canControl()) return;
     app.plan.dir = d;
     app.dirs[app.sel] = d;
+    // 【一斉】構え・待機している味方は、十字を押したらその場で向きが変わる（「構える」を押し直さなくていい。オーナー 11/03）
+    if (simul() && u.acted && u.facing !== d) {
+      var res = R.act(app.state, u.id, { dir: d, shoot: !!u.stance });
+      if (res.ok) { pushHistory(); app.state = res.state; }
+    }
     render();
   }
 
@@ -1151,7 +1158,7 @@
     var cls = ['unit', u.side];
     if (u.npc) cls.push('npc');
     if (view.selected) cls.push('selected');
-    if (u.side === 'ally' && u.acted && !u.npc && !app.editMode) cls.push('acted');
+    if (u.side === 'ally' && u.acted && !u.npc && !app.editMode && !(simul() && u.stance)) cls.push('acted');   // 【一斉】薄いのは待機（撃たない）味方だけ
     if (u.stuck) cls.push('stuck');
     if (R.hidden(st, u)) cls.push('hidden');
     if (view.next) cls.push('next-ready');
@@ -1301,7 +1308,7 @@
     var reach = u ? reachOf(u) : {};
     // 動いたけれど、まだ撃っていない味方の元の位置（点線で薄く描く。オーナー 10/30）
     var moveFrom = {};
-    if (!app.editMode && !st.result) R.controllableOf(st).forEach(function (a) { if (a.moved && !a.acted) moveFrom[key(a.moved.from[0], a.moved.from[1])] = a; });
+    if (!app.editMode && !st.result) R.controllableOf(st).forEach(function (a) { if (a.moved && (!a.acted || simul())) moveFrom[key(a.moved.from[0], a.moved.from[1])] = a; });   // 【一斉】構えていても、発動までは元の位置を出す
     var guide = (u && !st.result && !so) ? guideNow(u) : {};
     var pv = (u && app.plan && !st.result) ? previewNow(u) : null;
     var fc = forecastNow();
@@ -1723,7 +1730,7 @@
     };
     var al = R.controllableOf(st), npcs = R.alliesOf(st).filter(function (a) { return a.npc; });
     el.roster.innerHTML = al.length || npcs.length
-      ? al.map(function (a) { return icon(a, (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '')); }).join('') +
+      ? al.map(function (a) { return icon(a, (a.id === app.sel ? ' selected' : '') + (a.acted && !(simul() && a.stance) ? ' acted' : '')); }).join('') +   // 【一斉】薄いのは待機の味方だけ
         npcs.map(function (a) { return icon(a, ' npc'); }).join('')
       : '<p class="muted">味方がいません（エディットで置けます）</p>';
 
@@ -1749,7 +1756,7 @@
       return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + (e.stand === 'rush' ? ' ' : '（' + esc(R.magicName(e.magic)) + '）') + 'HP ' + e.hp + '/' + e.maxHp +
         (warn[e.id] ? ' <span class="danger">予告で -' + warn[e.id] + (warn[e.id] >= e.hp ? '（倒れる）' : '') + '</span>' : '') +
         '<span class="hpbar"><span style="width:' + Math.max(0, e.hp / e.maxHp * 100) + '%"></span></span> ' + DIR_ARROW[e.facing] + esc(note) + '</span>' +
-        (rushTo[e.id] ? '<span class="plan">次のターンの始めに: ' + esc(rushText(rushTo[e.id])) + '</span>' : '') +
+        (rushTo[e.id] ? '<span class="plan">ターンの終わりに: ' + esc(rushText(rushTo[e.id])) + '</span>' : '') +
         (marchTo[e.id] ? '<span class="plan">ターンの終わりに ' + DIR_ARROW[marchTo[e.id].dir] + ' へ1マス進む' + (plans[e.id] ? '。そのまま撃つ' : '') + '</span>' : '') +
         (plans[e.id] ? '<span class="plan">' + esc(planText(plans[e.id], st)) + '</span>' : '') + '</div>';
     }).join('');
@@ -1763,8 +1770,8 @@
   function renderOrderPanel(fa) {
     if (!el.orderPanel) return;
     var st = app.state;
-    // 展示モードでは出さない（並べ替えのボタンに気が散るため。順番は「魔法」を押した順で、盤面の構えの印の①②で分かる。オーナー 10/31）
-    if (!simul() || app.editMode || EXHIBIT) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
+    // 展示モードでも出す（オーナー 11/03。前は展示では出さず、順番は「魔法」を押した順だった 10/31）
+    if (!simul() || app.editMode) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
     // 予告（fa）の並び ＝ 盤面の番号と同じ。選んでいる味方の、まだ確定していない構えも入る
     var list = (fa ? fa.allies : []).map(function (p) { return { p: p, a: R.findUnit(st, p.id) }; }).filter(function (x) { return x.a; });
     var mine = R.stanceList(st).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });
@@ -1783,13 +1790,18 @@
     }).join('');
     var combos = [];
     if (fa && !shapeOnly()) fa.allies.forEach(function (p) { (p.combos || []).forEach(function (c) { combos.push(comboText({ comboMagics: c.magics }) + ' → ' + finName(c.name) + '！'); }); });
-    var waiting = R.controllableOf(st).filter(function (a) { return !a.acted; }).length;
+    // 待機の味方（撃たない）: 欄の下に薄く。順番からは外れる（構えに戻すと最後に並ぶ）
+    var shown = {};
+    list.forEach(function (x) { shown[x.a.id] = true; });
+    var waits = R.controllableOf(st).filter(function (a) { return a.acted && !a.stance && !shown[a.id]; }).map(function (a) {
+      return '<li class="order-row waiting' + (a.id === app.sel ? ' selected' : '') + '"><span class="o-no">－</span><span class="o-name"><b>' + esc(R.unitLabel(st, a)) + '</b><small>' + esc(ui('orderWait', '待機（撃たない）')) + '</small></span></li>';
+    }).join('');
     el.orderPanel.hidden = false;
-    el.orderPanel.classList.toggle('x-more', !rows);   // まだ誰も構えていないときは、欄ごと隠す（x-more）
+    el.orderPanel.classList.toggle('x-more', !rows && !waits);   // 誰もいないときは、欄ごと隠す（x-more）
     el.orderPanel.innerHTML = '<h3>' + esc(ui('order', '発動の順番')) + '</h3>' +
-      (rows ? '<ol class="order-list">' + rows + '</ol>' : '<p class="muted">まだ誰も構えていません</p>') +
-      (combos.length ? '<p class="order-combo">' + combos.map(esc).join('<br>') + '</p>' : '') +
-      (waiting ? '<p class="muted x-more">まだ構えていない味方: ' + waiting + '人</p>' : '');
+      (rows ? '<ol class="order-list">' + rows + '</ol>' : '<p class="muted">みんな待機しています</p>') +
+      (waits ? '<ul class="order-list order-waits">' + waits + '</ul>' : '') +
+      (combos.length ? '<p class="order-combo">' + combos.map(esc).join('<br>') + '</p>' : '');
   }
 
   // 右下のコントローラー（IMPROVE_controls 5-1）: 十字の矢印（真ん中は「向き」）と「魔法」「待機」。
@@ -1804,7 +1816,10 @@
     var shootOk = !!u && R.canShoot(app.state, u);
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
-    el.btnShoot.textContent = u && !shootOk ? ui('cantShoot', '宝を持つので撃てない') : simul() ? ui('stance', '魔法') : ui('shoot', '撃つ');
+    // 【一斉】今どちらなのか（構え／待機）をボタンの光り方で見せる（オーナー 11/03）
+    el.btnShoot.classList.toggle('on', !!u && simul() && !!u.stance);
+    el.btnWait.classList.toggle('on', !!u && simul() && u.acted && !u.stance);
+    el.btnShoot.textContent = u && !shootOk ? ui('cantShoot', '宝を持つので撃てない') : simul() ? ui('stance', '構える') : ui('shoot', '撃つ');
     el.btnWait.textContent = ui('wait', '待機');
     el.dirCenter.textContent = ui('dirCenter', '向き');
   }

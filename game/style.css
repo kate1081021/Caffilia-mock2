@@ -541,6 +541,11 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .ctrl-panel .dirpad { grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); }
 .ctrl-panel .dirpad .dir-center { font-size: 13px; }
 .ctrl-panel .act-buttons button { padding: 12px; font-size: 16px; }
+/* 【一斉】今どちらなのか（構え／待機）: 選んでいる味方の今の状態のボタンに印（オーナー 11/03） */
+.ctrl-panel .act-buttons button.on { box-shadow: 0 0 0 3px var(--gold); }
+.ctrl-panel .act-buttons button.on::after { content: ' ✓'; }
+.order-waits { margin-top: 4px; }
+.order-row.waiting { opacity: .55; }
 /* 右下のボタン（IMPROVE_controls 5-2）: 発動／クリアする／次へ／やり直す。同じ場所で文字が変わる */
 .go-btn { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; font-size: 18px; font-weight: bold; }
 
@@ -968,7 +973,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 }
 .unit.boss { border-width: 5px; box-shadow: 0 0 0 3px #fde047, 0 4px 10px rgba(0,0,0,.4); }
 .unit.body-float { background: radial-gradient(circle, #e9d5ff, #7c3aed); border-style: dashed; transform: translateY(-6%) rotate(var(--rot)); }
-.unit .u-order { position: absolute; right: -10%; top: -10%; font-size: .55em; font-weight: bold; color: #fff; background: var(--enemy-fc); border-radius: 50%; min-width: 1.4em; text-align: center; z-index: 6; transform: rotate(calc(-1 * var(--rot))); }
+.unit .u-order { position: absolute; left: auto; right: -10%; top: -10%; font-size: .55em; font-weight: bold; color: #fff; background: var(--enemy-fc); border-radius: 50%; min-width: 1.4em; height: 1.4em; line-height: 1.4em; text-align: center; z-index: 6; transform: none; }   /* left: auto（上の left と right の両方が効いて札が横に伸び、向きで回ると縦長に見えた。最初から全員構えるようになって目立った 11/03） */
 
 /* ---------- 展示ステージ③（3人でつなぐ） ---------- */
 
