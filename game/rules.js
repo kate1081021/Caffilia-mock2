@@ -82,6 +82,12 @@
   function isPlant(t) { return t === 'forest' || t === 'thicket'; }
   // 【育つ】吹いている風（風・強風）
   function isWind(t) { return t === 'breeze' || t === 'gale'; }
+  // 空気の中のもの・すぐ消える跡（吹いている風・強風・花びら）。地面に置かれた自然ではないので、
+  //   置く魔法（草・土・山・旋風）・流れる水・川は、空きと同じく扱う（風と花びらは、置いた自然や水に入れ替わる）。
+  //   前はマスがふさがっていて何も起きず（水は「風で止まった」）、同じターンに風より先に撃つか後に撃つかで結果が変わっていた（11/03）。
+  //   火を入れると火の渦になる・花びらは燃えない、は今までどおり
+  function isAiry(t) { return t === 'breeze' || t === 'gale' || t === 'petals'; }
+  var PLACE_OVER_AIR = { grass: true, earth: true, mount: true, senpu: true };
   function burnsStrong(t) { return t === 'forest' || (t === 'thicket' && B.fire.plantStrong); }   // 【育つ】plantStrong で草むらも強い炎
 
   // 燃え広がりを止めるマス
@@ -866,6 +872,7 @@
       if (o) addHit(ctx, o, u.power, 'direct');
       if (ENEMY_ATTACK[u.magic]) { if (o) ctx.phrases.push(unitLabel(s, o) + 'に当たった'); return; }   // 展示ステージ③の敵の攻撃: 自然は作らない
       var t = getTile(s, x, y);
+      if (isAiry(t) && PLACE_OVER_AIR[u.magic]) { setTile(s, x, y, 'empty'); t = 'empty'; }   // 風・花びらの上にも置ける（isAiry）
       // 人の足元にも自然ができる（ideas.natureUnderUnits）: 人がいても置く。
       //   オーナー 10/30: 山（通れない）も足元に盛る。足元に山ができた人は、形のマスを全部済ませてから山の外へ押し出す（pushOffMountain）
       var free = function () { return !o || (B.ideas.natureUnderUnits); };
@@ -1390,6 +1397,7 @@
       if (overHill && overHill(cx, cy, prev)) { prev = [cx, cy]; over++; continue; }
       prev = [cx, cy];
       var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
+      if (isAiry(t)) t = 'empty';   // 風・花びらのマスも流れる（isAiry）
       if (o && o.kind === 'village') { addHit(ctx, o, o.hp, 'flood', [cx, cy]); flooded.push(unitLabel(s, o) + 'に川が流れこんだ'); }
       else if (o && o.side === 'object') { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
       if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
@@ -1441,6 +1449,7 @@
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
+      if (isAiry(t)) t = 'empty';   // 風・花びらのマスも流れる（isAiry）
       if (o) {
         addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
         // 人の足元にも自然ができる（オーナー 10/30: 人のいないマスと同じ作用）: 空き・水たまり・蜃気楼・草むらは水たまり（元の池なら川）、炎は消える
@@ -1583,7 +1592,7 @@
       var wet = 0;
       for (var j = firstRiver; j < path.length; j++) {
         var tt = getTile(s, path[j][0], path[j][1]);
-        if (tt === 'river' || tt === 'empty') { setTile(s, path[j][0], path[j][1], 'puddle'); wet++; }
+        if (tt === 'river' || tt === 'empty' || isAiry(tt)) { setTile(s, path[j][0], path[j][1], 'puddle'); wet++; }
       }
       ctx.phrases.push('【新案】川の水を' + F.name + 'へ運んだ（水たまり' + wet + 'マス）');
     }
@@ -1609,8 +1618,8 @@
           if (galeAt >= 0 && j >= galeAt) {
             // 【育つ】強風の通り道は、空きと風のマスに強風が残る
             if (!gale) { gale = { origin: c.slice(), tile: 'gale', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }; ctx.grows.push(gale); }
-            if ((tt === 'empty' || tt === 'breeze')) { setTile(s, c[0], c[1], 'gale'); galeLeft++; gale.cells.push(c.slice()); gale.tiles.push('gale'); gale.wave.push(j - galeAt); }
-          } else if (tt === 'empty') { setTile(s, c[0], c[1], 'breeze'); left++; }
+            if ((tt === 'empty' || tt === 'breeze' || tt === 'petals')) { setTile(s, c[0], c[1], 'gale'); galeLeft++; gale.cells.push(c.slice()); gale.tiles.push('gale'); gale.wave.push(j - galeAt); }
+          } else if (tt === 'empty' || tt === 'petals') { setTile(s, c[0], c[1], 'breeze'); left++; }   // 花びらは風が吹き払う（isAiry）
         });
         if (left) ctx.phrases.push('【新案】' + tileName('breeze') + 'が' + left + 'マス吹いている（ターン終了まで）');
         if (galeLeft) ctx.phrases.push('【育つ】強風が' + galeLeft + 'マス吹いている（ターン終了まで）');

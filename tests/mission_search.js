@@ -172,7 +172,7 @@ if (require.main === module) {
   });
   console.log(show(res.state));
   console.log('結果: ' + (res.state.resultText || '決着せず') + '  / ' + R.missionInfo(res.state).status.join(' / ') + '  (' + (Date.now() - t0) + 'ms)');
-  // demos.js にそのまま貼れる形
+  // 手順をそのまま貼れる形
   console.log('turns: ' + JSON.stringify(res.plan.map(function (p) {
     return p.acts.map(function (a) { var o = { id: a.id, to: a.to, dir: a.dir }; if (a.shoot === false) o.shoot = false; return o; });
   })));

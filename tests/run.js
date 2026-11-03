@@ -43,6 +43,7 @@ function empty(n, enemyActs) {
   return board(rows, enemyActs);
 }
 function tile(s, x, y) { return R.getTile(s, x, y); }
+function tileName(t) { return R.tileName(t); }
 function hp(s, id) { var u = R.findUnit(s, id); return u ? u.hp : null; }
 function pos(s, id) { var u = R.findUnit(s, id); return u ? [u.x, u.y] : null; }
 // 味方 a がその場で dir に撃つ
@@ -105,7 +106,7 @@ test('置く: ユニットがいるマスは直撃し、足元にも自然がで
   eq(hp(r.state, e.id), B.enemy.hp - B.ally.power);
   eq([tile(r.state, 1, 2), tile(r.state, 2, 2), tile(r.state, 3, 2)], ['forest', 'forest', 'forest']);
 });
-test('置く: 味方に当てても足元に自然ができる。山（通れない）は足元には盛らない', function () {
+test('置く: 味方に当てても足元に自然ができる。山（通れない）も足元に盛り、その人は山の外へ押し出す（オーナー 10/30）', function () {
   var s = empty(6);
   var a = R.addAlly(s, 'grass', 2, 5);
   var b = R.addAlly(s, 'earth', 2, 3);
@@ -115,8 +116,9 @@ test('置く: 味方に当てても足元に自然ができる。山（通れな
   var c = R.addAlly(s2, 'earth', 2, 5);      // 形 (1,3)(2,3)(1,2)
   var d = R.addAlly(s2, 'grass', 2, 3);
   var r2 = fire(s2, c, 'up');
-  eq(tile(r2.state, 2, 3), 'empty', '育つが切なら土は山なので、足元には盛らない');
-  eq(tile(r2.state, 1, 3), 'mountain');
+  eq([tile(r2.state, 2, 3), tile(r2.state, 1, 3)], ['mountain', 'mountain'], '足元にも山');
+  ok(R.isPassable(tile(r2.state, pos(r2.state, d.id)[0], pos(r2.state, d.id)[1])), '足元に山ができた人は、通れるマスへ押し出された: ' + pos(r2.state, d.id));
+  eq(hp(r2.state, d.id), B.ally.hp - B.ally.power, '直撃は受ける');
 });
 test('置く: natureUnderUnits を切ると、ユニットがいるマスは直撃だけで自然は変わらない（前の決まり）', function () {
   B.ideas.natureUnderUnits = false;
@@ -164,30 +166,34 @@ test('点ける: 森の上の敵には直撃＋森が燃える', function () {
 
 console.log('\n■ 流れる（水）【水たまりと源流】');
 
-// 水だけなら水たまり（balance.js の waterPuddle）を、この中だけ v にする
-function withPuddle(v, fn) { var keep = B.waterPuddle; B.waterPuddle = v; try { fn(); } finally { B.waterPuddle = keep; } }
-test('水だけなら正面に水たまり（2マス）。流れるのは山にかけたときだけ（オーナー 10/17）', function () {
+// 昔の水（オーナー 10/29 より前の標準）: 水は正面2マス、山に当たると向きの奥へまっすぐ源流（斜面なし）。
+//   【元】のテストは、盤面にこの上書きを入れて、その形を確かめる（balance.js の切り替えとして残っているもの）
+var OLD_WATER = { waterLength: 2, 'tutorial.slope': false };
+function old(s, ov) { s.overrides = ov; return s; }
+function merge(a, b) { var o = {}; [a, b].forEach(function (x) { Object.keys(x || {}).forEach(function (k) { o[k] = x[k]; }); }); return o; }
+test('水だけなら正面に水たまり（waterLength マス。今は1）。流れるのは山にかけたときだけ（オーナー 10/17・10/29）', function () {
   eq(B.waterPuddle, true, '標準');
+  var L = B.waterLength;
   var s = empty(6);
   var a = R.addAlly(s, 'water', 2, 5);
   var r = fire(s, a, 'up');
-  eq([4, 3, 2].map(function (y) { return tile(r.state, 2, y); }), ['puddle', 'puddle', 'empty']);
-  ok(r.events.some(function (e) { return /水たまりができた（2マス）/.test(e.text || ''); }), 'ログは「水たまり」');
+  eq([4, 3, 2].map(function (y) { return tile(r.state, 2, y); }), [4, 3, 2].map(function (y) { return 5 - y <= L ? 'puddle' : 'empty'; }));
+  ok(r.events.some(function (e) { return (e.text || '').indexOf('水たまりができた（' + L + 'マス）') >= 0; }), 'ログは「水たまり」');
   ok(R.reachableCells(r.state, a.id)['2,4'] === 1, '水たまりは通れる');
 });
-test('【元】waterPuddle を切ると、水だけなら正面に池（川2マス・通れない）', function () { withPuddle(false, function () {
-  var s = empty(6);
+test('【元】waterPuddle を切ると、水だけなら正面に池（川2マス・通れない）。斜面なし・水2マスのとき', function () {
+  var s = old(empty(6), merge(OLD_WATER, { waterPuddle: false }));
   var a = R.addAlly(s, 'water', 2, 5);
   var r = fire(s, a, 'up');
   eq([4, 3, 2].map(function (y) { return tile(r.state, 2, y); }), ['river', 'river', 'empty']);
   ok(r.events.some(function (e) { return /池ができた（2マス）/.test(e.text || ''); }), 'ログは「池」');
-}); });
+});
 test('水たまりにした水でも、感電・凍結・泥沼の材料になる', function () {
   var s = empty(6);
   var w = R.addAlly(s, 'water', 2, 5);
-  var r = fire(s, w, 'up');
-  var e = tough(r.state, R.addEnemy(r.state, 'fire', 1, 3));   // 水たまり (2,3) の隣
-  var t = R.addAlly(r.state, 'thunder', 2, 2);
+  var r = fire(s, w, 'up');                                    // 水たまり (2,4)
+  var e = tough(r.state, R.addEnemy(r.state, 'fire', 1, 4));   // 水たまりの隣
+  var t = R.addAlly(r.state, 'thunder', 2, 3);
   var r2 = fire(r.state, t, 'down');
   eq(names(r2.events, 'finisher'), ['感電']);
   eq(dealt(r2, e.id), B.shock.base, '隣の敵に感電');
@@ -199,29 +205,48 @@ test('山に当たると、山を下って盤の端まで川になる（源流�
   eq(tile(r.state, 2, 4), 'mountain', '山は残る');
   eq([3, 2, 1, 0].map(function (y) { return tile(r.state, 2, y); }), ['river', 'river', 'river', 'river']);
 });
-test('水の先（2マス以内）に山があれば源流になる。3マス目の山には届かない', function () {
-  var s = board(['......', '......', '......', '..M...', '......', '......']);
+test('水は正面 waterLength マスまで。その先の山には届かない', function () {
+  var L = B.waterLength;
+  var rows = ['......', '......', '......', '......', '......', '......'];
+  rows[4 - L] = '..M...';                                      // waterLength+1 マス先の山
+  var s = board(rows);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var r = fire(s, a, 'up');
+  eq(tile(r.state, 2, 5 - L), 'puddle', '届いた所は水たまり');
+  ok(!r.state.tiles.some(function (t) { return t === 'river'; }), '山には届かず、川は流れない');
+});
+test('【元】斜面なし: 水の先（2マス以内）に山があれば、向きの奥へ源流。3マス目の山には届かない', function () {
+  var s = old(board(['......', '......', '......', '..M...', '......', '......']), OLD_WATER);
   var a = R.addAlly(s, 'water', 2, 5);
   var r = fire(s, a, 'up');
   eq([tile(r.state, 2, 4), tile(r.state, 2, 2), tile(r.state, 2, 0)], ['puddle', 'river', 'river'], '山の手前は水たまり、山の先は川');
-  var s2 = board(['......', '......', '..M...', '......', '......', '......']);
+  var s2 = old(board(['......', '......', '..M...', '......', '......', '......']), OLD_WATER);
   var a2 = R.addAlly(s2, 'water', 2, 5);
   var r2 = fire(s2, a2, 'up');
   eq([tile(r2.state, 2, 4), tile(r2.state, 2, 3), tile(r2.state, 2, 1)], ['puddle', 'puddle', 'empty']);
 });
-test('源流は川・水たまりを越え、次の山も通り抜ける', function () {
-  var s = board(['......', '..M...', '..P...', '..R...', '..M...', '......']);
+test('【元】斜面なし: 源流は川・水たまりを越え、次の山も通り抜ける', function () {
+  var s = old(board(['......', '..M...', '..P...', '..R...', '..M...', '......']), OLD_WATER);
   var a = R.addAlly(s, 'water', 2, 5);
   var r = fire(s, a, 'up');
   eq([tile(r.state, 2, 2), tile(r.state, 2, 0)], ['river', 'river']);
 });
-test('ユニットで止まって直撃', function () {
+test('水はユニットに当たって止まり、直撃（足元は水たまり）', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var e = R.addEnemy(s, 'fire', 2, 4);
+  var r = fire(s, a, 'up');
+  eq(hp(r.state, e.id), B.enemy.hp - B.ally.power);
+  eq(tile(r.state, 2, 4), 'puddle', '足元も水たまり');
+  ok(r.events.some(function (ev) { return /に当たって止まった/.test(ev.text || ''); }), '止まった');
+});
+test('川は人の足元も流れ続ける（ダメージなし。オーナー 10/30）', function () {
   var s = board(['......', '......', '......', '......', '..M...', '......']);
   var a = R.addAlly(s, 'water', 2, 5);
   var e = R.addEnemy(s, 'fire', 2, 1);
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 1), tile(r.state, 2, 0)], ['river', 'river', 'empty', 'empty']);
-  eq(hp(r.state, e.id), B.enemy.hp - B.ally.power);
+  eq([3, 2, 1, 0].map(function (y) { return tile(r.state, 2, y); }), ['river', 'river', 'river', 'river'], '敵の足元を越えて盤の端まで');
+  eq(hp(r.state, e.id), B.enemy.hp, '川ではダメージなし');
 });
 test('炎を消して止まる', function () {
   var s = board(['......', '......', '......', '......', '..X...', '......']);
@@ -304,7 +329,10 @@ test('【新案】水たまりは通れる・土で泥沼・水が流れると�
   eq(tile(fire(s2, a2, 'up').state, 1, 3), 'mud', '土で泥沼');
   var s3 = board(['......', '......', '......', '......', '..P...', '......']);
   var a3 = R.addAlly(s3, 'water', 2, 5);
-  eq(tile(fire(s3, a3, 'up').state, 2, 4), 'river', '水で川');
+  eq(tile(fire(s3, a3, 'up').state, 2, 4), 'puddle', '水を当てても水たまりのまま');
+  var s4 = old(board(['......', '......', '......', '......', '..P...', '......']), OLD_WATER);
+  var a4 = R.addAlly(s4, 'water', 2, 5);
+  eq(tile(fire(s4, a4, 'up').state, 2, 4), 'river', '【元】斜面なし・水2マスなら、水が流れると川に戻る');
 });
 test('炎に当たって燃え広がり（その先へは風が届かない）', function () {
   var s = board(['......', '......', '..X...', '......', '......', '......']);
@@ -330,11 +358,12 @@ test('起点にいる者は押されずにダメージを受ける（森でな�
   eq(pos(r.state, e.id), [2, 2]);
   eq(dealt(r, e.id), B.fire.weakDamage);
 });
-test('通り道の空きが小さな炎になり、最大4マス', function () {
+test('通り道の空きが小さな炎になり、最大 spread.maxLength マス（今は3）', function () {
   var s = board(['.........', '.........', '.........', '.........', '.........', '..X......', '.........', '.........', '.........']);
   var a = R.addAlly(s, 'wind', 2, 7);
   var r = fire(s, a, 'up');
-  eq([4, 3, 2, 1, 0].map(function (y) { return tile(r.state, 2, y); }), ['smallfire', 'smallfire', 'smallfire', 'smallfire', 'empty']);
+  var L = B.spread.maxLength;
+  eq([4, 3, 2, 1, 0].map(function (y) { return tile(r.state, 2, y); }), [4, 3, 2, 1, 0].map(function (y) { return 5 - y <= L ? 'smallfire' : 'empty'; }));
 });
 test('川・山の手前で止まる', function () {
   var s = board(['......', '..R...', '......', '..X...', '......', '......']);
@@ -375,7 +404,7 @@ test('つながった森が全部燃え、ダメージは一定（決め手20）
   ]);
   var w = R.addAlly(s, 'wind', 2, 6);
   var e = R.addEnemy(s, 'fire', 1, 1);      // つながった森の上
-  var friend = R.addAlly(s, 'fire', 2, 0);  // 通り道の先（4マス目）
+  var friend = R.addAlly(s, 'fire', 2, 1);  // 通り道の森の上（3マス目）
   var r = fire(s, w, 'up');
   ['1,1', '2,1', '2,2', '2,3'].forEach(function (k) {
     var c = k.split(',').map(Number);
@@ -611,10 +640,13 @@ test('隠れていない味方がいれば、そちらを狙う', function () {
   ok(plan.target === undefined || plan.target === seen.id, 'target=' + plan.target);
   ok(hiddenAlly);
 });
-test('蜃気楼に水が流れると川に戻る', function () {
+test('蜃気楼に水を当てると水たまりに戻る（【元】斜面なし・水2マスなら川に戻る）', function () {
   var s = board(['......', '......', '......', '......', '..H...', '......']);
   var a = R.addAlly(s, 'water', 2, 5);
-  eq(tile(fire(s, a, 'up').state, 2, 4), 'river');
+  eq(tile(fire(s, a, 'up').state, 2, 4), 'puddle');
+  var s2 = old(board(['......', '......', '......', '......', '..H...', '......']), OLD_WATER);
+  var a2 = R.addAlly(s2, 'water', 2, 5);
+  eq(tile(fire(s2, a2, 'up').state, 2, 4), 'river', '【元】');
 });
 
 console.log('\n■ 【新案】氷（凍らせる）と凍結');
@@ -655,7 +687,8 @@ test('火が氷に当たると溶けて水たまり。水は氷の上を流れ�
   var s = board(['......', '......', '......', '......', '..I...', '......']);
   var a = R.addAlly(s, 'fire', 2, 5);
   eq(tile(fire(s, a, 'up').state, 2, 4), 'puddle');
-  var s2 = board(['......', '......', '......', '......', '..I...', '......']);
+  // 氷も流れる長さの1マスに数える。水が2マス流れるときに、氷の先の空きへ届く
+  var s2 = old(board(['......', '......', '......', '......', '..I...', '......']), { waterLength: 2 });
   var a2 = R.addAlly(s2, 'water', 2, 5);
   var r2 = fire(s2, a2, 'up');
   eq([tile(r2.state, 2, 4), tile(r2.state, 2, 3)], ['ice', 'puddle'], '氷の先の空きは水たまり');
@@ -763,7 +796,7 @@ test('【元】竜巻に火を入れると火炎竜巻: 竜巻とまわりが燃
   eq(dealt(r, e.id), B.fireTornado.damage);
 });
 test('【元】竜巻に水を入れるとセンタクキ: まわりの輪が回り、竜巻は消える', function () {
-  var s = board(['......', '..TT..', '..TT..', '......', '......', '......']);
+  var s = old(board(['......', '..TT..', '..TT..', '......', '......', '......']), { waterLength: 2 });   // 水が2マス流れる盤面で確かめる
   var a = R.addAlly(s, 'water', 2, 4);             // (2,3) 水たまり、(2,2) 竜巻
   var e = tough(s, R.addEnemy(s, 'fire', 1, 0));   // 輪の左上
   var r = fire(s, a, 'up');
@@ -774,7 +807,7 @@ test('【元】竜巻に水を入れるとセンタクキ: まわりの輪が回
   eq(r.state.tiles.filter(function (t) { return t === 'puddle'; }).length, 1, '雨は降らない（水たまりは撃った水の1マスだけ。輪と一緒に回る）');
 });
 test('【元】【仮】あと一手のヒント: 竜巻があると「水でセンタクキ」。今撃てる水の味方を教える', function () {
-  var s = board(['......', '..TT..', '..TT..', '......', '......', '......']);
+  var s = old(board(['......', '..TT..', '..TT..', '......', '......', '......']), { waterLength: 2 });   // 水が2マス流れる盤面で確かめる
   var h = R.nextHints(s);
   eq(h.map(function (x) { return [x.name, x.magic, x.cells.length, x.shooters.length]; }), [['センタクキ', 'water', 4, 0]], '水の味方がいなくても札は出る');
   var w = R.addAlly(s, 'water', 4, 5);             // (3,4) へ動いて上に撃てば竜巻に届く
@@ -791,7 +824,7 @@ test('【元】【仮】あと一手のヒント: 竜巻があると「水でセ
 // ここから「新しい作り方」（tornadoRecipe: windWater。今の標準）
 B.tornadoRecipe = 'windWater';
 test('つむじ風に水を流すと、水を巻き上げて2×2の竜巻に育つ', function () {
-  var s = board(['......', '......', '..W...', '......', '......', '......']);
+  var s = old(board(['......', '......', '..W...', '......', '......', '......']), { waterLength: 2 });   // 水が2マス流れる盤面で確かめる
   var a = R.addAlly(s, 'water', 2, 4);             // (2,3) 水たまり、(2,2) つむじ風
   var r = fire(s, a, 'up');
   eq([tile(r.state, 2, 2), tile(r.state, 3, 2), tile(r.state, 2, 1), tile(r.state, 3, 1)], ['tornado', 'tornado', 'tornado', 'tornado']);
@@ -844,13 +877,13 @@ test('旋風の作り方では、風はつむじ風を残さない', function ()
   eq(r.state.tiles.filter(function (t) { return t === 'whirlwind'; }).length, 0);
 });
 test('つむじ風に水を流すと、つながったつむじ風がまるごと竜巻になる（大きく巻けば大きな竜巻）', function () {
-  var s = board(['......', '.WWW..', '.WWW..', '......', '......', '......']);
+  var s = old(board(['......', '.WWW..', '.WWW..', '......', '......', '......']), { waterLength: 2 });   // 水が2マス流れる盤面で確かめる
   var b = R.addAlly(s, 'water', 2, 4);             // (2,3) 池、(2,2) つむじ風
   var r = fire(s, b, 'up');
   eq(r.state.tiles.filter(function (t) { return t === 'tornado'; }).length, 6);
 });
 test('旋風の竜巻に火でセンタクキ。何も残らない', function () {
-  var s = board(['......', '..WW..', '..WW..', '......', '......', '......']);
+  var s = old(board(['......', '..WW..', '..WW..', '......', '......', '......']), { waterLength: 2 });   // 水が2マス流れる盤面で確かめる
   var w = R.addAlly(s, 'water', 0, 2);
   var r = fire(s, w, 'right');                     // (1,2) 池、(2,2) つむじ風 → 竜巻
   eq(tile(r.state, 3, 1), 'tornado');
@@ -896,7 +929,7 @@ test('2×2を選ぶ順: 風を多く含む → 奥 → 右（横向きの風な�
   eq(R.findUnit(r2.state, c.id).hp, B.ally.hp, '火を入れた本人は巻き込まれない');
 });
 test('火の渦に水でセンタクキ: まわりの輪が回り、渦は跡形もなく消える', function () {
-  var s = board(['......', '..QQ..', '..QQ..', '......', '......', '......']);
+  var s = old(board(['......', '..QQ..', '..QQ..', '......', '......', '......']), { waterLength: 2 });   // 水が2マス流れる盤面で確かめる
   var a = R.addAlly(s, 'water', 2, 4);               // (2,3) 池、(2,2) 火の渦
   var e = tough(s, R.addEnemy(s, 'fire', 1, 0));
   var r = fire(s, a, 'up');
@@ -938,6 +971,40 @@ test('元の形（4マス）に切り替えると、正面4マスまで吹き抜
     eq(pos(r.state, e.id), [2, 0]);
     eq(r.state.tiles.filter(function (t) { return t === 'breeze'; }).length, 0);
   } finally { B.windMode = 'breeze'; }
+});
+
+test('風・強風・花びらのマスにも、草・土・山・水は空きと同じく効く（空気の中のもの・すぐ消える跡。11/03）', function () {
+  ['breeze', 'gale', 'petals'].forEach(function (air) {
+    [['grass', 'forest'], ['earth', 'mountain'], ['mount', 'mountain'], ['water', 'puddle']].forEach(function (p) {
+      var s = empty(7);
+      var a = R.addAlly(s, p[0], 3, 6);
+      var cells = R.shapeCells(s, p[0], 3, 6, 'up');
+      cells.forEach(function (c) { R.setTile(s, c[0], c[1], air); });
+      var r = fire(s, a, 'up');
+      eq(tile(r.state, cells[0][0], cells[0][1]), p[1], tileName(air) + 'に' + p[0]);
+    });
+  });
+  // 火は今までどおり、吹いている風に入ると火の渦。花びらは燃えない
+  var s2 = board(['......', '......', '......', '..B...', '......', '......']);
+  eq(names(fire(s2, R.addAlly(s2, 'fire', 2, 4), 'up').events, 'finisher'), ['火の渦']);
+});
+test('一斉: 風と同じターンに土・水を撃つと、構える順番を入れ替えても、風の通り道に同じく山・水たまりができる（11/03）', function () {
+  var keep = B.turnMode; B.turnMode = 'simul';
+  try {
+    [['earth', [4, 4], 'mountain'], ['water', [3, 4], 'puddle']].forEach(function (p) {
+      var got = [['wind', p[0]], [p[0], 'wind']].map(function (order) {
+        var s = empty(6); R.addEnemy(s, 'fire', 5, 0);
+        var ids = { wind: R.addAlly(s, 'wind', 2, 5).id };   // 風: (2,4)(2,3) を上へ
+        ids[p[0]] = R.addAlly(s, p[0], p[1][0], p[1][1]).id;   // 左へ撃つと (2,4) に当たる
+        var dirs = { wind: 'up' }; dirs[p[0]] = 'left';
+        order.forEach(function (m) { var r = R.act(s, ids[m], { dir: dirs[m] }); ok(r.ok, r.error); s = r.state; });
+        var t = R.endTurn(s);
+        var st = null; t.steps.forEach(function (x) { if (!st && x.events.some(function (e) { return e.type === 'turnEnd'; })) st = x.state; });
+        return tile(st, 2, 4);
+      });
+      eq(got, [p[2], p[2]], p[0] + ': 風が先でも後でも (2,4) は ' + p[2]);
+    });
+  } finally { B.turnMode = keep; }
 });
 
 console.log('\n■ 【新案・試し】闇（吸う）・死の森・オバケヤシキ');
@@ -1044,7 +1111,7 @@ test('火傷: ターン終了ごとに2、2回で治る。重ねがけは回数�
 });
 test('火傷は水か氷が当たると治る', function () {
   var s = empty(6);
-  var e = tough(s, R.addEnemy(s, 'fire', 2, 2));
+  var e = tough(s, R.addEnemy(s, 'fire', 2, 3));   // 水の届くマス
   R.findUnit(s, e.id).burn = 2;
   var w = R.addAlly(s, 'water', 2, 4);
   eq(R.findUnit(fire(s, w, 'up').state, e.id).burn, 0, '水');
@@ -1875,12 +1942,14 @@ test('エディットで置きもの・印・宝を置ける（トロッコは1�
 
 // ---------------------------------------------------------------
 console.log('\n■ 育つ（IMPROVE_grow）: 土 — 丘と山');
-// grow.enabled を入れて試す（終わったら元に戻す）
+// grow.enabled を入れて試す（終わったら元に戻す）。
+//   育つは、水が2マス・山に斜面がなかった頃（10/07）に作った試し（今は切）。その頃の水（OLD_WATER）で確かめる
 function withGrow(fn, set) {
-  var was = JSON.parse(JSON.stringify(B.grow));
+  var was = JSON.parse(JSON.stringify(B.grow)), wasWater = [B.waterLength, B.tutorial.slope];
   B.grow.enabled = true;
+  B.waterLength = OLD_WATER.waterLength; B.tutorial.slope = OLD_WATER['tutorial.slope'];
   Object.keys(set || {}).forEach(function (k) { B.grow[k] = set[k]; });
-  try { fn(); } finally { Object.keys(was).forEach(function (k) { B.grow[k] = was[k]; }); }
+  try { fn(); } finally { Object.keys(was).forEach(function (k) { B.grow[k] = was[k]; }); B.waterLength = wasWater[0]; B.tutorial.slope = wasWater[1]; }
 }
 CH.h = 'hill';
 
@@ -1900,12 +1969,13 @@ test('育つ: 空きに土で丘、丘にもう一度土で山に育つ', functi
   eq([tile(r2.state, 1, 3), tile(r2.state, 2, 3), tile(r2.state, 1, 2)], ['mountain', 'mountain', 'mountain']);
   ok(r2.events.some(function (e) { return /丘が山に育った/.test(e.text || ''); }), 'ログに「育った」');
 }); });
-test('育つ: ユニットのいる丘は育たない（直撃だけ）', function () { withGrow(function () {
+test('育つ: ユニットのいる丘も山に育ち（足元にも山。オーナー 10/30）、その人は押し出される（直撃も受ける）', function () { withGrow(function () {
   var s = board(['......', '......', '......', '..h...', '......', '......']);
   var a = R.addAlly(s, 'earth', 2, 5);
   var e = tough(s, R.addEnemy(s, 'fire', 2, 3));
   var r = fire(s, a, 'up');
-  eq(tile(r.state, 2, 3), 'hill');
+  eq(tile(r.state, 2, 3), 'mountain');
+  ok(R.isPassable(tile(r.state, pos(r.state, e.id)[0], pos(r.state, e.id)[1])), '山の外へ押し出された: ' + pos(r.state, e.id));
   eq(dealt(r, e.id), 1);
 }); });
 test('育つ: 炎・小さな炎に土をかぶせると丘になる', function () { withGrow(function () {
@@ -1938,7 +2008,8 @@ test('丘: 高台は流れる・吹き抜ける魔法も1マス先から', funct
   var s = board(['......', '......', '......', '......', '..h...', '......']);
   var w = R.addAlly(s, 'water', 2, 4);
   var r = fire(s, w, 'up');
-  eq([tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 1)], ['empty', 'puddle', 'puddle']);
+  var L = B.waterLength;   // 丘の上からは1マス先から waterLength マス
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 1)], ['empty', 'puddle', L >= 2 ? 'puddle' : 'empty']);
   var s2 = board(['......', '......', '......', '......', '..h...', '......']);
   var b = R.addAlly(s2, 'wind', 2, 4);
   var e = tough(s2, R.addEnemy(s2, 'fire', 2, 1));
@@ -1947,9 +2018,9 @@ test('丘: 高台は流れる・吹き抜ける魔法も1マス先から', funct
 });
 test('丘: 水が当たると丘から川が流れる（源流）。丘は丘のまま', function () {
   var s = board(['......', '......', '......', '..h...', '......', '......']);
-  var a = R.addAlly(s, 'water', 2, 5);
+  var a = R.addAlly(s, 'water', 2, 4);   // 丘のすぐ手前から
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 2, 4), tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 0)], ['puddle', 'hill', 'river', 'river'], '丘の手前は水たまり、丘の先は川');
+  eq([tile(r.state, 2, 3), tile(r.state, 2, 2), tile(r.state, 2, 1), tile(r.state, 2, 0)], ['hill', 'river', 'river', 'river'], '丘の先は盤の端まで川');
 });
 test('丘: 低いので風をさえぎらない（丘の先の敵も運ぶ）', function () {
   var s = board(['......', '......', '......', '......', '..h...', '......']);
@@ -2024,17 +2095,17 @@ test('育つ: 山の大きさ 9 は 3×3', function () { withGrow(function () {
   eq(mountains(r.state).length, 9);
   eq([tile(r.state, 2, 2), tile(r.state, 4, 4)], ['mountain', 'mountain']);
 }, { mountainSize: 9 }); });
-test('育つ: ユニットのいるマス・ほかの自然のマスは山にならない（育てなかったマスとして残る）', function () { withGrow(function () {
+test('育つ: ほかの自然のマスは山にならない。ユニットのいるマスは足元にも山（オーナー 10/30）、その人は山の外へ', function () { withGrow(function () {
   var g = growBoard([[4, 3, 'F']]);
   var e = tough(g.s, R.addEnemy(g.s, 'fire', 3, 4));
   var r = fire(g.s, g.a, 'up');
-  eq(tile(r.state, 4, 3), 'forest');
-  eq(tile(r.state, 3, 4), 'empty');
-  eq(pos(r.state, e.id), [3, 4], '押し出しを切っているので、その場に残る');
+  eq(tile(r.state, 4, 3), 'forest', 'ほかの自然（森）は育てない');
+  eq(tile(r.state, 3, 4), 'mountain', 'ユニットのいるマスも山');
+  ok(pos(r.state, e.id)[1] !== 4 && R.isPassable(tile(r.state, pos(r.state, e.id)[0], pos(r.state, e.id)[1])), '育つの押し出しを切っていても、足元の山からは押し出される: ' + pos(r.state, e.id));
   var cast = r.events.filter(function (ev) { return ev.type === 'cast'; })[0];
-  eq(sorted(cast.grows[0].blocked), ['3,4', '4,3']);
+  eq(sorted(cast.grows[0].blocked), ['4,3']);
   var pv = R.previewAct(g.s, g.a.id, [3, 5], 'up');
-  eq(sorted(pv.grows[0].cells), ['2,3', '3,2', '3,3'], '予測にも育つマスが出る');
+  eq(sorted(pv.grows[0].cells), ['2,3', '3,2', '3,3', '3,4'], '予測にも育つマスが出る');
 }, { mountainSize: 5, pushOut: false }); });
 test('育つ: 波の順（元が0、となりが1、ななめが2）', function () { withGrow(function () {
   var g = growBoard(), r = fire(g.s, g.a, 'up');
@@ -2053,15 +2124,15 @@ test('押し出し: 山になるマスにいた者は、丘から見て外向き
   eq(dealt(r, e.id), 1);
   ok(r.events.some(function (ev) { return /盛り上がる山に押し出された（右へ1マス）/.test(ev.text || ''); }), 'ログ');
 }, { mountainSize: 5 }); });
-test('押し出し: 押せないとき（盤の端・通れない・ユニットがいる）は残り、そのマスは山にならない', function () { withGrow(function () {
+test('押し出し: 1マス先へ押せないとき（通れない・ユニットがいる）も、そのマスは山になり、その向きの先の空きマスへ押し出す（オーナー 10/30）', function () { withGrow(function () {
   var g = growBoard([[5, 3, 'M']]);
   var e = tough(g.s, R.addEnemy(g.s, 'fire', 4, 3));   // 右の先は山で通れない
   var b = tough(g.s, R.addEnemy(g.s, 'fire', 3, 2));   // 上
   tough(g.s, R.addEnemy(g.s, 'fire', 3, 1));           // 上の先にユニット
   var r = fire(g.s, g.a, 'up');
-  eq([pos(r.state, e.id), pos(r.state, b.id)], [[4, 3], [3, 2]]);
-  eq([tile(r.state, 4, 3), tile(r.state, 3, 2)], ['empty', 'empty']);
-  eq(dealt(r, e.id), 1, '押せなくても直撃は受ける');
+  eq([tile(r.state, 4, 3), tile(r.state, 3, 2)], ['mountain', 'mountain'], '足元にも山');
+  eq([pos(r.state, e.id), pos(r.state, b.id)], [[6, 3], [3, 0]], 'その向きで最初の空きマスへ（山・人のマスは越える）');
+  eq(dealt(r, e.id), 1, '直撃は受ける');
 }, { mountainSize: 5 }); });
 test('押し出し: ななめのマス（3×3）は、術者の向きの軸で外へ', function () { withGrow(function () {
   var g = growBoard();
@@ -2189,6 +2260,7 @@ test('草むら: 低いので雷は落ちない（その先の森に落ちる）
 test('草むら: 水が流れると沈んで川になる', function () {
   var s = board(['......', '......', '......', '..g...', '......', '......']);
   var a = R.addAlly(s, 'water', 2, 5);
+  old(s, OLD_WATER);   // 草むらは育つ（水2マスの頃）の自然
   var r = fire(s, a, 'up');
   eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['puddle', 'river'], '空きは水たまり、草むらは沈んで川');
 });
@@ -2365,8 +2437,9 @@ test('強風: 強風で起こした燃え広がりは遠くまで走る（＋2�
   var s = board(rows);
   var a = R.addAlly(s, 'wind', 3, 9);
   var r = fire(s, a, 'up');
-  // 炎 (3,7) から上へ、ふつうは4マス（(3,6)〜(3,3)）、強風なら6マス（〜(3,1)）
-  eq([tile(r.state, 3, 1), tile(r.state, 3, 0)], ['smallfire', 'empty']);
+  // 炎 (3,7) から上へ、ふつうは spread.maxLength マス、強風なら galeSpreadBonus マス長い
+  var far = 7 - (B.spread.maxLength + 2);
+  eq([tile(r.state, 3, far), tile(r.state, 3, far - 1)], ['smallfire', 'empty']);
 }, { galeLength: 4, galeSpreadBonus: 2 }); });
 test('強風: 火を入れると火の渦（風と同じ）。ターン終了でやむ', function () { withGrow(function () {
   var s = board(['......', '......', '......', '..b...', '......', '......']);
@@ -2475,7 +2548,7 @@ test('overrides: そのシナリオの中だけで効き、ほかのシナリオ
   var fin = t.events.filter(function (e) { return e.type === 'finisher'; })[0];
   ok(fin && fin.name === '燃え広がり' && /右へ3マス/.test(fin.text), '燃え広がりは3マス: ' + (fin && fin.text));
   eq(JSON.stringify(B), before, 'BALANCE は元のまま');
-  eq([B.windMode, B.spread.maxLength], ['breeze', 4], '標準は風2マス・燃え広がり4マス');
+  eq([B.windMode, B.spread.maxLength], ['breeze', 3], '標準は風2マス・燃え広がり3マス（オーナー 10/29）');
   // ほかのシナリオ: 風は標準の2マス
   var o = empty(6);
   var w = R.addAlly(o, 'wind', 2, 5);
@@ -2503,7 +2576,7 @@ test('構える味方: 毎ターン同じ所に構え直し、発動フェーズ
   var s = tut1();
   var n = tutNpc(s);
   ok(n.intent, '最初のターンから構えている');
-  eq(R.forecast(s).allies.map(function (a) { return [a.id, a.dir, a.cells]; }), [[n.id, 'right', [[1, 1]]]], '狙うマスは (1,1)');
+  eq(R.forecast(s).allies.map(function (a) { return [a.id, a.dir, a.cells]; }), [[n.id, 'right', [[1, 1], [2, 1]]]], '狙うマスは風の形 (1,1)(2,1)');
   var st = s;
   for (var turn = 1; turn <= 1; turn++) {   // ターン2の終わりは敵が撃って失敗するので、ターン1だけ
     var t = R.endTurn(R.act(st, tutPlayer(st).id, { dir: 'down' }).state);   // 下に撃つ（外す）
@@ -2539,16 +2612,24 @@ test('正解の手順: (1,2) へ動いて上に火 → 風で燃え広がり、�
   eq(t.state.turn, 1, '1ターン目で勝つ');
   eq([tile(t.state, 2, 1), tile(t.state, 3, 0), tile(t.state, 4, 1)], ['smallfire', 'fire', 'fire'], '通り道は小さな炎、森は炎');
 });
-test('(2,1) に火を置いても勝てない（弱い火は燃え移らない・風も当たらない）', function () {
+test('(2,1) に火を置いても勝てる（風は2マスなので (2,1) にも当たる。10/29 に①の風の上書きを外してから）', function () {
   var s = tut1();
   var r = R.act(s, tutPlayer(s).id, { to: [2, 2], dir: 'up' });
   eq(tile(r.state, 2, 1), 'smallfire');
   var t = R.endTurn(r.state);
+  eq(names(t.events, 'finisher'), ['燃え広がり'], '構える味方の風が小さな炎に当たる');
+  eq(t.state.result, 'win', '森ごと敵が燃える');
+});
+test('火を置く所が風の形の外なら勝てない（弱い火は燃え移らない）', function () {
+  var s = tut1();
+  var r = R.act(s, tutPlayer(s).id, { to: [1, 3], dir: 'up' });   // (1,2) に小さな炎（風は (1,1)(2,1) で届かない）
+  ok(r.ok, r.error);
+  eq(tile(r.state, 1, 2), 'smallfire');
+  var t = R.endTurn(r.state);
   ok(!t.state.result, '勝負はつかない');
   ok(!t.events.some(function (e) { return e.type === 'finisher' || e.type === 'fireSpread'; }), '燃え広がりも燃え移りもない');
-  eq([tile(t.state, 3, 1), tile(t.state, 2, 1)], ['forest', 'empty'], '森は残り、小さな炎は消える');
+  eq([tile(t.state, 3, 1), tile(t.state, 1, 2)], ['forest', 'empty'], '森は残り、小さな炎は消える');
   eq(R.enemiesOf(t.state)[0].hp, B.enemy.hp);
-  eq(pos(t.state, R.enemiesOf(t.state)[0].id), [3, 1], '敵は森の中を1マス進んだだけ');
 });
 test('外したあとのターンで、構える味方の狙うマス (1,1) が光る（外す前は光らない）', function () {
   var s = tut1();
@@ -2556,7 +2637,7 @@ test('外したあとのターンで、構える味方の狙うマス (1,1) が�
   var r = R.act(s, tutPlayer(s).id, { dir: 'down' });
   eq(R.npcHintCells(r.state), [], '撃っただけでは光らない');
   var t = R.endTurn(r.state);
-  eq(R.npcHintCells(t.state), [[1, 1]], '外したあとは光る');
+  eq(R.npcHintCells(t.state), [[1, 1], [2, 1]], '外したあとは光る（風の形の2マス）');
   eq(R.npcHintCells(R.startBattle(R.loadPreset('spread')).state), [], 'ほかのシナリオでは光らない');
   var r2 = R.act(t.state, tutPlayer(t.state).id, { to: [1, 2], dir: 'up' });
   eq(R.endTurn(r2.state).state.result, 'win', '2ターン目でも勝てる');
@@ -2587,7 +2668,7 @@ test('進む敵（移動と魔法のセット）: ターン1は (3,1) へ進む�
   // ターン2に正解すれば、敵は動く前に森ごと燃えて勝つ
   eq(R.endTurn(R.act(st, tutPlayer(st).id, { to: [1, 2], dir: 'up' }).state).state.result, 'win', 'ターン2の正解で勝つ');
 });
-test('山を盛る魔法: 2マス先を真ん中に十字5マスへ一度で山。倒れた者のマスにも山、倒れなければ盛らない', function () {
+test('山を盛る魔法: 2マス先を真ん中に十字5マスへ一度で山。人のマスにも山（倒れなくても。オーナー 10/30）、残った人は山の外へ', function () {
   var s = empty(7);
   var e = R.addEnemy(s, 'mount', 3, 6, 'up');
   eq(sorted(R.shapeCells(s, 'mount', 3, 6, 'up')), sorted([[3, 5], [2, 4], [3, 4], [4, 4], [3, 3]]), '形');
@@ -2601,7 +2682,8 @@ test('山を盛る魔法: 2マス先を真ん中に十字5マスへ一度で山�
   eq([tile(t.state, 3, 5), tile(t.state, 3, 4), tile(t.state, 3, 3)], ['mountain', 'mountain', 'mountain'], '空きは山（丘ではない）');
   ok(!R.findUnit(t.state, weak.id), '3で倒れた');
   eq(tile(t.state, 2, 4), 'mountain', '倒れた者のマスにも山');
-  eq([hp(t.state, tough1.id), tile(t.state, 4, 4)], [6, 'empty'], '倒れなければ山は盛らない');
+  eq([hp(t.state, tough1.id), tile(t.state, 4, 4)], [6, 'mountain'], '倒れなくても足元に山');
+  ok(R.isPassable(tile(t.state, pos(t.state, tough1.id)[0], pos(t.state, tough1.id)[1])), '山の外へ押し出された: ' + pos(t.state, tough1.id));
 });
 test('構える味方が倒れたら失敗（ほかの味方が残っていても）', function () {
   var s = tut1();
@@ -2654,7 +2736,8 @@ function tut2With(more) {
 }
 function t2Mount(s) { return R.controllableOf(s).filter(function (a) { return a.magic === 'mount'; })[0]; }
 function t2Water(s) { return R.controllableOf(s).filter(function (a) { return a.magic === 'water'; })[0]; }
-function slopeAt(s, x, y) { return (s.slopes || {})[y * s.size + x]; }
+// 山の斜面（オーナー 10/30 から、印は持たず、くっついた山のかたまりから毎回決める: R.slopeMap）
+function slopeAt(s, x, y) { return R.slopeMap(s)[y * s.size + x]; }
 // このステージの数値（山の頂上と腕・水は正面1マス）で動く、空の盤面
 function slopeBoard(n) {
   var s = empty(n);
@@ -2704,23 +2787,23 @@ test('JSON の書き出し・読み込みで増援と突進の敵が残る。横
   var w = R.loadPreset('ex3');
   var rw = R.importLayout(R.exportLayout(w));
   ok(rw.ok, rw.error);
-  eq([rw.state.size, R.rowsOf(rw.state), rw.state.tiles.length], [12, 7, 84], '横長の盤面');
+  eq([rw.state.size, R.rowsOf(rw.state), rw.state.tiles.length], [10, 7, 70], '横長の盤面（③は 10×7。オーナー 10/30）');
   var rs = R.editResize(w, 6).state;
   eq([rs.size, R.rowsOf(rs), rs.h], [6, 6, undefined]);
 });
-test('山の魔法: 正面2マス先が頂上、上下左右が腕の十字。腕に下り坂の向き、頂上に「peak」の印', function () {
+test('山の魔法: 2マス先を真ん中に十字の山。くっついた山のかたまりの真ん中が頂上、ほかは頂上から下る向きの斜面', function () {
   var st = crossBoard();
   ok([[3, 5], [2, 4], [3, 4], [4, 4], [3, 3]].every(function (c) { return tile(st, c[0], c[1]) === 'mountain'; }), '十字の山');
   eq([slopeAt(st, 3, 4), slopeAt(st, 3, 3), slopeAt(st, 4, 4), slopeAt(st, 3, 5), slopeAt(st, 2, 4)], ['peak', 'up', 'right', 'down', 'left'], '頂上と腕');
 });
-test('山の魔法: 腕が盤の外に出るなら、その腕だけなくなる（ステージでは T 字）。山は通れない', function () {
+test('山の魔法: 腕が盤の外に出るなら、その腕だけなくなる（ステージでは T 字）。T 字の頂上は (0,3)。山は通れない', function () {
   var s = tut2();
   var r = fire(s, t2Mount(s), 'up');
   eq([slopeAt(r.state, 0, 3), slopeAt(r.state, 0, 2), slopeAt(r.state, 1, 3), slopeAt(r.state, 0, 4)], ['peak', 'up', 'right', 'down'], '頂上 (0,3)、腕 (0,2)(1,3)(0,4)');
   eq(r.state.tiles.filter(function (t) { return t === 'mountain'; }).length, 4, 'T 字の4マス');
   ok(!R.isPassable('mountain'));
 });
-test('山の魔法: 置くマスの水たまり・川は泥沼になり、頂上・腕の印もつかない。山でなくなったマスから印は消える', function () {
+test('山の魔法: 置くマスの水たまり・川は泥沼になり、斜面もない。山でなくなったマスの斜面は消える', function () {
   var s = slopeBoard(7);
   R.setTile(s, 4, 4, 'puddle');
   R.setTile(s, 2, 4, 'river');
@@ -2729,19 +2812,19 @@ test('山の魔法: 置くマスの水たまり・川は泥沼になり、頂上
   R.setTile(st, 3, 3, 'empty');
   eq(slopeAt(st, 3, 3), undefined, '山でなくなったら印も消える');
 });
-test('水: 空きに撃つと、このステージでは水たまり1マス（標準は水たまり2マス）', function () {
+test('水: 空きに撃つと水たまり1マス（オーナー 10/29 から、このステージもほかも同じ）', function () {
   var s = tut2();
   var r = fire(s, t2Water(s), 'up');
   eq([tile(r.state, 1, 4), tile(r.state, 1, 3)], ['puddle', 'empty']);
   var o = empty(6);
   var r2 = fire(o, R.addAlly(o, 'water', 2, 5), 'up');
-  eq([tile(r2.state, 2, 4), tile(r2.state, 2, 3)], ['puddle', 'puddle'], 'ほかのシナリオは標準の水たまり2マス');
+  eq([tile(r2.state, 2, 4), tile(r2.state, 2, 3)], ['puddle', 'empty'], 'ほかのシナリオも同じ');
 });
-test('水: 山の腕に当てると、その腕の次のマスから頂上と反対の向きへ盤の端まで川（水の向きではなく、山の高さで決まる）', function () {
+test('水: 山の斜面に当てると、その次のマスから下りの向き（頂上と反対）へ盤の端まで川（水の向きではなく、山の高さで決まる）', function () {
   // 上の腕 (3,3) に右向きで当てる → 川は上へ (3,2)〜(3,0)
   var st = crossBoard();
   var r = R.act(st, R.addAlly(st, 'water', 2, 3, 'right').id, { dir: 'right' });
-  ok(/山の腕に当たって、頂上と反対の上へ川が流れ出した/.test(r.events[0].text), r.events[0].text);
+  ok(/山の斜面に当たって、下りの上へ川が流れ出した/.test(r.events[0].text), r.events[0].text);
   eq([tile(r.state, 3, 2), tile(r.state, 3, 1), tile(r.state, 3, 0), tile(r.state, 4, 3)], ['river', 'river', 'river', 'empty'], '上へ盤の端まで。水の向き（右）には流れない');
   eq(tile(r.state, 3, 3), 'mountain', '腕は山のまま');
   // 右の腕 (4,4) に下向きで当てる → 川は右へ (5,4)(6,4)
@@ -2763,7 +2846,7 @@ test('水: 山の頂上に当たると、すべての腕から川が流れる（
   // 丘の上から撃つと1マス先から流れる（高台）。(1,4) の丘から右へ → 左の腕 (2,4) の次、頂上 (3,4) に当たる
   R.setTile(st, 1, 4, 'hill');
   var r = R.act(st, R.addAlly(st, 'water', 1, 4, 'right').id, { dir: 'right' });
-  ok(/山の頂上に当たって、4つの腕から川が流れ出した/.test(r.events[0].text), r.events[0].text);
+  ok(/山の頂上に当たって、\d方向へ川が流れ出した/.test(r.events[0].text), r.events[0].text);   // 左は腕の先がすぐ丘なので、川のマスは数えない
   eq([tile(r.state, 3, 2), tile(r.state, 3, 0)], ['river', 'river'], '上の腕から上へ盤の端まで');
   eq([tile(r.state, 5, 4), tile(r.state, 6, 4)], ['river', 'river'], '右の腕から右へ');
   eq(tile(r.state, 3, 6), 'river', '下の腕から下へ');
@@ -2803,8 +2886,8 @@ test('突進の敵: 人は無視して一番近い村へ、このステージで
   ok(!t.events.some(function (e) { return e.type === 'cast'; }), '撃たない');
   eq(t.events.filter(function (e) { return e.type === 'move'; })[0].text, '敵Aが村へ向かって1マス走った');
 });
-test('突進の敵: 山・川・水たまり・泥沼・ユニットのいるマスは通らず、回り道する', function () {
-  ['mountain', 'river', 'puddle', 'mud', 'unit'].forEach(function (wall) {
+test('突進の敵: 山・川・水たまり・泥沼は通らず、回り道する。ユニットのいるマスは通り抜ける（オーナー 10/30）', function () {
+  ['mountain', 'river', 'puddle', 'mud'].forEach(function (wall) {
     var s = R.loadPreset('tut2');
     s.units = s.units.filter(function (u) { return u.side !== 'enemy'; });
     var e = R.addEnemy(s, 'earth', 3, 1, 'down'); e.stand = 'rush';
@@ -2814,6 +2897,12 @@ test('突進の敵: 山・川・水たまり・泥沼・ユニットのいるマ
     ok(r.reach && !r.path.some(function (c) { return c[0] === 3 && c[1] === 2; }), wall + ' を通らない: ' + JSON.stringify(r.path));
     eq(r.path.length, 4, wall + ': 回り道で4マス（まっすぐなら3マス）');
   });
+  var s = R.loadPreset('tut2');
+  s.units = s.units.filter(function (u) { return u.side !== 'enemy'; });
+  var e = R.addEnemy(s, 'earth', 3, 1, 'down'); e.stand = 'rush';
+  R.addEnemy(s, 'earth', 3, 2, 'down');
+  var r = R.rushRoute(s, R.findUnit(s, e.id));
+  eq(r.path, [[3, 2], [3, 3], [3, 4]], 'ユニットのマスは通り抜けて、まっすぐ3マス');
 });
 test('突進の敵: 道がなければ、届くマスのうち村に一番近いマスまで走って待つ（そこにいればその場で待つ）', function () {
   var st = t2Solved(tut2());
@@ -2887,12 +2976,14 @@ test('水 → 山の順: 腕のマスが水たまり → 泥沼（腕になら�
   eq([tile(m.state, 1, 3), slopeAt(m.state, 1, 3)], ['mud', undefined], '泥沼');
   var st = R.endTurn(m.state).state;
   eq(st.result, null, '1ターン目では負けない');
-  // 立て直しの一例: 山使いが (1,5) へ動いて上に山（真ん中 (1,3) は泥沼のまま、右の腕 (2,3) ができる）→ 水使いが (2,4) から上の右の腕に水 → 右へ川
+  // 立て直しの一例（11/03 に探した。今の決まりでは、この1通り）: 山使いが (1,5) へ動いて上に山 → (1,4) の水使いは足元の山から右へ押し出される。
+  //   (1,4) は左の山とくっついて、右へ下る斜面になる → 水使いが (2,4) から左の (1,4) に水 → 右へ川が流れて5行目がふさがる。
+  //   （右の腕 (2,3) は真ん中が泥沼なのでほかの山と離れた1マスの山＝頂上。そこに水を当てると、下へも流れて村を押し流す）
   var a = R.act(st, t2Mount(st).id, { to: [1, 5], dir: 'up' });
-  eq(slopeAt(a.state, 2, 3), 'right', '右の腕');
-  var b = R.act(a.state, t2Water(a.state).id, { to: [2, 4], dir: 'up' });
-  eq([tile(b.state, 3, 3), tile(b.state, 4, 3), tile(b.state, 5, 3)], ['river', 'river', 'river']);
+  eq([slopeAt(a.state, 1, 4), slopeAt(a.state, 2, 3)], ['right', 'peak']);
+  var b = R.act(a.state, t2Water(a.state).id, { to: [2, 4], dir: 'left' });
   ok(b.ok, b.error);
+  eq([tile(b.state, 3, 4), tile(b.state, 4, 4), tile(b.state, 5, 4)], ['river', 'river', 'river']);
   eq(t2Run(b.state, 5).result, 'win', '2ターン目に立て直して勝つ');
 });
 test('増援: 毎ターンの終わりに上の端 (3,0) から1体。ふさがっていたら出られない。overrides で切れる', function () {
@@ -2966,13 +3057,13 @@ test('overrides: このシナリオの中だけで効き、ほかのシナリオ
   var st = t2Solved(tut2());
   R.endTurn(st); R.forecast(st);
   eq(JSON.stringify(B), before, 'BALANCE は元のまま');
-  eq([B.tutorial.slope, B.waterLength, B.ally.move, B.enemy.rushMove, B.mission.defense.sealWin], [false, 2, 2, 3, false]);
-  // ほかのシナリオ: 山の魔法に頂上・腕の印はつかず、山に水は今どおり（向きの奥へ源流）
+  eq([B.tutorial.slope, B.waterLength, B.ally.move, B.enemy.rushMove, B.mission.defense.sealWin], [true, 1, 2, 3, false], '標準の値（②の上書きは突進1マス・道をふさいだらクリア）');
+  // ほかのシナリオでも、山に水は斜面を下る（オーナー 10/29 から、どの山も同じ決め方）
   var o = empty(7);
   var st2 = fire(o, R.addAlly(o, 'mount', 3, 6, 'up'), 'up').state;
-  eq(st2.slopes, undefined, '頂上・腕の印はない');
+  st2.units = st2.units.filter(function (u) { return u.magic !== 'mount'; });
   var r = R.act(st2, R.addAlly(st2, 'water', 2, 3, 'right').id, { dir: 'right' });
-  eq([tile(r.state, 3, 3), tile(r.state, 4, 3), tile(r.state, 6, 3), tile(r.state, 3, 2)], ['mountain', 'river', 'river', 'empty'], '今どおり、山を越えて向きの奥へ川');
+  eq([tile(r.state, 3, 3), tile(r.state, 3, 2), tile(r.state, 3, 0), tile(r.state, 4, 3)], ['mountain', 'river', 'river', 'empty'], '上の斜面から上へ。水の向き（右）には流れない');
 });
 
 // ---------------------------------------------------------------
