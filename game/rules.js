@@ -80,6 +80,9 @@
 
   // 【育つ】燃える植物（森・草むら）と、燃えて強い炎になる植物（今は森だけ）
   function isPlant(t) { return t === 'forest' || t === 'thicket'; }
+  // 村は燃える（木でできていて、森と同じく火が点くと燃える。オーナー 11/03）。燃えた村は壊れ、そのマスは炎になる
+  function isVillage(o) { return !!o && o.side === 'object' && o.kind === 'village'; }
+  function burnVillage(s, o, ctx) { addHit(ctx, o, o.hp, 'burn', [o.x, o.y]); setTile(s, o.x, o.y, 'fire'); }
   // 【育つ】吹いている風（風・強風）
   function isWind(t) { return t === 'breeze' || t === 'gale'; }
   // 空気の中のもの・すぐ消える跡（吹いている風・強風・花びら）。地面に置かれた自然ではないので、
@@ -569,9 +572,11 @@
     // 強い炎になるのは、燃えた森のマス（【育つ】草むらは燃えるが、今は弱い炎）
     var strongList = burnedList.filter(function (c) { var bt = burned[key(c[0], c[1])]; return burnsStrong(bt); });
     var grassN = burnedList.length - strongList.length;
+    var villagesBurned = 0;
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
+      if (isVillage(u)) { burnVillage(s, u, ctx); villagesBurned++; return; }   // 通り道の村は燃える（マスは炎。燃え広がりはそのまま先へ走る。オーナー 11/03）
       if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher', c);
       else addHit(ctx, u, B.fire.weakDamage, 'weakfire', c);
     });
@@ -583,7 +588,8 @@
       text: '燃え広がり！ ' + DIRS[dir].name + 'へ' + path.length + 'マス走り、' +
         (strongList.length ? '森' + strongList.length + 'つが燃えた（燃えた森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
           : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
-        (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '')
+        (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '') +
+        (villagesBurned ? '。村' + villagesBurned + 'つも燃えた' : '')
     });
     if (mountainAt) { ctx.phrases.push('燃え広がりが山に届いて火が点いた'); doFunka(s, mountainAt[0], mountainAt[1], ctx, ev, {}); }
     return fin;
@@ -896,7 +902,8 @@
       } else if (u.magic === 'senpu') {
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
-        if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
+        if (isVillage(o)) { burnVillage(s, o, ctx); ctx.phrases.push(unitLabel(s, o) + 'に火が点いて燃えた'); }   // 村は燃える（オーナー 11/03）
+        else if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
         else if (t === 'smallfire' && B.grow.enabled) { setTile(s, x, y, 'fire'); ctx.phrases.push('【育つ】小さな炎が炎に育った'); ctx.grows.push({ origin: [x, y], tile: 'fire', cells: [[x, y]], tiles: ['fire'], wave: [0], blocked: [], pushed: [] }); }
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
         else if (isWind(t)) { ctx.phrases.push('【新案】吹いている' + tileName(t) + 'に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
@@ -1777,8 +1784,12 @@
     if (!mv) return reachInfo(s, u);
     var here = { dist: {}, order: [[u.x, u.y]] };
     here.dist[key(u.x, u.y)] = 0;
-    if (u.stuck || u.x !== mv.to[0] || u.y !== mv.to[1]) return here;
+    if (u.x !== mv.to[0] || u.y !== mv.to[1]) return here;
+    // 動いた味方の泥沼は、このターンの移動ではまったもの（はまっている味方は動けないので）。元の位置から数え直すときは、はまる前として数える（オーナー 11/03「移動させた後ももう一度触ったら変えられる」）
+    var wasStuck = u.stuck;
+    u.stuck = false;
     var r = reachInfo(s, u, mv.from), dist = {}, order = [];
+    u.stuck = wasStuck;
     r.order.forEach(function (c) {
       var o = unitAt(s, c[0], c[1]);
       if (o && o !== u) return;   // 元の位置に、もうほかの駒がいる
@@ -1791,10 +1802,9 @@
   function reachableCells(s, unitId) {
     var u = findUnit(s, unitId);
     if (!u) return {};
-    if (restancing(u)) { var here = {}; here[key(u.x, u.y)] = 0; return here; }   // 【一斉】構え直しは動けない
     return u.side === 'ally' ? moveInfo(s, u).dist : reachInfo(s, u).dist;
   }
-  // 【一斉】このターンもう構えた（か待機した）味方が、構え直すところか
+  // 【一斉】このターンもう構えた（か待機した）味方が、構え直すところか（構え・待機・移動は発動まで何度でも直せる。オーナー 11/03）
   function restancing(u) { return simulOn() && !!u && u.side === 'ally' && !u.npc && u.acted; }
 
   function moveUnit(s, u, x, y, dist, ev) {
@@ -1805,6 +1815,7 @@
   }
   // 味方を to へ動かす（dist: 元の位置からの歩数。0 は元の位置へ戻る＝移動の取り消し）
   function allyStep(s, u, to, dist, ev) {
+    if (u.moved) delete u.stuck;   // 動き直し: このターンの移動ではまった泥沼は、はまる前に戻す（行き先が泥沼なら、またはまる）
     if (dist === 0) {
       var back = [u.x, u.y];
       u.x = to[0]; u.y = to[1];
@@ -1860,8 +1871,8 @@
     var dir = opts.dir || u0.facing;
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
     var same = to[0] === u0.x && to[1] === u0.y;
-    var dist = same ? 0 : again ? undefined : moveInfo(s0, u0).dist[key(to[0], to[1])];
-    if (dist === undefined) return fail(s0, again ? '構え直しでは動けない（向きと構えだけ）' : u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
+    var dist = same ? 0 : moveInfo(s0, u0).dist[key(to[0], to[1])];   // 【一斉】構え直しでも動ける（元の位置から数える。オーナー 11/03）
+    if (dist === undefined) return fail(s0, u0.stuck && !u0.moved ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
     if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, '宝を持っている間は撃てない（待機だけ）');
 
     var s = clone(s0);
@@ -1870,7 +1881,7 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
-    if (u.stuck && !again && !u.moved) {   // このターンに動いて泥沼にはまったのなら、休むのは次のターン
+    if (u.stuck && !again && !u.moved && !simulOn()) {   // このターンに動いて泥沼にはまったのなら、休むのは次のターン。【一斉】休みはターンの終わりに数える
       unstick(u);
       ev.push({ type: 'mudSkip', id: u.id, text: unitLabel(s, u) + 'は泥沼にはまっていて動けない（1回休み）' });
     }
@@ -1905,7 +1916,7 @@
     var u0 = findUnit(s0, unitId);
     if (!u0 || u0.side !== 'ally') return fail(s0, '味方を選んでいない');
     if (u0.npc) return fail(s0, '構える味方には指示できない');
-    if (u0.acted) return fail(s0, restancing(u0) ? '構え直しでは動けない（向きと構えだけ）' : 'この味方はもう行動した');
+    if (u0.acted && !restancing(u0)) return fail(s0, 'この味方はもう行動した');   // 【一斉】構え・待機のあとも、発動までは動き直せる（オーナー 11/03）
     if (!to || (to[0] === u0.x && to[1] === u0.y)) return fail(s0, 'もうそこにいる');
     var dist = moveInfo(s0, u0).dist[key(to[0], to[1])];
     if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
@@ -1930,6 +1941,21 @@
     return { ok: true, state: s, events: [{ type: 'reorder', id: a.id, text: unitLabel(s, a) + 'の発動を' + (j + 1) + '番目にした' }], steps: [] };
   }
 
+  // 【一斉】ターンの始めに、操作できる味方を全員「構え」にする（オーナー 11/03「デフォルトで魔法を構えていて、そのままターン終了しても撃つ」）。
+  //   向きは今の向き。順番は前のターンの順（s.lastOrder。待機した味方はそのうしろ）、1ターン目は味方の並び順。宝を持っている味方は待機
+  //   構え・待機・移動は発動を押すまで何度でも直せる（act・move）。1人ずつ（single）のときは何もしない
+  function armAllies(s) {
+    if (!simulOn()) return;
+    var order = (s.lastOrder || []).slice();
+    controllableOf(s).forEach(function (a) { if (order.indexOf(a.id) < 0) order.push(a.id); });
+    var n = 0;
+    order.forEach(function (id) {
+      var a = findUnit(s, id);
+      if (!a || a.side !== 'ally' || a.npc) return;
+      a.acted = true;
+      if (canShoot(s, a, [a.x, a.y])) a.stance = { n: ++n }; else delete a.stance;
+    });
+  }
   function allAlliesActed(s) {
     var al = controllableOf(s);   // 構える味方は数えない
     return al.length > 0 && al.every(function (a) { return a.acted; });
@@ -2056,19 +2082,22 @@
   //   2. その時点の盤面で、自分や他の敵がダメージを受ける組み合わせは選ばない
   //   3. 残りから狙い（人数・近い人・自然）で選ぶ。同点なら 移動が短い → 見つけた順（上右下左の幅優先）→ 向き（上右下左）
   //   4. 狙いで点が付く組み合わせがなければ、一番近い味方へ最大2マス進んで、その方を向く
-  function planEnemy(s, e) {
+  //   noMove: 動かずに、今の位置で予告だけ決める（1ターン目。敵は置いた所から始まる。オーナー 11/03。IMPROVE_ターンの流れ 段1）
+  function planEnemy(s, e, noMove) {
     if (e.stand === 'still') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'still' };   // 動かない: 移動も予告もしない
     // 進む: ターンの始めには何もしない（移動と魔法はセットで、敵の発動のときに行う。marchPhase）
     if (e.stand === 'march') return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'march' };
     // 突進: ターンの始めに村へ走る（rushMove）。予告は出さない
+    if (e.stand === 'rush' && noMove) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' };
     if (e.stand === 'rush') { var rr = rushRoute(s, e); return { to: rr && rr.stop ? rr.path[rr.stop - 1] : [e.x, e.y], dir: e.facing, dist: 0, kind: 'rush' }; }
     // 展示ステージ③: ボスは前へ1マス進んで一撃を予告（ふさがれていたら進まない）。取り巻きは風の人へまっすぐ進み、隣に来たら体当たりを予告
     if (e.stand === 'boss') {
-      var bs = e.stuck ? null : bossStep(s, e);
-      return { to: bs || [e.x, e.y], dir: e.facing, dist: bs ? 1 : 0, kind: 'boss', blocked: !bs && !e.stuck };
+      var bs = e.stuck || noMove ? null : bossStep(s, e);
+      return { to: bs || [e.x, e.y], dir: e.facing, dist: bs ? 1 : 0, kind: 'boss', blocked: !bs && !e.stuck && !noMove };
     }
     if (e.stand === 'float') {
       var fr = floatRoute(s, e), ft = fr.target ? findUnit(s, fr.target) : null;
+      if (noMove && fr.path.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'float', noIntent: true };   // 動かない: 隣でなければ予告もしない
       var fdir = fr.adjacent && ft ? faceToward(fr.to[0], fr.to[1], ft) : e.facing;
       if (!fr.adjacent && fr.path.length) { var fl = fr.path.length > 1 ? fr.path[fr.path.length - 2] : [e.x, e.y]; fdir = stepDirOf(fl, fr.to); }
       return { to: fr.to, dir: fdir, dist: fr.path.length, kind: 'float', noIntent: !fr.adjacent };
@@ -2076,7 +2105,7 @@
     if (!alliesOf(s).length) return null;
     var allies = alliesOf(s).filter(function (a) { return !hidden(s, a, e); });
     if (!allies.length) return { to: [e.x, e.y], dir: e.facing, dist: 0, kind: 'lost' };
-    var info = reachInfo(s, e);
+    var info = noMove ? { order: [[e.x, e.y]], dist: (function () { var d = {}; d[key(e.x, e.y)] = 0; return d; })() } : reachInfo(s, e);   // noMove: 今の位置だけ
     // 「的」: 的があれば一番近い的へ向かう。的がない（宝がまだ拾われていない・戦闘）なら「近い人」と同じ
     var targets = e.aim === 'target' ? missionTargets(s) : [];
     var aim = e.aim === 'target' && !targets.length ? 'near' : e.aim;
@@ -2140,17 +2169,18 @@
   }
 
   // 1. 敵の移動と予告（敵の順に1体ずつ）
-  function enemyPlanPhase(s, ev, step) {
+  // 敵の移動と予告。noMove: 動かずに予告だけ（1ターン目。オーナー 11/03「味方から動くのを基本に」。2ターン目からは前のターンの終わりに動く）
+  function enemyPlanPhase(s, ev, step, noMove) {
     var ids = enemiesOf(s).map(function (e) { return e.id; });
     ids.forEach(function (id) {
       if (s.result) return;
       var e = findUnit(s, id);
       if (!e) return;
       e.intent = false;
-      if (e.stand === 'rush') { rushMove(s, e, ev, step); return; }   // 突進: 村へ走って、隣なら体当たり
-      var plan = planEnemy(s, e);
+      if (e.stand === 'rush') { if (!noMove) rushMove(s, e, ev, step); return; }   // 突進: 村へ走って、隣なら体当たり（1ターン目は走らない）
+      var plan = planEnemy(s, e, noMove);
       if (!plan || plan.kind === 'still' || plan.kind === 'march') { e.intent = false; return; }
-      if (e.stuck) {
+      if (e.stuck && !noMove) {
         unstick(e);
         ev.push({ type: 'mudSkip', id: e.id, text: unitLabel(s, e) + 'は泥沼にはまっていて動けない（1回休み）' });
       }
@@ -2579,7 +2609,7 @@
     for (var y = 0; y < rowsOf(s); y++) {
       for (var x = 0; x < s.size; x++) {
         var ft = getTile(s, x, y);
-        if (!isPlant(ft)) continue;   // 森と【育つ】草むらへ燃え移る
+        if (!isPlant(ft) && !isVillage(unitAt(s, x, y))) continue;   // 森と【育つ】草むら、村（オーナー 11/03）へ燃え移る
         if (neighbors(s, x, y).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'fire' || nt === 'firewhirl'; })) out.push([x, y]);
       }
     }
@@ -2595,6 +2625,7 @@
       if (s.tiles[i] !== 'fire' || skip[i]) continue;
       var a = (old[i] || 0) + 1;
       var life = (s.fireLife && s.fireLife[i]) || B.fire.burnOutTurns;   // 【育つ】植物が燃えた炎は植物ごとの長さ
+      if (!(life > 0)) continue;   // 0 は燃え尽きない（オーナー 11/03）。年齢も数えない
       if (a >= life) cells.push([i % s.size, Math.floor(i / s.size)]);
       else age[i] = a;
     }
@@ -2605,15 +2636,27 @@
   function timePasses(s, ev, step) {
     // 1. 炎が隣の森へ燃え移る（処理開始時の盤面で同時に判定）
     var caught = fireSpreadCells(s);
-    var caughtGrass = caught.filter(function (c) { return getTile(s, c[0], c[1]) === 'thicket'; }).length;
+    var caughtV = [], what = {};
+    caught.forEach(function (c) {
+      var o = unitAt(s, c[0], c[1]);
+      if (isVillage(o)) caughtV.push(o);
+      what[isVillage(o) ? '村' : getTile(s, c[0], c[1]) === 'thicket' ? '草むら' : '森'] = true;
+    });
     caught.forEach(function (c) { setTile(s, c[0], c[1], 'fire'); });
-    var caughtWhat = !caughtGrass ? '森' : caughtGrass === caught.length ? '草むら' : '森・草むら';
+    var caughtWhat = ['森', '草むら', '村'].filter(function (w) { return what[w]; }).join('・');
     if (caught.length) ev.push({ type: 'fireSpread', cells: caught, text: '炎が隣の' + caughtWhat + 'へ燃え移った（' + caught.length + 'マス）' });
+    // 燃え移った村は壊れる（removeDead は下の 2 のダメージのあと。村が壊れた数は防衛の負けに数える）
+    caughtV.forEach(function (o) {
+      var amount = o.hp;
+      o.hp = 0;
+      ev.push({ type: 'damage', id: o.id, side: o.side, amount: amount, src: 'burn', cells: [[o.x, o.y]], text: '炎が' + unitLabel(s, o) + 'に燃え移った' });
+    });
     step();
 
     // 2. 炎の上にいる者にダメージ
     var burnEv = [];
     s.units.forEach(function (u) {
+      if (u.hp <= 0) return;   // いま燃え移って壊れた村
       if (getTile(s, u.x, u.y) === 'fire' || getTile(s, u.x, u.y) === 'firewhirl') {
         u.hp -= B.fireTileDamage;
         burnEv.push({ type: 'damage', id: u.id, side: u.side, amount: B.fireTileDamage, src: 'burn', cells: [[u.x, u.y]], text: '炎の上の' + unitLabel(s, u) + 'に' + B.fireTileDamage + 'ダメージ（残りHP ' + Math.max(0, u.hp) + '）' });
@@ -2680,10 +2723,12 @@
     }
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
     //   （このターンに動いて泥沼にはまった味方は、次のターンに休む）
-    alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck && !a.moved) unstick(a); });
+    //   【一斉】泥沼で休んでいた味方（動いていない）は、構えていても、ここで休みを使ったことにする
+    alliesOf(s).forEach(function (a) { if ((!a.acted || simulOn()) && a.stuck && !a.moved) unstick(a); });
 
     // 3a. 構える味方の魔法の発動（敵より先）。【一斉】味方の構えを構えた順に発動（構える味方はその最後）
     if (simulOn()) {
+      s.lastOrder = stanceList(s).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });   // 次のターンの最初の順番
       if (stanceList(s).length) {
         ev.push({ type: 'phase', text: '── 構えの発動（構えた順） ──' });
         fireStances(s, ev, step);
@@ -2730,14 +2775,20 @@
     // 4e. 展示ステージ③: ヒントの数えと、取り巻きが湧く
     if (!s.result && s.ex) exTurnEnd(s, ev, step);
 
-    // 5. 次のターン: 構える味方が構え直す → 敵の移動と予告
+    // 5. 次のターンの用意: 構える味方が構え直す → 敵の移動と予告（このターンの終わりに。オーナー 11/03「前のターンの終わり」）→ 次のターン開始
+    //   敵は置いた所から1ターン目を始め（startBattle）、2ターン目からは前のターンの終わりに動いて予告する。味方から動くのが基本
+    if (!s.result) {
+      alliesOf(s).forEach(function (a) { a.acted = false; delete a.moved; });
+      armAllies(s);   // 【一斉】全員、前のターンの順で構える
+      allyReadyPhase(s, ev, step);
+      if (s.enemyActs && enemiesOf(s).length) {
+        ev.push({ type: 'phase', text: '── 敵の移動と予告（ターン' + s.turn + 'の終わり） ──' });
+        enemyPlanPhase(s, ev, step);
+      }
+    }
     if (!s.result) {
       s.turn += 1;
-      alliesOf(s).forEach(function (a) { a.acted = false; delete a.moved; });
       ev.push({ type: 'turnStart', text: '── ターン' + s.turn + ' 開始 ──' });
-      step();
-      allyReadyPhase(s, ev, step);
-      if (s.enemyActs) enemyPlanPhase(s, ev, step);
     }
     step();
     return { ok: true, state: s, events: ev, steps: steps };
@@ -2750,8 +2801,9 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
+    armAllies(s);   // 【一斉】全員、味方の並び順で構える（オーナー 11/03）
     allyReadyPhase(s, ev, step);
-    if (s.enemyActs) enemyPlanPhase(s, ev, step);
+    if (s.enemyActs) enemyPlanPhase(s, ev, step, true);   // 1ターン目: 敵は置いた所から動かずに予告（味方から動く。オーナー 11/03）
     step();
     return { ok: true, state: s, events: ev, steps: steps };
   }
@@ -3320,14 +3372,14 @@
       desc: '【敵】味方 草・水・風、敵2体（火・狙い 人数）。敵は動いてから予告（紫）を出し、ターンの最後に発動する。敵Bは森の上で構える。敵Aの火の予告先に風を吹かせておくと、敵Aの火で火の渦が起き、森の上の敵Bに強い炎（20）が入る。森でないマスは弱い炎（5＋火傷）。水で消す手もある。',
       rows: ['......', '......', '..F...', '..F...', '......', '......'],
       allies: [['grass', 0, 5], ['water', 5, 5], ['wind', 3, 5]],
-      enemies: [['fire', 3, 0], ['fire', 2, 1]]
+      enemies: [['fire', 3, 2, {}, 'down'], ['fire', 2, 3, {}, 'down']]   // 敵は前の「1ターン目の頭に動いたあと」の位置に置いた（1ターン目は動かない。オーナー 11/03）
     },
     {
       id: 'trap', name: '【敵】罠に踏み込む',
-      desc: '【敵】味方 草・火・風、敵2体（土）。敵Aは「通れない所だけ避ける」ので炎の列を踏み越えて来る。敵Bは「危ない所も避ける」ので炎の向こうから出られない。踏み込んできた敵Aを、火と風の燃え広がりで迎え撃つ（足元が森でないと弱い炎で、5＋火傷）。炎の列は2回目のターン終了で燃え尽き、敵Bが出てくる。敵Bの土の予告先に立つと倒れる。',
+      desc: '【敵】味方 草・火・風、敵2体（土）。敵Aは「通れない所だけ避ける」ので炎の列を踏み越えて来た所（(1,3)）から始まる。敵Bは「危ない所も避ける」ので炎の向こうから出られない。踏み込んできた敵Aを、火と風の燃え広がりで迎え撃つ（足元が森でないと弱い炎で、5＋火傷）。炎の列は燃え尽きない（オーナー 11/03）ので、敵Bは炎の列がある間は出てこない。敵Bの土の予告先に立つと倒れる。',
       rows: ['......', '......', 'XXXXXX', '......', '.FFFF.', '......'],
       allies: [['grass', 0, 5], ['fire', 2, 5], ['wind', 5, 5]],
-      enemies: [['earth', 1, 1, { avoid: 'wall' }], ['earth', 4, 1, { avoid: 'danger' }]]
+      enemies: [['earth', 1, 3, { avoid: 'wall' }, 'down'], ['earth', 4, 1, { avoid: 'danger' }, 'down']]   // 敵は前の「1ターン目の頭に動いたあと」の位置に置いた（1ターン目は動かない。オーナー 11/03）
     },
     {
       id: 'enemyThunder', name: '【敵】敵だけの雷', enemyOnly: ['thunder'],
@@ -3341,7 +3393,7 @@
       desc: '味方 草・火・風、敵1体（火）。森を並べて敵ごと燃やす練習。',
       rows: ['......', '.....M', '......', '......', '......', '......'],
       allies: [['grass', 1, 5], ['fire', 3, 5], ['wind', 4, 5]],
-      enemies: [['fire', 2, 0]]
+      enemies: [['fire', 2, 2, {}, 'down']]   // 敵は前の「1ターン目の頭に動いたあと」の位置に置いた（1ターン目は動かない。オーナー 11/03）
     },
     {
       id: 'fireEnemy', name: '火の敵',
@@ -3456,7 +3508,7 @@
       // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
       // 突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち。道をふさぎきったらキーでクリアにできる（オーナー 10/17）
       //   オーナー 10/29: ルールの上書き（水は正面1マス・山の頂上と腕・移動2）は外した。どのシナリオとも同じ値で動く。残すのはステージの中身（敵の動き・勝ち方）だけ
-      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'mission.defense.sealWin': true }
+      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5 }
     },
     {
       // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
@@ -3593,7 +3645,8 @@
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'defense') {
       var T = B.mission.defense.turns;
-      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (B.mission.defense.sealWin ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
+      var canSeal = B.mission.defense.sealWin && (enemiesOf(s).some(function (e) { return e.stand === 'rush'; }) || !!(s.spawn && s.spawn.stand === 'rush'));   // ふさぐ相手（突進）がいるときだけ書く
+      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (canSeal ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
       info.lose = '村が' + B.mission.defense.loseAt + 'つ壊れる／味方が全員倒れる';
       // 「ターン4/5」の形だけ（決着の前とあとで長さを変えない。村の行は出さない。村の HP は村のマスを押すと出る。IMPROVE_controls 3-1）
       info.status.push('ターン' + Math.min(s.turn, T) + '/' + T);

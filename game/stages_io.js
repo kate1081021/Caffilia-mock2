@@ -24,16 +24,24 @@
 
   // 勝ち方。ルールにある勝ち負けの決まりから選ぶ（新しい決まりは作らない）
   //   boss: ステージ③の決まり（s.ex。ボスを倒せば勝ち・味方が1人でも倒れたら負け）
-  //   defense / seal: お題の防衛（mission.defense.turns ターン守る。seal はふさいだらその場でクリアにできる＝ステージ②の決まり）
+  //   defense: お題の防衛（mission.defense.turns ターン守る。突進の敵の道をふさいだら、その場でクリアにもできる）。
+  //     前の「道をふさぐ」（seal）は「村を守る」と同じなので1つにした（オーナー 11/03）。前のステージの seal・sealWin の上書きは、読むと村を守るになる
   var WINS = [
     { id: 'annihilate', name: '敵を全員倒す' },
     { id: 'boss', name: 'ボスを倒す（味方が1人でも倒れたら負け）' },
-    { id: 'defense', name: '村を守る（決めたターンまで）' },
-    { id: 'seal', name: '道をふさぐ（村を守る・ふさいだらクリアにできる）' },
+    { id: 'defense', name: '村を守る（決めたターンまで守るか、道をふさいだらクリア）' },
     { id: 'escort', name: 'トロッコをゴールへ' },
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
   var OV_TURNS = 'mission.defense.turns', OV_SEAL = 'mission.defense.sealWin';
+  // 難易度（オーナー 11/03。IMPROVE_ステージ一覧 段1）: 定義の difficulty に持つ。ないものは「なし」。内蔵の①②③はチュートリアル
+  var DIFFICULTIES = [
+    { id: 'tutorial', name: 'チュートリアル' },
+    { id: 'easy', name: 'やさしい' },
+    { id: 'normal', name: 'ふつう' },
+    { id: 'hard', name: 'むずかしい' }
+  ];
+  function diffOf(def) { return def && DIFFICULTIES.some(function (d) { return d.id === def.difficulty; }) ? def.difficulty : ''; }
 
   function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
   function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
@@ -135,6 +143,7 @@
     if (d.wagon !== undefined && !inside(d.wagon)) return 'トロッコの位置が正しくない';
     if ((d.goal && !(Array.isArray(d.goal) && d.goal.every(inside))) || (d.exit && !(Array.isArray(d.exit) && d.exit.every(inside))) || (d.treasure && !inside(d.treasure))) return 'ゴール・帰り口・宝の位置が正しくない';
     if (d.mission !== undefined && !R.MISSION_INFO[d.mission]) return '知らないお題がある';
+    if (d.difficulty !== undefined && !diffOf(d)) return '知らない難易度がある';
     if (d.enemyOnly !== undefined && !(Array.isArray(d.enemyOnly) && d.enemyOnly.every(function (m) { return R.MAGIC_INFO[m]; }))) return '敵だけの魔法に知らない魔法がある';
     if (d.overrides !== undefined && !R.validOverrides(d.overrides)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
     if (d.spawn !== undefined) {
@@ -154,6 +163,8 @@
     if (err) return { ok: false, error: err };
     var s;
     try { s = R.buildPreset(def); } catch (e) { return { ok: false, error: '盤面を作れない（' + e.message + '）' }; }
+    // 前のステージの「道をふさぐ」の入・切（sealWin の上書き）は捨てる。村を守るはいつも、ふさいだらクリアにできる（オーナー 11/03）
+    if (s.overrides && s.overrides[OV_SEAL] !== undefined) { delete s.overrides[OV_SEAL]; if (!Object.keys(s.overrides).length) delete s.overrides; }
     for (var i = 0; i < s.units.length; i++) {
       var bad = fits(R, s, s.units[i]);
       if (bad) return { ok: false, error: R.unitLabel(s, s.units[i]) + ': ' + bad };
@@ -188,10 +199,6 @@
     return { state: s, dropped: dropped };
   }
 
-  function sealOn(R, s) {
-    var ov = s.overrides || {};
-    return ov[OV_SEAL] !== undefined ? !!ov[OV_SEAL] : !!R.BALANCE.mission.defense.sealWin;
-  }
   function turnsOf(R, s) {
     var ov = s.overrides || {};
     return ov[OV_TURNS] !== undefined ? ov[OV_TURNS] : R.BALANCE.mission.defense.turns;
@@ -199,7 +206,6 @@
   function winOf(R, s) {
     if (s.ex) return 'boss';
     var t = (s.mission && s.mission.type) || 'annihilate';
-    if (t === 'defense') return sealOn(R, s) ? 'seal' : 'defense';
     return t;
   }
   // exKeep: ボスの決まりを外したときに覚えておいた中身（③の取り巻きの湧き方・ミッション）。ボスに戻したら使う
@@ -213,11 +219,11 @@
       s.mission.type = 'annihilate';
     } else {
       delete s.ex;
-      s.mission.type = kind === 'seal' ? 'defense' : kind;
-      if (kind === 'defense' || kind === 'seal') {
+      if (kind === 'seal') kind = 'defense';   // 前の「道をふさぐ」
+      s.mission.type = kind;
+      if (kind === 'defense') {
         var n = Math.round(Number(turns) || R.BALANCE.mission.defense.turns);
         ov[OV_TURNS] = Math.max(1, Math.min(30, n));
-        ov[OV_SEAL] = kind === 'seal';
       }
     }
     if (!Object.keys(ov).length) delete s.overrides;
@@ -258,6 +264,65 @@
   }
 
   // ---------------------------------------------------------------
+  // 一覧の1行（オーナー 11/03。IMPROVE_ステージ一覧 段2）: 定義から、使う魔法とクリア方法を出す
+  // ---------------------------------------------------------------
+  // 使う魔法: 味方の魔法を並びの順に（同じ魔法は1つ）。構える味方（指示できない仲間）の魔法には「（仲間）」
+  function magicsOf(R, def) {
+    var seen = {}, out = [];
+    (def && def.allies || []).forEach(function (a) {
+      var npc = !!(a[3] && a[3].npc), k = a[0] + (npc ? '*' : '');
+      if (seen[k] || !R.MAGIC_INFO[a[0]]) return;
+      seen[k] = true;
+      out.push(R.MAGIC_INFO[a[0]].name + (npc ? '（仲間）' : ''));
+    });
+    return out.join('・');
+  }
+  // クリア方法の区分（オーナー 11/03「戦闘・ボス・防衛・護衛・奪取・破壊などで分けられる」）。一覧の列と、絞る札に使う。
+  //   破壊は、その勝ち方ができたらここに足す（今のゲームにはまだない）
+  var WIN_KINDS = [
+    { id: 'battle', name: '戦闘' },
+    { id: 'boss', name: 'ボス' },
+    { id: 'defense', name: '防衛' },
+    { id: 'escort', name: '護衛' },
+    { id: 'retrieve', name: '奪取' }
+  ];
+  function winKind(def) {
+    if (!def) return '';
+    if (def.ex) return 'boss';
+    if (def.mission === 'defense' || def.mission === 'escort' || def.mission === 'retrieve') return def.mission;
+    return 'battle';
+  }
+  function winLabel(R, def) { var k = winKind(def), w = WIN_KINDS.filter(function (x) { return x.id === k; })[0]; return w ? w.name : ''; }
+  // 名前に入っている区分の印（【チュートリアル】など）は、一覧では難易度の札に任せて外す
+  function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
+
+  // ---------------------------------------------------------------
+  // 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）。stages・trash はこのブラウザの入れ物（{ 名前: 中身 }）
+  //   消す → ゴミ箱へ（中身はそのまま。消した時刻を足す）。戻す → 同じ名前があれば「名前（2）」。どちらも新しい入れ物を返す
+  // ---------------------------------------------------------------
+  function freeName(name, taken) {
+    if (!taken[name]) return name;
+    for (var i = 2; ; i++) { var n = name + '（' + i + '）'; if (!taken[n]) return n; }
+  }
+  function trashPut(stages, trash, name, now) {
+    stages = clone(stages || {}); trash = clone(trash || {});
+    if (!stages[name]) return { stages: stages, trash: trash, key: null };
+    var key = freeName(name, trash);
+    trash[key] = { name: name, rec: stages[name], deletedAt: now || Date.now() };
+    delete stages[name];
+    return { stages: stages, trash: trash, key: key };
+  }
+  function trashRestore(stages, trash, key) {
+    stages = clone(stages || {}); trash = clone(trash || {});
+    var item = trash[key];
+    if (!item) return { stages: stages, trash: trash, name: null };
+    var name = freeName(item.name || key, stages);
+    stages[name] = item.rec;
+    delete trash[key];
+    return { stages: stages, trash: trash, name: name };
+  }
+
+  // ---------------------------------------------------------------
   // ファイル
   // ---------------------------------------------------------------
   function toFile(stage) {
@@ -287,7 +352,8 @@
   }
 
   var api = {
-    PREFIX: PREFIX, WINS: WINS, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
+    PREFIX: PREFIX, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
   };

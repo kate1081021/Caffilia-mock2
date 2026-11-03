@@ -46,13 +46,50 @@ eq(S.resize(R, s3, 99, 1).state.size, B.maxBoardSize, '大きさは決まりの�
 eq(R.rowsOf(S.resize(R, s3, 99, 1).state), B.minBoardSize, '縦も');
 
 // 勝ち方
-eq([S.winOf(R, s3), S.winOf(R, R.loadPreset('tut2')), S.winOf(R, R.loadPreset('tut1'))], ['boss', 'seal', 'annihilate'], '今の勝ち方');
+eq([S.winOf(R, s3), S.winOf(R, R.loadPreset('tut2')), S.winOf(R, R.loadPreset('tut1'))], ['boss', 'defense', 'annihilate'], '今の勝ち方（②は村を守る。道をふさぐは村を守るに1つにした 11/03）');
 var w = S.setWin(R, s3, 'defense', 7);
 eq([S.winOf(R, w), w.mission.type, !!w.ex, S.turnsOf(R, w)], ['defense', 'defense', false, 7], '村を守る 7ターン');
 var w2 = S.setWin(R, w, 'boss', 0, s3.ex);
 eq([S.winOf(R, w2), w2.ex, w2.overrides], ['boss', s3.ex, undefined], 'ボスに戻すと③の決まりが戻る（ターン数は外れる）');
 eq(S.setWin(R, R.loadPreset('tut1'), 'boss').ex, {}, '新しくボスにすると、湧かないボスの決まり');
-ok(R.validOverrides(S.setWin(R, s3, 'seal', 3).overrides), 'ふさぐの数値は正しい形');
+var ws = S.setWin(R, s3, 'seal', 3);
+ok(R.validOverrides(ws.overrides), 'ふさぐの数値は正しい形');
+eq([S.winOf(R, ws), S.turnsOf(R, ws), ws.overrides['mission.defense.sealWin']], ['defense', 3, undefined], '前の「道をふさぐ」（seal）を選ぶと村を守る（sealWin は書かない）');
+var WINS_IDS = S.WINS.map(function (x) { return x.id; });
+ok(WINS_IDS.indexOf('seal') < 0 && WINS_IDS.indexOf('defense') >= 0, '勝ち方の一覧に「道をふさぐ」はない（村を守るだけ）');
+var oldDef = S.toDef(R, w, '前の防衛');
+oldDef.overrides = { 'mission.defense.turns': 4, 'mission.defense.sealWin': false };
+var ob = S.build(R, oldDef);
+ok(ob.ok, ob.error);
+eq(ob.ok && [S.winOf(R, ob.state), ob.state.overrides], ['defense', { 'mission.defense.turns': 4 }], '前の JSON の sealWin の上書きは捨てて読む（村を守る・4ターン）');
+
+// 難易度と一覧の1行（オーナー 11/03。IMPROVE_ステージ一覧 段1・段2）
+eq(S.DIFFICULTIES.map(function (d) { return d.name; }), ['チュートリアル', 'やさしい', 'ふつう', 'むずかしい'], '難易度は4段');
+var dd = S.toDef(R, R.loadPreset('tut1'), '難易度つき');
+dd.difficulty = 'hard';
+var db = S.build(R, dd);
+ok(db.ok, db.error);
+eq([S.diffOf(dd), S.diffOf({}), S.diffOf(null)], ['hard', '', ''], '定義の difficulty（ないものは「なし」）');
+eq(S.fromFile(R, S.toFile({ name: '難易度つき', def: dd })).def.difficulty, 'hard', 'ファイルに書き出して読んでも残る');
+eq(S.checkDef(R, Object.assign({}, dd, { difficulty: 'super' })), '知らない難易度がある', '知らない難易度は読まない');
+eq([S.magicsOf(R, R.findPreset('tut1')), S.magicsOf(R, R.findPreset('tut2')), S.magicsOf(R, R.findPreset('ex3'))], ['風（仲間）・火', '山・水', '山・火・風'], '使う魔法（構える味方は「仲間」）');
+eq([S.winLabel(R, R.findPreset('tut1')), S.winLabel(R, R.findPreset('tut2')), S.winLabel(R, R.findPreset('ex3')), S.winLabel(R, S.toDef(R, S.setWin(R, s3, 'defense', 7), 'x'))],
+  ['戦闘', '防衛', 'ボス', '防衛'], 'クリア方法は区分の短い名前（オーナー 11/03）');
+eq(S.WIN_KINDS.map(function (w) { return w.name; }), ['戦闘', 'ボス', '防衛', '護衛', '奪取'], 'クリア方法の区分');
+eq([S.winKind({ rows: [], mission: 'escort' }), S.winKind({ rows: [], mission: 'retrieve' }), S.winKind({ rows: [] })], ['escort', 'retrieve', 'battle']);
+eq([S.plainTitle('【チュートリアル】① 重ねる'), S.plainTitle('森の道')], ['① 重ねる', '森の道'], '名前の区分の印は一覧では外す');
+
+// 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）
+var st0 = { '森': { def: dd, at: 1 }, '山': { def: dd, at: 2 } };
+var t1 = S.trashPut(st0, {}, '森', 100);
+eq([Object.keys(t1.stages), t1.key, t1.trash['森'].name, t1.trash['森'].deletedAt, t1.trash['森'].rec.at], [['山'], '森', '森', 100, 1], 'ゴミ箱へ移す（中身はそのまま）');
+eq(Object.keys(st0), ['森', '山'], 'もとの入れ物は変えない');
+var t2 = S.trashPut(Object.assign({ '森': { def: dd, at: 3 } }, t1.stages), t1.trash, '森', 200);
+eq(Object.keys(t2.trash).sort(), ['森', '森（2）'], '同じ名前を2回消すと、ゴミ箱で「名前（2）」');
+var r1 = S.trashRestore(Object.assign({ '森': { def: dd, at: 9 } }, t2.stages), t2.trash, '森');
+eq([r1.name, Object.keys(r1.trash)], ['森（2）', ['森（2）']], '同じ名前があれば「名前（2）」で戻す');
+eq(r1.stages['森（2）'].at, 1, '戻ったのは消した中身');
+eq(S.trashRestore({}, {}, 'ない').name, null, 'ゴミ箱にないものは戻せない');
 
 // HP: ルールの決まり（hpBase）で遊び始めの HP になる
 var hp = S.setHp(R, s3, s3.units[3].id, 30);

@@ -28,7 +28,7 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
 
   await test('はじめは空。CORS は *（ファイルから開いたページからも使える）', async function () {
     var r = await call('GET', 'all');
-    eq([r.status, r.data.stages, r.data.lineup, r.cors], [200, {}, null, '*']);
+    eq([r.status, r.data.stages, r.data.lineup, r.data.trash, r.cors], [200, {}, null, {}, '*']);
   });
   await test('共有すると、みんなのステージに入る。同じ名前は上書き', async function () {
     var a = await call('PUT', 'stages/' + encodeURIComponent('森の道'), { def: DEF, texts: { scenes: { start: [] } } });
@@ -53,6 +53,44 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     ok((await call('PUT', 'lineup', { start: ['tut:tut1'], pick: [] })).data.ok);
     ok((await call('DELETE', 'stages/' + encodeURIComponent('森の道'))).data.ok, '外したら消せる');
     eq(Object.keys((await call('GET', 'all')).data.stages), []);
+  });
+  // ゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）
+  await test('消すとゴミ箱へ移る（完全には消えない）。中身・消した時刻・もとの名前が残る', async function () {
+    var r = await call('GET', 'all');
+    eq(Object.keys(r.data.trash), ['森の道'], '上の「消す」はゴミ箱へ');
+    var t = r.data.trash['森の道'];
+    eq([t.name, t.def.rows, typeof t.deletedAt], ['森の道', ['F.....'], 'number']);
+  });
+  await test('ゴミ箱から戻す。同じ名前のステージがあれば「名前（2）」で戻す', async function () {
+    ok((await call('PUT', 'stages/' + encodeURIComponent('森の道'), { def: DEF, texts: null })).data.ok, '同じ名前を新しく共有');
+    var b = await call('POST', 'trash/' + encodeURIComponent('森の道') + '/restore');
+    eq([b.status, b.data.name], [200, '森の道（2）']);
+    var r = await call('GET', 'all');
+    eq([Object.keys(r.data.stages).sort(), r.data.trash], [['森の道', '森の道（2）'], {}]);
+    eq(r.data.stages['森の道（2）'].def.rows, ['F.....'], '戻ったのは消した中身');
+    eq((await call('POST', 'trash/' + encodeURIComponent('ない') + '/restore')).status, 404, 'ゴミ箱にないものは戻せない');
+  });
+  await test('同じ名前を2回消すと、ゴミ箱では「名前（2）」で両方残る。完全に消すとゴミ箱からなくなる', async function () {
+    ok((await call('DELETE', 'stages/' + encodeURIComponent('森の道'))).data.ok);
+    ok((await call('PUT', 'stages/' + encodeURIComponent('森の道'), { def: DEF, texts: null })).data.ok);
+    var d2 = await call('DELETE', 'stages/' + encodeURIComponent('森の道'));
+    eq(d2.data.trashed, '森の道（2）');
+    eq(Object.keys((await call('GET', 'all')).data.trash).sort(), ['森の道', '森の道（2）']);
+    ok((await call('DELETE', 'trash/' + encodeURIComponent('森の道（2）'))).data.ok);
+    ok((await call('DELETE', 'trash/' + encodeURIComponent('森の道'))).data.ok);
+    eq((await call('GET', 'all')).data.trash, {}, '完全に消えた');
+  });
+  await test('ゴミ箱がいっぱいなら、消すのを断る（勝手に古いものを消さない）', async function () {
+    var full = {};
+    for (var i = 0; i < 500; i++) full['x' + i] = { name: 'x' + i, def: DEF, deletedAt: 1 };
+    mem.trash = JSON.stringify(full);
+    ok((await call('PUT', 'stages/a', { def: DEF })).data.ok);
+    var d = await call('DELETE', 'stages/a');
+    eq(d.status, 409);
+    ok('a' in (await call('GET', 'all')).data.stages, '消えずに残る');
+    mem.trash = JSON.stringify({});
+    ok((await call('DELETE', 'stages/a')).data.ok);
+    ok((await call('DELETE', 'trash/a')).data.ok);
   });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);

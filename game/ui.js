@@ -45,6 +45,9 @@
   // エディットで作ったステージ（オーナー 10/30）。中身は stages_io.js（チュートリアルと同じ形の定義＋会話の窓の文）
   var SIO = window.StagesIO;
   var STAGE_KEY = 'cafilia-mock-stages-v1';       // 自分のステージ { 名前: { def, texts, exKeep, at } }。直すたびに自動で残す（IMPROVE_v3 段0）
+  var TRASH_KEY = 'cafilia-mock-trash-v1';        // 自分のステージのゴミ箱 { 鍵: { name, rec, deletedAt } }（オーナー 11/03。IMPROVE_ステージ一覧 段3）
+  var FILTER_KEY = 'cafilia-mock-home-filter';    // 開発の最初の画面で選んだ難易度の札（'' はすべて）
+  var WIN_FILTER_KEY = 'cafilia-mock-home-win';   // 同じく、クリア方法の札
   var DRAFT_KEY = 'cafilia-mock-stage-draft';     // 前の作りかけ { cur, prev }。段0で自分のステージに移した（元は消さずに残す）
   var MIGRATED_KEY = 'cafilia-mock-stages-migrated';   // 前の作りかけ・前の保存を移したしるし { at, moved, failed }
   // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
@@ -96,7 +99,7 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
     'btnGo', 'btnUndo', 'btnReset', 'btnEdit', 'side', 'playSide', 'playPanel', 'ctrlPanel', 'editPanel', 'roster', 'actPanel',
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
+    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'saveDiff', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose', 'btnView'].forEach(function (id) { el[id] = $(id); });
@@ -467,7 +470,7 @@
   function selUnit() {
     if (!app.sel) return null;
     var u = R.findUnit(app.state, app.sel);
-    return u && !u.acted ? u : null;   // 魔法で構えた・待機した味方は選べない（構え直しは画面からなくした。IMPROVE_controls 4-1）
+    return u && (!u.acted || simul()) ? u : null;   // 【一斉】構えた・待機した味方も、発動まではいつでも選べる（オーナー 11/03）。1人ずつでは行動した味方は選べない
   }
   function canControl() { return !app.busy && !app.editMode && !app.state.result; }
 
@@ -478,10 +481,11 @@
   function clearPlans() { app.dirs = {}; app.plan = null; }
 
   // 遊ぶ側の最初は、誰も選んでいない（オーナー 10/30）。味方は押して（か 1〜3 キーで）選ぶ
-  //   構える味方と、魔法で構えた・待機した味方（薄い味方）は選べない。押しても選ぶのをやめるだけ（IMPROVE_controls 2章）
+  //   構える味方（指示できない仲間）は選べない。押しても選ぶのをやめるだけ（IMPROVE_controls 2章）。
+  //   【一斉】構えた・待機した味方も選べる（発動までは何度でも動き直し・向き・構え ⇄ 待機を直せる。オーナー 11/03）
   function select(id) {
     var u = R.findUnit(app.state, id);
-    if (!u || u.side !== 'ally' || u.npc || u.acted) { deselect(); return; }
+    if (!u || u.side !== 'ally' || u.npc || (u.acted && !simul())) { deselect(); return; }
     app.sel = id;
     app.plan = { dir: app.dirs[id] || u.facing };
     render();
@@ -489,9 +493,15 @@
   function deselect() { app.sel = null; app.plan = null; render(); }
 
   function setDir(d) {
-    if (!selUnit() || !canControl()) return;
+    var u = selUnit();
+    if (!u || !canControl()) return;
     app.plan.dir = d;
     app.dirs[app.sel] = d;
+    // 【一斉】構え・待機している味方は、十字を押したらその場で向きが変わる（「構える」を押し直さなくていい。オーナー 11/03）
+    if (simul() && u.acted && u.facing !== d) {
+      var res = R.act(app.state, u.id, { dir: d, shoot: !!u.stance });
+      if (res.ok) { pushHistory(); app.state = res.state; }
+    }
     render();
   }
 
@@ -663,8 +673,8 @@
   function testing() { return !app.editMode && !!app.draft && !!app.draft.playId && app.scenario === app.draft.playId; }
 
   // 作っているステージ（app.draft）の名前・文。「1手戻す」で戻すために覚える
-  function draftMeta() { var d = app.draft; return { name: d.name, texts: SIO.clone(d.texts), exKeep: SIO.clone(d.exKeep) }; }
-  function setDraftMeta(m) { app.draft.name = m.name; app.draft.texts = SIO.clone(m.texts); app.draft.exKeep = SIO.clone(m.exKeep); }
+  function draftMeta() { var d = app.draft; return { name: d.name, texts: SIO.clone(d.texts), exKeep: SIO.clone(d.exKeep), difficulty: d.difficulty || '' }; }
+  function setDraftMeta(m) { app.draft.name = m.name; app.draft.texts = SIO.clone(m.texts); app.draft.exKeep = SIO.clone(m.exKeep); app.draft.difficulty = m.difficulty || ''; }
   function fillTexts(t, name) {
     t = t ? SIO.clone(t) : SIO.blankTexts(name);
     t.name = name;
@@ -699,7 +709,7 @@
     var b = rec && SIO.build(R, rec.def);
     if (!b || !b.ok) return null;
     delete b.state.stage;
-    return { state: b.state, name: name, key: name, texts: fillTexts(rec.texts, name), exKeep: rec.exKeep || null, base: rec.base || null };
+    return { state: b.state, name: name, key: name, texts: fillTexts(rec.texts, name), exKeep: rec.exKeep || null, base: rec.base || null, difficulty: SIO.diffOf(rec.def) };
   }
   // 作るステージを d に替える。それまでのステージは自分のステージに残っている。新しく増えるものは名前が重ならないようにする
   function startDraft(d) {
@@ -724,7 +734,9 @@
   }
   function draftRecord() {
     var d = app.draft, s = app.editMode ? app.state : d.state;
-    return { def: SIO.toDef(R, s, d.name), texts: d.texts, exKeep: d.exKeep || null, base: d.base || null };   // base: 最後に共有した（写した）ときの中身のしるし（段4）
+    var def = SIO.toDef(R, s, d.name);
+    if (d.difficulty) def.difficulty = d.difficulty;   // 難易度（オーナー 11/03）
+    return { def: def, texts: d.texts, exKeep: d.exKeep || null, base: d.base || null };   // base: 最後に共有した（写した）ときの中身のしるし（段4）
   }
   function keepDraft() {
     var d = app.draft;
@@ -1147,7 +1159,7 @@
     var cls = ['unit', u.side];
     if (u.npc) cls.push('npc');
     if (view.selected) cls.push('selected');
-    if (u.side === 'ally' && u.acted && !u.npc && !app.editMode) cls.push('acted');
+    if (u.side === 'ally' && u.acted && !u.npc && !app.editMode && !(simul() && u.stance)) cls.push('acted');   // 【一斉】薄いのは待機（撃たない）味方だけ
     if (u.stuck) cls.push('stuck');
     if (R.hidden(st, u)) cls.push('hidden');
     if (view.next) cls.push('next-ready');
@@ -1297,7 +1309,7 @@
     var reach = u ? reachOf(u) : {};
     // 動いたけれど、まだ撃っていない味方の元の位置（点線で薄く描く。オーナー 10/30）
     var moveFrom = {};
-    if (!app.editMode && !st.result) R.controllableOf(st).forEach(function (a) { if (a.moved && !a.acted) moveFrom[key(a.moved.from[0], a.moved.from[1])] = a; });
+    if (!app.editMode && !st.result) R.controllableOf(st).forEach(function (a) { if (a.moved && (!a.acted || simul())) moveFrom[key(a.moved.from[0], a.moved.from[1])] = a; });   // 【一斉】構えていても、発動までは元の位置を出す
     var guide = (u && !st.result && !so) ? guideNow(u) : {};
     var pv = (u && app.plan && !st.result) ? previewNow(u) : null;
     var fc = forecastNow();
@@ -1719,7 +1731,7 @@
     };
     var al = R.controllableOf(st), npcs = R.alliesOf(st).filter(function (a) { return a.npc; });
     el.roster.innerHTML = al.length || npcs.length
-      ? al.map(function (a) { return icon(a, (a.id === app.sel ? ' selected' : '') + (a.acted ? ' acted' : '')); }).join('') +
+      ? al.map(function (a) { return icon(a, (a.id === app.sel ? ' selected' : '') + (a.acted && !(simul() && a.stance) ? ' acted' : '')); }).join('') +   // 【一斉】薄いのは待機の味方だけ
         npcs.map(function (a) { return icon(a, ' npc'); }).join('')
       : '<p class="muted">味方がいません（エディットで置けます）</p>';
 
@@ -1745,7 +1757,7 @@
       return '<div class="enemy-row"><span class="dot">' + esc(e.letter) + '</span><span>' + esc(e.name) + (e.stand === 'rush' ? ' ' : '（' + esc(R.magicName(e.magic)) + '）') + 'HP ' + e.hp + '/' + e.maxHp +
         (warn[e.id] ? ' <span class="danger">予告で -' + warn[e.id] + (warn[e.id] >= e.hp ? '（倒れる）' : '') + '</span>' : '') +
         '<span class="hpbar"><span style="width:' + Math.max(0, e.hp / e.maxHp * 100) + '%"></span></span> ' + DIR_ARROW[e.facing] + esc(note) + '</span>' +
-        (rushTo[e.id] ? '<span class="plan">次のターンの始めに: ' + esc(rushText(rushTo[e.id])) + '</span>' : '') +
+        (rushTo[e.id] ? '<span class="plan">ターンの終わりに: ' + esc(rushText(rushTo[e.id])) + '</span>' : '') +
         (marchTo[e.id] ? '<span class="plan">ターンの終わりに ' + DIR_ARROW[marchTo[e.id].dir] + ' へ1マス進む' + (plans[e.id] ? '。そのまま撃つ' : '') + '</span>' : '') +
         (plans[e.id] ? '<span class="plan">' + esc(planText(plans[e.id], st)) + '</span>' : '') + '</div>';
     }).join('');
@@ -1759,8 +1771,8 @@
   function renderOrderPanel(fa) {
     if (!el.orderPanel) return;
     var st = app.state;
-    // 展示モードでは出さない（並べ替えのボタンに気が散るため。順番は「魔法」を押した順で、盤面の構えの印の①②で分かる。オーナー 10/31）
-    if (!simul() || app.editMode || EXHIBIT) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
+    // 展示モードでも出す（オーナー 11/03。前は展示では出さず、順番は「魔法」を押した順だった 10/31）
+    if (!simul() || app.editMode) { el.orderPanel.hidden = true; el.orderPanel.innerHTML = ''; return; }
     // 予告（fa）の並び ＝ 盤面の番号と同じ。選んでいる味方の、まだ確定していない構えも入る
     var list = (fa ? fa.allies : []).map(function (p) { return { p: p, a: R.findUnit(st, p.id) }; }).filter(function (x) { return x.a; });
     var mine = R.stanceList(st).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });
@@ -1779,13 +1791,18 @@
     }).join('');
     var combos = [];
     if (fa && !shapeOnly()) fa.allies.forEach(function (p) { (p.combos || []).forEach(function (c) { combos.push(comboText({ comboMagics: c.magics }) + ' → ' + finName(c.name) + '！'); }); });
-    var waiting = R.controllableOf(st).filter(function (a) { return !a.acted; }).length;
+    // 待機の味方（撃たない）: 欄の下に薄く。順番からは外れる（構えに戻すと最後に並ぶ）
+    var shown = {};
+    list.forEach(function (x) { shown[x.a.id] = true; });
+    var waits = R.controllableOf(st).filter(function (a) { return a.acted && !a.stance && !shown[a.id]; }).map(function (a) {
+      return '<li class="order-row waiting' + (a.id === app.sel ? ' selected' : '') + '"><span class="o-no">－</span><span class="o-name"><b>' + esc(R.unitLabel(st, a)) + '</b><small>' + esc(ui('orderWait', '待機（撃たない）')) + '</small></span></li>';
+    }).join('');
     el.orderPanel.hidden = false;
-    el.orderPanel.classList.toggle('x-more', !rows);   // まだ誰も構えていないときは、欄ごと隠す（x-more）
+    el.orderPanel.classList.toggle('x-more', !rows && !waits);   // 誰もいないときは、欄ごと隠す（x-more）
     el.orderPanel.innerHTML = '<h3>' + esc(ui('order', '発動の順番')) + '</h3>' +
-      (rows ? '<ol class="order-list">' + rows + '</ol>' : '<p class="muted">まだ誰も構えていません</p>') +
-      (combos.length ? '<p class="order-combo">' + combos.map(esc).join('<br>') + '</p>' : '') +
-      (waiting ? '<p class="muted x-more">まだ構えていない味方: ' + waiting + '人</p>' : '');
+      (rows ? '<ol class="order-list">' + rows + '</ol>' : '<p class="muted">みんな待機しています</p>') +
+      (waits ? '<ul class="order-list order-waits">' + waits + '</ul>' : '') +
+      (combos.length ? '<p class="order-combo">' + combos.map(esc).join('<br>') + '</p>' : '');
   }
 
   // 右下のコントローラー（IMPROVE_controls 5-1）: 十字の矢印（真ん中は「向き」）と「魔法」「待機」。
@@ -1800,7 +1817,10 @@
     var shootOk = !!u && R.canShoot(app.state, u);
     el.btnShoot.disabled = !shootOk;
     el.btnWait.disabled = !u;
-    el.btnShoot.textContent = u && !shootOk ? ui('cantShoot', '宝を持つので撃てない') : simul() ? ui('stance', '魔法') : ui('shoot', '撃つ');
+    // 【一斉】今どちらなのか（構え／待機）をボタンの光り方で見せる（オーナー 11/03）
+    el.btnShoot.classList.toggle('on', !!u && simul() && !!u.stance);
+    el.btnWait.classList.toggle('on', !!u && simul() && u.acted && !u.stance);
+    el.btnShoot.textContent = u && !shootOk ? ui('cantShoot', '宝を持つので撃てない') : simul() ? ui('stance', '構える') : ui('shoot', '撃つ');
     el.btnWait.textContent = ui('wait', '待機');
     el.dirCenter.textContent = ui('dirCenter', '向き');
   }
@@ -1882,12 +1902,11 @@
     el.winSelect.innerHTML = SIO.WINS.map(function (w) {
       return '<option value="' + w.id + '"' + (w.id === win ? ' selected' : '') + '>' + esc(w.name) + '</option>';
     }).join('');
-    el.winTurnsLabel.hidden = !(win === 'defense' || win === 'seal');
+    el.winTurnsLabel.hidden = win !== 'defense';
     if (document.activeElement !== el.winTurns) el.winTurns.value = SIO.turnsOf(R, st);
     var mi = st.mission || {}, lack = [];
     if (win === 'boss' && !R.enemiesOf(st).some(function (e) { return e.stand === 'boss'; })) lack.push('動きが「ボス」の敵がいない（どれか1体を倒しただけで勝ちになる）');
-    if ((win === 'defense' || win === 'seal') && !R.objectsOf(st, 'village').length) lack.push('村がない');
-    if (win === 'seal' && !R.enemiesOf(st).some(function (e) { return e.stand === 'rush'; }) && !(st.spawn && st.spawn.stand === 'rush')) lack.push('ふさぐ相手（動きが「突進」の敵）がいない');
+    if (win === 'defense' && !R.objectsOf(st, 'village').length) lack.push('村がない');
     if (win === 'escort' && !R.objectsOf(st, 'wagon').length) lack.push('トロッコがない');
     if (win === 'escort' && !(mi.goal || []).length) lack.push('ゴールがない');
     if (win === 'retrieve' && !mi.treasure) lack.push('宝がない');
@@ -1921,6 +1940,7 @@
     var d = app.draft, tx = d.texts, hint = tx.hint || {};
     var put = function (e, v) { if (document.activeElement !== e && e.value !== v) e.value = v; };
     put(el.saveName, d.name);
+    if (document.activeElement !== el.saveDiff) el.saveDiff.value = d.difficulty || '';
     put(el.txHintSimul, hint.simul || '');
     put(el.txHintSingle, hint.single || '');
   }
@@ -2179,6 +2199,15 @@
     app.draft.name = v;
     render();
   });
+  // 難易度（オーナー 11/03。IMPROVE_ステージ一覧 段1）
+  el.saveDiff.innerHTML = '<option value="">なし</option>' + SIO.DIFFICULTIES.map(function (d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+  el.saveDiff.addEventListener('change', function () {
+    var v = el.saveDiff.value;
+    if (!app.draft || v === (app.draft.difficulty || '')) return;
+    pushHistory();
+    app.draft.difficulty = v;
+    render();
+  });
   [['txHintSimul', 'simul'], ['txHintSingle', 'single']].forEach(function (p) {
     el[p[0]].addEventListener('change', function () {
       var t = app.draft.texts;
@@ -2202,7 +2231,7 @@
   var SITE_API = 'https://caffilia-jkwzvlbc7.kate108superstar.workers.dev/api/';
   var API = window.CAFILIA_API || (/^https?:$/.test(window.location.protocol) ? '/api/' : SITE_API);
   var NET_MS = 8000;   // これより待っても答えがなければ、つながっていないことにする
-  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, why: '' };
+  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, why: '' };
   function api(method, path, body) {
     return new Promise(function (resolve) {
       var done = false, finish = function (r) { if (!done) { done = true; resolve(r); } };
@@ -2222,8 +2251,9 @@
   // みんなのステージと展示の並びを読み直す
   function fetchShared() {
     return api('GET', 'all').then(function (res) {
-      app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, why: '' }
-        : { ok: false, loaded: true, stages: {}, lineup: null, why: netWhy(res) };
+      // trash: ゴミ箱（ゴミ箱のない古い置き場所では null。そのときは「消す」は今までどおり完全に消す）
+      app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, trash: res.data.trash || null, why: '' }
+        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, why: netWhy(res) };
       return app.shared;
     });
   }
@@ -2299,7 +2329,7 @@
     var fromCloud = function (key) {
       var bs = SIO.build(R, cloud.def).state;
       delete bs.stage;
-      return { state: bs, name: name, key: key, texts: fillTexts(cloud.texts, name), exKeep: null, base: stageSig(cloud) };
+      return { state: bs, name: name, key: key, texts: fillTexts(cloud.texts, name), exKeep: null, base: stageSig(cloud), difficulty: SIO.diffOf(cloud.def) };
     };
     var go = function (d) { startDraft(d); enterEdit(false); };
     if (!own) { go(fromCloud()); return; }
@@ -2524,27 +2554,140 @@
     if (EXHIBIT) { renderExhibitHome(app.homeView); return; }
     if (app.homeView === 'lineup') { renderLineup(); return; }
     var stages = stageStore(), mine = ownList(), mig = migrateInfo();
+    var del = function (attr, nm, title) { return '<span class="row-btns"><button type="button" class="home-del" ' + attr + '="' + esc(nm) + '" title="' + esc(title) + '">消す</button></span>'; };
     el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
-      '<section class="home-sec"><h3>チュートリアル <small>作る側にすると、写しが自分のステージにできる（元は変わらない）</small></h3><div class="home-list">' +
-      EXHIBIT_STAGES.map(function (id) { return '<button type="button" class="home-stage" data-open="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '</button>'; }).join('') +
-      '</div></section>' +
-      '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる</small></h3><div class="home-list">' +
+      (app.homeNote ? '<p class="home-note">' + esc(app.homeNote.text) + (app.homeNote.ref ? ' <button type="button" data-tr-restore="' + esc(app.homeNote.ref) + '">戻す</button>' : '') + '</p>' : '') +
+      filterChips() +
+      '<section class="home-sec"><h3>チュートリアル <small>作る側にすると、写しが自分のステージにできる（元は変わらない）</small></h3>' +
+      homeRows(EXHIBIT_STAGES.map(function (id) { var p = R.findPreset(id); return { open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial' }; }), '') +
+      '</section>' +
+      '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる</small></h3>' +
       (!app.shared.loaded ? '<p class="muted">読み込み中…</p>' : !app.shared.ok ? '<p class="note">' + esc(app.shared.why) + '</p>' :
-        sharedList().length ? sharedList().map(function (nm) {
-          return '<span class="home-own"><button type="button" class="home-stage" data-open="all:' + esc(nm) + '">' + esc(nm) + '</button>' +
-            '<button type="button" class="home-del" data-sdel="' + esc(nm) + '" title="みんなのステージ「' + esc(nm) + '」を消す">消す</button></span>';
-        }).join('') : '<p class="muted">まだありません（エディットの「共有する」で増える）</p>') +
-      '</div></section>' +
-      '<section class="home-sec"><h3>自分のステージ <small>このブラウザに自動で残る。新しく直した順</small></h3><div class="home-list">' +
-      (mine.length ? mine.map(function (nm) {
-        return '<span class="home-own"><button type="button" class="home-stage" data-open="my:' + esc(nm) + '">' + esc(nm) + '</button>' +
-          '<button type="button" class="home-del" data-del="' + esc(nm) + '" title="「' + esc(nm) + '」を消す">消す</button></span>';
-      }).join('') : '<p class="muted">まだありません</p>') + '</div>' +
+        homeRows(sharedList().map(function (nm) {
+          var rec = app.shared.stages[nm];
+          return { open: 'all:' + nm, title: nm, def: rec.def, diff: SIO.diffOf(rec.def), del: del('data-sdel', nm, 'みんなのステージ「' + nm + '」を' + (app.shared.trash ? 'ゴミ箱に入れる' : '消す')) };
+        }), 'まだありません（エディットの「共有する」で増える）')) +
+      '</section>' +
+      '<section class="home-sec"><h3>自分のステージ <small>このブラウザに自動で残る。新しく直した順</small></h3>' +
+      homeRows(mine.map(function (nm) {
+        var rec = stages[nm] || {};
+        return { open: 'my:' + nm, title: nm, def: rec.def, diff: SIO.diffOf(rec.def), del: del('data-del', nm, '「' + nm + '」をゴミ箱に入れる') };
+      }), 'まだありません') +
       (stages === null ? '<p class="note">この環境ではブラウザに残せません。作ったら「共有する」で、みんなのステージに置いてください。</p>' : '') +
       (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
       '</section>' +
       '<div class="home-list"><button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>' +
-      '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button></div>';
+      '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button></div>' +
+      trashSection();
+  }
+  // 一覧（オーナー 11/03。IMPROVE_ステージ一覧 段2）: 1行に1つ。難易度の札・タイトル・使う魔法・クリア方法。上の札で難易度ごとに絞れる
+  //   items: [{ open, title, def, diff, del }]。並びは難易度の順（なしは最後）、その中は今の順
+  var DIFF_ORDER = {};
+  SIO.DIFFICULTIES.forEach(function (d, i) { DIFF_ORDER[d.id] = i; });
+  function diffName(id) { var d = SIO.DIFFICULTIES.filter(function (x) { return x.id === id; })[0]; return d ? d.name : ''; }
+  function homeRows(items, empty) {
+    var f = app.homeFilter, wf = app.homeWin;
+    var list = items.map(function (it, i) { return { it: it, i: i }; })
+      .filter(function (x) { return (!f || x.it.diff === f) && (!wf || SIO.winKind(x.it.def) === wf); })
+      .sort(function (a, b) {
+        var da = a.it.diff ? DIFF_ORDER[a.it.diff] : 99, db = b.it.diff ? DIFF_ORDER[b.it.diff] : 99;
+        return da - db || a.i - b.i;
+      });
+    var narrowed = (f || wf) && items.length;
+    if (!list.length) return empty || narrowed ? '<p class="muted">' + esc(narrowed ? 'この条件のステージはありません' : empty) + '</p>' : '';
+    return '<div class="home-rows">' + list.map(function (x) {
+      var it = x.it;
+      return '<div class="home-row">' +
+        '<span class="diff-tag' + (it.diff ? ' diff-' + it.diff : ' diff-none') + '">' + esc(diffName(it.diff)) + '</span>' +
+        '<button type="button" class="home-stage home-title" data-open="' + esc(it.open) + '">' + esc(SIO.plainTitle(it.title)) + '</button>' +
+        '<span class="home-magic" title="使う魔法">' + esc(SIO.magicsOf(R, it.def)) + '</span>' +
+        '<span class="home-win" title="クリア方法">' + esc(SIO.winLabel(R, it.def)) + '</span>' +
+        (it.del || '<span class="row-btns"></span>') + '</div>';   // 消すがない行も、列をそろえるために空けておく
+    }).join('') + '</div>';
+  }
+  function savedPick(k) { try { return window.localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  app.homeFilter = DIFF_ORDER[savedPick(FILTER_KEY)] !== undefined ? savedPick(FILTER_KEY) : '';
+  app.homeWin = SIO.WIN_KINDS.some(function (w) { return w.id === savedPick(WIN_FILTER_KEY); }) ? savedPick(WIN_FILTER_KEY) : '';
+  // 絞る札: 1段目は難易度、2段目はクリア方法（戦闘・ボス・防衛・護衛・奪取。オーナー 11/03）。両方で絞れる
+  function filterChips() {
+    var row = function (label, attr, now, opts) {
+      return '<div class="home-filter" role="group" aria-label="' + label + 'で分ける"><span class="filter-label">' + label + '</span>' +
+        [['', 'すべて']].concat(opts.map(function (d) { return [d.id, d.name]; })).map(function (c) {
+          return '<button type="button" class="chip' + (c[0] === now ? ' on' : '') + '" ' + attr + '="' + c[0] + '" aria-pressed="' + (c[0] === now) + '">' + esc(c[1]) + '</button>';
+        }).join('') + '</div>';
+    };
+    return row('難易度', 'data-filter', app.homeFilter, SIO.DIFFICULTIES) + row('クリア方法', 'data-wfilter', app.homeWin, SIO.WIN_KINDS);
+  }
+  // ゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）: 自分のステージはこのブラウザ（TRASH_KEY）、みんなのステージは共有の置き場所
+  function trashStore() { try { var raw = window.localStorage.getItem(TRASH_KEY); return raw ? JSON.parse(raw) : {}; } catch (e) { return null; } }
+  function trashStoreSet(obj) { try { window.localStorage.setItem(TRASH_KEY, JSON.stringify(obj)); return true; } catch (e) { return false; } }
+  function trashItems() {
+    var own = trashStore() || {}, cloud = app.shared.trash || {};
+    return Object.keys(own).map(function (k) { return { ref: 'my:' + k, name: own[k].name || k, where: '自分', at: own[k].deletedAt || 0 }; })
+      .concat(Object.keys(cloud).map(function (k) { return { ref: 'all:' + k, name: cloud[k].name || k, where: 'みんな', at: cloud[k].deletedAt || 0 }; }))
+      .sort(function (a, b) { return b.at - a.at; });
+  }
+  function fmtTime(t) {
+    if (!t) return '';
+    var d = new Date(t), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  }
+  function trashSection() {
+    var items = trashItems();
+    return '<section class="home-sec home-trash"><h3><button type="button" class="trash-toggle" data-trash-toggle="1" aria-expanded="' + !!app.trashOpen + '">' +
+      (app.trashOpen ? '▾' : '▸') + ' ゴミ箱（' + items.length + '）</button> <small>消したステージ。戻せる</small></h3>' +
+      (!app.trashOpen ? '' : items.length ? '<div class="home-rows">' + items.map(function (it) {
+        return '<div class="home-row trash-row"><span class="diff-tag diff-none">' + esc(it.where) + '</span><span class="home-title trash-name">' + esc(it.name) + '</span>' +
+          '<span class="trash-at">' + esc(fmtTime(it.at)) + ' に消した</span>' +
+          '<span class="row-btns"><button type="button" data-tr-restore="' + esc(it.ref) + '">戻す</button>' +
+          '<button type="button" class="home-del" data-tr-purge="' + esc(it.ref) + '">完全に消す</button></span></div>';
+      }).join('') + '</div>' : '<p class="muted">空です</p>') + '</section>';
+  }
+  // 「ゴミ箱に入れた [戻す]」を少しのあいだ出す
+  function homeNote(text, ref) {
+    app.homeNote = { text: text, ref: ref || '' };
+    clearTimeout(homeNote.timer);
+    homeNote.timer = setTimeout(function () { app.homeNote = null; if (app.home && !EXHIBIT && app.homeView === 'list') renderHome(); }, 8000);
+    renderHome();
+  }
+  function refSplit(ref) { var i = ref.indexOf(':'); return { kind: ref.slice(0, i), key: ref.slice(i + 1) }; }
+  function restoreTrash(ref) {
+    var r0 = refSplit(ref);
+    if (r0.kind === 'my') {
+      var stages = stageStore(), trash = trashStore();
+      if (!stages || !trash) return;
+      var r = SIO.trashRestore(stages, trash, r0.key);
+      if (!r.name) { renderHome(); return; }
+      if (!stageStoreSet(r.stages) || !trashStoreSet(r.trash)) { window.alert('戻せませんでした'); return; }   // 先にステージへ戻す（消えてなくなることはない）
+      homeNote('「' + r.name + '」を自分のステージに戻した');
+      return;
+    }
+    api('POST', 'trash/' + encodeURIComponent(r0.key) + '/restore').then(function (res) {
+      if (!res.ok) window.alert('戻せませんでした: ' + netWhy(res));
+      fetchShared().then(function () {
+        if (!app.home) return;
+        if (res.ok && res.data && res.data.name) homeNote('「' + res.data.name + '」をみんなのステージに戻した');
+        else renderHome();
+      });
+    });
+  }
+  function purgeTrash(ref) {
+    var r0 = refSplit(ref);
+    if (r0.kind === 'my') {
+      var trash = trashStore();
+      if (!trash || !trash[r0.key]) return;
+      if (!window.confirm('ゴミ箱の「' + (trash[r0.key].name || r0.key) + '」を完全に消します。元に戻せません。消しますか？')) return;
+      delete trash[r0.key];
+      if (!trashStoreSet(trash)) window.alert('消せませんでした');
+      renderHome();
+      return;
+    }
+    var it = (app.shared.trash || {})[r0.key];
+    if (!window.confirm('ゴミ箱の「' + ((it && it.name) || r0.key) + '」（みんなのステージ）を完全に消します。\n⚠ どのパソコンからも消えます。元に戻せません。消しますか？')) return;
+    api('DELETE', 'trash/' + encodeURIComponent(r0.key)).then(function (res) {
+      if (!res.ok) window.alert('消せませんでした: ' + netWhy(res));
+      fetchShared().then(function () { if (app.home) renderHome(); });
+    });
   }
   // 最初の画面を出す・しまう。view: 開発は 'list'（一覧）・'lineup'（展示の並び）、展示は 'title'・'pick'・'thanks'・'clear'
   function showHome(on, view) {
@@ -2565,13 +2708,19 @@
     showHome(false);
     loadScenario(registerShared(name));
   }
-  // みんなのステージを消す: 展示の並びに入っていたら消せない。どのパソコンからも消えるので ⚠ で確かめる
+  // みんなのステージを消す: 展示の並びに入っていたら消せない。ゴミ箱のある置き場所ならゴミ箱へ（戻せる。オーナー 11/03）。
+  //   ゴミ箱のない古い置き場所（まだ公開していない）なら、今までどおり ⚠ で確かめてから完全に消す
   function deleteShared(name) {
     if (inLineup('all:' + name)) { window.alert('「' + name + '」は展示の並びに入っているので消せません。展示の並びから外すと消せます'); return; }
-    if (!window.confirm('みんなのステージ「' + name + '」を消します。\n⚠ どのパソコンからも消えます。元に戻せません。消しますか？')) return;
+    var toTrash = !!app.shared.trash;
+    if (!toTrash && !window.confirm('みんなのステージ「' + name + '」を消します。\n⚠ どのパソコンからも消えます。元に戻せません。消しますか？')) return;
     api('DELETE', 'stages/' + encodeURIComponent(name)).then(function (res) {
-      if (!res.ok) window.alert('消せませんでした: ' + netWhy(res));
-      fetchShared().then(function () { if (app.home) renderHome(); });
+      if (!res.ok) window.alert((toTrash ? 'ゴミ箱に入れられませんでした: ' : '消せませんでした: ') + netWhy(res));
+      fetchShared().then(function () {
+        if (!app.home) return;
+        if (res.ok && toTrash && res.data && res.data.trashed) homeNote('みんなのステージ「' + name + '」をゴミ箱に入れた', 'all:' + res.data.trashed);
+        else renderHome();
+      });
     });
   }
   // 最初の画面に戻る。エディット中なら、その盤面を自分のステージに残してから
@@ -2589,6 +2738,39 @@
     showHome(true);
     render();
   }
+  // 開発モード: ブラウザ（スマホ）の「戻る」で、展示モードに戻らず1つ上の画面へ（オーナー 11/03。IMPROVE_小さい直し 1-1）
+  //   テストプレイ（作っているステージ）→ エディット → 開発の最初の画面。ほかのステージのテストプレイ・エディット → 最初の画面。
+  //   最初の画面ではその場に残る（開発モードから出るのは、今までどおり右下の点の長押しだけ）。開いている窓があれば、まず窓を閉じる。
+  //   「1手戻す」（app.history）とは別のもの。展示モードの「戻る」は今のまま。
+  function navBack() {
+    if (!el.howto.hidden) { setHowto(false); return; }
+    if (!el.choice.hidden) { el.choice.hidden = true; return; }
+    if (app.closeDialog) { app.closeDialog(); return; }
+    if (app.busy) skipPlayback();
+    if (app.home) {
+      if (app.homeView === 'lineup' && (!lineupDirty() || window.confirm('展示の並びで変えたところを捨てて、一覧に戻りますか？'))) { app.homeView = 'list'; renderHome(); }
+      return;
+    }
+    if (testing()) setEditMode(true);
+    else goHome();
+  }
+  //   履歴は2つだけ使う: 下（base）と上（top）。いつも top にいて、「戻る」で base に来たら、アプリの中で1つ上の画面へ戻し、
+  //   history.forward() で top に戻る（積み直さない）。URL は変えない（#dev のまま。hashchange は起きない）。
+  //   top はページを触ったとき（ユーザーの操作の中）に積む。操作なしで積んだ履歴は、Chrome の「戻る」が飛ばしてしまうため。
+  if (!EXHIBIT && window.history && window.history.replaceState) (function () {
+    var H = window.history;
+    try { H.replaceState({ cafNav: 'base' }, ''); } catch (e) { return; }
+    function arm() {
+      var st = H.state;
+      if (!(st && st.cafNav === 'top')) { try { H.pushState({ cafNav: 'top' }, ''); } catch (e) { /* 積めなくても遊べる（戻るは今までどおり） */ } }
+    }
+    ['pointerdown', 'keydown'].forEach(function (n) { window.addEventListener(n, arm, true); });
+    window.addEventListener('popstate', function (e) {
+      if (!(e.state && e.state.cafNav === 'base')) return;
+      navBack();
+      H.forward();
+    });
+  })();
   // 自分のステージを遊ぶ（テストプレイ。E で、そのステージを作る側へ）
   function playOwn(name) {
     var d = draftFromRecord(name, (stageStore() || {})[name]);
@@ -2612,15 +2794,15 @@
     render();
     refreshShare();
   }
-  // 自分のステージを消す: 確かめてから（元に戻せない）
+  // 自分のステージを消す: ゴミ箱へ（戻せる。オーナー 11/03。前は確かめてから完全に消した）
   function deleteOwn(name) {
-    var stages = stageStore();
+    var stages = stageStore(), trash = trashStore();
     if (!stages || !stages[name]) return;
-    if (!window.confirm('自分のステージ「' + name + '」を消します。元に戻せません。消しますか？')) return;
-    delete stages[name];
-    if (!stageStoreSet(stages)) { window.alert('消せませんでした'); return; }
+    if (!trash) { window.alert('ゴミ箱に入れられませんでした'); return; }
+    var r = SIO.trashPut(stages, trash, name);
+    if (!trashStoreSet(r.trash) || !stageStoreSet(r.stages)) { window.alert('ゴミ箱に入れられませんでした'); return; }   // 先にゴミ箱へ書く（消えてなくなることはない）
     if (app.draft && app.draft.key === name) app.draft = null;   // 前に開いていたステージなら、作っていた盤面も手放す
-    renderHome();
+    homeNote('「' + name + '」をゴミ箱に入れた', 'my:' + r.key);
   }
   el.home.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('button');
@@ -2634,6 +2816,21 @@
     }
     if (app.homeView === 'lineup') { lineupAction(b); return; }
     if (b.hasAttribute('data-lineup')) { app.lineupDraft = lineupGet(); app.lineupSaved = false; app.homeView = 'lineup'; renderLineup(); return; }
+    if (b.hasAttribute('data-filter')) {
+      app.homeFilter = b.getAttribute('data-filter');
+      try { window.localStorage.setItem(FILTER_KEY, app.homeFilter); } catch (er) { /* 覚えられなくても絞れる */ }
+      renderHome();
+      return;
+    }
+    if (b.hasAttribute('data-wfilter')) {
+      app.homeWin = b.getAttribute('data-wfilter');
+      try { window.localStorage.setItem(WIN_FILTER_KEY, app.homeWin); } catch (er) { /* 覚えられなくても絞れる */ }
+      renderHome();
+      return;
+    }
+    if (b.hasAttribute('data-trash-toggle')) { app.trashOpen = !app.trashOpen; renderHome(); return; }
+    if (b.hasAttribute('data-tr-restore')) { restoreTrash(b.getAttribute('data-tr-restore')); return; }
+    if (b.hasAttribute('data-tr-purge')) { purgeTrash(b.getAttribute('data-tr-purge')); return; }
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
     if (b.hasAttribute('data-sdel')) { deleteShared(b.getAttribute('data-sdel')); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }

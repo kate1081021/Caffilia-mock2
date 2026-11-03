@@ -65,7 +65,7 @@ test('魔法は①②と同じ（オーナー 10/29 から、このステージ�
 });
 
 console.log('\n■ 3段のシナジー');
-test('つながる: 位置が整っていれば1ターンで 山 → 火山 → 桜吹雪。ボスと扇の中の取り巻きが倒れて勝ち', function () {
+test('つながる: 位置が整っていれば1ターンで 山 → 火山 → 桜吹雪。ボスが倒れて勝ち（取り巻きは1ターン目は置いた所＝扇の外に残る。11/03）', function () {
   mode('chain');
   var t = playTurn(start(), [EARTH, FIRE, WIND]);
   ok(t.events.some(function (e) { return e.type === 'kindle' && e.made === 'volcano'; }), '火山になった');
@@ -73,7 +73,7 @@ test('つながる: 位置が整っていれば1ターンで 山 → 火山 → 
   ok(f, '桜吹雪');
   eq(t.state.result, 'win');
   ok(!boss(t.state), 'ボスが倒れた');
-  eq(R.enemiesOf(t.state).length, 0, '扇の中の取り巻きもまとめて倒れた');
+  eq(R.enemiesOf(t.state).length, 2, '取り巻き2体は1ターン目は動かず、置いた所（扇の外）に残る（勝ちはボスだけ。前は1ターン目の頭に扇の中へ進んでいて、まとめて倒れた）');
   eq(Math.max.apply(null, f.cells.map(function (c) { return c[0]; })), 4 + B.eruption.depth, '扇はつながった火山の一番先 (x=4) から eruption.depth 段先まで');
   ok(count(t.state, 'petals') > 10, '空きに花びらが積もる');
   eq(count(t.state, 'volcano'), 0, '吹き終えた火山は山に戻る');
@@ -95,13 +95,15 @@ console.log('\n■ 敵');
 test('ボス: 1ターンに1マス前へ進み、体の前の2列に一撃を予告する。山でふさがれたら進まない', function () {
   var s = start();
   var b = boss(s);
-  eq([b.x, b.y, b.intent], [6, 2, true], '1ターン目の始めに1マス進んで予告');
+  eq([b.x, b.y, b.intent], [7, 2, true], '1ターン目は置いた所 (7,2) で、進まずに予告（味方から動く。オーナー 11/03）');
   var fc = R.forecast(s).enemies.filter(function (p) { return p.id === b.id; })[0];
   eq(fc.cells.length, 6, '体の前の2列（3×2）');
-  ok(fc.cells.every(function (c) { return c[0] === 4 || c[0] === 5; }));
+  ok(fc.cells.every(function (c) { return c[0] === 5 || c[0] === 6; }), JSON.stringify(fc.cells));
   mode('instant');
   var t = playTurn(s, [EARTH, wait(s, 'fire'), wait(s, 'wind')]);   // 十字の山の右の端は (4,3)
-  eq(boss(t.state).x, 5, 'ターン2の始めに x=5 まで');
+  eq(boss(t.state).x, 6, '1ターン目の終わりに x=6 へ');
+  t = idle(t.state);
+  eq(boss(t.state).x, 5, '2ターン目の終わりに x=5 まで');
   t = idle(t.state);
   eq(boss(t.state).x, 5, 'x=5 で山にふさがれて止まる');
   ok(t.events.some(function (e) { return /前をふさがれて進めない/.test(e.text || ''); }), 'ふさがれた一言');
