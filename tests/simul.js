@@ -53,32 +53,40 @@ test('1人ずつ: 撃つとすぐ起きる（構えは出ない）', function ()
   ok(r.events.some(function (e) { return e.type === 'cast'; }), 'すぐ撃つ');
   ok(!R.findUnit(r.state, p.id).stance, '構えはない');
 });
-test('一斉: 構えるとまだ起きず、盤面は変わらない。予告（forecast の allies）に、構えた順で出る', function () {
+test('一斉: 最初から全員、並び順で構えている（オーナー 11/03）。構えてもまだ起きず、盤面は変わらない。予告（forecast の allies）に、発動の順で出る', function () {
   mode('simul');
   var s = start('trio');
+  eq([R.stanceList(s).map(function (a) { return a.id; }), R.allAlliesActed(s)], [['P1', 'P2', 'P3'], true], '最初から全員構えていて、発動を押せる');
   var r = act(s, 'P1', [4, 6], 'up');
   ok(!r.events.some(function (e) { return e.type === 'cast'; }), '撃たない');
   eq(r.state.tiles, s.tiles, '盤面は変わらない');
   ok(r.events.some(function (e) { return e.type === 'stance' && e.order === 1; }), '構えの出来事（1番目）');
   var s2 = act(r.state, 'P2', [3, 6], 'up').state;
-  eq(R.stanceList(s2).map(function (a) { return a.id; }), ['P1', 'P2']);
+  eq(R.stanceList(s2).map(function (a) { return a.id; }), ['P1', 'P2', 'P3'], '構え直しても順番は変わらない');
   var fc = R.forecast(s2);
-  eq(fc.allies.map(function (p) { return [p.id, p.order]; }), [['P1', 1], ['P2', 2]]);
+  eq(fc.allies.map(function (p) { return [p.id, p.order]; }), [['P1', 1], ['P2', 2], ['P3', 3]]);
   ok(fc.allies[1].tileChanges.some(function (c) { return c.to === 'sakura'; }), '2番目（草）の予告で桜が咲く');
 });
-test('一斉: 構え直しは向きだけ（動けない）。順番はそのまま。待機にすると構えは消える', function () {
+test('一斉: 構え・待機のあとも、発動までは動き直せる（元の位置から数える）。順番はそのまま。待機で構えは消え、構えに戻すと最後に並ぶ（オーナー 11/03）', function () {
   mode('simul');
   var s = start('trio');
-  s = act(s, 'P1', [4, 6], 'up').state;
-  s = act(s, 'P2', [3, 6], 'up').state;
-  ok(!R.act(s, 'P1', { to: [4, 5], dir: 'up' }).ok, '構え直しでは動けない');
-  eq(Object.keys(R.reachableCells(s, 'P1')), ['4,6'], '動けるマスは今の所だけ');
+  var m = R.act(s, 'P1', { to: [4, 5], dir: 'up' });
+  ok(m.ok, m.error);
+  eq([[R.findUnit(m.state, 'P1').x, R.findUnit(m.state, 'P1').y], R.stanceOrder(m.state, 'P1')], [[4, 5], 1], '構えたまま動いた（1番目のまま）');
+  ok(Object.keys(R.reachableCells(m.state, 'P1')).indexOf('4,6') >= 0, '元の位置にも戻れる');
+  var back = R.move(m.state, 'P1', [4, 6]);
+  ok(back.ok, back.error);
+  s = back.state;
   var r = act(s, 'P1', [4, 6], 'left');
   eq([R.findUnit(r.state, 'P1').facing, R.stanceOrder(r.state, 'P1')], ['left', 1], '向きが変わり、1番目のまま');
   ok(/構え直した/.test(r.events.map(function (e) { return e.text; }).join()), 'ログは「構え直した」');
   var w = act(r.state, 'P1', [4, 6], 'up', false);
   ok(!R.findUnit(w.state, 'P1').stance, '待機で構えが消える');
   eq(R.stanceOrder(w.state, 'P2'), 1, '草が1番目に繰り上がる');
+  var w2 = R.move(w.state, 'P1', [4, 5]);
+  ok(w2.ok, '待機のあとも動ける');
+  var a2 = act(w2.state, 'P1', [4, 5], 'up');
+  eq(R.stanceOrder(a2.state, 'P1'), 3, '構えに戻すと最後に並ぶ');
 });
 test('一斉: 並べ替え（▲▼）で順番が入れ替わる。端より先へは動かせない。構える味方は動かせない', function () {
   mode('simul');
@@ -87,7 +95,7 @@ test('一斉: 並べ替え（▲▼）で順番が入れ替わる。端より先
   s = act(s, 'P2', [3, 6], 'up').state;
   var r = R.reorderStance(s, 'P2', -1);
   ok(r.ok);
-  eq(R.stanceList(r.state).map(function (a) { return a.id; }), ['P2', 'P1']);
+  eq(R.stanceList(r.state).map(function (a) { return a.id; }), ['P2', 'P1', 'P3']);
   ok(!R.reorderStance(s, 'P1', -1).ok, '1番目より前へは動かせない');
   var t = start('tut1');
   var npc = R.alliesOf(t).filter(function (a) { return a.npc; })[0];
@@ -103,7 +111,29 @@ test('一斉: 発動は構えた順に1人ずつ（出来事に順番）。そ�
   eq(casts.slice(0, 2).map(function (e) { return [e.magic, e.order]; }), [['mount', 1], ['water', 2]]);
   var phases = t.events.filter(function (e) { return e.type === 'phase'; }).map(function (e) { return e.text; });
   ok(/構えの発動/.test(phases[0]), phases.join());
-  ok(R.alliesOf(t.state).every(function (a) { return !a.stance && !a.acted; }), '次のターンは構えも行動も空に');
+  ok(R.controllableOf(t.state).every(function (a) { return a.stance && !a.moved; }), '次のターンも、全員また構えている（動きは数え直し）');
+  eq(R.stanceList(t.state).map(function (a) { return a.magic; }), ['mount', 'water'], '順番は前のターンのまま');
+});
+test('一斉: 何も触らずに発動しても、全員が今の位置と向きで、並び順に撃つ（オーナー 11/03）', function () {
+  mode('simul');
+  var t = R.endTurn(start('trio'));
+  var casts = t.events.filter(function (e) { return e.type === 'cast' && e.order; });
+  eq(casts.map(function (e) { return [e.magic, e.order]; }), [['earth', 1], ['grass', 2], ['wind', 3]]);
+});
+test('一斉: 泥沼で休みの味方は動けない（向きと構え ⇄ 待機だけ）。ターンの終わりに休みを使い、次のターンは動ける', function () {
+  mode('simul');
+  var s0 = R.createState({ size: 6, blank: true, enemyActs: false });
+  R.setTile(s0, 2, 4, 'mud');
+  var a = R.addAlly(s0, 'fire', 2, 4, 'up');
+  R.addEnemy(s0, 'fire', 5, 0, 'down');
+  var s = R.startBattle(s0).state;
+  R.findUnit(s, a.id).stuck = true;   // 前のターンに泥沼にはまった
+  eq(Object.keys(R.reachableCells(s, a.id)), ['2,4'], '動けない');
+  ok(!R.move(s, a.id, [2, 3]).ok, '動けない');
+  ok(R.act(s, a.id, { dir: 'left' }).ok && R.act(s, a.id, { dir: 'up', shoot: false }).ok, '向きと待機は変えられる');
+  var t = R.endTurn(s).state;
+  ok(!R.findUnit(t, a.id).stuck, 'ターンの終わりに休みを使った');
+  ok(Object.keys(R.reachableCells(t, a.id)).length > 1, '次のターンは動ける');
 });
 test('一斉: 予測（previewAct）は構えた順に全部起きたあと。敵の予告はその盤面で計算し直す', function () {
   mode('simul');
@@ -167,6 +197,7 @@ test('② 一斉: 水 → 山の順だと泥沼（予測でも分かる）。並
   var s = start('tut2');
   s = act(s, byMagic(s, 'water').id, [1, 4], 'up').state;
   s = act(s, byMagic(s, 'mount').id, [0, 5], 'up').state;
+  s = R.reorderStance(s, byMagic(s, 'water').id, -1).state;   // 最初の順番は並び順（山 → 水）。▲で水を先に（オーナー 11/03）
   var r = R.fireAllStances(s);
   eq(R.getTile(r.after, 1, 3), 'mud', '水 → 山: 泥沼');
   var sw = R.reorderStance(s, byMagic(s, 'water').id, 1).state;
@@ -176,7 +207,7 @@ test('① 一斉: 構える味方は最初から構えていて、順番はい�
   mode('simul');
   var s = start('tut1');
   var npc = R.alliesOf(s).filter(function (a) { return a.npc; })[0];
-  eq(R.forecast(s).allies.map(function (p) { return p.id; }), [npc.id], '最初から予告に出る');
+  eq(R.forecast(s).allies.map(function (p) { return p.id; }), [byMagic(s, 'fire').id, npc.id], '最初から予告に出る（火の味方も最初から構えている。オーナー 11/03）');
   s = act(s, byMagic(s, 'fire').id, [1, 2], 'up').state;
   eq(R.stanceList(s).map(function (a) { return a.npc ? 'npc' : a.magic; }), ['fire', 'npc']);
 });

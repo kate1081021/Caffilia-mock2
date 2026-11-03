@@ -1307,13 +1307,17 @@ test('移動だけ: 動き直しは元の位置から数える。元の位置へ
   eq(R.findUnit(again.state, a.id).moved, { from: [2, 5], to: [4, 5] });
   ok(R.act(st, a.id, { to: [3, 5], dir: 'up' }).ok, 'act も元の位置から数える');
 });
-test('移動だけ: 泥沼に入ったらはまって、もう動けない。休むのは次のターン', function () {
+test('移動だけ: 泥沼に入ったらはまる。撃つ前なら、元の位置から数えて動き直せる（はまったのも取り消し。オーナー 11/03）。休むのは次のターン', function () {
   var s = board(['......', '......', '......', '......', '..D...', '......']);
   var a = R.addAlly(s, 'fire', 2, 5);
   var st = R.move(s, a.id, [2, 4]).state;
   ok(R.findUnit(st, a.id).stuck, 'はまった');
-  eq(Object.keys(R.reachableCells(st, a.id)), ['2,4'], '今の位置だけ');
-  ok(!R.move(st, a.id, [2, 5]).ok, '元の位置へも戻れない');
+  var re = Object.keys(R.reachableCells(st, a.id));
+  ok(re.indexOf('2,5') >= 0 && re.indexOf('3,4') >= 0, '元の位置から数えて動き直せる: ' + re.join(' '));
+  var back = R.move(st, a.id, [2, 5]);
+  ok(back.ok && !R.findUnit(back.state, a.id).stuck, '元の位置へ戻ると、はまったのも取り消し');
+  var other = R.move(st, a.id, [3, 4]);
+  ok(other.ok && !R.findUnit(other.state, a.id).stuck, 'ほかの空きへ動き直しても、はまっていない');
   var r = R.act(st, a.id, { dir: 'up' });
   ok(r.ok && !r.events.some(function (e) { return e.type === 'mudSkip'; }), '撃てる（このターンは休まない）');
   ok(R.findUnit(r.state, a.id).stuck, 'まだはまっている');

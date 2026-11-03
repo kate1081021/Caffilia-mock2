@@ -1784,8 +1784,12 @@
     if (!mv) return reachInfo(s, u);
     var here = { dist: {}, order: [[u.x, u.y]] };
     here.dist[key(u.x, u.y)] = 0;
-    if (u.stuck || u.x !== mv.to[0] || u.y !== mv.to[1]) return here;
+    if (u.x !== mv.to[0] || u.y !== mv.to[1]) return here;
+    // 動いた味方の泥沼は、このターンの移動ではまったもの（はまっている味方は動けないので）。元の位置から数え直すときは、はまる前として数える（オーナー 11/03「移動させた後ももう一度触ったら変えられる」）
+    var wasStuck = u.stuck;
+    u.stuck = false;
     var r = reachInfo(s, u, mv.from), dist = {}, order = [];
+    u.stuck = wasStuck;
     r.order.forEach(function (c) {
       var o = unitAt(s, c[0], c[1]);
       if (o && o !== u) return;   // 元の位置に、もうほかの駒がいる
@@ -1798,10 +1802,9 @@
   function reachableCells(s, unitId) {
     var u = findUnit(s, unitId);
     if (!u) return {};
-    if (restancing(u)) { var here = {}; here[key(u.x, u.y)] = 0; return here; }   // 【一斉】構え直しは動けない
     return u.side === 'ally' ? moveInfo(s, u).dist : reachInfo(s, u).dist;
   }
-  // 【一斉】このターンもう構えた（か待機した）味方が、構え直すところか
+  // 【一斉】このターンもう構えた（か待機した）味方が、構え直すところか（構え・待機・移動は発動まで何度でも直せる。オーナー 11/03）
   function restancing(u) { return simulOn() && !!u && u.side === 'ally' && !u.npc && u.acted; }
 
   function moveUnit(s, u, x, y, dist, ev) {
@@ -1812,6 +1815,7 @@
   }
   // 味方を to へ動かす（dist: 元の位置からの歩数。0 は元の位置へ戻る＝移動の取り消し）
   function allyStep(s, u, to, dist, ev) {
+    if (u.moved) delete u.stuck;   // 動き直し: このターンの移動ではまった泥沼は、はまる前に戻す（行き先が泥沼なら、またはまる）
     if (dist === 0) {
       var back = [u.x, u.y];
       u.x = to[0]; u.y = to[1];
@@ -1867,8 +1871,8 @@
     var dir = opts.dir || u0.facing;
     if (!DIRS[dir]) return fail(s0, '向きが正しくない');
     var same = to[0] === u0.x && to[1] === u0.y;
-    var dist = same ? 0 : again ? undefined : moveInfo(s0, u0).dist[key(to[0], to[1])];
-    if (dist === undefined) return fail(s0, again ? '構え直しでは動けない（向きと構えだけ）' : u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
+    var dist = same ? 0 : moveInfo(s0, u0).dist[key(to[0], to[1])];   // 【一斉】構え直しでも動ける（元の位置から数える。オーナー 11/03）
+    if (dist === undefined) return fail(s0, u0.stuck && !u0.moved ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
     if (opts.shoot !== false && !canShoot(s0, u0, to)) return fail(s0, '宝を持っている間は撃てない（待機だけ）');
 
     var s = clone(s0);
@@ -1877,7 +1881,7 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
-    if (u.stuck && !again && !u.moved) {   // このターンに動いて泥沼にはまったのなら、休むのは次のターン
+    if (u.stuck && !again && !u.moved && !simulOn()) {   // このターンに動いて泥沼にはまったのなら、休むのは次のターン。【一斉】休みはターンの終わりに数える
       unstick(u);
       ev.push({ type: 'mudSkip', id: u.id, text: unitLabel(s, u) + 'は泥沼にはまっていて動けない（1回休み）' });
     }
@@ -1912,7 +1916,7 @@
     var u0 = findUnit(s0, unitId);
     if (!u0 || u0.side !== 'ally') return fail(s0, '味方を選んでいない');
     if (u0.npc) return fail(s0, '構える味方には指示できない');
-    if (u0.acted) return fail(s0, restancing(u0) ? '構え直しでは動けない（向きと構えだけ）' : 'この味方はもう行動した');
+    if (u0.acted && !restancing(u0)) return fail(s0, 'この味方はもう行動した');   // 【一斉】構え・待機のあとも、発動までは動き直せる（オーナー 11/03）
     if (!to || (to[0] === u0.x && to[1] === u0.y)) return fail(s0, 'もうそこにいる');
     var dist = moveInfo(s0, u0).dist[key(to[0], to[1])];
     if (dist === undefined) return fail(s0, u0.stuck ? '泥沼にはまっていて動けない' : 'そこへは移動できない');
@@ -1937,6 +1941,21 @@
     return { ok: true, state: s, events: [{ type: 'reorder', id: a.id, text: unitLabel(s, a) + 'の発動を' + (j + 1) + '番目にした' }], steps: [] };
   }
 
+  // 【一斉】ターンの始めに、操作できる味方を全員「構え」にする（オーナー 11/03「デフォルトで魔法を構えていて、そのままターン終了しても撃つ」）。
+  //   向きは今の向き。順番は前のターンの順（s.lastOrder。待機した味方はそのうしろ）、1ターン目は味方の並び順。宝を持っている味方は待機
+  //   構え・待機・移動は発動を押すまで何度でも直せる（act・move）。1人ずつ（single）のときは何もしない
+  function armAllies(s) {
+    if (!simulOn()) return;
+    var order = (s.lastOrder || []).slice();
+    controllableOf(s).forEach(function (a) { if (order.indexOf(a.id) < 0) order.push(a.id); });
+    var n = 0;
+    order.forEach(function (id) {
+      var a = findUnit(s, id);
+      if (!a || a.side !== 'ally' || a.npc) return;
+      a.acted = true;
+      if (canShoot(s, a, [a.x, a.y])) a.stance = { n: ++n }; else delete a.stance;
+    });
+  }
   function allAlliesActed(s) {
     var al = controllableOf(s);   // 構える味方は数えない
     return al.length > 0 && al.every(function (a) { return a.acted; });
@@ -2704,10 +2723,12 @@
     }
     // このターン行動しなかった味方は、泥沼の1回休みを使ったことにする
     //   （このターンに動いて泥沼にはまった味方は、次のターンに休む）
-    alliesOf(s).forEach(function (a) { if (!a.acted && a.stuck && !a.moved) unstick(a); });
+    //   【一斉】泥沼で休んでいた味方（動いていない）は、構えていても、ここで休みを使ったことにする
+    alliesOf(s).forEach(function (a) { if ((!a.acted || simulOn()) && a.stuck && !a.moved) unstick(a); });
 
     // 3a. 構える味方の魔法の発動（敵より先）。【一斉】味方の構えを構えた順に発動（構える味方はその最後）
     if (simulOn()) {
+      s.lastOrder = stanceList(s).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });   // 次のターンの最初の順番
       if (stanceList(s).length) {
         ev.push({ type: 'phase', text: '── 構えの発動（構えた順） ──' });
         fireStances(s, ev, step);
@@ -2758,6 +2779,7 @@
     //   敵は置いた所から1ターン目を始め（startBattle）、2ターン目からは前のターンの終わりに動いて予告する。味方から動くのが基本
     if (!s.result) {
       alliesOf(s).forEach(function (a) { a.acted = false; delete a.moved; });
+      armAllies(s);   // 【一斉】全員、前のターンの順で構える
       allyReadyPhase(s, ev, step);
       if (s.enemyActs && enemiesOf(s).length) {
         ev.push({ type: 'phase', text: '── 敵の移動と予告（ターン' + s.turn + 'の終わり） ──' });
@@ -2779,6 +2801,7 @@
     function step() {
       if (ev.length > mark) { steps.push({ state: clone(s), events: ev.slice(mark) }); mark = ev.length; }
     }
+    armAllies(s);   // 【一斉】全員、味方の並び順で構える（オーナー 11/03）
     allyReadyPhase(s, ev, step);
     if (s.enemyActs) enemyPlanPhase(s, ev, step, true);   // 1ターン目: 敵は置いた所から動かずに予告（味方から動く。オーナー 11/03）
     step();
