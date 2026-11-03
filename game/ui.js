@@ -2589,6 +2589,39 @@
     showHome(true);
     render();
   }
+  // 開発モード: ブラウザ（スマホ）の「戻る」で、展示モードに戻らず1つ上の画面へ（オーナー 11/03。IMPROVE_小さい直し 1-1）
+  //   テストプレイ（作っているステージ）→ エディット → 開発の最初の画面。ほかのステージのテストプレイ・エディット → 最初の画面。
+  //   最初の画面ではその場に残る（開発モードから出るのは、今までどおり右下の点の長押しだけ）。開いている窓があれば、まず窓を閉じる。
+  //   「1手戻す」（app.history）とは別のもの。展示モードの「戻る」は今のまま。
+  function navBack() {
+    if (!el.howto.hidden) { setHowto(false); return; }
+    if (!el.choice.hidden) { el.choice.hidden = true; return; }
+    if (app.closeDialog) { app.closeDialog(); return; }
+    if (app.busy) skipPlayback();
+    if (app.home) {
+      if (app.homeView === 'lineup' && (!lineupDirty() || window.confirm('展示の並びで変えたところを捨てて、一覧に戻りますか？'))) { app.homeView = 'list'; renderHome(); }
+      return;
+    }
+    if (testing()) setEditMode(true);
+    else goHome();
+  }
+  //   履歴は2つだけ使う: 下（base）と上（top）。いつも top にいて、「戻る」で base に来たら、アプリの中で1つ上の画面へ戻し、
+  //   history.forward() で top に戻る（積み直さない）。URL は変えない（#dev のまま。hashchange は起きない）。
+  //   top はページを触ったとき（ユーザーの操作の中）に積む。操作なしで積んだ履歴は、Chrome の「戻る」が飛ばしてしまうため。
+  if (!EXHIBIT && window.history && window.history.replaceState) (function () {
+    var H = window.history;
+    try { H.replaceState({ cafNav: 'base' }, ''); } catch (e) { return; }
+    function arm() {
+      var st = H.state;
+      if (!(st && st.cafNav === 'top')) { try { H.pushState({ cafNav: 'top' }, ''); } catch (e) { /* 積めなくても遊べる（戻るは今までどおり） */ } }
+    }
+    ['pointerdown', 'keydown'].forEach(function (n) { window.addEventListener(n, arm, true); });
+    window.addEventListener('popstate', function (e) {
+      if (!(e.state && e.state.cafNav === 'base')) return;
+      navBack();
+      H.forward();
+    });
+  })();
   // 自分のステージを遊ぶ（テストプレイ。E で、そのステージを作る側へ）
   function playOwn(name) {
     var d = draftFromRecord(name, (stageStore() || {})[name]);
