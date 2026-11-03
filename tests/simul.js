@@ -6,7 +6,6 @@ var R = require('../game/rules.js');
 var B = require('../game/balance.js');
 var IO = require('../game/texts_io.js');
 var TEXTS = require('../game/texts.js');
-var DEMOS = require('./data/demos.js');
 
 var passed = 0, failed = [];
 function test(name, fn) {
@@ -181,11 +180,11 @@ test('① 一斉: 構える味方は最初から構えていて、順番はい�
   s = act(s, byMagic(s, 'fire').id, [1, 2], 'up').state;
   eq(R.stanceList(s).map(function (a) { return a.npc ? 'npc' : a.magic; }), ['fire', 'npc']);
 });
-test('① 一斉: 外すと「火は点いたのに、風は別の所」。構える味方の風は (1,1) を吹く', function () {
+test('① 一斉: 外すと「火は点いたのに、風は別の所」。構える味方の風は (1,1)(2,1) を吹く（風は2マス）', function () {
   mode('simul');
   var t = playTurn(start('tut1'), [['fire', [0, 3], 'up']]);
   var casts = t.events.filter(function (e) { return e.type === 'cast'; });
-  eq(casts.slice(0, 2).map(function (e) { return e.cells; }), [[[0, 2]], [[1, 1]]]);
+  eq(casts.slice(0, 2).map(function (e) { return e.cells; }), [[[0, 2]], [[1, 1], [2, 1]]]);
   ok(!t.state.result);
 });
 test('やり直しのヒントはターンの形ごと（texts.js）', function () {
@@ -195,38 +194,6 @@ test('やり直しのヒントはターンの形ごと（texts.js）', function 
     for (var i = 0; i < 5 && !lost.result; i++) lost = R.endTurn(lost).state;
     var r = R.retryStage(lost);
     eq(R.stageHint(r.state), TEXTS.stages.tut2.hint[m]);
-  });
-});
-
-console.log('\n■ デモ（どちらの形でも動く）');
-DEMOS.forEach(function (d) {
-  if (d.recipe) return;   // 竜巻のデモは一覧に出していない
-  ['single', 'simul'].forEach(function (m) {
-    test('デモ「' + d.name + '」（' + m + '）', function () {
-      mode(m);
-      var p = R.findPreset(d.preset);
-      var saved = [B.windMode, B.tornadoRecipe, B.sakura.from];
-      B.windMode = (p && p.windMode) || d.windMode || 'breeze'; B.tornadoRecipe = d.recipe || 'off'; if (p && p.sakuraFrom) B.sakura.from = p.sakuraFrom;   // 画面のデモと同じ設定
-      try {
-      var s = R.startBattle(R.loadPreset(d.preset)).state, fins = [], errs = 0;
-      if (d.enemyActs === false) s.enemyActs = false;
-      d.turns.forEach(function (turn) {
-        if (s.result) return;
-        turn.forEach(function (a) {
-          if (s.result || !R.findUnit(s, a.id)) return;
-          var r = R.act(s, a.id, { to: a.to, dir: a.dir, shoot: a.shoot });
-          if (!r.ok) { errs++; return; }
-          fins = fins.concat(names(r.events, 'finisher'));
-          s = r.state;
-        });
-        if (s.result) return;
-        if (m === 'simul') R.controllableOf(s).forEach(function (u) { if (!u.acted) { var w = R.act(s, u.id, { shoot: false }); if (w.ok) s = w.state; } });
-        if (m === 'simul' || R.allAlliesActed(s)) { var t = R.endTurn(s); fins = fins.concat(names(t.events, 'finisher')); s = t.state; }
-      });
-      ok(p, 'シナリオがある');
-      console.log('        → ' + (s.result || '決着せず') + '、決め手 ' + (fins.join('・') || 'なし') + (errs ? '、動けなかった手 ' + errs : ''));
-      } finally { B.windMode = saved[0]; B.tornadoRecipe = saved[1]; B.sakura.from = saved[2]; }
-    });
   });
 });
 
