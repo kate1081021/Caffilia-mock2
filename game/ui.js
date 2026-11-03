@@ -12,6 +12,8 @@
   function TX() { return window.TEXTS || {}; }
   function ui(k, fallback) { var u = TX().ui || {}; return u[k] !== undefined && u[k] !== '' ? u[k] : (fallback || ''); }
   function finName(n) { var f = TX().finishers || {}; return f[n] || n; }
+  // 出来事の文。シナジーの名前は設定で変えた名前で出す（ルールが作る文は元の名前。オーナー 11/03）
+  function evText(e) { var n = e && e.type === 'finisher' && e.name, f = n && finName(n); return f && f !== n ? String(e.text || '').split(n).join(f) : e.text; }
   function stageTexts(id) { var st = TX().stages || {}; return (id && st[id]) || null; }
   function stageName(p) { var t = p && stageTexts(p.id); return (t && t.name) || (p && (p.short || p.name)) || ''; }
   // 行の「ターンの形」の指定が今の形に合うか（both / simul / single）
@@ -41,6 +43,19 @@
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left', w: 'up', a: 'left', s: 'down', d: 'right', W: 'up', A: 'left', S: 'down', D: 'right' };
   var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
   Object.keys(R.TILE_INFO).forEach(function (t) { if (!SHORT[t]) SHORT[t] = R.TILE_INFO[t].name; });
+  // 設定（オーナー 11/03。game/settings.js・.claude/IMPROVE_設定.md）: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）。
+  //   開いたらすぐ、このブラウザの写しを当てる。共有の置き場所から読んだら、そちらを当てる（fetchShared）
+  var CS = window.CafiliaSettings;
+  var SHORT0 = {};
+  Object.keys(SHORT).forEach(function (t) { SHORT0[t] = SHORT[t]; });
+  function applySettings(s) {
+    if (!CS) return;
+    CS.applyColors(document, s);
+    CS.applyNames(R, TX(), s);
+    var c = CS.clean(s);
+    Object.keys(SHORT0).forEach(function (t) { SHORT[t] = (c.tiles[t] && c.tiles[t].name) || SHORT0[t]; });   // 盤面の「→森」など
+  }
+  applySettings(CS && CS.cacheGet());
   var STORE_KEY = 'cafilia-mock-v2-layouts';   // 前の保存（配置だけ。R.exportLayout の JSON）。段0で自分のステージに移した（元は消さずに残す）
   // エディットで作ったステージ（オーナー 10/30）。中身は stages_io.js（チュートリアルと同じ形の定義＋会話の窓の文）
   var SIO = window.StagesIO;
@@ -330,7 +345,7 @@
     var hl = {}, flash = {}, finishers = [], combo = null;
     var exNow = !!exOf();
     events.forEach(function (e) {
-      addLog((e.combo ? '【' + comboText(e) + '】' : '') + e.text, logType(e));
+      addLog((e.combo ? '【' + comboText(e) + '】' : '') + evText(e), logType(e));
       if (app.onEvent) app.onEvent(e);   // 文章（きっかけ: 決め手・敵の予告・展示③のヒントとミッションなど）
       // 展示ステージ③: 山に火で火山（2段目のシナジー）も、決め手と同じく名前を出す
       var synergy = e.type === 'finisher' || (exNow && e.type === 'kindle' && e.made === 'volcano');
@@ -2231,7 +2246,7 @@
   var SITE_API = 'https://caffilia-jkwzvlbc7.kate108superstar.workers.dev/api/';
   var API = window.CAFILIA_API || (/^https?:$/.test(window.location.protocol) ? '/api/' : SITE_API);
   var NET_MS = 8000;   // これより待っても答えがなければ、つながっていないことにする
-  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, why: '' };
+  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, why: '' };
   function api(method, path, body) {
     return new Promise(function (resolve) {
       var done = false, finish = function (r) { if (!done) { done = true; resolve(r); } };
@@ -2252,8 +2267,15 @@
   function fetchShared() {
     return api('GET', 'all').then(function (res) {
       // trash: ゴミ箱（ゴミ箱のない古い置き場所では null。そのときは「消す」は今までどおり完全に消す）
-      app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, trash: res.data.trash || null, why: '' }
-        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, why: netWhy(res) };
+      app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, trash: res.data.trash || null,
+          settings: res.data.settings || null, hasSettings: res.data.settings !== undefined, why: '' }
+        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, why: netWhy(res) };
+      // 設定: 置き場所にあれば（まだ誰も保存していなければ元の色と名前）当てて、このブラウザにも写す。設定の画面で直している間は当てない
+      if (app.shared.hasSettings && !(app.home && app.homeView === 'settings')) {
+        if (CS) CS.cacheSet(app.shared.settings);
+        applySettings(app.shared.settings);
+        if (!app.home) render();
+      }
       return app.shared;
     });
   }
@@ -2480,6 +2502,134 @@
       '<button type="button" data-lu-back="1">' + (dirty ? 'やめて一覧に戻る（変えたところは捨てる）' : '一覧に戻る') + '</button></div>' +
       (dirty ? '<p class="note">まだ展示モードは変わっていません。「この並びで展示する」を押すと変わります。</p>' : app.lineupSaved ? '<p class="note">展示モードの並びを、この並びにしました。</p>' : '');
   }
+  // ---------------------------------------------------------------
+  // 設定の画面（開発モード。オーナー 11/03。.claude/IMPROVE_設定.md）: 画面の主な色（RGB）と、名前（自然・マップの字・魔法・シナジー）。
+  //   変えるとすぐ、このページに当たって見える（下書き app.settingsDraft）。「この設定で保存する」で共有の置き場所へ。
+  //   保存すると、どのパソコンの展示モード・開発モードもこの設定で出る（展示の並びと同じ）。やめたら保存した設定に戻す
+  // ---------------------------------------------------------------
+  function settingsSaved() { return CS.clean(app.shared.hasSettings ? app.shared.settings : CS.cacheGet()); }
+  function settingsBare(x) { x = CS.clean(x); delete x.at; return JSON.stringify(x); }
+  function settingsDirty() { return settingsBare(app.settingsDraft) !== settingsBare(settingsSaved()); }
+  function settingsWhy() {
+    if (!app.shared.loaded) return '共有の置き場所を読み込み中…';
+    if (!app.shared.ok) return app.shared.why + '（つながると保存できます）';
+    if (!app.shared.hasSettings) return '共有の置き場所がまだ古いので、保存できません（公開すると使えます。node tests/serve.js で開けば手元で試せます）';
+    return '';
+  }
+  function openSettings() {
+    if (!CS) return;
+    app.settingsDraft = settingsSaved();
+    app.settingsNote = '';
+    app.homeView = 'settings';
+    renderSettings();
+  }
+  function settingsBack() {
+    if (settingsDirty() && !window.confirm('設定で変えたところを捨てて、一覧に戻りますか？')) return;
+    applySettings(settingsSaved());   // 下書きで見ていた色と名前を、保存した設定に戻す
+    app.homeView = 'list';
+    renderHome();
+  }
+  function renderSettings() {
+    var d = app.settingsDraft = CS.clean(app.settingsDraft), o = CS.originals(R, TX()), why = settingsWhy();
+    var colorRows = CS.COLORS.map(function (c) {
+      var v = d.colors[c.key] || c.def, rgb = CS.rgbOf(v);
+      return '<div class="set-row" data-ckey="' + c.key + '">' +
+        '<span class="set-name"><b>' + esc(c.name) + '</b><small>' + esc(c.note) + '</small></span>' +
+        '<input type="color" class="set-color" data-color="' + c.key + '" value="' + v + '" aria-label="' + esc(c.name) + 'の色">' +
+        '<span class="set-rgb">' + ['R', 'G', 'B'].map(function (n, i) {
+          return '<label>' + n + '<input type="number" min="0" max="255" step="1" inputmode="numeric" data-rgb="' + c.key + '" data-i="' + i + '" value="' + rgb[i] + '"></label>';
+        }).join('') + '</span>' +
+        '<button type="button" class="set-reset" data-creset="' + c.key + '"' + (d.colors[c.key] ? '' : ' disabled') + '>元に戻す</button></div>';
+    }).join('');
+    var nameInput = function (attr, key, val, ph, max, label) {
+      return '<input type="text" ' + attr + '="' + esc(key) + '" value="' + esc(val || '') + '" placeholder="' + esc(ph) + '" maxlength="' + max + '" aria-label="' + esc(label) + '">';
+    };
+    var tileRows = Object.keys(o.tiles).map(function (k) {
+      var v = d.tiles[k] || {}, t0 = o.tiles[k];
+      return '<div class="set-row set-names"><span class="set-name"><b>' + esc(t0.name) + '</b><small>' + esc(k) + '</small></span>' +
+        '<label>表示名' + nameInput('data-tname', k, v.name, t0.name, CS.MAX_NAME, t0.name + 'の表示名') + '</label>' +
+        '<label>マップの字' + nameInput('data-tlabel', k, v.label, t0.label || '（なし）', CS.MAX_LABEL, t0.name + 'のマップの字') + '</label></div>';
+    }).join('');
+    var magicRows = Object.keys(o.magics).map(function (k) {
+      return '<div class="set-row set-names"><span class="set-name"><b>' + esc(o.magics[k]) + '</b><small>' + esc(k) + '</small></span>' +
+        '<label>名前' + nameInput('data-mname', k, d.magics[k], o.magics[k], CS.MAX_NAME, o.magics[k] + 'の魔法の名前') + '</label></div>';
+    }).join('');
+    var synRows = Object.keys(o.synergies).map(function (k) {
+      return '<div class="set-row set-names"><span class="set-name"><b>' + esc(o.synergies[k]) + '</b></span>' +
+        '<label>名前' + nameInput('data-sname', k, d.synergies[k], o.synergies[k], CS.MAX_NAME, o.synergies[k] + 'の名前') + '</label></div>';
+    }).join('');
+    el.home.innerHTML = '<h2>設定 <small>画面の色と名前。展示モードも、保存した設定で出る</small></h2>' +
+      '<p class="lu-warn">⚠ 「この設定で保存する」を押すと、展示モードの色と名前がどのパソコンでも変わります</p>' +
+      '<section class="home-sec"><h3>色 <small>RGB（0〜255）か、色の四角を押して選ぶ。変えるとすぐ画面に出る（保存するまでは、このページだけ）</small></h3>' + colorRows + '</section>' +
+      '<section class="home-sec"><h3>自然の名前 <small>表示名（押したマスの情報・ログ など）と、マップに出る字（' + CS.MAX_LABEL + '文字まで）。空なら元の名前</small></h3>' + tileRows + '</section>' +
+      '<section class="home-sec"><h3>魔法の名前 <small>駒の字・ログ など。空なら元の名前</small></h3>' + magicRows + '</section>' +
+      '<section class="home-sec"><h3>シナジーの名前 <small>真ん中に出る文字・ログ など。空なら元の名前</small></h3>' + synRows + '</section>' +
+      '<div class="home-list set-actions"><button type="button" class="primary" data-set-save="1">この設定で保存する</button>' +
+      '<button type="button" data-set-back="1"></button>' +
+      '<button type="button" data-set-clear="1">ぜんぶ元に戻す</button></div>' +
+      '<p class="note set-why"' + (why ? '' : ' hidden') + '>' + esc(why) + '</p>' +
+      '<p class="note set-note"' + (app.settingsNote ? '' : ' hidden') + '>' + esc(app.settingsNote || '') + '</p>';
+    settingsButtons();
+  }
+  // 打っている途中の欄はそのままで、ボタンの「押せる・押せない」と字だけを直す
+  function settingsButtons() {
+    var dirty = settingsDirty(), why = settingsWhy();
+    var save = el.home.querySelector('[data-set-save]'), back = el.home.querySelector('[data-set-back]');
+    if (save) { save.disabled = !dirty || !!why; save.title = why; }
+    if (back) back.textContent = dirty ? 'やめて一覧に戻る（変えたところは捨てる）' : '一覧に戻る';
+  }
+  function settingsAction(b) {
+    var d = app.settingsDraft;
+    if (b.hasAttribute('data-set-back')) { settingsBack(); return; }
+    if (b.hasAttribute('data-creset')) { delete d.colors[b.getAttribute('data-creset')]; applySettings(d); renderSettings(); return; }
+    if (b.hasAttribute('data-set-clear')) { app.settingsDraft = CS.clean({}); applySettings(app.settingsDraft); app.settingsNote = '元の色と名前にした（まだ保存していない）'; renderSettings(); return; }
+    if (b.hasAttribute('data-set-save')) {
+      var body = CS.clean(d);
+      delete body.at;
+      b.disabled = true;
+      api('PUT', 'settings', body).then(function (res) {
+        if (!res.ok) { window.alert('保存できませんでした: ' + netWhy(res)); settingsButtons(); return; }
+        body.at = res.data && res.data.at;
+        app.shared.settings = body;
+        CS.cacheSet(body);
+        app.settingsNote = '保存しました。展示モードも、この色と名前で出ます（ほかのパソコンには1分ほどで届きます）';
+        if (app.home && app.homeView === 'settings') renderSettings();
+      });
+    }
+  }
+  // 色・名前の欄を打ったら: 下書きを直して、すぐ当てる（画面は作り直さない。打っている欄の字が消えないように）
+  function settingsInput(t) {
+    var d = app.settingsDraft, row = t.closest('.set-row');
+    var setColor = function (key, hex) {
+      if (hex === CS.colorDef(key)) delete d.colors[key]; else d.colors[key] = hex;
+      var rgb = CS.rgbOf(hex), pick = row.querySelector('[data-color]');
+      if (pick && pick !== t) pick.value = hex;
+      Array.prototype.forEach.call(row.querySelectorAll('[data-rgb]'), function (n) { if (n !== t) n.value = rgb[Number(n.getAttribute('data-i'))]; });
+      var rs = row.querySelector('[data-creset]');
+      if (rs) rs.disabled = !d.colors[key];
+    };
+    var put = function (box, key, field, v) {
+      v = String(v || '').trim();
+      if (field) { box[key] = box[key] || {}; if (v) box[key][field] = v; else delete box[key][field]; if (!Object.keys(box[key]).length) delete box[key]; }
+      else if (v) box[key] = v; else delete box[key];
+    };
+    if (t.hasAttribute('data-color')) setColor(t.getAttribute('data-color'), t.value.toLowerCase());
+    else if (t.hasAttribute('data-rgb')) {
+      var key = t.getAttribute('data-rgb');
+      setColor(key, CS.hexOf([0, 1, 2].map(function (i) { return row.querySelector('[data-rgb][data-i="' + i + '"]').value; })));
+    } else if (t.hasAttribute('data-tname')) put(d.tiles, t.getAttribute('data-tname'), 'name', t.value);
+    else if (t.hasAttribute('data-tlabel')) put(d.tiles, t.getAttribute('data-tlabel'), 'label', t.value);
+    else if (t.hasAttribute('data-mname')) put(d.magics, t.getAttribute('data-mname'), null, t.value);
+    else if (t.hasAttribute('data-sname')) put(d.synergies, t.getAttribute('data-sname'), null, t.value);
+    else return;
+    app.settingsNote = '';
+    var note = el.home.querySelector('.set-note');
+    if (note) note.hidden = true;
+    applySettings(d);
+    settingsButtons();
+  }
+  el.home.addEventListener('input', function (e) { if (!EXHIBIT && app.home && app.homeView === 'settings' && CS) settingsInput(e.target); });
+
   function lineupAction(b) {
     var d = app.lineupDraft;
     app.lineupSaved = false;
@@ -2553,6 +2703,7 @@
   function renderHome() {
     if (EXHIBIT) { renderExhibitHome(app.homeView); return; }
     if (app.homeView === 'lineup') { renderLineup(); return; }
+    if (app.homeView === 'settings') { renderSettings(); return; }
     var stages = stageStore(), mine = ownList(), mig = migrateInfo();
     var del = function (attr, nm, title) { return '<span class="row-btns"><button type="button" class="home-del" ' + attr + '="' + esc(nm) + '" title="' + esc(title) + '">消す</button></span>'; };
     el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
@@ -2577,7 +2728,8 @@
       (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
       '</section>' +
       '<div class="home-list"><button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>' +
-      '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button></div>' +
+      '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button>' +
+      '<button type="button" class="home-new" data-settings="1">設定</button></div>' +
       trashSection();
   }
   // 一覧（オーナー 11/03。IMPROVE_ステージ一覧 段2）: 1行に1つ。難易度の札・タイトル・使う魔法・クリア方法。上の札で難易度ごとに絞れる
@@ -2699,7 +2851,7 @@
     el.banner.classList.remove('show');
     if (on) {
       renderHome();
-      if (app.homeView !== 'lineup') fetchShared().then(function () { if (app.home && app.homeView !== 'lineup') renderHome(); });   // みんなのステージ・展示の並びを読み直す
+      if (app.homeView !== 'lineup' && app.homeView !== 'settings') fetchShared().then(function () { if (app.home && app.homeView !== 'lineup' && app.homeView !== 'settings') renderHome(); });   // みんなのステージ・展示の並びを読み直す
     }
   }
   // みんなのステージを遊ぶ（E で作る側へ。自分のステージに写しができる）
@@ -2749,6 +2901,7 @@
     if (app.busy) skipPlayback();
     if (app.home) {
       if (app.homeView === 'lineup' && (!lineupDirty() || window.confirm('展示の並びで変えたところを捨てて、一覧に戻りますか？'))) { app.homeView = 'list'; renderHome(); }
+      if (app.homeView === 'settings') settingsBack();
       return;
     }
     if (testing()) setEditMode(true);
@@ -2815,6 +2968,8 @@
       return;
     }
     if (app.homeView === 'lineup') { lineupAction(b); return; }
+    if (app.homeView === 'settings') { settingsAction(b); return; }
+    if (b.hasAttribute('data-settings')) { openSettings(); return; }
     if (b.hasAttribute('data-lineup')) { app.lineupDraft = lineupGet(); app.lineupSaved = false; app.homeView = 'lineup'; renderLineup(); return; }
     if (b.hasAttribute('data-filter')) {
       app.homeFilter = b.getAttribute('data-filter');

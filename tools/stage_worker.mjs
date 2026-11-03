@@ -4,14 +4,16 @@
  *   置くもの（Workers KV。バインディングの名前は CAFILIA）:
  *     stages … みんなのステージ { 名前: { def, texts, at } }（盤面の定義と会話の文。at は共有した時刻）
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
+ *     settings … 設定 { colors, tiles, magics, synergies, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
  *     trash  … ゴミ箱 { 鍵: { name, def, texts, at, deletedAt } }（消したみんなのステージ。戻せる。オーナー 11/03。鍵はふつう名前、重なれば「名前（2）」）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
- *     GET    /api/all             … { stages, lineup, trash }（trash があれば、ゴミ箱のある置き場所。画面はそれで見分ける）
+ *     GET    /api/all             … { stages, lineup, trash, settings }（trash・settings があれば、ゴミ箱・設定のある置き場所。画面はそれで見分ける。settings はまだなければ null）
  *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き）。本文 { def, texts }
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
+ *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
  *   KV は書いてから、ほかの場所で見えるまで1分ほどかかることがある（Cloudflare の決まり）。
  *   tools/publish.js が publish/worker.mjs に写す。手元の確かめでは tests/serve.js がこのファイルを読み、同じように答える。
  *   Cloudflare で動くので ES Modules で書く（モックの画面のファイルとは別。画面は今までどおり ES Modules を使わない）。
@@ -46,6 +48,21 @@ function freeName(name, taken) {
     if (!taken[n]) return n;
   }
 }
+// 設定の形（game/settings.js の clean と同じ決まり。こちらは正しくなければ断る）
+function okSettings(b) {
+  const isObj = function (o) { return !!o && typeof o === 'object' && !Array.isArray(o); };
+  const okStr = function (v, max) { return typeof v === 'string' && v.length <= max; };
+  if (!isObj(b)) return false;
+  const parts = ['colors', 'tiles', 'magics', 'synergies'];
+  if (Object.keys(b).some(function (k) { return parts.indexOf(k) < 0; })) return false;
+  const c = b.colors || {}, t = b.tiles || {}, m = b.magics || {}, s = b.synergies || {};
+  if (![c, t, m, s].every(isObj)) return false;
+  if (Object.keys(c).length + Object.keys(t).length + Object.keys(m).length + Object.keys(s).length > 300) return false;
+  return Object.keys(c).every(function (k) { return /^--[a-z-]{1,30}$/.test(k) && /^#[0-9a-f]{6}$/i.test(c[k]); }) &&
+    Object.keys(t).every(function (k) { return /^[a-z]{1,20}$/.test(k) && isObj(t[k]) && Object.keys(t[k]).every(function (f) { return (f === 'name' && okStr(t[k][f], 12)) || (f === 'label' && okStr(t[k][f], 3)); }); }) &&
+    Object.keys(m).every(function (k) { return /^[a-z]{1,20}$/.test(k) && okStr(m[k], 12); }) &&
+    Object.keys(s).every(function (k) { return k.length >= 1 && k.length <= 20 && okStr(s[k], 12); });
+}
 function inLineup(lineup, name) { const r = 'all:' + name; return !!lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(r) >= 0; }); }
 
 // /api/ の1件に答える。kv は Workers KV（get(key, 'json')・put(key, text)）
@@ -55,7 +72,7 @@ export async function handleApi(req, kv) {
   const path = new URL(req.url).pathname.replace(/^\/api\//, '');
   try {
     if (req.method === 'GET' && path === 'all') {
-      return json({ ok: true, stages: (await kv.get('stages', 'json')) || {}, lineup: (await kv.get('lineup', 'json')) || null, trash: (await kv.get('trash', 'json')) || {} });
+      return json({ ok: true, stages: (await kv.get('stages', 'json')) || {}, lineup: (await kv.get('lineup', 'json')) || null, trash: (await kv.get('trash', 'json')) || {}, settings: (await kv.get('settings', 'json')) || null });
     }
     const m = /^stages\/(.+)$/.exec(path);
     if (m) {
@@ -106,6 +123,13 @@ export async function handleApi(req, kv) {
         await kv.put('trash', JSON.stringify(trash));
         return json({ ok: true });
       }
+    }
+    if (req.method === 'PUT' && path === 'settings') {
+      const b = await body(req);
+      if (!okSettings(b)) return fail('設定の形が正しくない');
+      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, at: Date.now() };
+      await kv.put('settings', JSON.stringify(settings));
+      return json({ ok: true, at: settings.at });
     }
     if (req.method === 'PUT' && path === 'lineup') {
       const b = await body(req);

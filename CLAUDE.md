@@ -125,7 +125,7 @@
 - 小さな変更（数値・形・見た目・1つのシナジー追加）はバイブコーディング。会話で直す → テストを通す → 画面で動いている所を見せる → `docs/` の枝を今の姿に直す → コミット。
 - 大きな作り直しは、仕様書（`.claude/IMPROVE_名前.md`）を書いてオーナーと決めてから、まとめて作る。終わった仕様書は `archive/仕様と調査/` へ移す。
 - シナジーは、8章「案の出し方」に沿って1つずつ出し、作って確かめる。
-- テスト: すべての .js に `node --check`（`for f in game/*.js tests/*.js tools/*.js; do node --check "$f"; done`）。ルールを変えたら `node tests/run.js`・`tests/scenarios.js`・`tests/simul.js`・`tests/ex3.js`・`tests/stages.js`・`tests/stage_api.js` をすべて通す。
+- テスト: すべての .js に `node --check`（`for f in game/*.js tests/*.js tools/*.js; do node --check "$f"; done`）。ルールを変えたら `node tests/run.js`・`tests/scenarios.js`・`tests/simul.js`・`tests/ex3.js`・`tests/stages.js`・`tests/stage_api.js`・`tests/settings.js` をすべて通す。
   - ルールを変えたら、同じ変更の中でテストの期待も直す。直す前に、今の動きが法則どおりかを確かめる。テストを消したり、落ちたまま置いたりしない。
   - node のテストは「1人ずつ」（`balance.js` の `turnMode: 'single'`）で動く。画面はいつも「一斉」。結果が同じことは確かめてある。
 - 画面の確認は `node tests/serve.js`（http://localhost:8765。開発モードは `#dev`）で開く。パソコンのセッションは内蔵ブラウザ、クラウドのセッションは入っているブラウザ（Playwright）で撮って、オーナーに見せる。
