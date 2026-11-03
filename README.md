@@ -53,6 +53,7 @@ game/        ゲーム本体
   texts.js     画面に出る文
   stages_io.js エディットのステージの読み書き
   mode.js      展示 ⇄ 開発・見た目の切り替え
+  settings.js  設定（画面の主な色と、自然・魔法・シナジーの名前）
   style.css    見た目
   img/         駒の絵（名前の一覧.txt）
 tests/       テストと調べもの用の道具
@@ -77,7 +78,7 @@ node tests/scenarios.js
 node tests/serve.js
 ```
 
-- `tests/run.js` はルールのテスト、`tests/scenarios.js` は決まった手順を最後まで動かして確かめる。ほかに `tests/simul.js`（一斉発動・チュートリアル）・`tests/ex3.js`（③）・`tests/stages.js`（エディットのステージ）・`tests/stage_api.js`（共有の置き場所）。ルールを変えたら全部通す（11/03 にすべて通るようにした）。
+- `tests/run.js` はルールのテスト、`tests/scenarios.js` は決まった手順を最後まで動かして確かめる。ほかに `tests/simul.js`（一斉発動・チュートリアル）・`tests/ex3.js`（③）・`tests/stages.js`（エディットのステージ）・`tests/stage_api.js`（共有の置き場所）・`tests/settings.js`（設定の色と名前）。ルールを変えたら全部通す（11/03 にすべて通るようにした）。
 - `tests/` のほかのファイル（`_play.js`・`autoplay.js`・`mission_search.js`・`ex3_search.js` など）は、手を探したり数を見たりする調べもの用の道具。
 - `tests/serve.js` は http://localhost:8765 で画面を開く（共有の置き場所も手元で動く）。
 - Cloudflare への公開は、Claude Code に「クラウドフレアにあげて」（`.claude/skills/cloudflare-publish`）。

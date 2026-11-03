@@ -9,6 +9,8 @@
   --accent: #c2410c;
   --gold: #f5c518;
   --enemy-fc: #7c3aed;
+  --button-bg: #ffffff;    /* ボタンの地（設定で変えられる。game/settings.js。オーナー 11/03） */
+  --board-frame: #cfc5b2;  /* 盤面の枠（同じく） */
 
   --t-empty: #ece5d6;
   --t-forest: #4d8b3f;
@@ -37,7 +39,7 @@ button, select, input, textarea { font: inherit; color: var(--ink); }
 button {
   cursor: pointer;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--button-bg);
   border-radius: 8px;
   padding: 6px 12px;
 }
@@ -170,7 +172,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)));
   min-width: 300px;
   aspect-ratio: var(--n) / var(--rows);
-  background: #cfc5b2;
+  background: var(--board-frame);
   border-radius: 12px;
   user-select: none;
   container-type: inline-size;
@@ -1054,6 +1056,25 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
   .home-row.trash-row { grid-template-columns: 4em minmax(0, 1fr) auto; }
   .home-row.trash-row .trash-at { grid-column: 2; grid-row: 2; }
   .home-filter .filter-label { width: 100%; }
+}
+/* 設定の画面（オーナー 11/03。game/settings.js）: 色（色の四角・RGB・元に戻す）と名前の欄 */
+.set-row { display: grid; grid-template-columns: 11em 3.2em minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 6px 4px; border-top: 1px solid var(--line); }
+.set-row:first-of-type { border-top: none; }
+.set-name { display: flex; flex-direction: column; line-height: 1.3; }
+.set-name small { color: var(--muted); font-size: 12px; }
+.set-color { width: 3em; height: 2.2em; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+.set-rgb { display: flex; flex-wrap: wrap; gap: 6px; }
+.set-rgb label { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; color: var(--muted); }
+.set-rgb input { width: 4.2em; }
+.set-reset { font-size: 12px; padding: 4px 10px; }
+.set-names { grid-template-columns: 11em minmax(0, 1fr) minmax(0, 1fr); }
+.set-names label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+.set-names input { width: 100%; }
+@media (max-width: 640px) {
+  .set-row { grid-template-columns: minmax(0, 1fr) 3.2em; }
+  .set-row .set-rgb, .set-row .set-reset { grid-column: 1 / -1; }
+  .set-names { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .set-names .set-name { grid-column: 1 / -1; }
 }
 /* 展示モードの最初の画面・ありがとう！・クリア！・選んで遊ぶ（IMPROVE_v3 段3）: 真ん中に大きく */
 html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 12vh; }

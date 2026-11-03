@@ -28,7 +28,7 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
 
   await test('はじめは空。CORS は *（ファイルから開いたページからも使える）', async function () {
     var r = await call('GET', 'all');
-    eq([r.status, r.data.stages, r.data.lineup, r.data.trash, r.cors], [200, {}, null, {}, '*']);
+    eq([r.status, r.data.stages, r.data.lineup, r.data.trash, r.data.settings, r.cors], [200, {}, null, {}, null, '*'], '設定はまだない（null）');
   });
   await test('共有すると、みんなのステージに入る。同じ名前は上書き', async function () {
     var a = await call('PUT', 'stages/' + encodeURIComponent('森の道'), { def: DEF, texts: { scenes: { start: [] } } });
@@ -91,6 +91,29 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     mem.trash = JSON.stringify({});
     ok((await call('DELETE', 'stages/a')).data.ok);
     ok((await call('DELETE', 'trash/a')).data.ok);
+  });
+  // 設定（画面の主な色と名前。オーナー 11/03）
+  await test('設定を保存すると /api/all に出る（保存した時刻つき）', async function () {
+    var body = { colors: { '--bg': '#112233' }, tiles: { forest: { name: '林', label: '林' } }, magics: { grass: '芽' }, synergies: { '燃え広がり': '大火事' } };
+    var r = await call('PUT', 'settings', body);
+    ok(r.status === 200 && r.data.ok && typeof r.data.at === 'number', JSON.stringify(r.data));
+    var g = (await call('GET', 'all')).data.settings;
+    eq([g.colors, g.tiles, g.magics, g.synergies, g.at], [body.colors, body.tiles, body.magics, body.synergies, r.data.at]);
+    ok((await call('PUT', 'settings', {})).data.ok, '空（元の色と名前）も保存できる');
+    eq((await call('GET', 'all')).data.settings.colors, {});
+  });
+  await test('設定の形が正しくないものは受け取らない', async function () {
+    var bad = [
+      { colors: { '--bg': 'red' } },
+      { colors: { 'bg': '#112233' } },
+      { tiles: { forest: { name: 'あいうえおかきくけこさしす' } } },
+      { tiles: { forest: { label: '森林地帯' } } },
+      { tiles: { forest: { color: '#000000' } } },
+      { magics: { grass: 3 } },
+      { other: {} },
+      []
+    ];
+    for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
   });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);
