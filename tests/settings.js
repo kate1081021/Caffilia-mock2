@@ -67,8 +67,9 @@ test('名前の形: 長すぎる名前は詰め、空の名前・知らない形
   eq(c.synergies, {});
 });
 
-test('シナジーの元の名前は「当たっていた自然×当てた魔法」の形（順番あり。オーナー 11/04）', function () {
-  eq([TEXTS.finishers['燃え広がり'], TEXTS.finishers['桜吹雪'], TEXTS.finishers['火の渦'], TEXTS.finishers['火山']], ['炎×風', '火山×風', '風×火', '山×火']);
+test('シナジーの元の名前は「自然×魔法」の形（順番あり）。途中でできた自然（火山・火の渦など）は元の組み合わせまでほどく（オーナー 11/04）', function () {
+  eq([TEXTS.finishers['燃え広がり'], TEXTS.finishers['桜吹雪'], TEXTS.finishers['火の渦'], TEXTS.finishers['火山'], TEXTS.finishers['センタクキ']], ['炎×風', '山×火×風', '風×火', '山×火', '風×火×水']);
+  ok(!Object.keys(TEXTS.finishers).some(function (k) { return /火山×|火の渦×|死の森×|竜巻×/.test(TEXTS.finishers[k]); }), '火山・火の渦・死の森・竜巻は名前の中に出さない');
   ok(Object.keys(TEXTS.finishers).every(function (k) { return /×/.test(TEXTS.finishers[k]); }), 'どれも「×」の形');
 });
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
