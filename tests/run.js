@@ -3032,11 +3032,12 @@ test('ふさいだかは増援の出てくる所も数える。泥沼もふさ�
   R.setTile(s2, 5, 3, 'mud');
   ok(R.sealReady(R.act(s2, t2Mount(s2).id, { dir: 'up' }).state), '突進の敵は泥沼を通らない');
 });
-test('ふさいでクリアはステージ②だけ（標準の防衛は切）', function () {
-  var s = R.startBattle(R.loadPreset('mDefense')).state;
-  eq(R.withOverrides(s, function () { return B.mission.defense.sealWin; }), false);
+test('村を守るは、どの防衛でもふさいだらクリアにできる。突進の敵がいなければ、ふさいだことにならず文にも出さない（オーナー 11/03）', function () {
+  var s = R.startBattle(R.loadPreset('mDefense')).state;   // 敵は「動き」2体（突進ではない）
+  eq(R.withOverrides(s, function () { return B.mission.defense.sealWin; }), true, '標準で入');
   ok(!/ふさい/.test(R.missionInfo(s).win), R.missionInfo(s).win);
   ok(!R.sealReady(s), 'ふさいだことにならない');
+  ok(/ふさい/.test(R.missionInfo(tut2()).win), '突進の敵がいる②では文に出る');
 });
 test('やり直し: 負けたあと最初からやり直すと、盤面が最初に戻り、ヒントが1文出る（最初の挑戦では出ない）', function () {
   var s = tut2();
@@ -3057,7 +3058,7 @@ test('overrides: このシナリオの中だけで効き、ほかのシナリオ
   var st = t2Solved(tut2());
   R.endTurn(st); R.forecast(st);
   eq(JSON.stringify(B), before, 'BALANCE は元のまま');
-  eq([B.tutorial.slope, B.waterLength, B.ally.move, B.enemy.rushMove, B.mission.defense.sealWin], [true, 1, 2, 3, false], '標準の値（②の上書きは突進1マス・道をふさいだらクリア）');
+  eq([B.tutorial.slope, B.waterLength, B.ally.move, B.enemy.rushMove, B.mission.defense.sealWin], [true, 1, 2, 3, true], '標準の値（②の上書きは突進1マス・5ターン。道をふさいだらクリアは標準で入 11/03）');
   // ほかのシナリオでも、山に水は斜面を下る（オーナー 10/29 から、どの山も同じ決め方）
   var o = empty(7);
   var st2 = fire(o, R.addAlly(o, 'mount', 3, 6, 'up'), 'up').state;

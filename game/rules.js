@@ -3456,7 +3456,7 @@
       // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
       // 突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち。道をふさぎきったらキーでクリアにできる（オーナー 10/17）
       //   オーナー 10/29: ルールの上書き（水は正面1マス・山の頂上と腕・移動2）は外した。どのシナリオとも同じ値で動く。残すのはステージの中身（敵の動き・勝ち方）だけ
-      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5, 'mission.defense.sealWin': true }
+      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5 }
     },
     {
       // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
@@ -3593,7 +3593,8 @@
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'defense') {
       var T = B.mission.defense.turns;
-      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (B.mission.defense.sealWin ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
+      var canSeal = B.mission.defense.sealWin && (enemiesOf(s).some(function (e) { return e.stand === 'rush'; }) || !!(s.spawn && s.spawn.stand === 'rush'));   // ふさぐ相手（突進）がいるときだけ書く
+      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (canSeal ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
       info.lose = '村が' + B.mission.defense.loseAt + 'つ壊れる／味方が全員倒れる';
       // 「ターン4/5」の形だけ（決着の前とあとで長さを変えない。村の行は出さない。村の HP は村のマスを押すと出る。IMPROVE_controls 3-1）
       info.status.push('ターン' + Math.min(s.turn, T) + '/' + T);

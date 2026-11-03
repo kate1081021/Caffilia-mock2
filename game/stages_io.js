@@ -24,12 +24,12 @@
 
   // 勝ち方。ルールにある勝ち負けの決まりから選ぶ（新しい決まりは作らない）
   //   boss: ステージ③の決まり（s.ex。ボスを倒せば勝ち・味方が1人でも倒れたら負け）
-  //   defense / seal: お題の防衛（mission.defense.turns ターン守る。seal はふさいだらその場でクリアにできる＝ステージ②の決まり）
+  //   defense: お題の防衛（mission.defense.turns ターン守る。突進の敵の道をふさいだら、その場でクリアにもできる）。
+  //     前の「道をふさぐ」（seal）は「村を守る」と同じなので1つにした（オーナー 11/03）。前のステージの seal・sealWin の上書きは、読むと村を守るになる
   var WINS = [
     { id: 'annihilate', name: '敵を全員倒す' },
     { id: 'boss', name: 'ボスを倒す（味方が1人でも倒れたら負け）' },
-    { id: 'defense', name: '村を守る（決めたターンまで）' },
-    { id: 'seal', name: '道をふさぐ（村を守る・ふさいだらクリアにできる）' },
+    { id: 'defense', name: '村を守る（決めたターンまで守るか、道をふさいだらクリア）' },
     { id: 'escort', name: 'トロッコをゴールへ' },
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
@@ -154,6 +154,8 @@
     if (err) return { ok: false, error: err };
     var s;
     try { s = R.buildPreset(def); } catch (e) { return { ok: false, error: '盤面を作れない（' + e.message + '）' }; }
+    // 前のステージの「道をふさぐ」の入・切（sealWin の上書き）は捨てる。村を守るはいつも、ふさいだらクリアにできる（オーナー 11/03）
+    if (s.overrides && s.overrides[OV_SEAL] !== undefined) { delete s.overrides[OV_SEAL]; if (!Object.keys(s.overrides).length) delete s.overrides; }
     for (var i = 0; i < s.units.length; i++) {
       var bad = fits(R, s, s.units[i]);
       if (bad) return { ok: false, error: R.unitLabel(s, s.units[i]) + ': ' + bad };
@@ -188,10 +190,6 @@
     return { state: s, dropped: dropped };
   }
 
-  function sealOn(R, s) {
-    var ov = s.overrides || {};
-    return ov[OV_SEAL] !== undefined ? !!ov[OV_SEAL] : !!R.BALANCE.mission.defense.sealWin;
-  }
   function turnsOf(R, s) {
     var ov = s.overrides || {};
     return ov[OV_TURNS] !== undefined ? ov[OV_TURNS] : R.BALANCE.mission.defense.turns;
@@ -199,7 +197,6 @@
   function winOf(R, s) {
     if (s.ex) return 'boss';
     var t = (s.mission && s.mission.type) || 'annihilate';
-    if (t === 'defense') return sealOn(R, s) ? 'seal' : 'defense';
     return t;
   }
   // exKeep: ボスの決まりを外したときに覚えておいた中身（③の取り巻きの湧き方・ミッション）。ボスに戻したら使う
@@ -213,11 +210,11 @@
       s.mission.type = 'annihilate';
     } else {
       delete s.ex;
-      s.mission.type = kind === 'seal' ? 'defense' : kind;
-      if (kind === 'defense' || kind === 'seal') {
+      if (kind === 'seal') kind = 'defense';   // 前の「道をふさぐ」
+      s.mission.type = kind;
+      if (kind === 'defense') {
         var n = Math.round(Number(turns) || R.BALANCE.mission.defense.turns);
         ov[OV_TURNS] = Math.max(1, Math.min(30, n));
-        ov[OV_SEAL] = kind === 'seal';
       }
     }
     if (!Object.keys(ov).length) delete s.overrides;

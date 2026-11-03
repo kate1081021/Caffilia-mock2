@@ -399,7 +399,7 @@ scenario('13. ステージ② 2人で守る: 1ターン目は何もしない →
     g.expectLog('村への道をふさいだ！（勝利）');
     check(g.state.result === 'win' && g.state.turn === 2 && R.objectsOf(g.state, 'village').length === 4, 'ターン2のうちに、村は4つとも残って勝ち');
     check(!g.log.some(function (l) { return /体当たり/.test(l); }), '一度も体当たりされない');
-    check(B.waterLength === 1 && B.tutorial.slope === true && B.mission.defense.turns === 5 && B.mission.defense.sealWin === false, 'このステージの数値はほかに漏れていない（標準の値のまま）');
+    check(B.waterLength === 1 && B.tutorial.slope === true && B.mission.defense.turns === 5 && B.mission.defense.sealWin === true, 'このステージの数値はほかに漏れていない（標準の値のまま）');
   });
 
 console.log('\n' + (failures ? failures + ' 件の確認に失敗' : 'すべてのシナリオが期待どおり'));

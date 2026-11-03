@@ -1882,12 +1882,11 @@
     el.winSelect.innerHTML = SIO.WINS.map(function (w) {
       return '<option value="' + w.id + '"' + (w.id === win ? ' selected' : '') + '>' + esc(w.name) + '</option>';
     }).join('');
-    el.winTurnsLabel.hidden = !(win === 'defense' || win === 'seal');
+    el.winTurnsLabel.hidden = win !== 'defense';
     if (document.activeElement !== el.winTurns) el.winTurns.value = SIO.turnsOf(R, st);
     var mi = st.mission || {}, lack = [];
     if (win === 'boss' && !R.enemiesOf(st).some(function (e) { return e.stand === 'boss'; })) lack.push('動きが「ボス」の敵がいない（どれか1体を倒しただけで勝ちになる）');
-    if ((win === 'defense' || win === 'seal') && !R.objectsOf(st, 'village').length) lack.push('村がない');
-    if (win === 'seal' && !R.enemiesOf(st).some(function (e) { return e.stand === 'rush'; }) && !(st.spawn && st.spawn.stand === 'rush')) lack.push('ふさぐ相手（動きが「突進」の敵）がいない');
+    if (win === 'defense' && !R.objectsOf(st, 'village').length) lack.push('村がない');
     if (win === 'escort' && !R.objectsOf(st, 'wagon').length) lack.push('トロッコがない');
     if (win === 'escort' && !(mi.goal || []).length) lack.push('ゴールがない');
     if (win === 'retrieve' && !mi.treasure) lack.push('宝がない');

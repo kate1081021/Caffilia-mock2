@@ -46,13 +46,22 @@ eq(S.resize(R, s3, 99, 1).state.size, B.maxBoardSize, '大きさは決まりの�
 eq(R.rowsOf(S.resize(R, s3, 99, 1).state), B.minBoardSize, '縦も');
 
 // 勝ち方
-eq([S.winOf(R, s3), S.winOf(R, R.loadPreset('tut2')), S.winOf(R, R.loadPreset('tut1'))], ['boss', 'seal', 'annihilate'], '今の勝ち方');
+eq([S.winOf(R, s3), S.winOf(R, R.loadPreset('tut2')), S.winOf(R, R.loadPreset('tut1'))], ['boss', 'defense', 'annihilate'], '今の勝ち方（②は村を守る。道をふさぐは村を守るに1つにした 11/03）');
 var w = S.setWin(R, s3, 'defense', 7);
 eq([S.winOf(R, w), w.mission.type, !!w.ex, S.turnsOf(R, w)], ['defense', 'defense', false, 7], '村を守る 7ターン');
 var w2 = S.setWin(R, w, 'boss', 0, s3.ex);
 eq([S.winOf(R, w2), w2.ex, w2.overrides], ['boss', s3.ex, undefined], 'ボスに戻すと③の決まりが戻る（ターン数は外れる）');
 eq(S.setWin(R, R.loadPreset('tut1'), 'boss').ex, {}, '新しくボスにすると、湧かないボスの決まり');
-ok(R.validOverrides(S.setWin(R, s3, 'seal', 3).overrides), 'ふさぐの数値は正しい形');
+var ws = S.setWin(R, s3, 'seal', 3);
+ok(R.validOverrides(ws.overrides), 'ふさぐの数値は正しい形');
+eq([S.winOf(R, ws), S.turnsOf(R, ws), ws.overrides['mission.defense.sealWin']], ['defense', 3, undefined], '前の「道をふさぐ」（seal）を選ぶと村を守る（sealWin は書かない）');
+var WINS_IDS = S.WINS.map(function (x) { return x.id; });
+ok(WINS_IDS.indexOf('seal') < 0 && WINS_IDS.indexOf('defense') >= 0, '勝ち方の一覧に「道をふさぐ」はない（村を守るだけ）');
+var oldDef = S.toDef(R, w, '前の防衛');
+oldDef.overrides = { 'mission.defense.turns': 4, 'mission.defense.sealWin': false };
+var ob = S.build(R, oldDef);
+ok(ob.ok, ob.error);
+eq(ob.ok && [S.winOf(R, ob.state), ob.state.overrides], ['defense', { 'mission.defense.turns': 4 }], '前の JSON の sealWin の上書きは捨てて読む（村を守る・4ターン）');
 
 // HP: ルールの決まり（hpBase）で遊び始めの HP になる
 var hp = S.setHp(R, s3, s3.units[3].id, 30);
