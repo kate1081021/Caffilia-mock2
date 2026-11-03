@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Caffilia シナジーモック</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="game/style.css">
   <!-- 試遊アンケートの QR（展示の「ありがとう！」「クリア！」の画面で出す。オーナー 10/31）。
        ここに書いておくと tools/publish.js が公開するファイルに含める -->
-  <link rel="preload" href="survey_qr.png" as="image">
+  <link rel="preload" href="game/survey_qr.png" as="image">
 </head>
 <body>
   <!-- 展示モードと開発モード（#dev）。ほかより先に決めて、<html> に印を付ける。
        調整パネル・ラボ・スーパープレイ・新案プレイ・シナリオの一覧・切り替え・くわしく・文章パネル・進行モックなどは、
        IMPROVE_v3 段1（オーナー 10/30）でアーカイブした（archive/開発モード_20261030/） -->
-  <script src="mode.js"></script>
+  <script src="game/mode.js"></script>
   <header class="topbar">
     <!-- 展示モード: 左上の小さな「⌂ タイトル」。押すと確かめてから最初の画面へ（オーナー 10/31） -->
     <button id="btnTitle" type="button" class="btn-title">⌂ タイトル</button>
@@ -164,11 +164,11 @@
   <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どちらのモードでも同じ位置・同じ見た目 -->
   <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
 
-  <script src="balance.js"></script>
-  <script src="texts.js"></script>
-  <script src="stages_io.js"></script>
-  <script src="rules.js"></script>
-  <script src="ui.js"></script>
+  <script src="game/balance.js"></script>
+  <script src="game/texts.js"></script>
+  <script src="game/stages_io.js"></script>
+  <script src="game/rules.js"></script>
+  <script src="game/ui.js"></script>
   <!-- 会話の窓（texts_ui.js）は、じゃまなのでなくした（オーナー 10/31。archive/会話の窓_20261031/） -->
 </body>
 </html>

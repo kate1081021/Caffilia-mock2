@@ -3,8 +3,8 @@
  *   node tests/verify_ideas.js
  * 「できることが増えたか（選択肢・材料・逃げ道）」を数字で見る。ダメージの大きさは見ない。
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
 
 var CH = { '.': 'empty', F: 'forest', M: 'mountain', R: 'river', X: 'fire', s: 'smallfire', V: 'volcano', D: 'mud', P: 'puddle', H: 'mirage', I: 'ice', L: 'lava', W: 'whirlwind', T: 'tornado' };
 function board(rows) {

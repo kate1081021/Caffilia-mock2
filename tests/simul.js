@@ -2,10 +2,10 @@
  * 一斉発動・チュートリアル3つ・文章（IMPROVE_simul）のテスト。  node tests/simul.js
  *   ターンの形は BALANCE.turnMode（'single' 1人ずつ／'simul' 一斉）。テストの中で切り替え、終わったら元に戻す。
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
-var IO = require('../texts_io.js');
-var TEXTS = require('../texts.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
+var IO = require('../game/texts_io.js');
+var TEXTS = require('../game/texts.js');
 var DEMOS = require('./data/demos.js');
 
 var passed = 0, failed = [];
@@ -233,7 +233,7 @@ DEMOS.forEach(function (d) {
 console.log('\n■ 文章（texts.js・texts_io.js）');
 test('texts.js は書き出し（serialize）と同じ形。読み込み直すと同じ中身', function () {
   var fs = require('fs'), path = require('path');
-  var src = fs.readFileSync(path.join(__dirname, '..', 'texts.js'), 'utf8');
+  var src = fs.readFileSync(path.join(__dirname, '..', 'game', 'texts.js'), 'utf8');
   eq(IO.serialize(TEXTS), src, 'ファイルが serialize の出力どおり');
   eq(IO.parse(src), TEXTS);
 });

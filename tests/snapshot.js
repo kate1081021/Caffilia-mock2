@@ -8,8 +8,8 @@
 var fs = require('fs');
 var path = require('path');
 var crypto = require('crypto');
-var R = require('../rules.js');
-var B = require('../balance.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
 var DEMOS = require('./data/demos.js');
 
 var FILE = path.join(__dirname, 'snapshot_base.txt');

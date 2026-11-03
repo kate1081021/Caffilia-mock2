@@ -3,8 +3,8 @@
  *   どのシナリオ・チュートリアルも、ステージの定義に書き出して読み直すと同じ盤面になる（遊び始めの1手目まで同じ）。
  *   盤面の大きさ・勝ち方・HP・会話の窓の文・ファイルの読み書き。オーナー 10/30
  */
-var R = require('../rules.js');
-var S = require('../stages_io.js');
+var R = require('../game/rules.js');
+var S = require('../game/stages_io.js');
 var B = R.BALANCE;
 
 var fails = 0, count = 0;

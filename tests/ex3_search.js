@@ -6,8 +6,8 @@
  *   一掃の手は全部、惜しい手（ボスだけ）は例の数（既定 20）まで出す。待機の手は打たない（桜吹雪には3人の魔法が要る）
  *   オーナー 10/30: ③の配置の組み直しで、つながるの1ターン目に一掃できる手と惜しい手を数えるために書き直した
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
 var mode = process.argv[2] || 'chain';
 var allOrders = process.argv.indexOf('all') >= 0;
 var keep = Number(process.argv.filter(function (a) { return /^\d+$/.test(a); })[0] || 20);

@@ -2,9 +2,9 @@
  * 展示ステージ③（3人でつなぐ。.claude/IMPROVE_stage3.md）のテスト。  node tests/ex3.js
  *   魔法の出し方は BALANCE.turnMode と BALANCE.simul.stepwise（step: simul＋stepwise／chain: simul／instant: single）。テストの中で切り替え、終わったら元に戻す。
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
-var TEXTS = require('../texts.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
+var TEXTS = require('../game/texts.js');
 
 var passed = 0, failed = [];
 function test(name, fn) {
