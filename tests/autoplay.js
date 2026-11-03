@@ -4,7 +4,7 @@
  *   ターンの形（BALANCE.turnMode）はどちらでも動く（一斉では構えを置いてから発動）。
  *   play(state, { turns, beam }) → { result, turns, state }
  */
-var R = require('../rules.js');
+var R = require('../game/rules.js');
 
 var MATERIAL = { forest: 1, mountain: 1, river: 1, puddle: 1, smallfire: 2, fire: 2, sakura: 4, volcano: 3, firewhirl: 4, deadforest: 4, breeze: 1, mud: 1 };
 

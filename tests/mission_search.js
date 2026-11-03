@@ -4,7 +4,7 @@
  *   見つけた手順と、手ごとに「敵のいないところに撃ったか」「何の自然を作った・壊したか」を出す。
  *   module として読むと search(state, opts) が使える（playtest.js から）。
  */
-var R = require('../rules.js');
+var R = require('../game/rules.js');
 
 function key(x, y) { return x + ',' + y; }
 

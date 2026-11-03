@@ -1079,7 +1079,7 @@
   //   名前（.png）: 味方 ally_<魔法>（ally_fire など）／敵 enemy_<魔法> → なければ enemy／ボス boss／取り巻き minion／村 village／トロッコ trolley。
   //   立ち絵と駒を分けたいときは、同じ名前に _koma を付けた画像を入れると、駒だけその絵になる（ally_fire_koma.png など）。
   //   あるかどうかは、奥行きの見た目で駒を描くときに1枚ずつ確かめる（真上の見た目と展示モードの真上では読みに行かない）
-  var IMG_DIR = 'img/', imgState = {};   // 名前 → 'wait' | 'ok' | 'none'
+  var IMG_DIR = 'game/img/', imgState = {};   // 名前 → 'wait' | 'ok' | 'none'
   function imgNames(u) {
     var base = [];
     if (u.side === 'object') base = [u.kind === 'wagon' ? 'trolley' : u.kind];
@@ -2384,7 +2384,7 @@
         '<div class="home-list ex-menu">' + back + '</div>';
     } else if (view === 'thanks' || view === 'clear') {
       // ありがとう！（チュートリアルを遊び終えたあと）・クリア！（選んで遊ぶ）: 試遊アンケートの QR とひとこと（オーナー 10/31）
-      var survey = '<div class="ex-survey"><img src="survey_qr.png" alt="試遊アンケートの QR コード">' +
+      var survey = '<div class="ex-survey"><img src="game/survey_qr.png" alt="試遊アンケートの QR コード">' +
         '<p>' + esc(ui('exSurvey', 'よかったらアンケートお願いします！')) + '</p></div>';
       el.home.innerHTML = '<h2 class="ex-head big">' + esc(view === 'thanks' ? ui('exThanks', 'ここまで遊んでくれてありがとう！') : ui('exClear', 'クリア！')) + '</h2>' +
         survey + '<div class="home-list ex-menu">' + back + other + '</div>';

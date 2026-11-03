@@ -1,8 +1,8 @@
 /*
  * ルールのテスト（v2）。  node tests/run.js
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
 
 var passed = 0;
 var failed = [];
@@ -2957,7 +2957,7 @@ test('やり直し: 負けたあと最初からやり直すと、盤面が最初
   eq([r.state.turn, r.state.result, r.state.tries], [1, null, 1]);
   eq(r.state.tiles, tut2().tiles, '盤面が最初に戻る');
   eq(r.state.units.map(function (u) { return [u.x, u.y, u.hp]; }), tut2().units.map(function (u) { return [u.x, u.y, u.hp]; }), 'ユニットも最初に戻る（敵の最初の移動まで）');
-  eq(R.stageHint(r.state), require('../texts.js').stages.tut2.hint.single);   // 文は texts.js（IMPROVE_simul）。今は「山に向かって水を撃つと…？」
+  eq(R.stageHint(r.state), require('../game/texts.js').stages.tut2.hint.single);   // 文は texts.js（IMPROVE_simul）。今は「山に向かって水を撃つと…？」
   eq(R.retryStage(t2Run(r.state, 3)).state.tries, 2, '何度でも');
   eq(R.retryStage(R.startBattle(R.loadPreset('spread')).state), null, 'チュートリアルでなければ、やり直しはない');
 });

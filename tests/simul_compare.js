@@ -7,8 +7,8 @@
  *   - 味方が倒れた数
  *   自動プレイは参考（人の遊び方ではない）。どちらの形も同じ探索・同じ点数のつけ方。ONLY=シナリオid、TURNS=最大ターン数、BEAM=幅
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
 
 var MAX_TURNS = Number(process.env.TURNS) || 8;
 var BEAM = Number(process.env.BEAM) || 5;

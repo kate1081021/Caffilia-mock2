@@ -40,9 +40,9 @@ function pageFiles(html) {
     if (files.indexOf(m[1]) === -1) files.push(m[1]);
   }
   // 駒の絵（img/。HD-2D の方針 10/31）: 画面は名前で読みに行くので、フォルダの画像を全部出す
-  var imgDir = path.join(ROOT, 'img');
+  var imgDir = path.join(ROOT, 'game', 'img');
   if (fs.existsSync(imgDir)) fs.readdirSync(imgDir).forEach(function (n) {
-    if (/\.(png|jpe?g|webp|gif)$/i.test(n) && files.indexOf('img/' + n) === -1) files.push('img/' + n);
+    if (/\.(png|jpe?g|webp|gif)$/i.test(n) && files.indexOf('game/img/' + n) === -1) files.push('game/img/' + n);
   });
   return files;
 }
@@ -51,7 +51,7 @@ function pageFiles(html) {
 function publishedHtml(html) {
   return html
     .replace(/(<meta charset="utf-8">)/, '$1\n  ' + NOINDEX)
-    .replace(/(<script src="balance\.js"><\/script>)/, '<script src="version.js"></script>\n  $1');
+    .replace(/(<script src="game\/balance\.js"><\/script>)/, '<script src="version.js"></script>\n  $1');
 }
 
 function pad(n) { return (n < 10 ? '0' : '') + n; }

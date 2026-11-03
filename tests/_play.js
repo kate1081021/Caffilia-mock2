@@ -1,5 +1,5 @@
 // 手で手順を試す（調べもの用）: node tests/_play.js シナリオid '[[["P1",[x,y],"up"],...], ...]'
-var R = require('../rules.js');
+var R = require('../game/rules.js');
 var show = require('./_show.js');
 var id = process.argv[2], turns = JSON.parse(process.argv[3] || '[]');
 var s = R.startBattle(R.loadPreset(id)).state;

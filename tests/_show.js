@@ -1,5 +1,5 @@
 // 盤面を文字で出す（調べもの用）
-var R = require('../rules.js');
+var R = require('../game/rules.js');
 var L = { empty: '.', forest: 'F', mountain: 'M', river: 'R', fire: 'X', smallfire: 's', volcano: 'V', mud: 'D', puddle: 'P', mirage: 'H', ice: 'I', lava: 'L', breeze: 'b', firewhirl: 'Q', sakura: 'K', petals: 'p', deadforest: 'G', haunted: 'O', whirlwind: 'W', tornado: 'T' };
 function show(s) {
   var m = s.mission || {};

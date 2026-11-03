@@ -6,7 +6,7 @@ description: カフィーリアのモックを Cloudflare に公開する（tool
 # Cloudflare に公開する
 
 公開先: https://caffilia-jkwzvlbc7.kate108superstar.workers.dev/
-しくみ: モックのフォルダ（CLAUDE.md がある所。このフォルダの1つ上）の `publish/` は別の git リポジトリ。
+しくみ: モックのフォルダ（CLAUDE.md がある、リポジトリの一番上）の `publish/` は別の git リポジトリ。
 `tools/publish.js` が index.html の読み込むファイルを写し、commit して main に push すると、Cloudflare が2〜3分で公開する。
 
 コマンドはすべて、モックのフォルダで動かす。
@@ -22,7 +22,7 @@ description: カフィーリアのモックを Cloudflare に公開する（tool
 ## 2. 出す前に確かめる
 
 1. `git status --short`。コミットしていない変更は、そのまま公開に入る（作業中のファイルを写すため）。あれば「コミットしていない変更も出ます」と伝え、コミットするか聞く。
-2. すべての .js に `node --check`（`for f in *.js; do node --check "$f"; done`）。通らなければ出さずに止める。
+2. すべての .js に `node --check`（`for f in game/*.js tests/*.js tools/*.js; do node --check "$f"; done`）。通らなければ出さずに止める。
 3. `publish/` が main で、変更がないこと（`git -C publish status --short`・`git -C publish branch --show-current`）。違えば止めて相談する。
 
 ## 3. 出す

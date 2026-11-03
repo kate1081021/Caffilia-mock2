@@ -3,8 +3,8 @@
  *   node tests/scenarios.js
  * 画面と同じく「味方が1人ずつ行動 → 3人とも終えたら自動でターン終了」で進める。
  */
-var R = require('../rules.js');
-var B = require('../balance.js');
+var R = require('../game/rules.js');
+var B = require('../game/balance.js');
 
 var failures = 0;
 var SAKURA0 = B.sakura.from;   // 桜吹雪の起こし方の標準（balance.js。オーナー 10/17 から火山に風）

@@ -7,8 +7,8 @@
  *    お題（防衛・護衛・奪取）のシナリオでは代わりに、mission_search.js の探索を幅を変えて回す（勝率は参考）
  * ONLY=シナリオid で1つだけ見られる。
  */
-var R = require('../rules.js');
-var BAL = require('../balance.js');
+var R = require('../game/rules.js');
+var BAL = require('../game/balance.js');
 // IDEAS_OFF=1 で、試し中の小さなシナジー（balance.js の ideas）を全部切ってくらべられる
 if (process.env.IDEAS_OFF) Object.keys(BAL.ideas).forEach(function (k) { BAL.ideas[k] = false; });
 console.log('小さなシナジー（ideas）: ' + (process.env.IDEAS_OFF ? 'すべて切った' : 'すべて入れた'));
