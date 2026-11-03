@@ -80,6 +80,9 @@
 
   // 【育つ】燃える植物（森・草むら）と、燃えて強い炎になる植物（今は森だけ）
   function isPlant(t) { return t === 'forest' || t === 'thicket'; }
+  // 村は燃える（木でできていて、森と同じく火が点くと燃える。オーナー 11/03）。燃えた村は壊れ、そのマスは炎になる
+  function isVillage(o) { return !!o && o.side === 'object' && o.kind === 'village'; }
+  function burnVillage(s, o, ctx) { addHit(ctx, o, o.hp, 'burn', [o.x, o.y]); setTile(s, o.x, o.y, 'fire'); }
   // 【育つ】吹いている風（風・強風）
   function isWind(t) { return t === 'breeze' || t === 'gale'; }
   // 空気の中のもの・すぐ消える跡（吹いている風・強風・花びら）。地面に置かれた自然ではないので、
@@ -569,9 +572,11 @@
     // 強い炎になるのは、燃えた森のマス（【育つ】草むらは燃えるが、今は弱い炎）
     var strongList = burnedList.filter(function (c) { var bt = burned[key(c[0], c[1])]; return burnsStrong(bt); });
     var grassN = burnedList.length - strongList.length;
+    var villagesBurned = 0;
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
+      if (isVillage(u)) { burnVillage(s, u, ctx); villagesBurned++; return; }   // 通り道の村は燃える（マスは炎。燃え広がりはそのまま先へ走る。オーナー 11/03）
       if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher', c);
       else addHit(ctx, u, B.fire.weakDamage, 'weakfire', c);
     });
@@ -583,7 +588,8 @@
       text: '燃え広がり！ ' + DIRS[dir].name + 'へ' + path.length + 'マス走り、' +
         (strongList.length ? '森' + strongList.length + 'つが燃えた（燃えた森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
           : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
-        (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '')
+        (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '') +
+        (villagesBurned ? '。村' + villagesBurned + 'つも燃えた' : '')
     });
     if (mountainAt) { ctx.phrases.push('燃え広がりが山に届いて火が点いた'); doFunka(s, mountainAt[0], mountainAt[1], ctx, ev, {}); }
     return fin;
@@ -896,7 +902,8 @@
       } else if (u.magic === 'senpu') {
         if (!o && t === 'empty') { setTile(s, x, y, 'whirlwind'); ctx.phrases.push('【新案】つむじ風が巻き起こった'); }
       } else if (u.magic === 'fire') {
-        if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
+        if (isVillage(o)) { burnVillage(s, o, ctx); ctx.phrases.push(unitLabel(s, o) + 'に火が点いて燃えた'); }   // 村は燃える（オーナー 11/03）
+        else if (t === 'empty') { setTile(s, x, y, 'smallfire'); ctx.phrases.push('小さな炎がついた'); }
         else if (t === 'smallfire' && B.grow.enabled) { setTile(s, x, y, 'fire'); ctx.phrases.push('【育つ】小さな炎が炎に育った'); ctx.grows.push({ origin: [x, y], tile: 'fire', cells: [[x, y]], tiles: ['fire'], wave: [0], blocked: [], pushed: [] }); }
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
         else if (isWind(t)) { ctx.phrases.push('【新案】吹いている' + tileName(t) + 'に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
@@ -2579,7 +2586,7 @@
     for (var y = 0; y < rowsOf(s); y++) {
       for (var x = 0; x < s.size; x++) {
         var ft = getTile(s, x, y);
-        if (!isPlant(ft)) continue;   // 森と【育つ】草むらへ燃え移る
+        if (!isPlant(ft) && !isVillage(unitAt(s, x, y))) continue;   // 森と【育つ】草むら、村（オーナー 11/03）へ燃え移る
         if (neighbors(s, x, y).some(function (n) { var nt = getTile(s, n.x, n.y); return nt === 'fire' || nt === 'firewhirl'; })) out.push([x, y]);
       }
     }
@@ -2595,6 +2602,7 @@
       if (s.tiles[i] !== 'fire' || skip[i]) continue;
       var a = (old[i] || 0) + 1;
       var life = (s.fireLife && s.fireLife[i]) || B.fire.burnOutTurns;   // 【育つ】植物が燃えた炎は植物ごとの長さ
+      if (!(life > 0)) continue;   // 0 は燃え尽きない（オーナー 11/03）。年齢も数えない
       if (a >= life) cells.push([i % s.size, Math.floor(i / s.size)]);
       else age[i] = a;
     }
@@ -2605,15 +2613,27 @@
   function timePasses(s, ev, step) {
     // 1. 炎が隣の森へ燃え移る（処理開始時の盤面で同時に判定）
     var caught = fireSpreadCells(s);
-    var caughtGrass = caught.filter(function (c) { return getTile(s, c[0], c[1]) === 'thicket'; }).length;
+    var caughtV = [], what = {};
+    caught.forEach(function (c) {
+      var o = unitAt(s, c[0], c[1]);
+      if (isVillage(o)) caughtV.push(o);
+      what[isVillage(o) ? '村' : getTile(s, c[0], c[1]) === 'thicket' ? '草むら' : '森'] = true;
+    });
     caught.forEach(function (c) { setTile(s, c[0], c[1], 'fire'); });
-    var caughtWhat = !caughtGrass ? '森' : caughtGrass === caught.length ? '草むら' : '森・草むら';
+    var caughtWhat = ['森', '草むら', '村'].filter(function (w) { return what[w]; }).join('・');
     if (caught.length) ev.push({ type: 'fireSpread', cells: caught, text: '炎が隣の' + caughtWhat + 'へ燃え移った（' + caught.length + 'マス）' });
+    // 燃え移った村は壊れる（removeDead は下の 2 のダメージのあと。村が壊れた数は防衛の負けに数える）
+    caughtV.forEach(function (o) {
+      var amount = o.hp;
+      o.hp = 0;
+      ev.push({ type: 'damage', id: o.id, side: o.side, amount: amount, src: 'burn', cells: [[o.x, o.y]], text: '炎が' + unitLabel(s, o) + 'に燃え移った' });
+    });
     step();
 
     // 2. 炎の上にいる者にダメージ
     var burnEv = [];
     s.units.forEach(function (u) {
+      if (u.hp <= 0) return;   // いま燃え移って壊れた村
       if (getTile(s, u.x, u.y) === 'fire' || getTile(s, u.x, u.y) === 'firewhirl') {
         u.hp -= B.fireTileDamage;
         burnEv.push({ type: 'damage', id: u.id, side: u.side, amount: B.fireTileDamage, src: 'burn', cells: [[u.x, u.y]], text: '炎の上の' + unitLabel(s, u) + 'に' + B.fireTileDamage + 'ダメージ（残りHP ' + Math.max(0, u.hp) + '）' });
@@ -3324,7 +3344,7 @@
     },
     {
       id: 'trap', name: '【敵】罠に踏み込む',
-      desc: '【敵】味方 草・火・風、敵2体（土）。敵Aは「通れない所だけ避ける」ので炎の列を踏み越えて来る。敵Bは「危ない所も避ける」ので炎の向こうから出られない。踏み込んできた敵Aを、火と風の燃え広がりで迎え撃つ（足元が森でないと弱い炎で、5＋火傷）。炎の列は2回目のターン終了で燃え尽き、敵Bが出てくる。敵Bの土の予告先に立つと倒れる。',
+      desc: '【敵】味方 草・火・風、敵2体（土）。敵Aは「通れない所だけ避ける」ので炎の列を踏み越えて来る。敵Bは「危ない所も避ける」ので炎の向こうから出られない。踏み込んできた敵Aを、火と風の燃え広がりで迎え撃つ（足元が森でないと弱い炎で、5＋火傷）。炎の列は燃え尽きない（オーナー 11/03）ので、敵Bは炎の列がある間は出てこない。敵Bの土の予告先に立つと倒れる。',
       rows: ['......', '......', 'XXXXXX', '......', '.FFFF.', '......'],
       allies: [['grass', 0, 5], ['fire', 2, 5], ['wind', 5, 5]],
       enemies: [['earth', 1, 1, { avoid: 'wall' }], ['earth', 4, 1, { avoid: 'danger' }]]

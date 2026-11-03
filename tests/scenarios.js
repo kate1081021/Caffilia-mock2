@@ -302,7 +302,7 @@ scenario('8. 【敵】敵の火を使う: 敵Aの予告先に風を吹かせる 
     check(R.alliesOf(g.state).length === 3, '味方は無事');
   });
 
-scenario('9. 【敵】罠に踏み込む: 避けない敵Aは炎を踏み越えて来る／避ける敵Bは炎の列が燃え尽きるまで出られない',
+scenario('9. 【敵】罠に踏み込む: 避けない敵Aは炎を踏み越えて来る／避ける敵Bは炎の列がある間は出られない（炎は燃え尽きない。オーナー 11/03）',
   function () { return hp20(function () { return R.startBattle(R.loadPreset('trap')).state; }); },
   function (g) {
     var a = enemyAt(g, 'A'), b = enemyAt(g, 'B');
@@ -319,10 +319,10 @@ scenario('9. 【敵】罠に踏み込む: 避けない敵Aは炎を踏み越え�
     check(g.tile(0, 2) === 'fire', '1回目のターン終了では炎の列は残る');
     check(enemyAt(g, 'B').x === 4 && enemyAt(g, 'B').y === 1, '敵Bはまだ出られない');
     R.alliesOf(g.state).forEach(function (al) { if (!g.state.result) g.act(al.id, [al.x, al.y], al.facing, false); });
-    check([0, 1, 2, 3, 4, 5].every(function (x) { return g.tile(x, 2) !== 'fire'; }), '2回目のターン終了で炎の列が燃え尽きた');
-    g.expectLog('炎が燃え尽きた（6マス）');
+    check([0, 1, 2, 3, 4, 5].every(function (x) { return g.tile(x, 2) === 'fire'; }), '2回目のターン終了でも炎の列は残る（燃え尽きない。前はここで燃え尽きた）');
+    check(!g.log.some(function (l) { return /燃え尽きた/.test(l); }), 'ログに「燃え尽きた」はない');
     var b3 = enemyAt(g, 'B');
-    check(b3 && b3.y > 1, '3ターン目、敵Bが炎の向こうから出てきた');
+    check(b3 && b3.x === 4 && b3.y === 1, '3ターン目も、敵Bは炎の向こうから出られない');
   });
 
 scenario('10. 【敵】敵の雷も同じ法則: こちらの水たまりに敵の雷が落ちて、敵が自分の雷で感電（水の味方は風で離しておく）',

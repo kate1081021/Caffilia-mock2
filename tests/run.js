@@ -1121,7 +1121,27 @@ test('火傷は水か氷が当たると治る', function () {
   var ic = R.addAlly(s2, 'ice', 2, 4);
   eq(R.findUnit(fire(s2, ic, 'up').state, e2.id).burn, 0, '氷');
 });
-test('炎は、できてからターン終了を2回迎えると燃え尽きて空きに戻る。燃え移った炎はそこから数える', function () {
+// 炎の燃え尽きを入れたとき（balance.js の fire.burnOutTurns。標準は 0 = 燃え尽きない。オーナー 11/03）
+function withBurnOut(n, fn) { var was = B.fire.burnOutTurns; B.fire.burnOutTurns = n; try { fn(); } finally { B.fire.burnOutTurns = was; } }
+test('炎は燃え尽きない（消えるのは水か土を当てたときだけ。オーナー 11/03）。燃え移りはターン終了ごとに続く', function () {
+  var s = board(['......', '.FF...', '......', '......', '......', '......']);
+  var a = R.addAlly(s, 'fire', 0, 1);
+  var st = fire(s, a, 'right').state;                  // (1,1) の森が炎に
+  var r1 = R.endTurn(st);                              // (2,1) へ燃え移る
+  eq([tile(r1.state, 1, 1), tile(r1.state, 2, 1)], ['fire', 'fire']);
+  eq(R.forecast(r1.state).burnOut, [], '燃え尽きる炎の予告はない');
+  var r3 = R.endTurn(R.endTurn(r1.state).state);
+  eq([tile(r3.state, 1, 1), tile(r3.state, 2, 1)], ['fire', 'fire'], '3回目のターン終了でも残る');
+  ok(!r3.events.some(function (ev) { return ev.type === 'burnOut'; }), '燃え尽きない');
+});
+test('小さな炎は今どおり、ターン終了で消える（マッチの火）', function () {
+  var s = empty(6);
+  var a = R.addAlly(s, 'fire', 2, 4);
+  var st = fire(s, a, 'up').state;
+  eq(tile(st, 2, 3), 'smallfire');
+  eq(tile(R.endTurn(st).state, 2, 3), 'empty');
+});
+test('（燃え尽きを 2 にしたとき）炎は、できてからターン終了を2回迎えると燃え尽きて空きに戻る。燃え移った炎はそこから数える', function () { withBurnOut(2, function () {
   var s = board(['......', '.FF...', '......', '......', '......', '......']);
   var a = R.addAlly(s, 'fire', 0, 1);
   var st = fire(s, a, 'right').state;                  // (1,1) の森が炎に
@@ -1133,8 +1153,12 @@ test('炎は、できてからターン終了を2回迎えると燃え尽きて�
   ok(r2.events.some(function (ev) { return ev.type === 'burnOut'; }));
   var r3 = R.endTurn(r2.state);
   eq(tile(r3.state, 2, 1), 'empty');
-});
-test('火の渦が解けてできた炎も、解けた時点から数える', function () {
+}); });
+test('火の渦が解けてできた炎は残る（燃え尽きない）。燃え尽きを 2 にしたときは、解けた時点から数える', function () {
+  var s0 = board(['......', '..QQ..', '..QQ..', '......', '......', '......']);
+  R.addAlly(s0, 'fire', 0, 5);
+  eq(tile(R.endTurn(R.endTurn(R.endTurn(s0).state).state).state, 2, 1), 'fire', '燃え尽きない');
+  withBurnOut(2, function () {
   var s = board(['......', '..QQ..', '..QQ..', '......', '......', '......']);
   R.addAlly(s, 'fire', 0, 5);
   var r1 = R.endTurn(s);
@@ -1142,6 +1166,7 @@ test('火の渦が解けてできた炎も、解けた時点から数える', fu
   var r2 = R.endTurn(r1.state);
   eq(tile(r2.state, 2, 1), 'fire', '1回目');
   eq(tile(R.endTurn(r2.state).state, 2, 1), 'empty', '2回目で燃え尽き');
+  });
 });
 test('予告: ターン終了の火傷のダメージも含める', function () {
   var s = empty(6, true);
@@ -1699,6 +1724,53 @@ function mission(rows, type, enemyActs) {
 function wagonAt(s) { var w = R.objectsOf(s, 'wagon')[0]; return w ? [w.x, w.y] : null; }
 
 console.log('\n■ お題: 防衛');
+
+// 村は燃える（木でできていて、森と同じく火が点くと燃える。オーナー 11/03）
+test('村は燃える: ターン終了に隣の炎から燃え移り、壊れてマスは炎。予告にも出て、防衛では負け', function () {
+  var s = mission(['.....', '..F..', '.....', '..X..', '.....'], 'defense');
+  R.addAlly(s, 'water', 0, 0, 'up');
+  var v = R.addObject(s, 'village', 2, 2);
+  ok(R.forecast(s).fireSpread.some(function (c) { return c[0] === 2 && c[1] === 2; }), '燃え移りの予告に村のマス');
+  var r = R.endTurn(s);
+  ok(!R.findUnit(r.state, v.id), '村は燃えて壊れる');
+  eq(tile(r.state, 2, 2), 'fire', 'マスは炎');
+  ok(r.events.some(function (e) { return e.type === 'damage' && e.id === v.id && /燃え移った/.test(e.text); }), '「炎が村に燃え移った」');
+  ok(!r.events.some(function (e) { return e.type === 'damage' && e.id === v.id && e.src !== 'burn'; }), '炎の上の2は重ねない');
+  eq(r.state.result, 'lose', '防衛では負け');
+});
+test('燃えた村のマスから、次のターン終了に隣の森へ燃え移る', function () {
+  var s = board(['.....', '..F..', '.....', '..X..', '.....']);
+  R.addAlly(s, 'water', 0, 0, 'up');
+  R.addObject(s, 'village', 2, 2);
+  var r1 = R.endTurn(s);
+  eq([tile(r1.state, 2, 2), tile(r1.state, 2, 1)], ['fire', 'forest'], '同時に決めるので、森はまだ');
+  eq(tile(R.endTurn(r1.state).state, 2, 1), 'fire', '次のターン終了で森へ');
+});
+test('燃え広がりの通り道の村は燃えて壊れ、マスは炎。燃え広がりはそのまま先へ走る', function () {
+  var s = board(['.....', '.....', '.X...', '.....', '.....']);
+  var w = R.addAlly(s, 'wind', 0, 2, 'right');
+  var v = R.addObject(s, 'village', 3, 2);
+  var r = fire(s, w, 'right');
+  ok(names(r.events, 'finisher').indexOf('燃え広がり') >= 0, '燃え広がり');
+  ok(!R.findUnit(r.state, v.id), '村は壊れる');
+  eq([tile(r.state, 3, 2), tile(r.state, 4, 2)], ['fire', 'smallfire'], '村のマスは炎、その先は小さな炎');
+});
+test('火の魔法を村に当てると、火が点いて燃える（壊れてマスは炎）。敵の火でも同じ', function () {
+  var s = empty(5);
+  var a = R.addAlly(s, 'fire', 2, 4, 'up');
+  var v = R.addObject(s, 'village', 2, 3);
+  var r = fire(s, a, 'up');
+  ok(!R.findUnit(r.state, v.id), '村は壊れる');
+  eq(tile(r.state, 2, 3), 'fire', 'マスは炎（空きに火の小さな炎ではない）');
+  var s2 = empty(5, true);
+  R.addAlly(s2, 'water', 0, 4, 'up');
+  var v2 = R.addObject(s2, 'village', 2, 2);
+  var e = R.addEnemy(s2, 'fire', 2, 1, 'down');
+  e.intent = true;
+  var r2 = R.endTurn(s2);
+  ok(!R.findUnit(r2.state, v2.id), '敵の火でも村は燃える');
+  eq(tile(r2.state, 2, 2), 'fire');
+});
 
 test('村は敵の直撃で壊れて、負けになる', function () {
   var s = mission(['.....', '.....', '.....', '.....', '.....'], 'defense', true);
@@ -2323,14 +2395,14 @@ test('炎: 草むらの炎は1回目のターン終了で燃え尽き、森の�
   var R3 = R.endTurn(R2).state;
   eq(tile(R3, 4, 3), 'empty', '3回目: 森の炎も燃え尽きる');
 }); });
-test('炎: 小さな炎から育った炎は、今までどおり2回目のターン終了で燃え尽きる', function () { withGrow(function () {
+test('炎: （燃え尽きを 2 にしたとき）小さな炎から育った炎は、今までどおり2回目のターン終了で燃え尽きる', function () { withBurnOut(2, function () { withGrow(function () {
   var s = board(['......', '......', '......', '..s...', '......', '......']);
   var a = R.addAlly(s, 'fire', 2, 4);
   var st = fire(s, a, 'up').state;
   var R1 = R.endTurn(st).state;
   eq(tile(R1, 2, 3), 'fire');
   eq(tile(R.endTurn(R1).state, 2, 3), 'empty');
-}); });
+}); }); });
 test('火: 敵の火も同じく、小さな炎を炎に育てる', function () { withGrow(function () {
   var s = board(['......', '......', '..s...', '......', '......', '......'], true);
   var e = R.addEnemy(s, 'fire', 2, 1);
