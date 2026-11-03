@@ -47,6 +47,7 @@
   var STAGE_KEY = 'cafilia-mock-stages-v1';       // 自分のステージ { 名前: { def, texts, exKeep, at } }。直すたびに自動で残す（IMPROVE_v3 段0）
   var TRASH_KEY = 'cafilia-mock-trash-v1';        // 自分のステージのゴミ箱 { 鍵: { name, rec, deletedAt } }（オーナー 11/03。IMPROVE_ステージ一覧 段3）
   var FILTER_KEY = 'cafilia-mock-home-filter';    // 開発の最初の画面で選んだ難易度の札（'' はすべて）
+  var WIN_FILTER_KEY = 'cafilia-mock-home-win';   // 同じく、クリア方法の札
   var DRAFT_KEY = 'cafilia-mock-stage-draft';     // 前の作りかけ { cur, prev }。段0で自分のステージに移した（元は消さずに残す）
   var MIGRATED_KEY = 'cafilia-mock-stages-migrated';   // 前の作りかけ・前の保存を移したしるし { at, moved, failed }
   // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
@@ -2585,32 +2586,37 @@
   SIO.DIFFICULTIES.forEach(function (d, i) { DIFF_ORDER[d.id] = i; });
   function diffName(id) { var d = SIO.DIFFICULTIES.filter(function (x) { return x.id === id; })[0]; return d ? d.name : ''; }
   function homeRows(items, empty) {
-    var f = app.homeFilter;
+    var f = app.homeFilter, wf = app.homeWin;
     var list = items.map(function (it, i) { return { it: it, i: i }; })
-      .filter(function (x) { return !f || x.it.diff === f; })
+      .filter(function (x) { return (!f || x.it.diff === f) && (!wf || SIO.winKind(x.it.def) === wf); })
       .sort(function (a, b) {
         var da = a.it.diff ? DIFF_ORDER[a.it.diff] : 99, db = b.it.diff ? DIFF_ORDER[b.it.diff] : 99;
         return da - db || a.i - b.i;
       });
-    if (!list.length) return empty || (f && items.length) ? '<p class="muted">' + esc(f && items.length ? 'この難易度のステージはありません' : empty) + '</p>' : '';
+    var narrowed = (f || wf) && items.length;
+    if (!list.length) return empty || narrowed ? '<p class="muted">' + esc(narrowed ? 'この条件のステージはありません' : empty) + '</p>' : '';
     return '<div class="home-rows">' + list.map(function (x) {
       var it = x.it;
       return '<div class="home-row">' +
         '<span class="diff-tag' + (it.diff ? ' diff-' + it.diff : ' diff-none') + '">' + esc(diffName(it.diff)) + '</span>' +
         '<button type="button" class="home-stage home-title" data-open="' + esc(it.open) + '">' + esc(SIO.plainTitle(it.title)) + '</button>' +
-        '<span class="home-meta"><span class="home-magic" title="使う魔法">' + esc(SIO.magicsOf(R, it.def)) + '</span>' +
-        '<span class="home-win" title="クリア方法">' + esc(SIO.winLabel(R, it.def)) + '</span></span>' +
-        (it.del || '') + '</div>';
+        '<span class="home-magic" title="使う魔法">' + esc(SIO.magicsOf(R, it.def)) + '</span>' +
+        '<span class="home-win" title="クリア方法">' + esc(SIO.winLabel(R, it.def)) + '</span>' +
+        (it.del || '<span class="row-btns"></span>') + '</div>';   // 消すがない行も、列をそろえるために空けておく
     }).join('') + '</div>';
   }
-  function homeFilterSaved() { try { return window.localStorage.getItem(FILTER_KEY) || ''; } catch (e) { return ''; } }
-  app.homeFilter = DIFF_ORDER[homeFilterSaved()] !== undefined ? homeFilterSaved() : '';
+  function savedPick(k) { try { return window.localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  app.homeFilter = DIFF_ORDER[savedPick(FILTER_KEY)] !== undefined ? savedPick(FILTER_KEY) : '';
+  app.homeWin = SIO.WIN_KINDS.some(function (w) { return w.id === savedPick(WIN_FILTER_KEY); }) ? savedPick(WIN_FILTER_KEY) : '';
+  // 絞る札: 1段目は難易度、2段目はクリア方法（戦闘・ボス・防衛・護衛・奪取。オーナー 11/03）。両方で絞れる
   function filterChips() {
-    var f = app.homeFilter;
-    return '<div class="home-filter" role="group" aria-label="難易度で分ける">' +
-      [['', 'すべて']].concat(SIO.DIFFICULTIES.map(function (d) { return [d.id, d.name]; })).map(function (c) {
-        return '<button type="button" class="chip' + (c[0] === f ? ' on' : '') + '" data-filter="' + c[0] + '" aria-pressed="' + (c[0] === f) + '">' + esc(c[1]) + '</button>';
-      }).join('') + '</div>';
+    var row = function (label, attr, now, opts) {
+      return '<div class="home-filter" role="group" aria-label="' + label + 'で分ける"><span class="filter-label">' + label + '</span>' +
+        [['', 'すべて']].concat(opts.map(function (d) { return [d.id, d.name]; })).map(function (c) {
+          return '<button type="button" class="chip' + (c[0] === now ? ' on' : '') + '" ' + attr + '="' + c[0] + '" aria-pressed="' + (c[0] === now) + '">' + esc(c[1]) + '</button>';
+        }).join('') + '</div>';
+    };
+    return row('難易度', 'data-filter', app.homeFilter, SIO.DIFFICULTIES) + row('クリア方法', 'data-wfilter', app.homeWin, SIO.WIN_KINDS);
   }
   // ゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）: 自分のステージはこのブラウザ（TRASH_KEY）、みんなのステージは共有の置き場所
   function trashStore() { try { var raw = window.localStorage.getItem(TRASH_KEY); return raw ? JSON.parse(raw) : {}; } catch (e) { return null; } }
@@ -2631,8 +2637,8 @@
     return '<section class="home-sec home-trash"><h3><button type="button" class="trash-toggle" data-trash-toggle="1" aria-expanded="' + !!app.trashOpen + '">' +
       (app.trashOpen ? '▾' : '▸') + ' ゴミ箱（' + items.length + '）</button> <small>消したステージ。戻せる</small></h3>' +
       (!app.trashOpen ? '' : items.length ? '<div class="home-rows">' + items.map(function (it) {
-        return '<div class="home-row"><span class="diff-tag diff-none">' + esc(it.where) + '</span><span class="home-title trash-name">' + esc(it.name) + '</span>' +
-          '<span class="home-meta"><span>' + esc(fmtTime(it.at)) + ' に消した</span></span>' +
+        return '<div class="home-row trash-row"><span class="diff-tag diff-none">' + esc(it.where) + '</span><span class="home-title trash-name">' + esc(it.name) + '</span>' +
+          '<span class="trash-at">' + esc(fmtTime(it.at)) + ' に消した</span>' +
           '<span class="row-btns"><button type="button" data-tr-restore="' + esc(it.ref) + '">戻す</button>' +
           '<button type="button" class="home-del" data-tr-purge="' + esc(it.ref) + '">完全に消す</button></span></div>';
       }).join('') + '</div>' : '<p class="muted">空です</p>') + '</section>';
@@ -2813,6 +2819,12 @@
     if (b.hasAttribute('data-filter')) {
       app.homeFilter = b.getAttribute('data-filter');
       try { window.localStorage.setItem(FILTER_KEY, app.homeFilter); } catch (er) { /* 覚えられなくても絞れる */ }
+      renderHome();
+      return;
+    }
+    if (b.hasAttribute('data-wfilter')) {
+      app.homeWin = b.getAttribute('data-wfilter');
+      try { window.localStorage.setItem(WIN_FILTER_KEY, app.homeWin); } catch (er) { /* 覚えられなくても絞れる */ }
       renderHome();
       return;
     }

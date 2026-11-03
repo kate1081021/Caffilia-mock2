@@ -1018,16 +1018,21 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
 .home-own .home-del { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; padding: 0 10px; color: var(--muted); font-size: 12px; }
 .home-new { align-self: flex-start; min-height: 44px; padding: 6px 20px; font-size: 15px; }
 /* 一覧: 1行に1つ（オーナー 11/03。IMPROVE_ステージ一覧 段2）。難易度の札・タイトル・使う魔法・クリア方法・消す */
-.home-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.home-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.home-filter .filter-label { width: 5.5em; font-size: 13px; color: var(--muted); }
 .home-filter .chip { min-height: 36px; padding: 4px 14px; border-radius: 999px; font-size: 14px; }
 .home-filter .chip.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .home-rows { display: flex; flex-direction: column; gap: 6px; }
-.home-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) auto auto; align-items: center; gap: 4px 10px;
+/* 列の幅を決めて、どの行・どの欄でも縦がそろうようにする（オーナー 11/03「縦軸を揃えて」）: 難易度・タイトル・使う魔法・クリア方法・消す */
+.home-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 10em 3.5em 4.5em; align-items: center; gap: 4px 10px;
   padding: 4px 6px; border-radius: 10px; background: var(--bg); }
+.home-row .home-magic { font-size: 13px; color: var(--ink); }
+.home-row .home-win { font-size: 13px; color: var(--muted); }
+.home-row .row-btns { justify-self: end; }
+.home-row.trash-row { grid-template-columns: 7.5em minmax(0, 1fr) 10em auto; }
+.trash-at { font-size: 13px; color: var(--muted); }
 .home-row .home-title { justify-self: start; min-height: 40px; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
 .home-row .trash-name { font-size: 15px; padding: 0 4px; }
-.home-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 13px; }
-.home-magic { color: var(--ink); }
 .row-btns { display: inline-flex; gap: 6px; }
 .row-btns .home-del { color: var(--muted); font-size: 12px; padding: 0 10px; min-height: 32px; }
 .diff-tag { justify-self: start; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #fff; }
@@ -1039,10 +1044,16 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
 .diff-none { background: var(--line); color: var(--ink); }
 .home-note { margin: 0; padding: 6px 10px; border-radius: 8px; background: #fef3c7; font-size: 14px; }
 .trash-toggle { border: none; background: none; padding: 0; font: inherit; font-weight: 600; cursor: pointer; color: var(--ink); }
-/* 狭い画面では、使う魔法とクリア方法を2段目に回す */
+/* 狭い画面では2段: 1段目 難易度・タイトル・消す、2段目 クリア方法（難易度の下）・使う魔法（タイトルの下）。どちらの段も縦にそろう */
 @media (max-width: 640px) {
-  .home-row { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .home-row .home-meta { grid-column: 1 / -1; grid-row: 2; }
+  .home-row { grid-template-columns: 6.4em minmax(0, 1fr) auto; }
+  .home-row .diff-tag { font-size: 11px; }
+  .home-row .home-win { grid-column: 1; grid-row: 2; padding-left: 4px; }
+  .home-row .home-magic { grid-column: 2; grid-row: 2; }
+  .home-row .row-btns { grid-column: 3; grid-row: 1; }
+  .home-row.trash-row { grid-template-columns: 4em minmax(0, 1fr) auto; }
+  .home-row.trash-row .trash-at { grid-column: 2; grid-row: 2; }
+  .home-filter .filter-label { width: 100%; }
 }
 /* 展示モードの最初の画面・ありがとう！・クリア！・選んで遊ぶ（IMPROVE_v3 段3）: 真ん中に大きく */
 html.mode-exhibit .home { align-items: center; text-align: center; margin-top: 12vh; }

@@ -277,18 +277,22 @@
     });
     return out.join('・');
   }
-  // クリア方法: 勝ち方の短い名前（村を守るはターン数も）
-  function winLabel(R, def) {
+  // クリア方法の区分（オーナー 11/03「戦闘・ボス・防衛・護衛・奪取・破壊などで分けられる」）。一覧の列と、絞る札に使う。
+  //   破壊は、その勝ち方ができたらここに足す（今のゲームにはまだない）
+  var WIN_KINDS = [
+    { id: 'battle', name: '戦闘' },
+    { id: 'boss', name: 'ボス' },
+    { id: 'defense', name: '防衛' },
+    { id: 'escort', name: '護衛' },
+    { id: 'retrieve', name: '奪取' }
+  ];
+  function winKind(def) {
     if (!def) return '';
-    if (def.ex) return 'ボスを倒す';
-    if (def.mission === 'defense') {
-      var ov = def.overrides || {};
-      return '村を守る（' + (ov[OV_TURNS] !== undefined ? ov[OV_TURNS] : R.BALANCE.mission.defense.turns) + 'ターン）';
-    }
-    if (def.mission === 'escort') return 'トロッコをゴールへ';
-    if (def.mission === 'retrieve') return '宝を持ち帰る';
-    return '敵を全員倒す';
+    if (def.ex) return 'boss';
+    if (def.mission === 'defense' || def.mission === 'escort' || def.mission === 'retrieve') return def.mission;
+    return 'battle';
   }
+  function winLabel(R, def) { var k = winKind(def), w = WIN_KINDS.filter(function (x) { return x.id === k; })[0]; return w ? w.name : ''; }
   // 名前に入っている区分の印（【チュートリアル】など）は、一覧では難易度の札に任せて外す
   function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
 
@@ -348,7 +352,7 @@
   }
 
   var api = {
-    PREFIX: PREFIX, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, plainTitle: plainTitle,
+    PREFIX: PREFIX, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone

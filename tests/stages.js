@@ -74,7 +74,9 @@ eq(S.fromFile(R, S.toFile({ name: '難易度つき', def: dd })).def.difficulty,
 eq(S.checkDef(R, Object.assign({}, dd, { difficulty: 'super' })), '知らない難易度がある', '知らない難易度は読まない');
 eq([S.magicsOf(R, R.findPreset('tut1')), S.magicsOf(R, R.findPreset('tut2')), S.magicsOf(R, R.findPreset('ex3'))], ['風（仲間）・火', '山・水', '山・火・風'], '使う魔法（構える味方は「仲間」）');
 eq([S.winLabel(R, R.findPreset('tut1')), S.winLabel(R, R.findPreset('tut2')), S.winLabel(R, R.findPreset('ex3')), S.winLabel(R, S.toDef(R, S.setWin(R, s3, 'defense', 7), 'x'))],
-  ['敵を全員倒す', '村を守る（5ターン）', 'ボスを倒す', '村を守る（7ターン）'], 'クリア方法');
+  ['戦闘', '防衛', 'ボス', '防衛'], 'クリア方法は区分の短い名前（オーナー 11/03）');
+eq(S.WIN_KINDS.map(function (w) { return w.name; }), ['戦闘', 'ボス', '防衛', '護衛', '奪取'], 'クリア方法の区分');
+eq([S.winKind({ rows: [], mission: 'escort' }), S.winKind({ rows: [], mission: 'retrieve' }), S.winKind({ rows: [] })], ['escort', 'retrieve', 'battle']);
 eq([S.plainTitle('【チュートリアル】① 重ねる'), S.plainTitle('森の道')], ['① 重ねる', '森の道'], '名前の区分の印は一覧では外す');
 
 // 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）
