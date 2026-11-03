@@ -58,7 +58,7 @@ test('名前を当てる: 自然の表示名・マップの字・魔法・シナ
   } finally {
     S.applyNames(R, T, {});
   }
-  eq([R.TILE_INFO.forest.name, R.TILE_INFO.forest.label, R.TILE_INFO.mountain.name, R.magicName('grass'), T.finishers['燃え広がり']], ['森', '森', '山', '草', '燃え広がり'], '設定を外すと元の名前');
+  eq([R.TILE_INFO.forest.name, R.TILE_INFO.forest.label, R.TILE_INFO.mountain.name, R.magicName('grass'), T.finishers['燃え広がり']], ['森', '森', '山', '草', '炎×風'], '設定を外すと元の名前（シナジーの元の名前は「当たっていた自然×当てた魔法」。オーナー 11/04）');
 });
 test('名前の形: 長すぎる名前は詰め、空の名前・知らない形は捨てる', function () {
   var c = S.clean({ tiles: { forest: { name: '  ', label: '森林地帯' }, Bad: { name: 'x' } }, magics: { grass: 'あいうえおかきくけこさしすせそ' }, synergies: { '桜吹雪': '' } });
@@ -67,5 +67,9 @@ test('名前の形: 長すぎる名前は詰め、空の名前・知らない形
   eq(c.synergies, {});
 });
 
+test('シナジーの元の名前は「当たっていた自然×当てた魔法」の形（順番あり。オーナー 11/04）', function () {
+  eq([TEXTS.finishers['燃え広がり'], TEXTS.finishers['桜吹雪'], TEXTS.finishers['火の渦'], TEXTS.finishers['火山']], ['炎×風', '火山×風', '風×火', '山×火']);
+  ok(Object.keys(TEXTS.finishers).every(function (k) { return /×/.test(TEXTS.finishers[k]); }), 'どれも「×」の形');
+});
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) process.exitCode = 1;
