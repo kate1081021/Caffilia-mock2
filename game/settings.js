@@ -1,5 +1,5 @@
 /*
- * settings.js — 設定: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）を変える（オーナー 11/03。.claude/IMPROVE_設定.md）
+ * settings.js — 設定: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）を変える（オーナー 11/03。archive/仕様と調査/IMPROVE_設定.md）
  *   設定は共有の置き場所（Cloudflare の KV の settings。tools/stage_worker.mjs）に置き、展示モードもその設定で出す。
  *   このブラウザにも写し（CACHE_KEY）を覚えて、開いたらすぐ（つながる前に）その色で出す。つながらないときは写しか、元の色と名前。
  *   形: { colors: { '--bg': '#rrggbb', … }, tiles: { forest: { name, label } }, magics: { grass: '草' }, synergies: { 燃え広がり: '…' }, at }

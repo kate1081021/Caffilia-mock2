@@ -43,7 +43,7 @@
   var KEY_DIR = { ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left', w: 'up', a: 'left', s: 'down', d: 'right', W: 'up', A: 'left', S: 'down', D: 'right' };
   var SHORT = { empty: '空き', forest: '森', mountain: '山', river: '川', fire: '炎', smallfire: '小炎', volcano: '火山', mud: '泥沼', puddle: '水たまり', mirage: '蜃気楼', ice: '氷', lava: '溶岩', whirlwind: 'つむじ風', tornado: '竜巻', breeze: '風', firewhirl: '火の渦', sakura: '桜', petals: '花びら', deadforest: '死の森', haunted: 'オバケヤシキ', hill: '丘', thicket: '草むら', gale: '強風', hillsakura: '丘の桜' };
   Object.keys(R.TILE_INFO).forEach(function (t) { if (!SHORT[t]) SHORT[t] = R.TILE_INFO[t].name; });
-  // 設定（オーナー 11/03。game/settings.js・.claude/IMPROVE_設定.md）: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）。
+  // 設定（オーナー 11/03。game/settings.js・archive/仕様と調査/IMPROVE_設定.md）: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）。
   //   開いたらすぐ、このブラウザの写しを当てる。共有の置き場所から読んだら、そちらを当てる（fetchShared）
   var CS = window.CafiliaSettings;
   var SHORT0 = {};
@@ -2503,7 +2503,7 @@
       (dirty ? '<p class="note">まだ展示モードは変わっていません。「この並びで展示する」を押すと変わります。</p>' : app.lineupSaved ? '<p class="note">展示モードの並びを、この並びにしました。</p>' : '');
   }
   // ---------------------------------------------------------------
-  // 設定の画面（開発モード。オーナー 11/03。.claude/IMPROVE_設定.md）: 画面の主な色（RGB）と、名前（自然・マップの字・魔法・シナジー）。
+  // 設定の画面（開発モード。オーナー 11/03。archive/仕様と調査/IMPROVE_設定.md）: 画面の主な色（RGB）と、名前（自然・マップの字・魔法・シナジー）。
   //   変えるとすぐ、このページに当たって見える（下書き app.settingsDraft）。「この設定で保存する」で共有の置き場所へ。
   //   保存すると、どのパソコンの展示モード・開発モードもこの設定で出る（展示の並びと同じ）。やめたら保存した設定に戻す
   // ---------------------------------------------------------------
