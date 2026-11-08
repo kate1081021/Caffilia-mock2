@@ -987,7 +987,8 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .m-ex-mission.done .m-check { color: #7c2d12; }
 
 /* 構えと予測: 魔法の形の輪郭（外側の辺だけの点線）と向き。自然のマスとは別の見た目 */
-.so-line { position: absolute; inset: 2px; pointer-events: none; z-index: 3; border: 0 dashed var(--so, #1d4ed8); }
+/*   重なった形は段（--sl）ごとに 5px ずつ内側へ入れ子にして、どれも見えるようにする */
+.so-line { position: absolute; inset: calc(2px + var(--sl, 0) * 5px); pointer-events: none; z-index: 3; border: 0 dashed var(--so, #1d4ed8); }
 .so-line.e-t { border-top-width: 3px; }
 .so-line.e-r { border-right-width: 3px; }
 .so-line.e-b { border-bottom-width: 3px; }
@@ -997,7 +998,8 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .so-mount { --so: #7c4a1e; }
 .so-fire { --so: #dc2626; }
 .so-wind { --so: #0f766e; }
-.so-tag { position: absolute; left: 2px; top: 2px; z-index: 6; font-size: 11px; font-weight: bold; line-height: 1.2; padding: 0 4px; border-radius: 6px; color: #fff; background: var(--so, #1d4ed8); pointer-events: none; white-space: nowrap; }
+.so-tags { position: absolute; left: 2px; top: 2px; z-index: 6; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; pointer-events: none; }
+.so-tag { font-size: 11px; font-weight: bold; line-height: 1.2; padding: 0 4px; border-radius: 6px; color: #fff; background: var(--so, #1d4ed8); pointer-events: none; white-space: nowrap; }
 .so-tag.planned { box-shadow: 0 0 0 2px #fff; }
 
 /* ---------------------------------------------------------------
