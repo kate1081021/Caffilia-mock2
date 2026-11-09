@@ -583,12 +583,16 @@
     var amount = strongList.length ? B.fire.strongDamage : B.fire.weakDamage;
     var fin = { name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length, dir: dir, origin: [ox, oy] };
     ctx.finishers.push(fin);
+    // 強く燃えたものの名前: 森と草むら（plantStrong）を分けて数える（草に水で森が標準になり、草むらはどこでもできる。11/10）
+    var strongForest = strongList.filter(function (c) { return burned[key(c[0], c[1])] === 'forest'; }).length;
+    var strongThicket = strongList.length - strongForest;
+    var strongName = [strongForest ? '森' + strongForest + 'つ' : '', strongThicket ? '草むら' + strongThicket + 'マス' : ''].filter(Boolean).join('と');
     ev.push({
       type: 'finisher', name: '燃え広がり', cells: cells, strong: strongList.slice(), damage: amount, forests: strongList.length, dir: dir, origin: [ox, oy],
       text: '燃え広がり！ ' + DIRS[dir].name + 'へ' + path.length + 'マス走り、' +
-        (strongList.length ? '森' + strongList.length + 'つが燃えた（燃えた森の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
+        (strongList.length ? strongName + 'が燃えた（燃えた' + (strongThicket ? '森・草むら' : '森') + 'の上は威力' + B.fire.strongDamage + '、ほかは' + B.fire.weakDamage + '＋火傷）'
           : '燃えた森はなし（弱い炎: 威力' + B.fire.weakDamage + '＋火傷）') +
-        (grassN ? '。【育つ】草むら' + grassN + 'マスも燃えた' : '') +
+        (grassN ? '。草むら' + grassN + 'マスも燃えた（弱い炎）' : '') +
         (villagesBurned ? '。村' + villagesBurned + 'つも燃えた' : '')
     });
     if (mountainAt) { ctx.phrases.push('燃え広がりが山に届いて火が点いた'); doFunka(s, mountainAt[0], mountainAt[1], ctx, ev, {}); }
