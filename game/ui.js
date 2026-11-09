@@ -1397,15 +1397,23 @@
       var groups = [];
       if (fcAll) fcAll.allies.forEach(function (p) { if (!p.cancelled && !(u && p.id === u.id)) groups.push({ cells: p.cells || [], magic: p.magic, dir: p.dir, n: p.order }); });
       if (pv && u) groups.push({ cells: pv.cells || [], magic: u.magic, dir: app.plan.dir, n: pv.order || 0, planned: true });
+      // 重なっても全部見えるように: 重なる形どうしは輪郭を内側へずらして入れ子にする（1つの形はどのマスでも同じ段。オーナー 11/09「両方見えるように」）
+      var lvOf = {};   // マス → そのマスに描いた形の段
       groups.forEach(function (g) {
-        var inG = {};
-        g.cells.forEach(function (c) { inG[key(c[0], c[1])] = true; });
+        var inG = {}, used = {};
+        g.cells.forEach(function (c) {
+          var k2 = key(c[0], c[1]);
+          inG[k2] = true;
+          (lvOf[k2] || []).forEach(function (l) { used[l] = true; });
+        });
+        var lv = 0;
+        while (used[lv]) lv++;
         g.cells.forEach(function (c, i) {
           var k2 = key(c[0], c[1]);
-          if (soCell[k2]) return;
           var edges = [];
           [['t', 0, -1], ['r', 1, 0], ['b', 0, 1], ['l', -1, 0]].forEach(function (d) { if (!inG[key(c[0] + d[1], c[1] + d[2])]) edges.push('e-' + d[0]); });
-          soCell[k2] = { magic: g.magic, edges: edges, first: i === 0, dir: g.dir, n: g.n, planned: !!g.planned };
+          (soCell[k2] = soCell[k2] || []).push({ magic: g.magic, edges: edges, first: i === 0, dir: g.dir, n: g.n, planned: !!g.planned, lv: lv });
+          (lvOf[k2] = lvOf[k2] || []).push(lv);
         });
       });
     }
@@ -1641,10 +1649,13 @@
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
         if (moveFrom[k] && !unit) inner += '<div class="ghost ally move-from" title="' + esc(R.unitLabel(st, moveFrom[k]) + 'の元の位置（押すと戻る）') + '"></div>';
-        if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」
-          var sc = soCell[k];
-          inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '"></span>';
-          if (sc.first) inner += '<span class="so-tag so-' + sc.magic + (sc.planned ? ' planned' : '') + '">' + (sc.n ? (ORDER_MARK[sc.n] || sc.n) : '') + esc(R.magicName(sc.magic)) + DIR_ARROW[sc.dir] + '</span>';
+        if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」。重なった形は段ごとに内側へ、札は縦に並べる
+          var soTags = '';
+          soCell[k].forEach(function (sc) {
+            inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '" style="--sl:' + sc.lv + '"></span>';
+            if (sc.first) soTags += '<span class="so-tag so-' + sc.magic + (sc.planned ? ' planned' : '') + '">' + (sc.n ? (ORDER_MARK[sc.n] || sc.n) : '') + esc(R.magicName(sc.magic)) + DIR_ARROW[sc.dir] + '</span>';
+          });
+          if (soTags) inner += '<span class="so-tags">' + soTags + '</span>';
         }
         if (nextAt[k]) {
           var nx = nextAt[k], ready = nx.h.shooters.length > 0;
