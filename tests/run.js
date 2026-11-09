@@ -2372,6 +2372,56 @@ test('草: 敵の草も同じく、こちらの草むらを森に育てる', fun
 }, { forestSize: 5 }); });
 
 // ---------------------------------------------------------------
+console.log('\n■ 試し: 草に水で森（ideas.grassWater。オーナー 11/10）');
+var GW = { 'ideas.grassWater': true };
+test('草に水: 入なら、空きに草で草むら（切なら今までどおり森）', function () {
+  var g = grassBoard(); old(g.s, GW);
+  var r = fire(g.s, g.a, 'up');
+  eq([tile(r.state, 3, 4), tile(r.state, 2, 3), tile(r.state, 3, 3), tile(r.state, 4, 3)], ['thicket', 'thicket', 'thicket', 'thicket']);
+  eq(forests(r.state), []);
+});
+test('草に水: 草むらに水が当たると森になり、水はそこで止まる', function () {
+  var s = old(board(['......', '......', '......', '......', '..g...', '......']), GW);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['forest', 'empty']);
+  ok(r.events.some(function (e) { return /草むらが水を吸って森になった/.test(e.text || ''); }), r.events.map(function (e) { return e.text; }).join(' / '));
+});
+test('草に水: 切なら、草むらに水は今までどおり水たまり（森にならない）', function () {
+  var s = board(['......', '......', '......', '......', '..g...', '......']);
+  var a = R.addAlly(s, 'water', 2, 5);
+  eq(tile(fire(s, a, 'up').state, 2, 4), 'puddle');
+});
+test('草に水: 同じターンに 草 → 水 の順なら、水の当たった草むらだけ森になる', function () {
+  var g = grassBoard(); old(g.s, GW);
+  var w = R.addAlly(g.s, 'water', 3, 5);   // 上へ撃つと (3,4)
+  var r = fire(fire(g.s, g.a, 'up').state, w, 'up');
+  eq(forests(r.state), ['3,4']);
+  eq([tile(r.state, 2, 3), tile(r.state, 3, 3), tile(r.state, 4, 3)], ['thicket', 'thicket', 'thicket'], 'ほかの草むらはそのまま');
+});
+test('草に水: 山から流れ出した川も、草むらに当たると森にして止まる', function () {
+  var s = old(board(['.......', '.......', '...g...', '.......', '...M...', '.......', '.......']), GW);
+  var a = R.addAlly(s, 'water', 3, 5);   // 上へ撃つと (3,4) の山（1マスなので頂上 → 4方向へ）
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 3, 3), tile(r.state, 3, 2), tile(r.state, 3, 1)], ['river', 'forest', 'empty'], '上へ: 川 → 草むらで森 → その先は流れない');
+  eq([tile(r.state, 0, 4), tile(r.state, 6, 4)], ['river', 'river'], 'ほかの向きは盤の端まで');
+});
+test('草に水: 風で運ばれた川の水も、草むらに落ちると森になる', function () {
+  var s = old(board(['......', '......', '......', '..g...', '..R...', '......']), GW);
+  var a = R.addAlly(s, 'wind', 2, 5);   // 上へ2マス: (2,4) 川 → (2,3) 草むら
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['puddle', 'forest']);
+});
+test('草に水: 敵の水も同じく、こちらの草むらを森にする', function () {
+  var s = old(board(['......', '......', '..g...', '......', '......', '......'], true), GW);
+  var e = R.addEnemy(s, 'water', 2, 1);   // 下向き: (2,2) の草むら
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  eq(tile(r.state, 2, 2), 'forest');
+});
+
+// ---------------------------------------------------------------
 console.log('\n■ 育つ（IMPROVE_grow）: 火 — 小さな炎と炎');
 test('火: 切っているときは、小さな炎に火を点けても何も起きない', function () {
   var s = board(['......', '......', '......', '..s...', '......', '......']);

@@ -25,7 +25,7 @@
 
 ### テスト（11/03 に今のルールに合わせた）
 
-`tests/run.js`（307件）・`tests/scenarios.js`・`tests/simul.js`・`tests/ex3.js`・`tests/stages.js`・`tests/stage_api.js`・`tests/settings.js` は、すべて通る（11/08 に確かめた）。
+`tests/run.js`（314件）・`tests/scenarios.js`・`tests/simul.js`・`tests/ex3.js`・`tests/stages.js`・`tests/stage_api.js`・`tests/settings.js` は、すべて通る（11/08 に確かめた）。
 
 - 落ちていたのは、オーナーが決めてルールを変えたのにテストを直していなかったもの（10/29 の値そろえ: 水1マス・燃え広がり3・どの山にも斜面・①の風の上書きを外す。10/30: 足元にも山・頂上と腕の印をやめる・通り抜け・③の組み直し）。今の動きが法則どおりかを1件ずつ確かめてから、期待を今に合わせた。
 - 法則のテストのうち長さに関わるものは、数を `balance.js` から読む。昔の切り替え（【元】の池・斜面なしの源流・竜巻の作り方、切ってある「育つ」）のテストは、その盤面に昔の水の設定（`OLD_WATER`）を書いて確かめる。

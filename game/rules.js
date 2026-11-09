@@ -884,7 +884,8 @@
       var free = function () { return !o || (B.ideas.natureUnderUnits); };
       if (u.magic === 'grass') {
         // 【育つ】入のときは、空きに草で草むら、草むらに草で森に育つ
-        var lowG = B.grow.enabled ? 'thicket' : 'forest';
+        // 【試し】草に水で森（ideas.grassWater）のときも、空きに草で草むら（森に育てるのは水。soakThicket）
+        var lowG = (B.grow.enabled || B.ideas.grassWater) ? 'thicket' : 'forest';
         if (free(lowG) && t === 'empty') { setTile(s, x, y, lowG); ctx.phrases.push(tileName(lowG) + 'ができた' + (o ? '（' + unitLabel(s, o) + 'の足元）' : '')); planted.push([x, y, lowG]); }
         else if (free('forest') && t === 'thicket' && B.grow.enabled) growFrom.push([x, y]);
         else if (free('sakura') && t === 'mountain' && B.sakura.from === 'grass') { setTile(s, x, y, 'sakura'); ctx.phrases.push('【新案】山に桜が咲いた'); raise(o, x, y); }
@@ -1392,7 +1393,19 @@
     return out;
   }
 
+  // 【試し】草に水で森（ideas.grassWater。オーナー 11/10）: 草むらに水が当たると、水を吸って森に育つ。入でなければ何もしない
+  //   水の魔法・川・風で運ばれた水のどれでも同じ。水の魔法と川は、そこで止まる（森で止まるのと同じ）
+  function soakThicket(s, x, y, ctx) {
+    if (!B.ideas.grassWater || getTile(s, x, y) !== 'thicket') return false;
+    setTile(s, x, y, 'forest');
+    ctx.cells.push([x, y]);
+    ctx.grows.push({ origin: [x, y], tile: 'forest', cells: [[x, y]], tiles: ['forest'], wave: [0], blocked: [], pushed: [] });
+    return true;
+  }
+  var SOAK_STOP = '【試し】草むらが水を吸って森になった';
+
   // 1本の川: (sx, sy) の次のマスから d の向きへ。空き・水たまり・蜃気楼・草むらを川にして進む（川・氷はそのまま越える）。
+  //   【試し】grassWater が入なら、草むらは水を吸って森になり、川はそこで止まる（soakThicket）
   //   人（味方・敵）のマスでは止まらずに流れ続け、その人の足元も川になる（オーナー 10/30。人へのダメージはない）。
   //   村には流れこんで村を押し流し（壊れる）、そのまま流れ続ける（オーナー 10/31）。
   //   ほかの置きもの（トロッコ）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
@@ -1407,6 +1420,7 @@
       if (isAiry(t)) t = 'empty';   // 風・花びらのマスも流れる（isAiry）
       if (o && o.kind === 'village') { addHit(ctx, o, o.hp, 'flood', [cx, cy]); flooded.push(unitLabel(s, o) + 'に川が流れこんだ'); }
       else if (o && o.side === 'object') { stop = unitLabel(s, o) + 'の手前で止まった'; g.blocked.push([cx, cy]); break; }
+      if (soakThicket(s, cx, cy, ctx)) { stop = SOAK_STOP; break; }
       if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
         setTile(s, cx, cy, 'river');
         ctx.cells.push([cx, cy]);
@@ -1461,7 +1475,8 @@
         addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
         // 人の足元にも自然ができる（オーナー 10/30: 人のいないマスと同じ作用）: 空き・水たまり・蜃気楼・草むらは水たまり（元の池なら川）、炎は消える
         if (B.ideas.natureUnderUnits && !sourced && !growing) {
-          if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn ? 'puddle' : 'river'); made++; }
+          if (soakThicket(s, x, y, ctx)) ctx.phrases.push('【試し】足元の草むらが水を吸って森になった');
+          else if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, puddleOn ? 'puddle' : 'river'); made++; }
           else if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); ctx.phrases.push('足元の' + tileName(t) + 'を消した'); }
         }
         break;
@@ -1469,6 +1484,7 @@
       if (growing) {
         // 【育つ】育つ川は、空き・水たまり・草むらを川にして進む。ユニット・森・山・丘・火山・泥沼で止まり、炎は消して止まる
         left--;
+        if (soakThicket(s, x, y, ctx)) { stop = SOAK_STOP; break; }
         if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') { setTile(s, x, y, 'river'); made++; river.cells.push([x, y]); river.tiles.push('river'); river.wave.push(river.cells.length - 1); continue; }
         if (t === 'river' || t === 'ice') continue;
         if (t === 'fire' || t === 'smallfire') { setTile(s, x, y, 'empty'); stop = tileName(t) + 'を消して止まった'; break; }
@@ -1503,6 +1519,7 @@
         }
         continue;
       }
+      if (soakThicket(s, x, y, ctx)) { stop = SOAK_STOP; break; }   // 【試し】草に水で森（入のときだけ）
       if (t === 'empty' || t === 'puddle' || t === 'mirage' || t === 'thicket') {
         // 【育つ】低い草むらは水に沈む。入なら源流までは水たまり。
         //   水だけなら水たまり（waterPuddle）で変わるのは空きだけ: 水たまり・蜃気楼に水が流れると、今までどおり川に戻る
@@ -1596,12 +1613,14 @@
     var firstRiver = -1;
     path.forEach(function (c, j) { if (firstRiver < 0 && getTile(s, c[0], c[1]) === 'river') firstRiver = j; });
     if (firstRiver >= 0) {
-      var wet = 0;
+      var wet = 0, soaked = 0;
       for (var j = firstRiver; j < path.length; j++) {
         var tt = getTile(s, path[j][0], path[j][1]);
-        if (tt === 'river' || tt === 'empty' || isAiry(tt)) { setTile(s, path[j][0], path[j][1], 'puddle'); wet++; }
+        if (soakThicket(s, path[j][0], path[j][1], ctx)) soaked++;   // 【試し】運ばれた水を草むらが吸って森に（入のときだけ）
+        else if (tt === 'river' || tt === 'empty' || isAiry(tt)) { setTile(s, path[j][0], path[j][1], 'puddle'); wet++; }
       }
       ctx.phrases.push('【新案】川の水を' + F.name + 'へ運んだ（水たまり' + wet + 'マス）');
+      if (soaked) ctx.phrases.push('【試し】運ばれた水を吸って、草むら' + soaked + 'マスが森になった');
     }
     // 遠いマスから順にユニットを運ぶ
     for (var k = path.length - 1; k >= 0; k--) {
