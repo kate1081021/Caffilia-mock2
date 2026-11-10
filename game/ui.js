@@ -2739,6 +2739,8 @@
       (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
       '</section>' +
       '<div class="home-list"><button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>' +
+      '<button type="button" class="home-new" data-import="1" title="ステージのファイル（.json）を選ぶと、自分のステージに入る（ネットには出ない）">ファイルから読む</button>' +
+      '<input type="file" accept=".json,application/json" hidden data-import-file="1">' +
       '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button>' +
       '<button type="button" class="home-new" data-settings="1">設定</button></div>' +
       trashSection();
@@ -2958,6 +2960,27 @@
     render();
     refreshShare();
   }
+  // ファイルから読む（オーナー 11/10「自分の使うブラウザがいい」）: 選んだファイルのステージを、このブラウザの自分のステージに足す。
+  //   ネットには出ない（みんなのステージへは、エディットの「共有する」で）。同じ名前があれば「名前（2）」にする（上書きしない）
+  function importStages(text, fileName) {
+    var stages = stageStore();
+    if (!stages) { window.alert('この環境ではブラウザに残せないので、読みこめません'); return; }
+    var r = SIO.fromFiles(R, text);
+    var why = r.errors.map(function (e) { return e.name + ': ' + e.error; }).join('／');
+    if (!r.items.length) { homeNote('「' + fileName + '」から読めるステージがありませんでした（' + why + '）'); return; }
+    var a = SIO.addOwn(stages, r.items);
+    if (!stageStoreSet(a.stages)) { window.alert('自分のステージに残せませんでした'); return; }
+    addLog('「' + fileName + '」から自分のステージに入れた: ' + a.names.join('・'), 'system');
+    homeNote('「' + fileName + '」から ' + a.names.length + 'ステージを、自分のステージに入れた' + (r.errors.length ? '（読めなかったもの ' + r.errors.length + '件: ' + why + '）' : ''));
+  }
+  el.home.addEventListener('change', function (e) {
+    var pick = e.target;
+    if (EXHIBIT || !pick || !pick.hasAttribute || !pick.hasAttribute('data-import-file') || !pick.files || !pick.files[0]) return;
+    var file = pick.files[0], reader = new FileReader();
+    reader.onload = function () { importStages(String(reader.result || ''), file.name); };
+    reader.onerror = function () { homeNote('「' + file.name + '」を読めませんでした'); };
+    reader.readAsText(file);
+  });
   // 自分のステージを消す: ゴミ箱へ（戻せる。オーナー 11/03。前は確かめてから完全に消した）
   function deleteOwn(name) {
     var stages = stageStore(), trash = trashStore();
@@ -3000,6 +3023,7 @@
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
     if (b.hasAttribute('data-sdel')) { deleteShared(b.getAttribute('data-sdel')); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }
+    if (b.hasAttribute('data-import')) { var pick = el.home.querySelector('[data-import-file]'); if (pick) { pick.value = ''; pick.click(); } return; }
     var open = b.getAttribute('data-open') || '', kind = open.slice(0, open.indexOf(':')), name = open.slice(open.indexOf(':') + 1);
     if (kind === 'tut') { showHome(false); loadScenario(name); }
     else if (kind === 'my') playOwn(name);

@@ -120,5 +120,21 @@ ok(old.ok && old.name === '前の配置', '前の「配置」の JSON');
 var file = S.fromFile(R, S.toFile({ name: '③の改造', def: S.toDef(R, s3, '③の改造'), texts: { scenes: { start: lines } } }));
 eq([file.ok, file.name, file.texts.scenes.start.length], [true, '③の改造', 3], 'ステージのファイル（名前と文も）');
 
+// ファイルから読む（オーナー 11/10）: まとめたファイルからいくつでも。読めないものは飛ばして理由を残す。同じ名前は上書きしない
+var one = JSON.parse(S.toFile({ name: 'あ', def: S.toDef(R, R.loadPreset('tut1'), 'あ') }));
+var two = JSON.parse(S.toFile({ name: 'い', def: S.toDef(R, R.loadPreset('tut2'), 'い'), texts: { goal: '守る', hint: { simul: 'ヒント', single: 'ヒント' } } }));
+var bad = { format: 'cafilia-stage', name: 'う', def: { rows: ['...'], allies: [], enemies: [] } };
+var many = S.fromFiles(R, JSON.stringify({ format: S.FORMAT_MANY, stages: [one, bad, two] }));
+eq([many.items.map(function (it) { return it.name; }), many.errors.map(function (e) { return e.name; })], [['あ', 'い'], ['う']], 'まとめたファイル: 読めるものだけ読み、読めないものは理由つきで残す');
+eq(S.fromFiles(R, JSON.stringify([one, two])).items.length, 2, '並び（配列）でも読める');
+eq(S.fromFiles(R, JSON.stringify(one)).items.length, 1, 'ステージのファイル1つでも読める');
+eq(S.fromFiles(R, '{').errors.length, 1, '壊れた JSON は読まない');
+var added = S.addOwn({ 'あ': { def: {}, at: 1 } }, many.items, 1000);
+eq(added.names, ['あ（2）', 'い'], '同じ名前があれば番号を付ける（上書きしない）');
+eq([added.stages['あ'].at, added.stages['あ（2）'].def.id, added.stages['あ（2）'].def.custom, added.stages['あ（2）'].texts.name], [1, 'my:あ（2）', true, 'あ（2）'], '元の自分のステージは変わらず、足したものは自分のステージの形');
+ok(added.stages['あ（2）'].at > added.stages['い'].at, 'ファイルの順に、一覧の上から並ぶ（新しく直した順）');
+eq(added.stages['い'].texts.goal, '守る', '目標とヒントの文も入る');
+ok(S.build(R, added.stages['い'].def).ok, '足したものはそのまま遊べる');
+
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;
