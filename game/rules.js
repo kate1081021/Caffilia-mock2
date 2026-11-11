@@ -524,24 +524,12 @@
   // ---------------------------------------------------------------
 
   // 燃え広がり: 風が炎か小さな炎に当たる
+  //   燃えるのは、風下へまっすぐ走る通り道の森・草むらだけ（オーナー 11/11「直線状の森のみが燃えてほしい」。前は通り道の森とつながった森が全部燃えた）
   // bonus: 【育つ】強風で起こしたときに長くなるマス数
   function doSpread(s, ox, oy, dir, ctx, ev, bonus) {
     var F = DIRS[dir];
     var path = [];
     var burned = {}, burnedList = [];
-
-    function burnComponent(sx, sy) {
-      var stack = [[sx, sy]];
-      while (stack.length) {
-        var c = stack.pop();
-        var k = key(c[0], c[1]);
-        var bt = getTile(s, c[0], c[1]);
-        if (burned[k] || !(isPlant(bt))) continue;
-        burned[k] = bt;
-        burnedList.push(c);
-        neighbors(s, c[0], c[1]).forEach(function (n) { stack.push([n.x, n.y]); });
-      }
-    }
 
     var maxLen = B.spread.maxLength + (bonus || 0);
     var before = [];
@@ -554,7 +542,7 @@
       if (SPREAD_BLOCKERS[t]) break;
       path.push([x, y]);
       before.push(t);
-      if (isPlant(t)) burnComponent(x, y);
+      if (isPlant(t)) { burned[key(x, y)] = t; burnedList.push([x, y]); }
     }
 
     // 地形: 通り道の空きは小さな炎、燃えた森は炎。起点の炎はそのまま

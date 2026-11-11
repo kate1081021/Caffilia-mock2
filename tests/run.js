@@ -392,7 +392,7 @@ test('燃え広がりが山に届くと、山脈ごと火山になる（火が�
   var r2 = fire(s2, R.addAlly(s2, 'wind', 2, 5), 'up');
   eq(tile(r2.state, 2, 0), B.spread.maxLength >= 4 ? 'volcano' : 'mountain');
 });
-test('つながった森が全部燃え、ダメージは一定（決め手20）、味方も巻き込む', function () {
+test('燃えるのは通り道（まっすぐ）の森だけ。横につながった森は燃えない。ダメージは一定（決め手20）、味方も巻き込む（オーナー 11/11）', function () {
   var s = board([
     '.......',
     '.FF....',
@@ -403,13 +403,16 @@ test('つながった森が全部燃え、ダメージは一定（決め手20）
     '....F..'
   ]);
   var w = R.addAlly(s, 'wind', 2, 6);
-  var e = R.addEnemy(s, 'fire', 1, 1);      // つながった森の上
+  var e = R.addEnemy(s, 'fire', 2, 2);      // 通り道の森の上（2マス目）
+  var side = R.addEnemy(s, 'fire', 1, 1);   // 通り道の森に横からつながった森の上
   var friend = R.addAlly(s, 'fire', 2, 1);  // 通り道の森の上（3マス目）
   var r = fire(s, w, 'up');
-  ['1,1', '2,1', '2,2', '2,3'].forEach(function (k) {
+  ['2,1', '2,2', '2,3'].forEach(function (k) {
     var c = k.split(',').map(Number);
     eq(tile(r.state, c[0], c[1]), 'fire', k);
   });
+  eq(tile(r.state, 1, 1), 'forest', '横につながった森は燃えない');
+  eq(dealt(r, side.id), 0, '横の森の上の敵は無事');
   eq(tile(r.state, 4, 6), 'forest', '離れた森');
   eq(dealt(r, e.id), 20, '森の数によらず一定');
   eq(R.findUnit(r.state, e.id), null, '敵は1発で倒れる');
@@ -2316,18 +2319,19 @@ test('草むら: 火で燃える（今は弱い炎の扱い）', function () {
   var r = fire(s, a, 'up');
   eq(tile(r.state, 2, 3), 'fire');
 });
-test('草むら: 燃え広がりで、つながった森と草むらがまとめて燃える（plantStrong を切ると、強い炎は森の上だけ）', function () {
+test('草むら: 燃え広がりで、通り道の森と草むらが燃える（plantStrong を切ると、強い炎は森の上だけ）', function () {
   var was = B.fire.plantStrong; B.fire.plantStrong = false;
   try {
-  var s = board(['..gF..', '..g...', '..g...', '..X...', '......', '......']);
+  var s = board(['..FF..', '..g...', '..g...', '..X...', '......', '......']);
   var a = R.addAlly(s, 'wind', 2, 4);
   var e1 = R.addEnemy(s, 'fire', 2, 1);   // 草むらの上
-  var e2 = R.addEnemy(s, 'fire', 3, 0);   // 森の上
+  var e2 = R.addEnemy(s, 'fire', 2, 0);   // 森の上
   R.findUnit(s, e1.id).hp = 99; R.findUnit(s, e2.id).hp = 99;
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 2, 0), tile(r.state, 2, 2), tile(r.state, 3, 0)], ['fire', 'fire', 'fire']);
+  eq([tile(r.state, 2, 0), tile(r.state, 2, 1), tile(r.state, 2, 2)], ['fire', 'fire', 'fire']);
+  eq(tile(r.state, 3, 0), 'forest', '通り道から外れた森は燃えない');
   eq([dealt(r, e1.id), dealt(r, e2.id)], [B.fire.weakDamage, B.fire.strongDamage]);
-  ok(r.events.some(function (e) { return /草むら3マスも燃えた/.test(e.text || ''); }), 'ログ');
+  ok(r.events.some(function (e) { return /草むら2マスも燃えた/.test(e.text || ''); }), 'ログ');
   } finally { B.fire.plantStrong = was; }
 });
 test('草むら: ターン終了で、炎の隣の草むらへ燃え移る', function () {
@@ -2752,7 +2756,8 @@ test('正解の手順: (1,2) へ動いて上に火 → 風で燃え広がり、�
   var t = R.endTurn(R.act(s, tutPlayer(s).id, { to: [1, 2], dir: 'up' }).state);
   eq(t.state.result, 'win');
   eq(t.state.turn, 1, '1ターン目で勝つ');
-  eq([tile(t.state, 2, 1), tile(t.state, 3, 0), tile(t.state, 4, 1)], ['smallfire', 'fire', 'fire'], '通り道は小さな炎、森は炎');
+  eq([tile(t.state, 2, 1), tile(t.state, 3, 1), tile(t.state, 4, 1)], ['smallfire', 'fire', 'fire'], '通り道は小さな炎、森は炎');
+  eq([tile(t.state, 3, 0), tile(t.state, 4, 0)], ['forest', 'forest'], '通り道から外れた上の段の森は燃えない（11/11）');
 });
 test('(2,1) に火を置いても勝てる（風は2マスなので (2,1) にも当たる。10/29 に①の風の上書きを外してから）', function () {
   var s = tut1();

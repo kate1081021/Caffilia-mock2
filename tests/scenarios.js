@@ -92,9 +92,10 @@ scenario('1. 草で草むらのかたまり → 火で草むらに点火 → 炎
     g.act('P2', [1, 3], 'right');         // 火: (1,3) から右隣 (2,3) の草むらに火（草むらも燃える）
     g.expectLog('草むらが燃えた');
     g.act('P3', [2, 4], 'up');            // 風: 炎の真後ろ (2,4) から上へ → 燃え広がり
-    g.expectLog('燃え広がり！ 上へ3マス走り、森1つと草むら3マスが燃えた');
+    g.expectLog('燃え広がり！ 上へ3マス走り、森1つと草むら1マスが燃えた');   // 燃えるのは通り道の (2,2) 草むらと (2,0) 森だけ（11/11）
     check(g.state.result === 'win', '燃えた森の上の敵Aに強い炎（20）が入って倒れる');
-    check(['2,2', '1,2', '3,2'].every(function (k) { var c = k.split(',').map(Number); return g.tile(c[0], c[1]) !== 'forest'; }), 'かたまりの森は全部燃えた');
+    check(g.tile(2, 2) === 'fire' && g.tile(2, 0) === 'fire', '通り道の草むらと森が燃えた');
+    check(g.tile(1, 2) === 'thicket' && g.tile(3, 2) === 'thicket', '通り道から外れた横の草むらは燃えない');
     check(R.alliesOf(g.state).length === 3, '味方は巻き込まれていない');
   });
 
