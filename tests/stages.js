@@ -155,5 +155,16 @@ var nUid = 0;
 eq(S.addOwn({}, uidItems, 5, function () { return 'sNEW' + (++nUid); }).stages['う'].def.uid, 'sNEW1', 'ファイルから読んだものは新しい背番号');
 eq(S.addOwn({}, uidItems, 5).stages['う'].def.uid, undefined, '作る関数がなければ、ファイルの背番号は持ちこまない');
 
+// 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びで同じものを使う
+eq(S.applyOrder(['a', 'b', 'c'], null), ['a', 'b', 'c'], '順番がなければ、今の並びのまま');
+eq(S.applyOrder(['a', 'b', 'c'], ['c', 'a']), ['c', 'a', 'b'], '手で決めた順番が先。入っていない新しいものは末尾');
+eq(S.applyOrder(['a', 'b', 'c', 'd'], ['c', 'x', 'a', 'c']), ['c', 'a', 'b', 'd'], 'もうないもの・重なりは飛ばす。新しいものは今の並びの順に末尾');
+eq(S.applyOrder([], ['a']), [], '何もなければ空');
+var mvList = ['a', 'b', 'c', 'd'];
+eq([S.moveTo(mvList, 2, 1), S.moveTo(mvList, 0, 1), S.moveTo(mvList, 3, 0), S.moveTo(mvList, 0, 3)], [['a', 'c', 'b', 'd'], ['b', 'a', 'c', 'd'], ['d', 'a', 'b', 'c'], ['b', 'c', 'd', 'a']], '上へ・下へ・離れた所へ（札で絞ったときの、見えている隣）');
+eq([S.moveTo(mvList, 0, -1), S.moveTo(mvList, 3, 4), S.moveTo(mvList, 1, 1), S.moveTo(mvList, 0.5, 1)], [mvList, mvList, mvList, mvList], '端より先・同じ所・正しくない位置は、同じ並び');
+eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない');
+eq(S.applyOrder(['tut1', 'tut2', 'ex3'], S.moveTo(['tut1', 'tut2', 'ex3'], 2, 0)), ['ex3', 'tut1', 'tut2'], '動かした並びを順番として当てると、その順');
+
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;

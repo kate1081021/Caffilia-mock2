@@ -13,6 +13,7 @@
  *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか）
  *   setHp(R, s, id, hp)          … 敵のHP
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
+ *   applyOrder(keys, order) / moveTo(list, from, to) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
  *   blankTexts(name) / linesToText(lines) / textToLines(text) … 会話の窓の文（texts.js の stages.<id> と同じ形）
  */
@@ -305,6 +306,26 @@
   function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
 
   // ---------------------------------------------------------------
+  // 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びの3か所で、同じこの2つを使う
+  //   applyOrder(keys, order): keys（今あるもの）を、手で決めた順番 order に並べる。order にないもの（新しいステージ）は、keys の順のまま末尾に足す。
+  //     order にあっても今ないもの（消したステージ）は飛ばす
+  //   moveTo(list, from, to): from 番目を to 番目へ動かした、新しい並び（元の並びは変えない。動かせないときは同じ並び）
+  // ---------------------------------------------------------------
+  function applyOrder(keys, order) {
+    var has = {}, used = {}, out = [];
+    keys.forEach(function (k) { has[k] = true; });
+    (Array.isArray(order) ? order : []).forEach(function (k) { if (has[k] && !used[k]) { used[k] = true; out.push(k); } });
+    keys.forEach(function (k) { if (!used[k]) { used[k] = true; out.push(k); } });
+    return out;
+  }
+  function moveTo(list, from, to) {
+    var out = list.slice();
+    if (!(from % 1 === 0 && to % 1 === 0) || from < 0 || to < 0 || from >= out.length || to >= out.length || from === to) return out;
+    out.splice(to, 0, out.splice(from, 1)[0]);
+    return out;
+  }
+
+  // ---------------------------------------------------------------
   // 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）。stages・trash はこのブラウザの入れ物（{ 名前: 中身 }）
   //   消す → ゴミ箱へ（中身はそのまま。消した時刻を足す）。戻す → 同じ名前があれば「名前（2）」。どちらも新しい入れ物を返す
   // ---------------------------------------------------------------
@@ -395,7 +416,7 @@
   }
 
   var api = {
-    PREFIX: PREFIX, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, applyOrder: applyOrder, moveTo: moveTo, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone

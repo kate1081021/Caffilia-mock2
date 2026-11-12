@@ -211,6 +211,23 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq((await call('PUT', 'tutorials', { tutorials: { tut1: { def: {} } } }, store)).status, 400);
     eq((await call('PUT', 'tutorials', { tutorials: { 'だめ': { def: DEF } } }, store)).status, 400);
   });
+  // 一覧の順番（オーナー 11/12）
+  await test('順番: はじめは null。チュートリアルとみんなのステージを別々に置ける。片方を置いても、もう片方は前のまま', async function () {
+    var store = { m: {}, get: function (k) { return Promise.resolve(k in this.m ? JSON.parse(this.m[k]) : null); }, put: function (k, v) { this.m[k] = String(v); return Promise.resolve(); } };
+    eq((await call('GET', 'all', undefined, store)).data.order, null);
+    ok((await call('PUT', 'order/tut', { order: ['ex3', 'tut1', 'tut2'] }, store)).data.ok);
+    ok((await call('PUT', 'order/all', { order: ['森の道', '山の道'] }, store)).data.ok);
+    ok((await call('PUT', 'order/tut', { order: ['tut2', 'ex3', 'tut1'] }, store)).data.ok);
+    var o = (await call('GET', 'all', undefined, store)).data.order;
+    eq([o.tut, o.all, o.at > 0], [['tut2', 'ex3', 'tut1'], ['森の道', '山の道'], true]);
+  });
+  await test('順番: 正しくない形・知らない一覧は受け取らない', async function () {
+    eq((await call('PUT', 'order/tut', { order: 'tut1' })).status, 400, '並びでない');
+    eq((await call('PUT', 'order/tut', { order: ['だめ'] })).status, 400, 'チュートリアルの id の形でない');
+    eq((await call('PUT', 'order/all', { order: [' 前に空白'] })).status, 400, '名前の形でない');
+    eq((await call('PUT', 'order/all', { order: [new Array(42).join('あ')] })).status, 400, '長すぎる名前');
+    eq((await call('PUT', 'order/my', { order: [] })).status, 404, '自分のステージの順番は置かない');
+  });
   await test('チュートリアルを置いても、みんなのステージ・展示の並びは前のまま読める', async function () {
     var r = (await call('GET', 'all')).data;
     ok(Object.keys(r.stages).length > 0 && r.lineup && Array.isArray(r.lineup.start), JSON.stringify([Object.keys(r.stages), r.lineup]));

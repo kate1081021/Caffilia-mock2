@@ -1028,7 +1028,7 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
 .home-filter .chip.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .home-rows { display: flex; flex-direction: column; gap: 6px; }
 /* 列の幅を決めて、どの行・どの欄でも縦がそろうようにする（オーナー 11/03「縦軸を揃えて」）: 難易度・タイトル・使う魔法・クリア方法・消す */
-.home-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 10em 3.5em 4.5em; align-items: center; gap: 4px 10px;
+.home-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 10em 3.5em 9.5em; align-items: center; gap: 4px 10px;
   padding: 4px 6px; border-radius: 10px; background: var(--bg); }
 .home-row .home-magic { font-size: 13px; color: var(--ink); }
 .home-row .home-win { font-size: 13px; color: var(--muted); }
@@ -1038,6 +1038,9 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
 .home-row .home-title { justify-self: start; min-height: 40px; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
 .home-row .trash-name { font-size: 15px; padding: 0 4px; }
 .row-btns { display: inline-flex; gap: 6px; }
+/* 並び替えの ▲▼（オーナー 11/12。チュートリアル・みんなのステージ・展示の並びで同じ部品） */
+.row-btns .mv { min-height: 32px; min-width: 32px; padding: 0 6px; font-size: 12px; color: var(--muted); }
+.row-btns .mv:disabled { opacity: .35; }
 .row-btns .home-del { color: var(--muted); font-size: 12px; padding: 0 10px; min-height: 32px; }
 .diff-tag { justify-self: start; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #fff; }
 .diff-tag:empty { visibility: hidden; }
@@ -1098,16 +1101,25 @@ html.mode-exhibit .home.ex-title-view { max-width: none; margin: 0; min-height: 
 /* 開発モードの「展示の並び」（IMPROVE_v3 段3）: ≡ をつかんでドラッグで並び替え */
 .lu-warn { margin: 0; padding: 8px 12px; border: 2px solid #f59e0b; border-radius: 10px; background: #fef3c7; color: #92400e; font-weight: bold; }
 .lu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: lu; }
-.lu-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fffdf8; counter-increment: lu; }
-.lu-item::before { content: counter(lu); min-width: 1.4em; text-align: center; font-weight: bold; color: var(--muted); }
-.lu-item.dragging { box-shadow: 0 6px 16px rgba(0, 0, 0, .18); border-color: var(--ally); }
-.lu-item.missing .lu-name { color: var(--muted); text-decoration: line-through; }
+/* 展示の並びの行: 一覧と同じ行（.home-row）の頭に、つかむ所（≡）と番号を足す（オーナー 11/12） */
+.home-row.lu-row { grid-template-columns: 3.6em 7.5em minmax(0, 1fr) 10em 3.5em 9.5em; }
+.lu-row.dragging { box-shadow: 0 6px 16px rgba(0, 0, 0, .18); border-color: var(--ally); }
+.lu-row.missing .home-title { color: var(--muted); text-decoration: line-through; }
+.lu-row small.danger { color: #b91c1c; font-size: 12px; }
+.lu-lead { display: inline-flex; align-items: center; gap: 2px; }
+.lu-no { min-width: 1.2em; text-align: center; color: var(--muted); }
 .lu-grip { cursor: grab; touch-action: none; user-select: none; font-size: 20px; line-height: 1; padding: 4px 6px; color: var(--muted); }
-.lu-item.dragging .lu-grip { cursor: grabbing; }
-.lu-name { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.lu-name small { color: var(--muted); font-size: 12px; }
-.lu-name small.danger { color: #b91c1c; text-decoration: none; }
-.lu-out { font-size: 12px; padding: 2px 10px; }
+.lu-row.dragging .lu-grip { cursor: grabbing; }
+@media (max-width: 640px) {
+  /* 展示の並びの行（せまい画面）: 1段目に つかむ所・難易度・ボタン、2段目にタイトル、3段目にクリア方法と魔法 */
+  .home-row.lu-row { grid-template-columns: 3.2em minmax(0, 1fr) max-content; }
+  .home-row.lu-row .diff-tag { grid-column: 2; grid-row: 1; }
+  .home-row.lu-row .row-btns { grid-column: 3; grid-row: 1; }
+  .home-row.lu-row .row-btns button { white-space: nowrap; }
+  .home-row.lu-row .home-title { grid-column: 2 / -1; grid-row: 2; }
+  .home-row.lu-row .home-magic { grid-column: 2; grid-row: 3; }
+  .home-row.lu-row .home-win { grid-column: 3; grid-row: 3; padding-left: 0; justify-self: end; }
+}
 .lu-empty { padding: 4px 2px; }
 /* 共有（IMPROVE_v3 段4）: エディットの共有のようす・選ぶ窓のボタン */
 .share-note { margin: 0; }

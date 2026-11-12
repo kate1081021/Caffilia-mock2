@@ -6,6 +6,8 @@
  *     tutorials … チュートリアル { id: { def, texts, at } }（みんなのステージと同じ形。id は 'tut1' など。展示の並び・プレイ集の記録が指す名前で、変わらない。オーナー 11/12）
  *       はじめは置いていない（null）。開発モードの画面が、コードに入っている①②③を最初の中身として一度だけ置く（PUT /api/tutorials）。
  *       texts はそのステージの文の全部（名前・ヒント・scenes { 場面: 文の並び }…）。場面を足せば、シナリオも一緒に持てる
+ *     order  … 一覧の順番 { tut: [id…], all: [名前…], at }（開発モードの一覧で、手で決めた順番。オーナー 11/12）。
+ *       入っていないもの（新しいステージ）は画面が末尾に足す。もうないものが入っていても画面が飛ばす。まだ誰も並べていなければ null
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
  *     settings … 設定 { colors, tiles, magics, synergies, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
  *   ステージの背番号（def.uid。オーナー 11/10・11/12）: 見えない番号で、プレイ集の記録はこれでステージを指す（名前では指さない）。
@@ -14,13 +16,14 @@
  *     trash  … ゴミ箱 { 鍵: { name, def, texts, at, deletedAt } }（消したみんなのステージ。戻せる。オーナー 11/03。鍵はふつう名前、重なれば「名前（2）」）
  *     plays  … プレイ集の記録 { id: { id, name, stage: { kind, uid, name }, turns, at } }（チュートリアル・みんなのステージの分。game/plays.js。オーナー 11/10）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
- *     GET    /api/all             … { stages, lineup, trash, settings, plays, tutorials }（tutorials はまだ置いていなければ null。trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
+ *     GET    /api/all             … { stages, lineup, trash, settings, plays, tutorials, order }（tutorials・order はまだ置いていなければ null。trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
  *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts }。答えの uid が置いた背番号
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
  *     PUT    /api/tutorials       … チュートリアルの最初の中身を置く。本文 { tutorials: { id: { def, texts } } }。もう置いてあれば何も変えない（答えの seeded が false）。答えの tutorials が今の中身
  *     PUT    /api/tutorials/<id>  … チュートリアルを直す（置いてある id だけ。上書き）。本文 { def, texts }
+ *     PUT    /api/order/<tut|all> … 一覧の順番を置く。本文 { order: [...] }（tut は id、all は名前）
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
  *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
  *     PUT    /api/plays/<id>      … プレイ集の記録を置く（同じ id は上書き。名前を変えるときも）。本文は記録（形を確かめてから置く）
@@ -122,7 +125,7 @@ export async function handleApi(req, kv) {
       if (stampUids(trash, function (k, it) { return okName(it.name) ? it.name : k; })) await kv.put('trash', JSON.stringify(trash));
       return json({ ok: true, stages: stages, lineup: (await kv.get('lineup', 'json')) || null, trash: trash,
         settings: (await kv.get('settings', 'json')) || null, plays: (await kv.get('plays', 'json')) || {},
-        tutorials: (await kv.get('tutorials', 'json')) || null });
+        tutorials: (await kv.get('tutorials', 'json')) || null, order: (await kv.get('order', 'json')) || null });
     }
     // チュートリアル: 最初の中身を置く（一度だけ）・1つを直す
     const tu = /^tutorials(?:\/(.+))?$/.exec(path);
@@ -229,6 +232,16 @@ export async function handleApi(req, kv) {
       const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, at: Date.now() };
       await kv.put('settings', JSON.stringify(settings));
       return json({ ok: true, at: settings.at });
+    }
+    const od = /^order\/(tut|all)$/.exec(path);
+    if (od && req.method === 'PUT') {
+      const b = await body(req), list = b && b.order, tut = od[1] === 'tut';
+      if (!Array.isArray(list) || list.length > (tut ? MAX_TUTS : MAX_STAGES) || !list.every(tut ? okTutId : okName)) return fail('順番が正しくない');
+      const order = (await kv.get('order', 'json')) || {};
+      order[od[1]] = list;
+      order.at = Date.now();
+      await kv.put('order', JSON.stringify(order));
+      return json({ ok: true, at: order.at });
     }
     if (req.method === 'PUT' && path === 'lineup') {
       const b = await body(req);
