@@ -185,6 +185,36 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     var back = await call('POST', 'trash/' + encodeURIComponent('前からの山（2）') + '/restore');
     eq((await call('GET', 'all')).data.stages[back.data.name].def.uid, 'n:前からの山', '戻しても同じ背番号');
   });
+  // チュートリアル（オーナー 11/12）: みんなのステージと同じ形で置く。最初の中身は一度だけ
+  await test('チュートリアル: はじめは null。最初の中身は一度だけ置ける（2回目は何も変えない）', async function () {
+    eq((await call('GET', 'all')).data.tutorials, null, 'まだ置いていない');
+    eq((await call('PUT', 'tutorials/tut1', { def: DEF })).status, 404, '置く前は直せない');
+    var a = await call('PUT', 'tutorials', { tutorials: { tut1: { def: DEF, texts: { name: '①', scenes: { start: [] } } }, tut2: { def: DEF } } });
+    eq([a.status, a.data.seeded, Object.keys(a.data.tutorials)], [200, true, ['tut1', 'tut2']]);
+    var b = await call('PUT', 'tutorials', { tutorials: { tut1: { def: { rows: ['F.....'], allies: [], enemies: [] } } } });
+    eq([b.data.seeded, b.data.tutorials.tut1.def.rows, Object.keys(b.data.tutorials)], [false, DEF.rows, ['tut1', 'tut2']], '前の中身のまま');
+    var r = (await call('GET', 'all')).data;
+    eq([r.tutorials.tut1.texts.name, r.tutorials.tut2.texts], ['①', null], '文も一緒に持つ');
+  });
+  await test('チュートリアル: 1つを直すと上書き。ない id・正しくない中身は受け取らない', async function () {
+    var a = await call('PUT', 'tutorials/tut1', { def: { rows: ['F.....'], allies: [], enemies: [] }, texts: { name: '① 直した', scenes: { start: [], story1: [{ who: '', text: 'シナリオ', mode: 'both' }] } } });
+    ok(a.status === 200 && a.data.ok && a.data.at > 0, JSON.stringify(a.data));
+    var r = (await call('GET', 'all')).data.tutorials;
+    eq([r.tut1.def.rows, r.tut1.texts.name, r.tut1.texts.scenes.story1.length, r.tut2.def.rows], [['F.....'], '① 直した', 1, DEF.rows], 'tut1 だけ変わる。場面を足した文もそのまま持つ');
+    eq((await call('PUT', 'tutorials/tut9', { def: DEF })).status, 404, '置いていない id');
+    eq((await call('PUT', 'tutorials/tut1', { def: {} })).status, 400, '盤面がない');
+    eq((await call('PUT', 'tutorials/' + encodeURIComponent('だめ'), { def: DEF })).status, 400, 'id の形');
+  });
+  await test('チュートリアル: 最初の中身が正しくなければ置かない', async function () {
+    var store = { get: function () { return Promise.resolve(null); }, put: function () { throw new Error('書いてはいけない'); } };
+    eq((await call('PUT', 'tutorials', { tutorials: {} }, store)).status, 400);
+    eq((await call('PUT', 'tutorials', { tutorials: { tut1: { def: {} } } }, store)).status, 400);
+    eq((await call('PUT', 'tutorials', { tutorials: { 'だめ': { def: DEF } } }, store)).status, 400);
+  });
+  await test('チュートリアルを置いても、みんなのステージ・展示の並びは前のまま読める', async function () {
+    var r = (await call('GET', 'all')).data;
+    ok(Object.keys(r.stages).length > 0 && r.lineup && Array.isArray(r.lineup.start), JSON.stringify([Object.keys(r.stages), r.lineup]));
+  });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);
   });

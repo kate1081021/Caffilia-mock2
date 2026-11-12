@@ -127,7 +127,7 @@
   ['board', 'boardWrap', 'fx', 'banner', 'hint', 'turnLabel', 'modeLabel',
     'btnGo', 'btnUndo', 'btnReset', 'btnEdit', 'side', 'playSide', 'playPanel', 'ctrlPanel', 'editPanel', 'roster', 'actPanel',
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
-    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'saveDiff', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
+    'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'saveDiff', 'stageSaveNote', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose', 'btnView',
@@ -698,6 +698,7 @@
     if (on) {
       var back = testing(), p0 = !back && app.scenario && R.findPreset(app.scenario);
       if (p0 && p0.shared) { editShared(p0.name); return; }   // みんなのステージ: 自分のステージに写す（段4）
+      if (p0 && isTutId(p0.id)) { editTutAsk(p0.id); return; }   // チュートリアル: 元を直すか、写しを作るかを選ぶ（オーナー 11/12）
       if (!back) startDraft(draftFromScenario());
       enterEdit(back);
     } else {
@@ -715,7 +716,7 @@
     app.editMode = true;
     app.history = app.editHist;
     app.state = R.clone(app.draft.state);
-    addLog(back ? 'エディットに戻った（「' + app.draft.name + '」）' : app.draft.key ? 'エディット開始（自分のステージ「' + app.draft.name + '」を開いた）' : 'エディット開始（「' + app.draft.name + '」を作る。自分のステージに自動で残る）', 'system');
+    addLog(back ? 'エディットに戻った（「' + app.draft.name + '」）' : app.draft.tut ? 'エディット開始（チュートリアル「' + app.draft.name + '」を直す。「チュートリアルに保存する」を押すまで変わらない）' : app.draft.key ? 'エディット開始（自分のステージ「' + app.draft.name + '」を開いた）' : 'エディット開始（「' + app.draft.name + '」を作る。自分のステージに自動で残る）', 'system');
     render();
     refreshShare();
   }
@@ -732,7 +733,7 @@
     ['start', 'win', 'lose'].forEach(function (k) { if (!t.scenes[k]) t.scenes[k] = []; });
     return t;
   }
-  // 今のシナリオから作り始める。チュートリアル①②③などは写し（「〜のコピー」）を作る（元のチュートリアルと texts.js は書き換えない）
+  // 今のシナリオから作り始める。チュートリアル①②③などは写し（「〜のコピー」）を作る（元のチュートリアルは変わらない。元を直すのは draftFromTut）
   //   自分のステージを遊んでいるときは、写しではなく、その自分のステージを開く
   function draftFromScenario() {
     var id = app.scenario, p = id ? R.findPreset(id) : null;
@@ -763,7 +764,7 @@
   // 作るステージを d に替える。それまでのステージは自分のステージに残っている。新しく増えるものは名前が重ならないようにする
   function startDraft(d) {
     if (app.draft) keepDraft();
-    if (!d.key) d.name = uniqueName(d.name);
+    if (!d.key && !d.tut) d.name = uniqueName(d.name);   // チュートリアルを直すとき（d.tut）は、自分のステージを増やさない
     if (!d.uid) d.uid = P.newId('s');   // ステージの背番号（オーナー 11/10）。名前を変えても変わらないので、プレイ集の記録がついていく
     d.texts = fillTexts(d.texts, d.name);
     keepDraft.last = null;
@@ -791,7 +792,7 @@
   }
   function keepDraft() {
     var d = app.draft;
-    if (!d) return;
+    if (!d || d.tut) return;   // チュートリアルを直しているときは、自分のステージに残さない（「チュートリアルに保存する」で置き場所へ）
     if (d.key === d.name && JSON.stringify([d.name, draftRecord()]) === keepDraft.last) return;   // 変わっていなければ書かない
     var stages = stageStore();
     if (!stages) return;   // このブラウザに残せない環境（「ファイルに書き出す」を使う）
@@ -2013,7 +2014,9 @@
     var d = app.draft, tx = d.texts, hint = tx.hint || {};
     var put = function (e, v) { if (document.activeElement !== e && e.value !== v) e.value = v; };
     put(el.saveName, d.name);
-    if (document.activeElement !== el.saveDiff) el.saveDiff.value = d.difficulty || '';
+    if (document.activeElement !== el.saveDiff) el.saveDiff.value = d.tut ? 'tutorial' : d.difficulty || '';
+    el.saveDiff.disabled = !!d.tut;   // チュートリアルの難易度は、いつも「チュートリアル」
+    el.stageSaveNote.textContent = d.tut ? '「チュートリアルに保存する」を押すまで変わらない' : '直すたびに自動で残る';
     put(el.txHintSimul, hint.simul || '');
     put(el.txHintSingle, hint.single || '');
   }
@@ -2267,7 +2270,7 @@
   el.saveName.addEventListener('change', function () {
     var v = el.saveName.value.trim().replace(/^my:/, '');
     if (!v || v === app.draft.name) { el.saveName.value = app.draft.name; return; }
-    if ((stageStore() || {})[v]) { say('「' + v + '」は自分のステージにもうあります。ほかの名前にしてください'); el.saveName.value = app.draft.name; return; }
+    if (!app.draft.tut && (stageStore() || {})[v]) { say('「' + v + '」は自分のステージにもうあります。ほかの名前にしてください'); el.saveName.value = app.draft.name; return; }
     pushHistory();
     app.draft.name = v;
     render();
@@ -2304,7 +2307,7 @@
   var SITE_API = 'https://caffilia-jkwzvlbc7.kate108superstar.workers.dev/api/';
   var API = window.CAFILIA_API || (/^https?:$/.test(window.location.protocol) ? '/api/' : SITE_API);
   var NET_MS = 8000;   // これより待っても答えがなければ、つながっていないことにする
-  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, why: '' };
+  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, why: '' };
   function api(method, path, body) {
     return new Promise(function (resolve) {
       var done = false, finish = function (r) { if (!done) { done = true; resolve(r); } };
@@ -2327,15 +2330,117 @@
       // trash: ゴミ箱（ゴミ箱のない古い置き場所では null。そのときは「消す」は今までどおり完全に消す）
       // plays: プレイ集の記録（チュートリアル・みんなのステージの分。オーナー 11/10）。記録を置けない古い置き場所では hasPlays が false
       app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, trash: res.data.trash || null,
-          settings: res.data.settings || null, hasSettings: res.data.settings !== undefined, plays: res.data.plays || {}, hasPlays: res.data.plays !== undefined, why: '' }
-        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, why: netWhy(res) };
+          settings: res.data.settings || null, hasSettings: res.data.settings !== undefined, plays: res.data.plays || {}, hasPlays: res.data.plays !== undefined,
+          tutorials: res.data.tutorials || null, hasTutorials: res.data.tutorials !== undefined, why: '' }
+        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, why: netWhy(res) };
+      applyTutorials();   // チュートリアル: 置き場所にあれば、その中身で遊ぶ
       // 設定: 置き場所にあれば（まだ誰も保存していなければ元の色と名前）当てて、このブラウザにも写す。設定の画面で直している間は当てない
       if (app.shared.hasSettings && !(app.home && app.homeView === 'settings')) {
         if (CS) CS.cacheSet(app.shared.settings);
         applySettings(app.shared.settings);
         if (!app.home) render();
       }
+      // チュートリアルがまだ置かれていない置き場所には、コードの①②③を最初の中身として一度だけ置く（開発モードだけ）
+      if (!EXHIBIT && app.shared.hasTutorials && !app.shared.tutorials) return seedTutorials();
       return app.shared;
+    });
+  }
+  // ---------------------------------------------------------------
+  // チュートリアルをデータにする（オーナー 11/12）: 中身（盤面の定義と文）は、みんなのステージと同じ形 { def, texts } で共有の置き場所に置く。
+  //   コードの①②③（rules.js の TUTORIALS と texts.js の stages）は、最初の中身（一度だけ置く）と、つながらないときの控え。
+  //   置き場所から読めたら、R.TUTORIALS と文（TEXTS.stages）をその中身に差し替える。id（tut1 など）は変わらないので、
+  //   展示の並び（tut:tut1）・プレイ集の記録・やり直し・ヒントは、今までどおり同じ道で動く。
+  //   texts はそのステージの文の全部（scenes { 場面: 文の並び }）。場面を足せば、シナリオも一緒に持てる
+  // ---------------------------------------------------------------
+  var TUT_BUILTIN = {};
+  R.TUTORIALS.forEach(function (p) { TUT_BUILTIN[p.id] = { def: p, texts: SIO.clone(stageTexts(p.id)) }; });
+  function isTutId(id) { return EXHIBIT_STAGES.indexOf(id) >= 0; }
+  function applyTutorials() {
+    var t = app.shared.tutorials;
+    if (!t) return;
+    EXHIBIT_STAGES.forEach(function (id) {
+      var rec = t[id];
+      if (!rec || !SIO.build(R, rec.def).ok) return;   // 読めないものは、コードの控えのまま
+      var def = SIO.clone(rec.def);
+      def.id = id; delete def.custom; delete def.uid;
+      if (!def.tutorial) def.tutorial = TUT_BUILTIN[id].def.tutorial;
+      for (var i = 0; i < R.TUTORIALS.length; i++) if (R.TUTORIALS[i].id === id) R.TUTORIALS[i] = def;
+      if (rec.texts) customTexts[id] = rec.texts;
+    });
+    injectTexts();
+  }
+  function seedTutorials() {
+    var src = {};
+    EXHIBIT_STAGES.forEach(function (id) { src[id] = { def: SIO.clone(TUT_BUILTIN[id].def), texts: SIO.clone(TUT_BUILTIN[id].texts) }; });
+    return api('PUT', 'tutorials', { tutorials: src }).then(function (res) {
+      if (res.ok && res.data.tutorials) { app.shared.tutorials = res.data.tutorials; applyTutorials(); }
+      return app.shared;
+    });
+  }
+  // 今のチュートリアルの中身（遊ぶときに読むもの）
+  function tutNow(id) { return { def: R.findPreset(id), texts: stageTexts(id) }; }
+  // 中身のしるし。エディットの形（盤面 → 定義）にそろえてからくらべる（コードの書き方と、保存した形のちがいは見ない）
+  function tutSig(rec) {
+    var b = SIO.build(R, rec.def), nm = (rec.texts && rec.texts.name) || '';
+    return (b.ok ? stageSig({ def: SIO.toDef(R, b.state, 'x'), texts: fillTexts(rec.texts, nm) }) : '?') + '|' + nm;
+  }
+  // チュートリアルを直すための作りかけ。自分のステージは増やさない（d.tut が、直しているチュートリアルの id）
+  function draftFromTut(id) {
+    var now = tutNow(id), st = SIO.build(R, now.def).state, name = stageName(now.def);
+    delete st.stage;
+    return { state: st, name: name, tut: id, texts: fillTexts(now.texts, name), exKeep: null, base: tutSig(now) };
+  }
+  // 作りかけ → 置き場所に置く形。id・説明（desc）・番号は元のまま、名前の欄は一覧に出す短い名前
+  function tutDraftRec() {
+    var d = app.draft, cur = R.findPreset(d.tut), def = SIO.toDef(R, app.editMode ? app.state : d.state, d.name);
+    def.id = d.tut; def.name = cur.name; def.short = d.name; def.tutorial = cur.tutorial;
+    if (cur.desc) def.desc = cur.desc;
+    delete def.custom;
+    var texts = SIO.clone(d.texts);
+    texts.name = d.name;
+    return { def: def, texts: texts };
+  }
+  function tutDirty() { return !!(app.draft && app.draft.tut) && tutSig(tutDraftRec()) !== tutSig(tutNow(app.draft.tut)); }
+  // チュートリアルを作る側で開く: 元を直すか、今までどおり写し（自分のステージ）を作るかを選ぶ
+  function editTutAsk(id) {
+    choose('チュートリアル「' + stageName(R.findPreset(id)) + '」を作る側で開く', [
+      ['このチュートリアルを直す', function () { startDraft(draftFromTut(id)); enterEdit(false); }],
+      ['写しを作る（自分のステージに）', function () { startDraft(draftFromScenario()); enterEdit(false); }]
+    ]);
+  }
+  function renderTutShare() {
+    var d = app.draft, sh = app.shared, dirty = tutDirty(), other = tutSig(tutNow(d.tut)) !== d.base;
+    el.btnShare.textContent = 'チュートリアルに保存する';
+    el.btnShare.disabled = !sh.ok || !sh.hasTutorials || !!app.sharing || !dirty;
+    el.shareNote.textContent = app.sharing ? '保存しています…' : !sh.loaded ? '読み込み中…' : !sh.ok ? sh.why + '（つながると保存できます）' :
+      !sh.hasTutorials ? '共有の置き場所がまだ古いので、保存できません（公開すると使えます。node tests/serve.js で開けば手元で試せます）' :
+      !dirty ? 'チュートリアルと同じです' : other ? '開いたあとに、ほかの人が直しています。保存すると、その人の直した所が消えます ⚠' : '保存していない所があります';
+    el.shareNote.classList.toggle('danger', sh.ok && dirty && other);
+  }
+  // チュートリアルに保存する: 確かめてから、置き場所のチュートリアルを上書きする（どのパソコンの展示モードも変わる）
+  function saveTut() {
+    var d = app.draft;
+    if (!d || !d.tut || app.sharing) return;
+    app.sharing = true;
+    renderShare();
+    var stop = function (msg) { app.sharing = false; renderShare(); if (msg) window.alert(msg); };
+    fetchShared().then(function () {
+      if (!app.shared.ok) { stop(app.shared.why); return; }
+      if (!app.shared.tutorials) { stop('共有の置き場所に、チュートリアルを置けませんでした'); return; }
+      var rec = tutDraftRec(), other = tutSig(tutNow(d.tut)) !== d.base;
+      if (!window.confirm('チュートリアル「' + d.name + '」を、この形に変えます。\n展示モードのチュートリアルが、どのパソコンでも変わります。' +
+        (other ? '\n⚠ 開いたあとに、ほかの人が直しています。その人の直した所は消えます。' : '') + '\n保存しますか？')) { stop(); return; }
+      api('PUT', 'tutorials/' + d.tut, rec).then(function (res) {
+        if (!res.ok) { stop('保存できませんでした: ' + netWhy(res)); return; }
+        app.shared.tutorials[d.tut] = { def: rec.def, texts: rec.texts, at: res.data.at };
+        applyTutorials();
+        d.base = tutSig(tutNow(d.tut));
+        app.sharing = false;
+        addLog('チュートリアル「' + d.name + '」を保存した（どのパソコンの展示モードも、この形になる）', 'system');
+        say('チュートリアル「' + d.name + '」を保存しました');
+        render();
+        renderShare();
+      });
     });
   }
   function refreshShare() { fetchShared().then(renderShare); }
@@ -2363,6 +2468,8 @@
   function renderShare() {
     var d = app.draft;
     if (!d || !app.editMode) return;
+    if (d.tut) { renderTutShare(); return; }
+    el.btnShare.textContent = '共有する';
     el.btnShare.disabled = !app.shared.ok || !!app.sharing;
     el.shareNote.textContent = app.sharing ? '共有しています…' : !app.shared.loaded ? '読み込み中…' : app.shared.ok ? SHARE_TEXT[shareState(d.name, draftRecord())] : app.shared.why;
     el.shareNote.classList.toggle('danger', app.shared.ok && shareState(d.name, draftRecord()) === 'both');
@@ -2371,6 +2478,7 @@
   function shareDraft() {
     var d = app.draft;
     if (!d || app.sharing) return;
+    if (d.tut) { saveTut(); return; }
     keepDraft();
     app.sharing = true;
     renderShare();
@@ -2764,6 +2872,7 @@
   function curStageRef() {
     var id = app.scenario, p = id ? R.findPreset(id) : null;
     if (!p) return null;
+    if (testing() && app.draft.tut) return { kind: 'tut', uid: 'tut:' + app.draft.tut, name: app.draft.name };   // チュートリアルを直してテストプレイ中
     if (!p.custom) return { kind: 'tut', uid: 'tut:' + id, name: stageName(p) };
     if (p.shared) {
       var nm = refId(id), rec = app.shared.stages[nm];
@@ -3259,7 +3368,7 @@
     el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
       (app.homeNote ? '<p class="home-note">' + esc(app.homeNote.text) + (app.homeNote.ref ? ' <button type="button" data-tr-restore="' + esc(app.homeNote.ref) + '">戻す</button>' : '') + '</p>' : '') +
       filterChips() +
-      '<section class="home-sec"><h3>チュートリアル <small>作る側にすると、写しが自分のステージにできる（元は変わらない）</small></h3>' +
+      '<section class="home-sec"><h3>チュートリアル <small>作る側（E）にすると、元を直して保存するか、写しを自分のステージに作るかを選べる</small></h3>' +
       homeRows(EXHIBIT_STAGES.map(function (id) { var p = R.findPreset(id); return { open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial' }; }), '') +
       '</section>' +
       '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる</small></h3>' +
@@ -3431,12 +3540,16 @@
   // 最初の画面に戻る。エディット中なら、その盤面を自分のステージに残してから
   function goHome() {
     if (app.busy) skipPlayback();
+    // チュートリアルを直していたとき: 保存していない所は、確かめてから捨てる（自分のステージには残さない）
+    var tutDraft = !!(app.draft && app.draft.tut);
+    if (tutDraft && tutDirty() && !window.confirm('チュートリアル「' + app.draft.name + '」に、保存していない所があります。\n捨てて、最初の画面に戻りますか？')) return;
     if (app.editMode) {
       app.draft.state = R.clone(app.state);
       app.editHist = app.history;
       app.editMode = false;
     }
     keepDraft();
+    if (tutDraft) app.draft = null;
     if (app.closeDialog) app.closeDialog();
     app.sel = null; clearPlans(); app.editPick = null;
     app.history = [];

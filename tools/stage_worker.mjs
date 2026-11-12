@@ -3,6 +3,9 @@
  *   Cloudflare（今の公開先。Workers の静的サイト）で動く小さなプログラム。/api/ だけを受け持ち、ほかは今までどおり公開したファイルを返す。
  *   置くもの（Workers KV。バインディングの名前は CAFILIA）:
  *     stages … みんなのステージ { 名前: { def, texts, at } }（盤面の定義と会話の文。at は共有した時刻）
+ *     tutorials … チュートリアル { id: { def, texts, at } }（みんなのステージと同じ形。id は 'tut1' など。展示の並び・プレイ集の記録が指す名前で、変わらない。オーナー 11/12）
+ *       はじめは置いていない（null）。開発モードの画面が、コードに入っている①②③を最初の中身として一度だけ置く（PUT /api/tutorials）。
+ *       texts はそのステージの文の全部（名前・ヒント・scenes { 場面: 文の並び }…）。場面を足せば、シナリオも一緒に持てる
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
  *     settings … 設定 { colors, tiles, magics, synergies, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
  *   ステージの背番号（def.uid。オーナー 11/10・11/12）: 見えない番号で、プレイ集の記録はこれでステージを指す（名前では指さない）。
@@ -11,11 +14,13 @@
  *     trash  … ゴミ箱 { 鍵: { name, def, texts, at, deletedAt } }（消したみんなのステージ。戻せる。オーナー 11/03。鍵はふつう名前、重なれば「名前（2）」）
  *     plays  … プレイ集の記録 { id: { id, name, stage: { kind, uid, name }, turns, at } }（チュートリアル・みんなのステージの分。game/plays.js。オーナー 11/10）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
- *     GET    /api/all             … { stages, lineup, trash, settings, plays }（trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
+ *     GET    /api/all             … { stages, lineup, trash, settings, plays, tutorials }（tutorials はまだ置いていなければ null。trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
  *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts }。答えの uid が置いた背番号
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
+ *     PUT    /api/tutorials       … チュートリアルの最初の中身を置く。本文 { tutorials: { id: { def, texts } } }。もう置いてあれば何も変えない（答えの seeded が false）。答えの tutorials が今の中身
+ *     PUT    /api/tutorials/<id>  … チュートリアルを直す（置いてある id だけ。上書き）。本文 { def, texts }
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
  *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
  *     PUT    /api/plays/<id>      … プレイ集の記録を置く（同じ id は上書き。名前を変えるときも）。本文は記録（形を確かめてから置く）
@@ -34,6 +39,7 @@ const MAX_NAME = 40;        // ステージの名前の長さ（エディット�
 const MAX_STAGES = 500;     // みんなのステージの数
 const MAX_LIST = 50;        // 展示の並びの1段に入る数
 const MAX_TRASH = 500;      // ゴミ箱に入る数（いっぱいなら、勝手に古いものを消さずに断る）
+const MAX_TUTS = 50;        // チュートリアルの数
 const MAX_PLAYS = 500;      // プレイ集の記録の数
 
 function json(v, status) {
@@ -46,6 +52,8 @@ async function body(req) {
   return JSON.parse(t);
 }
 function okName(n) { return typeof n === 'string' && n.trim() === n && n.length > 0 && n.length <= MAX_NAME; }
+function okTutId(n) { return typeof n === 'string' && /^[a-z0-9]{1,20}$/.test(n); }
+function okStage(b) { return !!b && typeof b.def === 'object' && !!b.def && Array.isArray(b.def.rows); }
 function okRef(r) { return typeof r === 'string' && /^(tut|all):./.test(r) && r.length <= MAX_NAME + 4; }
 // 重ならない名前（「名前（2）」）。名前の長さに収まるように、もとの名前を詰める
 function freeName(name, taken) {
@@ -113,7 +121,31 @@ export async function handleApi(req, kv) {
       if (stampUids(stages, function (k) { return k; })) await kv.put('stages', JSON.stringify(stages));
       if (stampUids(trash, function (k, it) { return okName(it.name) ? it.name : k; })) await kv.put('trash', JSON.stringify(trash));
       return json({ ok: true, stages: stages, lineup: (await kv.get('lineup', 'json')) || null, trash: trash,
-        settings: (await kv.get('settings', 'json')) || null, plays: (await kv.get('plays', 'json')) || {} });
+        settings: (await kv.get('settings', 'json')) || null, plays: (await kv.get('plays', 'json')) || {},
+        tutorials: (await kv.get('tutorials', 'json')) || null });
+    }
+    // チュートリアル: 最初の中身を置く（一度だけ）・1つを直す
+    const tu = /^tutorials(?:\/(.+))?$/.exec(path);
+    if (tu && req.method === 'PUT') {
+      const now = await kv.get('tutorials', 'json');
+      const b = await body(req);
+      const texts = function (t) { return t && typeof t === 'object' ? t : null; };
+      if (tu[1] === undefined) {
+        if (now) return json({ ok: true, seeded: false, tutorials: now });
+        const src = b && b.tutorials, ids = src && typeof src === 'object' && !Array.isArray(src) ? Object.keys(src) : [];
+        if (!ids.length || ids.length > MAX_TUTS || !ids.every(function (id) { return okTutId(id) && okStage(src[id]); })) return fail('チュートリアルの中身が正しくない');
+        const at = Date.now(), tutorials = {};
+        ids.forEach(function (id) { tutorials[id] = { def: src[id].def, texts: texts(src[id].texts), at: at }; });
+        await kv.put('tutorials', JSON.stringify(tutorials));
+        return json({ ok: true, seeded: true, tutorials: tutorials });
+      }
+      const id = decodeURIComponent(tu[1]);
+      if (!okTutId(id)) return fail('チュートリアルの名前が正しくない');
+      if (!now || !now[id]) return fail('チュートリアルに見つからない', 404);
+      if (!okStage(b)) return fail('ステージの中身が正しくない');
+      now[id] = { def: b.def, texts: texts(b.texts), at: Date.now() };
+      await kv.put('tutorials', JSON.stringify(now));
+      return json({ ok: true, at: now[id].at });
     }
     const m = /^stages\/(.+)$/.exec(path);
     if (m) {
