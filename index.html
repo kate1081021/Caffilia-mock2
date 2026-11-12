@@ -31,6 +31,8 @@
       <!-- 開発モード: 見た目を 真上 ⇄ 奥行き（HD-2D の方針 10/31。mode.js）。エディットの間はいつも真上 -->
       <button id="btnView" type="button" title="遊ぶときの見た目を 真上 ⇄ 奥行き で切り替える（エディットはいつも真上）">見た目: 奥行き <kbd>V</kbd></button>
       <button id="btnHowto" type="button">遊び方</button>
+      <!-- プレイ集（オーナー 11/10）: 開発モードでクリアしたら出る。押すと、この攻略をプレイ集に保存する（ui.js） -->
+      <button id="btnSavePlay" type="button" class="save-play" hidden>★ この攻略を保存する</button>
     </div>
   </header>
 
@@ -165,6 +167,14 @@
     </div>
   </div>
 
+  <!-- プレイ集を流しているとき（ui.js。オーナー 11/10）: ステージ名の札と、マウスを動かすと出る「■ 止める」（Esc でも止まる） -->
+  <div id="rpCard" class="rp-card" hidden aria-live="polite"></div>
+  <div id="rpBar" class="rp-bar" hidden>
+    <button id="rpStop" type="button" class="primary">■ 止める <kbd>Esc</kbd></button>
+    <span id="rpSpeed" class="rp-speed" role="group" aria-label="速さ"></span>
+    <span id="rpNow" class="rp-now"></span>
+  </div>
+
   <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どちらのモードでも同じ位置・同じ見た目 -->
   <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
 
@@ -172,6 +182,7 @@
   <script src="game/texts.js"></script>
   <script src="game/stages_io.js"></script>
   <script src="game/rules.js"></script>
+  <script src="game/plays.js"></script>
   <script src="game/ui.js"></script>
   <!-- 会話の窓（texts_ui.js）は、じゃまなのでなくした（オーナー 10/31。archive/会話の窓_20261031/） -->
 </body>

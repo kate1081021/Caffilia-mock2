@@ -115,6 +115,38 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     ];
     for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
   });
+  // プレイ集の記録（オーナー 11/10）
+  var PLAY = { id: 'p1abc', name: '森ごと燃やす', stage: { kind: 'tut', uid: 'tut:tut1', name: '① 重ねる' }, turns: [[['move', 'P2', 1, 2], ['act', 'P2', 'up', 1], ['fire']]], at: 123 };
+  await test('プレイ集: はじめは空。置くと /api/all に出る（保存した時刻はそのまま）。同じ id は上書き（名前を変える）', async function () {
+    eq((await call('GET', 'all')).data.plays, {});
+    var a = await call('PUT', 'plays/p1abc', PLAY);
+    eq([a.status, a.data.at], [200, 123]);
+    eq((await call('GET', 'all')).data.plays.p1abc, PLAY);
+    var renamed = Object.assign({}, PLAY, { name: '別の名前' });
+    ok((await call('PUT', 'plays/p1abc', renamed)).data.ok);
+    var all = (await call('GET', 'all')).data.plays;
+    eq([Object.keys(all), all.p1abc.name], [['p1abc'], '別の名前']);
+  });
+  await test('プレイ集: 消すと消える（ないものを消しても ok）', async function () {
+    ok((await call('DELETE', 'plays/p1abc')).data.ok);
+    eq((await call('GET', 'all')).data.plays, {});
+    ok((await call('DELETE', 'plays/p1abc')).data.ok);
+  });
+  await test('プレイ集: 形が正しくない記録は受け取らない（自分のステージの記録は置かない）', async function () {
+    var bad = [
+      Object.assign({}, PLAY, { id: 'other' }),
+      Object.assign({}, PLAY, { name: '' }),
+      Object.assign({}, PLAY, { stage: { kind: 'mine', uid: 's1' } }),
+      Object.assign({}, PLAY, { stage: { kind: 'tut', uid: '' } }),
+      Object.assign({}, PLAY, { turns: [] }),
+      Object.assign({}, PLAY, { turns: [[['jump']]] }),
+      Object.assign({}, PLAY, { turns: [[['act', 'P2', 'north', 1]]] }),
+      Object.assign({}, PLAY, { turns: [[['move', 'P2', 1.5, 2]]] })
+    ];
+    for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'plays/p1abc', bad[i])).status, 400, JSON.stringify(bad[i]));
+    eq((await call('PUT', 'plays/' + encodeURIComponent('../x'), PLAY)).status, 400, 'id の形');
+    eq((await call('GET', 'all')).data.plays, {});
+  });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);
   });

@@ -6,14 +6,17 @@
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
  *     settings … 設定 { colors, tiles, magics, synergies, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
  *     trash  … ゴミ箱 { 鍵: { name, def, texts, at, deletedAt } }（消したみんなのステージ。戻せる。オーナー 11/03。鍵はふつう名前、重なれば「名前（2）」）
+ *     plays  … プレイ集の記録 { id: { id, name, stage: { kind, uid, name }, turns, at } }（チュートリアル・みんなのステージの分。game/plays.js。オーナー 11/10）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
- *     GET    /api/all             … { stages, lineup, trash, settings }（trash・settings があれば、ゴミ箱・設定のある置き場所。画面はそれで見分ける。settings はまだなければ null）
+ *     GET    /api/all             … { stages, lineup, trash, settings, plays }（trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
  *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き）。本文 { def, texts }
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
  *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
+ *     PUT    /api/plays/<id>      … プレイ集の記録を置く（同じ id は上書き。名前を変えるときも）。本文は記録（形を確かめてから置く）
+ *     DELETE /api/plays/<id>      … プレイ集の記録を消す（元に戻せない）
  *   KV は書いてから、ほかの場所で見えるまで1分ほどかかることがある（Cloudflare の決まり）。
  *   tools/publish.js が publish/worker.mjs に写す。手元の確かめでは tests/serve.js がこのファイルを読み、同じように答える。
  *   Cloudflare で動くので ES Modules で書く（モックの画面のファイルとは別。画面は今までどおり ES Modules を使わない）。
@@ -28,6 +31,7 @@ const MAX_NAME = 40;        // ステージの名前の長さ（エディット�
 const MAX_STAGES = 500;     // みんなのステージの数
 const MAX_LIST = 50;        // 展示の並びの1段に入る数
 const MAX_TRASH = 500;      // ゴミ箱に入る数（いっぱいなら、勝手に古いものを消さずに断る）
+const MAX_PLAYS = 500;      // プレイ集の記録の数
 
 function json(v, status) {
   return new Response(JSON.stringify(v), { status: status || 200, headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, CORS) });
@@ -63,6 +67,24 @@ function okSettings(b) {
     Object.keys(m).every(function (k) { return /^[a-z]{1,20}$/.test(k) && okStr(m[k], 12); }) &&
     Object.keys(s).every(function (k) { return k.length >= 1 && k.length <= 20 && okStr(s[k], 12); });
 }
+// プレイ集の記録の形（game/plays.js の valid と同じ決まり。正しくなければ断る）
+const OPS = { move: 4, act: 4, order: 3, fire: 1, seal: 1 };
+function okOp(op) {
+  if (!Array.isArray(op) || OPS[op[0]] !== op.length) return false;
+  const id = function (v) { return typeof v === 'string' && v.length > 0 && v.length <= 20; };
+  if (op[0] === 'move') return id(op[1]) && Number.isInteger(op[2]) && Number.isInteger(op[3]);
+  if (op[0] === 'act') return id(op[1]) && ['up', 'right', 'down', 'left'].indexOf(op[2]) >= 0 && (op[3] === 0 || op[3] === 1);
+  if (op[0] === 'order') return id(op[1]) && (op[2] === -1 || op[2] === 1);
+  return true;
+}
+function okPlay(b, id) {
+  const st = b && b.stage;
+  return !!b && typeof b === 'object' && b.id === id && typeof b.name === 'string' && b.name.length > 0 && b.name.length <= MAX_NAME &&
+    !!st && typeof st === 'object' && (st.kind === 'tut' || st.kind === 'all') && typeof st.uid === 'string' && st.uid.length > 0 && st.uid.length <= 80 &&
+    (st.name === undefined || (typeof st.name === 'string' && st.name.length <= MAX_NAME + 20)) &&
+    Array.isArray(b.turns) && b.turns.length > 0 && b.turns.length <= 100 &&
+    b.turns.every(function (t) { return Array.isArray(t) && t.length <= 200 && t.every(okOp); });
+}
 function inLineup(lineup, name) { const r = 'all:' + name; return !!lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(r) >= 0; }); }
 
 // /api/ の1件に答える。kv は Workers KV（get(key, 'json')・put(key, text)）
@@ -72,7 +94,8 @@ export async function handleApi(req, kv) {
   const path = new URL(req.url).pathname.replace(/^\/api\//, '');
   try {
     if (req.method === 'GET' && path === 'all') {
-      return json({ ok: true, stages: (await kv.get('stages', 'json')) || {}, lineup: (await kv.get('lineup', 'json')) || null, trash: (await kv.get('trash', 'json')) || {}, settings: (await kv.get('settings', 'json')) || null });
+      return json({ ok: true, stages: (await kv.get('stages', 'json')) || {}, lineup: (await kv.get('lineup', 'json')) || null, trash: (await kv.get('trash', 'json')) || {},
+        settings: (await kv.get('settings', 'json')) || null, plays: (await kv.get('plays', 'json')) || {} });
     }
     const m = /^stages\/(.+)$/.exec(path);
     if (m) {
@@ -121,6 +144,27 @@ export async function handleApi(req, kv) {
         if (!item) return json({ ok: true });
         delete trash[key];
         await kv.put('trash', JSON.stringify(trash));
+        return json({ ok: true });
+      }
+    }
+    const p = /^plays\/(.+)$/.exec(path);
+    if (p) {
+      const id = decodeURIComponent(p[1]);
+      if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return fail('記録の id が正しくない');
+      const plays = (await kv.get('plays', 'json')) || {};
+      if (req.method === 'PUT') {
+        const b = await body(req);
+        if (!okPlay(b, id)) return fail('記録の形が正しくない');
+        if (!plays[id] && Object.keys(plays).length >= MAX_PLAYS) return fail('プレイ集がいっぱい（' + MAX_PLAYS + '）', 409);
+        const at = typeof b.at === 'number' ? b.at : Date.now();
+        plays[id] = { id: id, name: b.name, stage: { kind: b.stage.kind, uid: b.stage.uid, name: b.stage.name || '' }, turns: b.turns, at: at };
+        await kv.put('plays', JSON.stringify(plays));
+        return json({ ok: true, at: at });
+      }
+      if (req.method === 'DELETE') {
+        if (!plays[id]) return json({ ok: true });
+        delete plays[id];
+        await kv.put('plays', JSON.stringify(plays));
         return json({ ok: true });
       }
     }
