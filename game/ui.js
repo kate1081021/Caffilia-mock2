@@ -1429,15 +1429,23 @@
       var groups = [];
       if (fcAll) fcAll.allies.forEach(function (p) { if (!p.cancelled && !(u && p.id === u.id)) groups.push({ cells: p.cells || [], magic: p.magic, dir: p.dir, n: p.order }); });
       if (pv && u) groups.push({ cells: pv.cells || [], magic: u.magic, dir: app.plan.dir, n: pv.order || 0, planned: true });
+      // 重なっても全部見えるように: 重なる形どうしは輪郭を内側へずらして入れ子にする（1つの形はどのマスでも同じ段。オーナー 11/09「両方見えるように」）
+      var lvOf = {};   // マス → そのマスに描いた形の段
       groups.forEach(function (g) {
-        var inG = {};
-        g.cells.forEach(function (c) { inG[key(c[0], c[1])] = true; });
+        var inG = {}, used = {};
+        g.cells.forEach(function (c) {
+          var k2 = key(c[0], c[1]);
+          inG[k2] = true;
+          (lvOf[k2] || []).forEach(function (l) { used[l] = true; });
+        });
+        var lv = 0;
+        while (used[lv]) lv++;
         g.cells.forEach(function (c, i) {
           var k2 = key(c[0], c[1]);
-          if (soCell[k2]) return;
           var edges = [];
           [['t', 0, -1], ['r', 1, 0], ['b', 0, 1], ['l', -1, 0]].forEach(function (d) { if (!inG[key(c[0] + d[1], c[1] + d[2])]) edges.push('e-' + d[0]); });
-          soCell[k2] = { magic: g.magic, edges: edges, first: i === 0, dir: g.dir, n: g.n, planned: !!g.planned };
+          (soCell[k2] = soCell[k2] || []).push({ magic: g.magic, edges: edges, first: i === 0, dir: g.dir, n: g.n, planned: !!g.planned, lv: lv });
+          (lvOf[k2] = lvOf[k2] || []).push(lv);
         });
       });
     }
@@ -1673,10 +1681,13 @@
         if (badges) inner += '<span class="b-fc">' + badges + '</span>';
         if (fcGhost[k] && !unit) inner += '<div class="ghost">' + esc(fcGhost[k].letter) + DIR_ARROW[fcGhost[k].dir] + '</div>';
         if (moveFrom[k] && !unit) inner += '<div class="ghost ally move-from" title="' + esc(R.unitLabel(st, moveFrom[k]) + 'の元の位置（押すと戻る）') + '"></div>';
-        if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」
-          var sc = soCell[k];
-          inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '"></span>';
-          if (sc.first) inner += '<span class="so-tag so-' + sc.magic + (sc.planned ? ' planned' : '') + '">' + (sc.n ? (ORDER_MARK[sc.n] || sc.n) : '') + esc(R.magicName(sc.magic)) + DIR_ARROW[sc.dir] + '</span>';
+        if (soCell[k]) {   // 展示ステージ③: 魔法の形の輪郭（外側の辺だけ）と、術者に一番近いマスに「①火→」。重なった形は段ごとに内側へ、札は縦に並べる
+          var soTags = '';
+          soCell[k].forEach(function (sc) {
+            inner += '<span class="so-line so-' + sc.magic + ' ' + sc.edges.join(' ') + (sc.planned ? ' planned' : '') + '" style="--sl:' + sc.lv + '"></span>';
+            if (sc.first) soTags += '<span class="so-tag so-' + sc.magic + (sc.planned ? ' planned' : '') + '">' + (sc.n ? (ORDER_MARK[sc.n] || sc.n) : '') + esc(R.magicName(sc.magic)) + DIR_ARROW[sc.dir] + '</span>';
+          });
+          if (soTags) inner += '<span class="so-tags">' + soTags + '</span>';
         }
         if (nextAt[k]) {
           var nx = nextAt[k], ready = nx.h.shooters.length > 0;
@@ -3250,6 +3261,8 @@
       (mig && mig.failed ? '<p class="note">前の作りかけ・前の保存のうち ' + mig.failed + 'つは今の形に直せず、移していません（消さずに残しています）。</p>' : '') +
       '</section>' +
       '<div class="home-list"><button type="button" class="primary home-new" data-new="1">＋ 新しく作る</button>' +
+      '<button type="button" class="home-new" data-import="1" title="ステージのファイル（.json）を選ぶと、自分のステージに入る（ネットには出ない）">ファイルから読む</button>' +
+      '<input type="file" accept=".json,application/json" hidden data-import-file="1">' +
       '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button>' +
       '<button type="button" class="home-new" data-settings="1">設定</button>' +
       '<button type="button" class="home-new" data-plays="1" title="クリアした攻略を流す（見ているだけで楽しいかの確かめ・映像用）">プレイ集</button></div>' +
@@ -3471,6 +3484,27 @@
     render();
     refreshShare();
   }
+  // ファイルから読む（オーナー 11/10「自分の使うブラウザがいい」）: 選んだファイルのステージを、このブラウザの自分のステージに足す。
+  //   ネットには出ない（みんなのステージへは、エディットの「共有する」で）。同じ名前があれば「名前（2）」にする（上書きしない）
+  function importStages(text, fileName) {
+    var stages = stageStore();
+    if (!stages) { window.alert('この環境ではブラウザに残せないので、読みこめません'); return; }
+    var r = SIO.fromFiles(R, text);
+    var why = r.errors.map(function (e) { return e.name + ': ' + e.error; }).join('／');
+    if (!r.items.length) { homeNote('「' + fileName + '」から読めるステージがありませんでした（' + why + '）'); return; }
+    var a = SIO.addOwn(stages, r.items);
+    if (!stageStoreSet(a.stages)) { window.alert('自分のステージに残せませんでした'); return; }
+    addLog('「' + fileName + '」から自分のステージに入れた: ' + a.names.join('・'), 'system');
+    homeNote('「' + fileName + '」から ' + a.names.length + 'ステージを、自分のステージに入れた' + (r.errors.length ? '（読めなかったもの ' + r.errors.length + '件: ' + why + '）' : ''));
+  }
+  el.home.addEventListener('change', function (e) {
+    var pick = e.target;
+    if (EXHIBIT || !pick || !pick.hasAttribute || !pick.hasAttribute('data-import-file') || !pick.files || !pick.files[0]) return;
+    var file = pick.files[0], reader = new FileReader();
+    reader.onload = function () { importStages(String(reader.result || ''), file.name); };
+    reader.onerror = function () { homeNote('「' + file.name + '」を読めませんでした'); };
+    reader.readAsText(file);
+  });
   // 自分のステージを消す: ゴミ箱へ（戻せる。オーナー 11/03。前は確かめてから完全に消した）
   function deleteOwn(name) {
     var stages = stageStore(), trash = trashStore();
@@ -3515,6 +3549,7 @@
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
     if (b.hasAttribute('data-sdel')) { deleteShared(b.getAttribute('data-sdel')); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }
+    if (b.hasAttribute('data-import')) { var pick = el.home.querySelector('[data-import-file]'); if (pick) { pick.value = ''; pick.click(); } return; }
     var open = b.getAttribute('data-open') || '', kind = open.slice(0, open.indexOf(':')), name = open.slice(open.indexOf(':') + 1);
     if (kind === 'tut') { showHome(false); loadScenario(name); }
     else if (kind === 'my') playOwn(name);

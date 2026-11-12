@@ -351,8 +351,41 @@
     return { ok: true, name: name, def: def, state: b.state, texts: texts || blankTexts(name) };
   }
 
+  // ファイルから読む（オーナー 11/10「自分の使うブラウザがいい」）: 1つのファイルに、ステージを1つでも、まとめていくつでも入れられる。
+  //   読める形: ステージのファイル（toFile）1つ／その並び（配列）／{ format: 'cafilia-stages', stages: [ステージのファイル…] }。
+  //   戻り値 { items: [{ name, def, texts }], errors: [{ name, error }] }。読めないものは飛ばして、理由を errors に残す
+  var FORMAT_MANY = 'cafilia-stages';
+  function fromFiles(R, text) {
+    var d;
+    try { d = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return { items: [], errors: [{ name: '', error: 'JSON として読めない' }] }; }
+    var list = Array.isArray(d) ? d : isObj(d) && d.format === FORMAT_MANY && Array.isArray(d.stages) ? d.stages : [d];
+    var items = [], errors = [];
+    list.forEach(function (one, i) {
+      var f = fromFile(R, one, '読み込んだステージ');
+      if (f.ok) items.push({ name: f.name, def: f.def, texts: f.texts });
+      else errors.push({ name: (isObj(one) && one.name) || String(i + 1) + 'つ目', error: f.error });
+    });
+    return { items: items, errors: errors };
+  }
+  // 読んだステージを、自分のステージ（{ 名前: 記録 }）に足す。同じ名前があれば「名前（2）」にする（上書きしない）。
+  //   ファイルの順に、一覧（新しく直した順）の上から並ぶように、時刻を1ずつずらす
+  function addOwn(stages, items, now) {
+    stages = clone(stages || {});
+    now = now || Date.now();
+    var names = items.map(function (it, i) {
+      var name = freeName(it.name, stages);
+      var def = clone(it.def);
+      def.id = PREFIX + name; def.name = name; def.custom = true; def.tutorial = true;   // エディットで作ったステージと同じ（やり直し・ヒントが効く）
+      var texts = clone(it.texts) || blankTexts(name);
+      texts.name = name;
+      stages[name] = { def: def, texts: texts, exKeep: null, base: null, at: now - i };
+      return name;
+    });
+    return { stages: stages, names: names };
+  }
+
   var api = {
-    PREFIX: PREFIX, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone

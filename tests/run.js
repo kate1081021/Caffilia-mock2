@@ -92,7 +92,7 @@ test('盤の外にはみ出したマスは無視される', function () {
   eq(R.shapeCells(s, 'fire', 0, 1, 'up'), [[0, 0]]);
   var a = R.addAlly(s, 'grass', 0, 5);
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 0, 3), tile(r.state, 0, 2), tile(r.state, 1, 2)], ['forest', 'forest', 'forest']);
+  eq([tile(r.state, 0, 3), tile(r.state, 0, 2), tile(r.state, 1, 2)], ['thicket', 'thicket', 'thicket']);   // 草は草むら（草に水で森 11/10）
 });
 
 console.log('\n■ 置く・点ける');
@@ -102,16 +102,16 @@ test('置く: ユニットがいるマスは直撃し、足元にも自然がで
   var a = R.addAlly(s, 'grass', 2, 5);
   var e = R.addEnemy(s, 'fire', 2, 3);       // (0,2) のマス
   var r = fire(s, a, 'up');
-  eq(tile(r.state, 2, 3), 'forest', '敵の足元にも森');
+  eq(tile(r.state, 2, 3), 'thicket', '敵の足元にも草むら');
   eq(hp(r.state, e.id), B.enemy.hp - B.ally.power);
-  eq([tile(r.state, 1, 2), tile(r.state, 2, 2), tile(r.state, 3, 2)], ['forest', 'forest', 'forest']);
+  eq([tile(r.state, 1, 2), tile(r.state, 2, 2), tile(r.state, 3, 2)], ['thicket', 'thicket', 'thicket']);
 });
 test('置く: 味方に当てても足元に自然ができる。山（通れない）も足元に盛り、その人は山の外へ押し出す（オーナー 10/30）', function () {
   var s = empty(6);
   var a = R.addAlly(s, 'grass', 2, 5);
   var b = R.addAlly(s, 'earth', 2, 3);
   var r = fire(s, a, 'up');
-  eq(tile(r.state, 2, 3), 'forest', '味方の足元に森');
+  eq(tile(r.state, 2, 3), 'thicket', '味方の足元に草むら');
   var s2 = empty(6);
   var c = R.addAlly(s2, 'earth', 2, 5);      // 形 (1,3)(2,3)(1,2)
   var d = R.addAlly(s2, 'grass', 2, 3);
@@ -392,7 +392,7 @@ test('燃え広がりが山に届くと、山脈ごと火山になる（火が�
   var r2 = fire(s2, R.addAlly(s2, 'wind', 2, 5), 'up');
   eq(tile(r2.state, 2, 0), B.spread.maxLength >= 4 ? 'volcano' : 'mountain');
 });
-test('つながった森が全部燃え、ダメージは一定（決め手20）、味方も巻き込む', function () {
+test('燃えるのは通り道（まっすぐ）の森だけ。横につながった森は燃えない。ダメージは一定（決め手20）、味方も巻き込む（オーナー 11/11）', function () {
   var s = board([
     '.......',
     '.FF....',
@@ -403,13 +403,16 @@ test('つながった森が全部燃え、ダメージは一定（決め手20）
     '....F..'
   ]);
   var w = R.addAlly(s, 'wind', 2, 6);
-  var e = R.addEnemy(s, 'fire', 1, 1);      // つながった森の上
+  var e = R.addEnemy(s, 'fire', 2, 2);      // 通り道の森の上（2マス目）
+  var side = R.addEnemy(s, 'fire', 1, 1);   // 通り道の森に横からつながった森の上
   var friend = R.addAlly(s, 'fire', 2, 1);  // 通り道の森の上（3マス目）
   var r = fire(s, w, 'up');
-  ['1,1', '2,1', '2,2', '2,3'].forEach(function (k) {
+  ['2,1', '2,2', '2,3'].forEach(function (k) {
     var c = k.split(',').map(Number);
     eq(tile(r.state, c[0], c[1]), 'fire', k);
   });
+  eq(tile(r.state, 1, 1), 'forest', '横につながった森は燃えない');
+  eq(dealt(r, side.id), 0, '横の森の上の敵は無事');
   eq(tile(r.state, 4, 6), 'forest', '離れた森');
   eq(dealt(r, e.id), 20, '森の数によらず一定');
   eq(R.findUnit(r.state, e.id), null, '敵は1発で倒れる');
@@ -527,11 +530,11 @@ test('標準では、山に草を植えても桜は咲かない（土 → 草 �
 
 // 元の試しの起こし方（山に草で桜）
 B.sakura.from = 'grass';
-test('【試し】山に草を植えると桜が咲く（森にはならない）。空きには森', function () {
+test('【試し】山に草を植えると桜が咲く（森にはならない）。空きには草むら', function () {
   var s = board(['......', '......', '..M...', '......', '......', '......']);
   var a = R.addAlly(s, 'grass', 2, 5);              // 上向き: (2,3)(1,2)(2,2)(3,2)
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 2, 2), tile(r.state, 2, 3), tile(r.state, 1, 2)], ['sakura', 'forest', 'forest']);
+  eq([tile(r.state, 2, 2), tile(r.state, 2, 3), tile(r.state, 1, 2)], ['sakura', 'thicket', 'thicket']);
   eq(R.isPassable('sakura'), false);
 });
 test('【試し】桜に風で桜吹雪: 花びらが扇形に舞い、空きは花びら（燃えない）。桜は散って山に戻る', function () {
@@ -975,7 +978,7 @@ test('元の形（4マス）に切り替えると、正面4マスまで吹き抜
 
 test('風・強風・花びらのマスにも、草・土・山・水は空きと同じく効く（空気の中のもの・すぐ消える跡。11/03）', function () {
   ['breeze', 'gale', 'petals'].forEach(function (air) {
-    [['grass', 'forest'], ['earth', 'mountain'], ['mount', 'mountain'], ['water', 'puddle']].forEach(function (p) {
+    [['grass', 'thicket'], ['earth', 'mountain'], ['mount', 'mountain'], ['water', 'puddle']].forEach(function (p) {
       var s = empty(7);
       var a = R.addAlly(s, p[0], 3, 6);
       var cells = R.shapeCells(s, p[0], 3, 6, 'up');
@@ -1202,11 +1205,11 @@ test('氷の上は滑る: 何かにぶつかったら、その手前で止まる
   var r = fire(s, a, 'up');
   eq(pos(r.state, e.id), [2, 1], '山の手前まで滑る');
 });
-test('水辺の森はよく育つ: 水に接して植えると、水に接したとなりの空きにも森が広がる', function () {
+test('水辺はよく育つ: 水に接して植えると、水に接したとなりの空きにも草むらが広がる（水が当たってはいないので森にはならない）', function () {
   var s = board(['......', '......', 'RRRRRR', '......', '......', '......']);
-  var a = R.addAlly(s, 'grass', 2, 5);                         // 形 (2,3)(1,2)(2,2)(3,2) → 川の上は植えられず、(2,3) だけ森
+  var a = R.addAlly(s, 'grass', 2, 5);                         // 形 (2,3)(1,2)(2,2)(3,2) → 川の上は植えられず、(2,3) だけ草むら
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 2, 3), tile(r.state, 1, 3), tile(r.state, 3, 3)], ['forest', 'forest', 'forest'], '川沿いに左右へ広がった');
+  eq([tile(r.state, 2, 3), tile(r.state, 1, 3), tile(r.state, 3, 3)], ['thicket', 'thicket', 'thicket'], '川沿いに左右へ広がった');
   eq(tile(r.state, 2, 4), 'empty', '水に接していない所には広がらない');
 });
 test('土をかぶせて火を消す: 炎・小さな炎に土を盛ると、山になる', function () {
@@ -1457,14 +1460,14 @@ test('予告を見て逃げれば、発動は空振りする', function () {
   ok(R.findUnit(r.state, a.id), '味方は無事');
   eq(casts(r.events, e.id).length, 1, '予告どおりに撃つ');
 });
-test('予告のあとで味方が森を足すと、発動の結果が変わる（小さな炎 → 森が燃える）', function () {
+test('予告のあとで味方が草むらを足すと、発動の結果が変わる（小さな炎 → 草むらが燃える）', function () {
   var s = empty(6, true);
   var e = R.addEnemy(s, 'fire', 2, 1);
   intend(s, e, 'down');                                // (2,2) に火
   var g = R.addAlly(s, 'grass', 2, 5);
   eq(R.forecast(s).enemies[0].tileChanges.map(function (c) { return c.to; }), ['smallfire']);
   var pv = R.previewAct(s, g.id, [2, 5], 'up');        // 草: (2,3)(1,2)(2,2)(3,2)
-  eq(R.forecast(pv.state).enemies[0].tileChanges.map(function (c) { return [c.from, c.to]; }), [['forest', 'fire']], '撃つ前の予測で、敵の予告の結果も計算し直せる');
+  eq(R.forecast(pv.state).enemies[0].tileChanges.map(function (c) { return [c.from, c.to]; }), [['thicket', 'fire']], '撃つ前の予測で、敵の予告の結果も計算し直せる');
   var st = R.act(s, g.id, { dir: 'up' }).state;
   var r = R.endTurn(st);
   eq(tile(r.state, 2, 2), 'fire');
@@ -2283,8 +2286,9 @@ function grassBoard(rows) {
   var s = board(rows || ['.......', '.......', '.......', '.......', '.......', '.......', '.......']);
   return { s: s, a: R.addAlly(s, 'grass', 3, 6) };
 }
-test('草: 切っているときは今までどおり、空きに草で森', function () {
-  var g = grassBoard(), r = fire(g.s, g.a, 'up');
+test('草: 育つも草に水で森も切っているときは、元のとおり空きに草で森', function () {
+  var g = grassBoard(); old(g.s, { 'ideas.grassWater': false });
+  var r = fire(g.s, g.a, 'up');
   eq(forests(r.state), ['2,3', '3,3', '3,4', '4,3']);
 });
 test('草: 空きに草で草むら、草むらにもう一度草で森に育つ（十字に茂る）', function () { withGrow(function () {
@@ -2315,18 +2319,19 @@ test('草むら: 火で燃える（今は弱い炎の扱い）', function () {
   var r = fire(s, a, 'up');
   eq(tile(r.state, 2, 3), 'fire');
 });
-test('草むら: 燃え広がりで、つながった森と草むらがまとめて燃える（plantStrong を切ると、強い炎は森の上だけ）', function () {
+test('草むら: 燃え広がりで、通り道の森と草むらが燃える（plantStrong を切ると、強い炎は森の上だけ）', function () {
   var was = B.fire.plantStrong; B.fire.plantStrong = false;
   try {
-  var s = board(['..gF..', '..g...', '..g...', '..X...', '......', '......']);
+  var s = board(['..FF..', '..g...', '..g...', '..X...', '......', '......']);
   var a = R.addAlly(s, 'wind', 2, 4);
   var e1 = R.addEnemy(s, 'fire', 2, 1);   // 草むらの上
-  var e2 = R.addEnemy(s, 'fire', 3, 0);   // 森の上
+  var e2 = R.addEnemy(s, 'fire', 2, 0);   // 森の上
   R.findUnit(s, e1.id).hp = 99; R.findUnit(s, e2.id).hp = 99;
   var r = fire(s, a, 'up');
-  eq([tile(r.state, 2, 0), tile(r.state, 2, 2), tile(r.state, 3, 0)], ['fire', 'fire', 'fire']);
+  eq([tile(r.state, 2, 0), tile(r.state, 2, 1), tile(r.state, 2, 2)], ['fire', 'fire', 'fire']);
+  eq(tile(r.state, 3, 0), 'forest', '通り道から外れた森は燃えない');
   eq([dealt(r, e1.id), dealt(r, e2.id)], [B.fire.weakDamage, B.fire.strongDamage]);
-  ok(r.events.some(function (e) { return /草むら3マスも燃えた/.test(e.text || ''); }), 'ログ');
+  ok(r.events.some(function (e) { return /草むら2マスも燃えた/.test(e.text || ''); }), 'ログ');
   } finally { B.fire.plantStrong = was; }
 });
 test('草むら: ターン終了で、炎の隣の草むらへ燃え移る', function () {
@@ -2348,10 +2353,10 @@ test('草むら: 低いので雷は落ちない（その先の森に落ちる）
   ok(r.events.some(function (e) { return /雷が森に落ちて燃えた/.test(e.text || ''); }), r.events.map(function (e) { return e.text; }).join(' / '));
   eq([tile(r.state, 2, 3), tile(r.state, 3, 2), tile(r.state, 2, 1)], ['thicket', 'thicket', 'fire']);
 });
-test('草むら: 水が流れると沈んで川になる', function () {
+test('草むら: （草に水で森を切ったとき）水が流れると沈んで川になる', function () {
   var s = board(['......', '......', '......', '..g...', '......', '......']);
   var a = R.addAlly(s, 'water', 2, 5);
-  old(s, OLD_WATER);   // 草むらは育つ（水2マスの頃）の自然
+  old(s, Object.assign({ 'ideas.grassWater': false }, OLD_WATER));   // 草むらは育つ（水2マスの頃）の自然。今は草むらに水で森（11/10）
   var r = fire(s, a, 'up');
   eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['puddle', 'river'], '空きは水たまり、草むらは沈んで川');
 });
@@ -2370,6 +2375,56 @@ test('草: 敵の草も同じく、こちらの草むらを森に育てる', fun
   var r = R.endTurn(s);
   eq([tile(r.state, 2, 2), tile(r.state, 2, 1), tile(r.state, 1, 2), tile(r.state, 3, 2)], ['forest', 'forest', 'forest', 'forest']);
 }, { forestSize: 5 }); });
+
+// ---------------------------------------------------------------
+console.log('\n■ 草に水で森（ideas.grassWater。オーナー 11/10「合う」→ 標準にする）');
+var GW_OFF = { 'ideas.grassWater': false };
+test('草に水: 空きに草で草むら（森にするのは水）', function () {
+  var g = grassBoard();
+  var r = fire(g.s, g.a, 'up');
+  eq([tile(r.state, 3, 4), tile(r.state, 2, 3), tile(r.state, 3, 3), tile(r.state, 4, 3)], ['thicket', 'thicket', 'thicket', 'thicket']);
+  eq(forests(r.state), []);
+});
+test('草に水: 草むらに水が当たると森になり、水はそこで止まる', function () {
+  var s = board(['......', '......', '......', '......', '..g...', '......']);
+  var a = R.addAlly(s, 'water', 2, 5);
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['forest', 'empty']);
+  ok(r.events.some(function (e) { return /草むらが水を吸って森になった/.test(e.text || ''); }), r.events.map(function (e) { return e.text; }).join(' / '));
+});
+test('草に水: 切ったときは元のとおり、草むらに水は水たまり（森にならない）', function () {
+  var s = old(board(['......', '......', '......', '......', '..g...', '......']), GW_OFF);
+  var a = R.addAlly(s, 'water', 2, 5);
+  eq(tile(fire(s, a, 'up').state, 2, 4), 'puddle');
+});
+test('草に水: 同じターンに 草 → 水 の順なら、水の当たった草むらだけ森になる', function () {
+  var g = grassBoard();
+  var w = R.addAlly(g.s, 'water', 3, 5);   // 上へ撃つと (3,4)
+  var r = fire(fire(g.s, g.a, 'up').state, w, 'up');
+  eq(forests(r.state), ['3,4']);
+  eq([tile(r.state, 2, 3), tile(r.state, 3, 3), tile(r.state, 4, 3)], ['thicket', 'thicket', 'thicket'], 'ほかの草むらはそのまま');
+});
+test('草に水: 山から流れ出した川も、草むらに当たると森にして止まる', function () {
+  var s = board(['.......', '.......', '...g...', '.......', '...M...', '.......', '.......']);
+  var a = R.addAlly(s, 'water', 3, 5);   // 上へ撃つと (3,4) の山（1マスなので頂上 → 4方向へ）
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 3, 3), tile(r.state, 3, 2), tile(r.state, 3, 1)], ['river', 'forest', 'empty'], '上へ: 川 → 草むらで森 → その先は流れない');
+  eq([tile(r.state, 0, 4), tile(r.state, 6, 4)], ['river', 'river'], 'ほかの向きは盤の端まで');
+});
+test('草に水: 風で運ばれた川の水も、草むらに落ちると森になる', function () {
+  var s = board(['......', '......', '......', '..g...', '..R...', '......']);
+  var a = R.addAlly(s, 'wind', 2, 5);   // 上へ2マス: (2,4) 川 → (2,3) 草むら
+  var r = fire(s, a, 'up');
+  eq([tile(r.state, 2, 4), tile(r.state, 2, 3)], ['puddle', 'forest']);
+});
+test('草に水: 敵の水も同じく、こちらの草むらを森にする', function () {
+  var s = board(['......', '......', '..g...', '......', '......', '......'], true);
+  var e = R.addEnemy(s, 'water', 2, 1);   // 下向き: (2,2) の草むら
+  R.addAlly(s, 'fire', 5, 5);
+  intend(s, e, 'down');
+  var r = R.endTurn(s);
+  eq(tile(r.state, 2, 2), 'forest');
+});
 
 // ---------------------------------------------------------------
 console.log('\n■ 育つ（IMPROVE_grow）: 火 — 小さな炎と炎');
@@ -2701,7 +2756,8 @@ test('正解の手順: (1,2) へ動いて上に火 → 風で燃え広がり、�
   var t = R.endTurn(R.act(s, tutPlayer(s).id, { to: [1, 2], dir: 'up' }).state);
   eq(t.state.result, 'win');
   eq(t.state.turn, 1, '1ターン目で勝つ');
-  eq([tile(t.state, 2, 1), tile(t.state, 3, 0), tile(t.state, 4, 1)], ['smallfire', 'fire', 'fire'], '通り道は小さな炎、森は炎');
+  eq([tile(t.state, 2, 1), tile(t.state, 3, 1), tile(t.state, 4, 1)], ['smallfire', 'fire', 'fire'], '通り道は小さな炎、森は炎');
+  eq([tile(t.state, 3, 0), tile(t.state, 4, 0)], ['forest', 'forest'], '通り道から外れた上の段の森は燃えない（11/11）');
 });
 test('(2,1) に火を置いても勝てる（風は2マスなので (2,1) にも当たる。10/29 に①の風の上書きを外してから）', function () {
   var s = tut1();
