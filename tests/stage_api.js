@@ -228,6 +228,47 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq((await call('PUT', 'tutorials/tnew1', { def: DEF }, store)).status, 409, 'いっぱい');
     ok((await call('PUT', 'tutorials/t0', { def: DEF }, store)).data.ok, 'いっぱいでも、あるものは直せる');
   });
+  // 枠の間を動かす（オーナー 11/13）: チュートリアル ⇄ みんなのステージ。写しではなく移る
+  await test('動かす: みんなのステージ → チュートリアル。元は消え、順番・展示の並び・プレイ集の記録が付いていく', async function () {
+    var m = {}, store = { get: function (k) { return Promise.resolve(k in m ? JSON.parse(m[k]) : null); }, put: function (k, v) { m[k] = String(v); return Promise.resolve(); } };
+    m.tutorials = JSON.stringify({ tut1: { def: DEF, texts: { name: '①' }, at: 1 }, tut2: { def: DEF, texts: { name: '②' }, at: 1 } });
+    m.stages = JSON.stringify({ '森の道': { def: Object.assign({ uid: 'sAAA', difficulty: 'easy' }, DEF), texts: { scenes: { start: [] } }, at: 5 }, '山の道': { def: Object.assign({ uid: 'sBBB' }, DEF), texts: null, at: 6 } });
+    m.lineup = JSON.stringify({ start: ['tut:tut1', 'all:森の道'], pick: ['all:森の道', 'all:山の道'], at: 1 });
+    m.order = JSON.stringify({ all: ['山の道', '森の道'], at: 1 });
+    m.plays = JSON.stringify({ p1: { id: 'p1', name: 'a', stage: { kind: 'all', uid: 'sAAA', name: '森の道' }, turns: [[['fire']]], at: 1 }, p2: { id: 'p2', name: 'b', stage: { kind: 'all', uid: 'sBBB', name: '山の道' }, turns: [[['fire']]], at: 1 } });
+    var r = await call('POST', 'move', { from: 'all', key: '森の道', order: ['tut1', 'tut2'], before: 'tut2' }, store);
+    ok(r.status === 200 && r.data.ok && /^t[a-z0-9]+$/.test(r.data.key), JSON.stringify(r.data));
+    var id = r.data.key, a = (await call('GET', 'all', undefined, store)).data;
+    eq([Object.keys(a.stages), Object.keys(a.tutorials).sort(), a.trash], [['山の道'], ['tut1', 'tut2', id].sort(), {}], '移った（ゴミ箱には入らない）');
+    eq([a.tutorials[id].texts.name, a.tutorials[id].def.short, a.tutorials[id].def.uid, a.tutorials[id].def.difficulty, a.tutorials[id].texts.scenes], ['森の道', '森の道', 'sAAA', 'easy', { start: [] }], '名前と中身（背番号・難易度・文）はそのまま持つ');
+    eq([a.order.tut, a.order.all], [['tut1', id, 'tut2'], ['山の道']], '落とした所に入る。元の順番からは外れる');
+    eq([a.lineup.start, a.lineup.pick], [['tut:tut1', 'tut:' + id], ['tut:' + id, 'all:山の道']], '展示の並びは同じステージを指したまま');
+    eq([a.plays.p1.stage.kind, a.plays.p1.stage.uid, a.plays.p2.stage.uid], ['tut', 'tut:' + id, 'sBBB'], 'プレイ集の記録も付いていく（ほかの記録は変わらない）');
+    // 戻す: チュートリアル → みんなのステージ
+    var b = await call('POST', 'move', { from: 'tut', key: id, order: ['山の道'], before: null }, store);
+    eq([b.status, b.data.key], [200, '森の道'], '同じ名前で戻る');
+    var z = (await call('GET', 'all', undefined, store)).data;
+    eq([Object.keys(z.tutorials), Object.keys(z.stages), z.stages['森の道'].def.uid, z.stages['森の道'].def.difficulty], [['tut1', 'tut2'], ['山の道', '森の道'], 'sAAA', 'easy'], '背番号・難易度も元のまま');
+    eq([z.order.tut, z.order.all, z.lineup.start, z.lineup.pick, z.plays.p1.stage.kind, z.plays.p1.stage.uid], [['tut1', 'tut2'], ['山の道', '森の道'], ['tut:tut1', 'all:森の道'], ['all:森の道', 'all:山の道'], 'all', 'sAAA'], '順番・展示の並び・記録も元どおり');
+  });
+  await test('動かす: チュートリアル → みんなのステージ。同じ名前があれば「名前（2）」。最後の1つ・ないもの・正しくない形は動かさない', async function () {
+    var m = {}, store = { get: function (k) { return Promise.resolve(k in m ? JSON.parse(m[k]) : null); }, put: function (k, v) { m[k] = String(v); return Promise.resolve(); } };
+    eq((await call('POST', 'move', { from: 'all', key: '森の道', order: [] }, store)).status, 404, 'チュートリアルをまだ置いていない');
+    m.tutorials = JSON.stringify({ tut1: { def: Object.assign({ name: '【チュートリアル】① 重ねる', short: '① 重ねる' }, DEF), texts: { name: '① 重ねる' }, at: 1 }, tut2: { def: Object.assign({ short: '② 守る' }, DEF), texts: null, at: 1 } });
+    m.stages = JSON.stringify({ '① 重ねる': { def: Object.assign({ uid: 'sAAA' }, DEF), texts: null, at: 5 } });
+    m.plays = JSON.stringify({ p1: { id: 'p1', name: 'a', stage: { kind: 'tut', uid: 'tut:tut1', name: '①' }, turns: [[['fire']]], at: 1 } });
+    eq((await call('POST', 'move', { from: 'tut', key: 'tut9', order: [] }, store)).status, 404, 'ないチュートリアル');
+    eq((await call('POST', 'move', { from: 'all', key: 'ない', order: [] }, store)).status, 404, 'ないみんなのステージ');
+    eq((await call('POST', 'move', { from: 'my', key: 'x', order: [] }, store)).status, 400, '知らない枠');
+    eq((await call('POST', 'move', { from: 'tut', key: 'tut1', order: 'x' }, store)).status, 400, '順番が並びでない');
+    var r = await call('POST', 'move', { from: 'tut', key: 'tut1', order: ['① 重ねる'], before: '① 重ねる' }, store);
+    eq([r.status, r.data.key], [200, '① 重ねる（2）'], '同じ名前があるので（2）');
+    var a = (await call('GET', 'all', undefined, store)).data, st = a.stages['① 重ねる（2）'];
+    eq([Object.keys(a.tutorials), a.order.all, st.def.difficulty, a.plays.p1.stage.kind, a.plays.p1.stage.uid === st.def.uid, st.def.uid !== 'sAAA'],
+      [['tut2'], ['① 重ねる（2）', '① 重ねる'], 'tutorial', 'all', true, true], '札はチュートリアルのまま。新しい背番号が付き、記録が付いていく');
+    eq((await call('POST', 'move', { from: 'tut', key: 'tut2', order: [] }, store)).status, 409, '最後の1つは動かせない');
+    eq(Object.keys((await call('GET', 'all', undefined, store)).data.tutorials), ['tut2'], '残っている');
+  });
   await test('チュートリアル: 最初の中身が正しくなければ置かない', async function () {
     var store = { get: function () { return Promise.resolve(null); }, put: function () { throw new Error('書いてはいけない'); } };
     eq((await call('PUT', 'tutorials', { tutorials: {} }, store)).status, 400);

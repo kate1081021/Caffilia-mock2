@@ -24,6 +24,10 @@
  *     PUT    /api/tutorials       … チュートリアルの最初の中身を置く。本文 { tutorials: { id: { def, texts } } }。もう置いてあれば何も変えない（答えの seeded が false）。答えの tutorials が今の中身
  *     PUT    /api/tutorials/<id>  … チュートリアルを直す（上書き）・新しく足す（まだない id。オーナー 11/12）。本文 { def, texts }。最初の中身を置く前は足せない
  *     DELETE /api/tutorials/<id>  … チュートリアルを消す（元に戻せない。最後の1つは消せない。展示の並びに入っていても消せる。画面が先に確かめる）
+ *     POST   /api/move            … チュートリアルとみんなのステージの間で、ステージを動かす（写しではなく移す。オーナー 11/13）。
+ *       本文 { from: 'tut'|'all', key: 動かすもの（tut は id、all は名前）, order: 動かす先の今の並び, before: この前に入れる（なければ末尾） }。
+ *       動かす先に置いてから、元を消す（ゴミ箱には入れない）。展示の並び・プレイ集の記録が指している先も、一緒に付け替える。
+ *       チュートリアルの最後の1つは動かせない。答えの key が、動かした先での id か名前
  *     PUT    /api/order/<tut|all> … 一覧の順番を置く。本文 { order: [...] }（tut は id、all は名前）
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
  *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
@@ -244,6 +248,73 @@ export async function handleApi(req, kv) {
       const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, at: Date.now() };
       await kv.put('settings', JSON.stringify(settings));
       return json({ ok: true, at: settings.at });
+    }
+    if (req.method === 'POST' && path === 'move') {
+      const b = await body(req);
+      const toTut = !!b && b.from === 'all';
+      if (!b || (b.from !== 'tut' && b.from !== 'all') || !(toTut ? okName : okTutId)(b.key)) return fail('動かすものが正しくない');
+      const list = b.order === undefined ? [] : b.order;
+      if (!Array.isArray(list) || list.length > (toTut ? MAX_TUTS : MAX_STAGES) || !list.every(toTut ? okTutId : okName)) return fail('順番が正しくない');
+      const stages = (await kv.get('stages', 'json')) || {}, tutorials = await kv.get('tutorials', 'json');
+      if (!tutorials) return fail('チュートリアルがまだ置かれていない', 404);
+      const now = Date.now();
+      let to, fromRef, toRef, fromPlay, toPlay;
+      if (toTut) {
+        const rec = stages[b.key];
+        if (!rec) return fail('みんなのステージに見つからない', 404);
+        if (Object.keys(tutorials).length >= MAX_TUTS) return fail('チュートリアルがいっぱい（' + MAX_TUTS + '）', 409);
+        do { to = 't' + now.toString(36) + Math.random().toString(36).slice(2, 5); } while (tutorials[to]);
+        // 中身はそのまま（背番号・難易度も持っておく。みんなのステージへ戻したときに使う）。名前は文と短い名前に入れる
+        const def = Object.assign({}, rec.def, { name: b.key, short: b.key });
+        const texts = rec.texts && typeof rec.texts === 'object' ? Object.assign({}, rec.texts, { name: b.key }) : { name: b.key };
+        tutorials[to] = { def: def, texts: texts, at: now };
+        await kv.put('tutorials', JSON.stringify(tutorials));   // 先に動かす先へ置く（途中で止まっても、消えてなくなることはない）
+        delete stages[b.key];
+        await kv.put('stages', JSON.stringify(stages));
+        fromRef = 'all:' + b.key; toRef = 'tut:' + to;
+        fromPlay = { kind: 'all', uid: okUid(rec.def.uid) ? rec.def.uid : 'n:' + b.key }; toPlay = { kind: 'tut', uid: 'tut:' + to };
+      } else {
+        const rec = tutorials[b.key];
+        if (!rec) return fail('チュートリアルに見つからない', 404);
+        if (Object.keys(tutorials).length <= 1) return fail('チュートリアルの最後の1つは動かせない', 409);
+        if (Object.keys(stages).length >= MAX_STAGES) return fail('みんなのステージがいっぱい（' + MAX_STAGES + '）', 409);
+        const t = rec.texts && typeof rec.texts === 'object' ? rec.texts : null;
+        let name = String((t && t.name) || rec.def.short || rec.def.name || '').trim().slice(0, MAX_NAME).trim();
+        if (!okName(name)) name = 'チュートリアル';
+        to = freeName(name, stages);
+        const taken = function (u) { return Object.keys(stages).some(function (n) { return stages[n].def && stages[n].def.uid === u; }); };
+        const def = Object.assign({}, rec.def, { uid: okUid(rec.def.uid) && !taken(rec.def.uid) ? rec.def.uid : newUid() });
+        if (def.difficulty === undefined) def.difficulty = 'tutorial';   // 一覧の札（チュートリアル）はそのまま
+        stages[to] = { def: def, texts: t, at: now };
+        await kv.put('stages', JSON.stringify(stages));
+        delete tutorials[b.key];
+        await kv.put('tutorials', JSON.stringify(tutorials));
+        fromRef = 'tut:' + b.key; toRef = 'all:' + to;
+        fromPlay = { kind: 'tut', uid: 'tut:' + b.key }; toPlay = { kind: 'all', uid: def.uid };
+      }
+      // 動かした先の順番: 送られてきた今の並びの、before の前（なければ末尾）に入れる。元の一覧の順番からは外す
+      const order = (await kv.get('order', 'json')) || {};
+      const dst = list.filter(function (k) { return k !== to; }), at = b.before === undefined || b.before === null ? -1 : dst.indexOf(b.before);
+      dst.splice(at < 0 ? dst.length : at, 0, to);
+      order[toTut ? 'tut' : 'all'] = dst;
+      const src = toTut ? 'all' : 'tut';
+      if (Array.isArray(order[src])) order[src] = order[src].filter(function (k) { return k !== b.key; });
+      order.at = now;
+      await kv.put('order', JSON.stringify(order));
+      // 展示の並び・プレイ集の記録が指している先を付け替える（展示モードの並びと、記録はそのまま残る）
+      const lineup = await kv.get('lineup', 'json');
+      if (lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(fromRef) >= 0; })) {
+        ['start', 'pick'].forEach(function (k) { lineup[k] = (lineup[k] || []).map(function (r) { return r === fromRef ? toRef : r; }); });
+        await kv.put('lineup', JSON.stringify(lineup));
+      }
+      const plays = (await kv.get('plays', 'json')) || {};
+      let moved = 0;
+      Object.keys(plays).forEach(function (id) {
+        const st = plays[id] && plays[id].stage;
+        if (st && st.kind === fromPlay.kind && st.uid === fromPlay.uid) { st.kind = toPlay.kind; st.uid = toPlay.uid; moved++; }
+      });
+      if (moved) await kv.put('plays', JSON.stringify(plays));
+      return json({ ok: true, key: to, at: now });
     }
     const od = /^order\/(tut|all)$/.exec(path);
     if (od && req.method === 'PUT') {

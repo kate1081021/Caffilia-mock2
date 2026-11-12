@@ -2438,9 +2438,9 @@
     ]);
   }
   // ---------------------------------------------------------------
-  // チュートリアルを足す・消す（オーナー 11/12）: 開発の一覧の「チュートリアル」の欄から。どちらも共有の置き場所をすぐ変える（どのパソコンでも変わる）。
-  //   足す: 空のステージ（味方3人・敵1体）から作るか、みんなのステージを写す。新しい id（t＋時刻）で置く。
-  //         足しただけでは展示モードには出ない（出すのは「展示の並び」で）。一覧では末尾に入り、▲▼ で並び替えられる。
+  // チュートリアルを足す・消す（オーナー 11/12・11/13）: どちらも共有の置き場所をすぐ変える（どのパソコンでも変わる）。
+  //   足す: みんなのステージの行を、チュートリアルの枠へドラッグする（moveAcross。写しではなく移る）。
+  //         前にあった「＋ チュートリアルを足す」（空から作る・写す）は外した（オーナー 11/13）。新しく作るときは、自分のステージで作って共有してから持ってくる。
   //   消す: 確かめてから消す（元に戻せない）。展示の並びに入っていれば、そのことも窓に出す（展示では飛ばす。決めてある並びには「見つからない」と残る）。
   //         最後の1つは消せない（チュートリアルが空になると、コードの①②③に戻ってしまうため）
   // ---------------------------------------------------------------
@@ -2449,35 +2449,6 @@
     return !sh.loaded ? '読み込み中…' : !sh.ok ? sh.why + '（つながると、足す・消すができます）' :
       !sh.hasTutorials ? '共有の置き場所がまだ古いので、足す・消すができません（公開すると使えます）' :
       !sh.tutorials ? '共有の置き場所に、まだチュートリアルが置かれていません' : '';
-  }
-  function newTutId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
-  function tutAdd(from) {
-    var why = tutEditWhy();
-    if (why) { window.alert(why); return; }
-    var name, def, texts, taken = {};
-    tutIds().forEach(function (id) { taken[stageName(R.findPreset(id))] = true; });
-    if (from) {
-      var nm = refId(from), rec = app.shared.stages[nm];
-      if (!rec || !SIO.build(R, rec.def).ok) { window.alert('みんなのステージに「' + nm + '」が見つかりません（消されたかもしれません）'); return; }
-      name = uniqueName(nm, taken); def = SIO.clone(rec.def); texts = fillTexts(rec.texts, name);
-    } else {
-      name = uniqueName('新しいチュートリアル', taken); def = SIO.toDef(R, newStage(B.boardSize).state, name); texts = fillTexts(null, name);
-    }
-    var id = newTutId();
-    def.id = id; def.name = name; def.short = name; def.tutorial = true;
-    delete def.custom; delete def.uid; delete def.difficulty;
-    api('PUT', 'tutorials/' + id, { def: def, texts: texts }).then(function (res) {
-      if (!res.ok) { window.alert('チュートリアルを足せませんでした: ' + netWhy(res)); return; }
-      app.shared.tutorials[id] = { def: def, texts: texts, at: res.data.at };
-      applyTutorials();
-      addLog('チュートリアル「' + name + '」を足した', 'system');
-      if (from) { homeNote('チュートリアル「' + name + '」を足した（みんなのステージ「' + refId(from) + '」の写し）'); return; }
-      // 空から作ったときは、そのまま作る側で開く（直したら「チュートリアルに保存する」）
-      showHome(false);
-      startDraft(draftFromTut(id));
-      enterEdit(false);
-      say('チュートリアル「' + name + '」を足しました（味方3人・敵1体から。直したら「チュートリアルに保存する」）');
-    });
   }
   function tutDelete(id) {
     var why = tutEditWhy() || (tutIds().length <= 1 ? '最後の1つは消せません' : ''), p = R.findPreset(id);
@@ -2747,15 +2718,15 @@
     //   「消す」は、この並びから外すだけ（ステージは消えない）
     var item = function (list, r, i, n) {
       var ok = refOk(r), tut = refKind(r) === 'tut', def = !ok ? null : tut ? R.findPreset(refId(r)) : app.shared.stages[refId(r)].def;
-      return stageRow({ cls: 'lu-row' + (ok ? '' : ' missing'), attrs: ' data-i="' + i + '"',
-        lead: '<span class="lu-lead"><span class="lu-grip" data-grip="' + list + '" title="ドラッグで並び替え">≡</span><b class="lu-no">' + (i + 1) + '</b></span>',
+      return stageRow({ cls: 'lu-row' + (ok ? '' : ' missing'), attrs: ' data-key="' + esc(r) + '"',
+        lead: gripHtml('') + '<b class="lu-no">' + (i + 1) + '</b>',
         open: ok ? r : '', title: refName(r), def: def, diff: !ok ? '' : tut ? 'tutorial' : SIO.diffOf(def),
         note: ok ? '' : '<small class="danger">見つからない（展示では飛ばす）</small>',
         btns: moveBtns('lu:' + list, i, i - 1, i + 1 < n ? i + 1 : -1) +
           '<button type="button" class="home-del" data-out="' + list + '" data-i="' + i + '" title="この並びから外す（ステージは消えない）">消す</button>' });
     };
     var sec = function (list, title, note) {
-      return '<section class="home-sec"><h3>' + esc(title) + ' <small>' + esc(note) + '</small></h3><div class="home-rows lu-list" data-list="' + list + '">' +
+      return '<section class="home-sec"><h3>' + esc(title) + ' <small>' + esc(note) + '</small></h3><div class="home-rows lu-list" data-list="lu:' + list + '">' +
         (d[list].length ? d[list].map(function (r, i) { return item(list, r, i, d[list].length); }).join('') : '<p class="lu-empty muted">まだありません（展示では、この段のボタンを出さない）</p>') + '</div></section>';
     };
     var opts = tutList().map(function (id) { return '<option value="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '（チュートリアル）</option>'; }).join('') +
@@ -2932,35 +2903,68 @@
     if (b.hasAttribute('data-lu-back')) { app.homeView = 'list'; renderHome(); return true; }
     return false;
   }
-  // ドラッグで並び替え（≡ をつかむ。同じ段の中で動かす）
+  // ドラッグで並び替え（≡ をつかむ。オーナー 11/13）: 開発の一覧（チュートリアル・みんなのステージ）と、展示の並びで、同じこの部品を使う。
+  //   枠（.home-rows[data-list]）の中で動かすと並び替え（MOVERS の set。▲▼ と同じ置き先）。
+  //   チュートリアルとみんなのステージは、枠は別のまま、ドラッグで行き来できる（落とすと、そのステージが移る。moveAcross）。
+  //   展示の並びの2段（はじめから・選んで遊ぶ）は、今までどおり同じ段の中だけ
   (function () {
-    var drag = null;
+    var drag = null, PAIR = { tut: 'all', all: 'tut' };
+    var rowsOf = function (box) { return Array.prototype.filter.call(box.children, function (x) { return x.classList.contains('home-row'); }); };
+    var boxesOf = function (list) {
+      return [list].concat(PAIR[list] ? [PAIR[list]] : []).map(function (n) { return el.home.querySelector('.home-rows[data-list="' + n + '"]'); }).filter(Boolean);
+    };
     el.home.addEventListener('pointerdown', function (e) {
       var g = e.target.closest && e.target.closest('[data-grip]');
-      if (!g || e.button > 0) return;
+      if (!g || e.button > 0 || EXHIBIT) return;
       e.preventDefault();
-      var li = g.closest('.lu-row');
-      drag = { list: g.getAttribute('data-grip'), li: li, ol: li.parentNode };
-      li.classList.add('dragging');
-      try { g.setPointerCapture(e.pointerId); } catch (x) { /* つかめなくても、押した所までは動く */ }
+      if (g.hasAttribute('data-nodrag')) return;   // 並び替えられないとき（つながらない など。理由は title）
+      var row = g.closest('.home-row');
+      drag = { list: row.parentNode.getAttribute('data-list'), row: row };
+      row.classList.add('dragging');
+      try { g.setPointerCapture(e.pointerId); } catch (x) { /* つかめなくても、window で追う */ }
     });
-    el.home.addEventListener('pointermove', function (e) {
+    window.addEventListener('pointermove', function (e) {
       if (!drag) return;
-      var items = Array.prototype.filter.call(drag.ol.children, function (x) { return x !== drag.li && x.classList.contains('lu-row'); });
-      var before = items.filter(function (x) { var r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; })[0] || null;
-      if (before !== drag.li.nextSibling) drag.ol.insertBefore(drag.li, before);
+      // 指のある枠（なければ今いる枠）の中で、指より下にある最初の行の前へ
+      var boxes = boxesOf(drag.list);
+      var box = boxes.filter(function (b) { var r = b.getBoundingClientRect(); return e.clientY >= r.top - 14 && e.clientY <= r.bottom + 14; })[0] || drag.row.parentNode;
+      var before = rowsOf(box).filter(function (x) { if (x === drag.row) return false; var r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; })[0] || null;
+      if (drag.row.parentNode !== box || before !== drag.row.nextElementSibling) {
+        if (before) box.insertBefore(drag.row, before);
+        else { var last = rowsOf(box).filter(function (x) { return x !== drag.row; }).pop(); box.insertBefore(drag.row, last ? last.nextSibling : box.firstChild); }
+      }
+      boxes.forEach(function (b) { b.classList.toggle('drop-on', b === box && b.getAttribute('data-list') !== drag.list); });
     });
     var end = function () {
       if (!drag) return;
-      var d = app.lineupDraft, old = d[drag.list];
-      d[drag.list] = Array.prototype.map.call(drag.ol.querySelectorAll('.lu-row'), function (x) { return old[Number(x.getAttribute('data-i'))]; });
+      var d = drag, box = d.row.parentNode, to = box.getAttribute('data-list'), key = d.row.getAttribute('data-key');
+      var rows = rowsOf(box), i = rows.indexOf(d.row);
+      var before = i + 1 < rows.length ? rows[i + 1].getAttribute('data-key') : null, prev = i > 0 ? rows[i - 1].getAttribute('data-key') : null;
       drag = null;
-      app.lineupSaved = false;
-      renderLineup();
+      if (to !== d.list) { moveAcross(d.list, key, to, before, prev); return; }
+      var m = MOVERS[to], now = m.get(), next = SIO.placeAt(now, key, before, prev);
+      if (JSON.stringify(next) !== JSON.stringify(now)) m.set(next);
+      else if (app.homeView === 'lineup') renderLineup(); else renderHome();
     };
-    el.home.addEventListener('pointerup', end);
-    el.home.addEventListener('pointercancel', end);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
   })();
+  // 枠の間を動かす（チュートリアル ⇄ みんなのステージ。オーナー 11/13）: 写しではなく、そのステージが移る。
+  //   置き場所が、動かした先へ置いてから元を消し、展示の並び・プレイ集の記録が指している先も付け替える（展示モードの並びは変わらない）
+  function moveAcross(from, key, to, before, prev) {
+    var why = tutEditWhy() || orderWhy() || (from === 'tut' && tutIds().length <= 1 ? 'チュートリアルの最後の1つは動かせません' : '');
+    if (why) { window.alert(why); renderHome(); return; }
+    var full = MOVERS[to].get(), NEW = '\u0000new', placed = SIO.placeAt(full, NEW, before, prev);
+    var name = from === 'tut' ? stageName(R.findPreset(key)) : key;
+    api('POST', 'move', { from: from, key: key, order: full, before: placed[placed.indexOf(NEW) + 1] || null }).then(function (res) {
+      if (!res.ok) window.alert('動かせませんでした: ' + netWhy(res));
+      fetchShared().then(function () {
+        if (!app.home || app.homeView !== 'list') return;
+        if (res.ok) { addLog('「' + name + '」を' + (to === 'tut' ? 'チュートリアル' : 'みんなのステージ') + 'へ動かした', 'system'); homeNote('「' + name + '」を' + (to === 'tut' ? 'チュートリアル' : 'みんなのステージ') + 'へ動かした'); }
+        else renderHome();
+      });
+    });
+  }
 
   // ---------------------------------------------------------------
   // プレイ集（オーナー 11/10）: 遊んでクリアした攻略を記録して流す（見ているだけで楽しいかの確かめ・映像用）。開発モードだけ
@@ -3512,22 +3516,18 @@
     el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
       (app.homeNote ? '<p class="home-note">' + esc(app.homeNote.text) + (app.homeNote.ref ? ' <button type="button" data-tr-restore="' + esc(app.homeNote.ref) + '">戻す</button>' : '') + '</p>' : '') +
       filterChips() +
-      '<section class="home-sec"><h3>チュートリアル ' + tutSourceTag() + ' <small>作る側（E）にすると、元を直して保存するか、写しを自分のステージに作るかを選べる。▲▼ で並び替え</small></h3>' +
+      '<section class="home-sec"><h3>チュートリアル ' + tutSourceTag() + ' <small>作る側（E）にすると、元を直して保存するか、写しを自分のステージに作るかを選べる。≡ のドラッグか ▲▼ で並び替え。下のみんなのステージを、ここへドラッグで持ってこられる</small></h3>' +
       homeRows(tutList().map(function (id, i, all) {
         var p = R.findPreset(id), why = tutEditWhy() || (all.length <= 1 ? '最後の1つは消せません' : '');
-        return { open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial',
+        return { key: id, open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial',
           btns: '<button type="button" class="home-del" data-tdel="' + esc(id) + '" title="' + esc(why || 'チュートリアル「' + stageName(p) + '」を消す（確かめてから。元に戻せない）') + '"' + (why ? ' disabled' : '') + '>消す</button>' };
       }), '', 'tut') +
-      // 足す（オーナー 11/12）: 空のステージから作るか、みんなのステージを写す。足したものは一覧の末尾に入り、▲▼ で並び替えられる
-      '<div class="row tut-add"><select id="tutAddFrom" aria-label="足すチュートリアルの中身"><option value="">空のステージから作る</option>' +
-      sharedList().map(function (nm) { return '<option value="all:' + esc(nm) + '">みんなのステージ「' + esc(nm) + '」を写す</option>'; }).join('') + '</select>' +
-      '<button type="button" data-tut-add="1"' + (tutEditWhy() ? ' disabled title="' + esc(tutEditWhy()) + '"' : '') + '>＋ チュートリアルを足す</button></div>' +
       '</section>' +
-      '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる。▲▼ で並び替え（新しいものは末尾）</small></h3>' +
+      '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる。≡ のドラッグか ▲▼ で並び替え（新しいものは末尾）。チュートリアルとの間も、ドラッグで行き来できる</small></h3>' +
       (!app.shared.loaded ? '<p class="muted">読み込み中…</p>' : !app.shared.ok ? '<p class="note">' + esc(app.shared.why) + '</p>' :
         homeRows(sharedList().map(function (nm) {
           var rec = app.shared.stages[nm];
-          return { open: 'all:' + nm, title: nm, def: rec.def, diff: SIO.diffOf(rec.def), btns: del('data-sdel', nm, 'みんなのステージ「' + nm + '」を' + (app.shared.trash ? 'ゴミ箱に入れる' : '消す')) };
+          return { key: nm, open: 'all:' + nm, title: nm, def: rec.def, diff: SIO.diffOf(rec.def), btns: del('data-sdel', nm, 'みんなのステージ「' + nm + '」を' + (app.shared.trash ? 'ゴミ箱に入れる' : '消す')) };
         }), 'まだありません（エディットの「共有する」で増える）', 'all')) +
       '</section>' +
       '<section class="home-sec"><h3>自分のステージ <small>このブラウザに自動で残る。新しく直した順</small></h3>' +
@@ -3557,18 +3557,25 @@
     var list = items.map(function (it, i) { return { it: it, i: i }; })
       .filter(function (x) { return (!f || x.it.diff === f) && (!wf || SIO.winKind(x.it.def) === wf); });
     var narrowed = (f || wf) && items.length;
-    if (!list.length) return empty || narrowed ? '<p class="muted">' + esc(narrowed ? 'この条件のステージはありません' : empty) + '</p>' : '';
+    var none = !list.length && (empty || narrowed) ? '<p class="muted">' + esc(narrowed ? 'この条件のステージはありません' : empty) + '</p>' : '';
+    if (!list.length && !mover) return none;
     var why = mover ? orderWhy() : '';
-    return '<div class="home-rows">' + list.map(function (x, n) {
+    // 並び替えられる一覧は、空でも枠を出す（ほかの枠からドラッグで落とせるように）
+    return '<div class="home-rows"' + (mover ? ' data-list="' + mover + '"' : '') + '>' + none + list.map(function (x, n) {
       var it = x.it, mv = mover ? moveBtns(mover, x.i, n > 0 ? list[n - 1].i : -1, n + 1 < list.length ? list[n + 1].i : -1, why) : '';
-      return stageRow({ open: it.open, title: it.title, def: it.def, diff: it.diff, btns: mv + (it.btns || '') });
+      return stageRow({ open: it.open, title: it.title, def: it.def, diff: it.diff, btns: mv + (it.btns || ''),
+        lead: mover ? gripHtml(why) : '', attrs: mover ? ' data-key="' + esc(it.key) + '"' : '' });
     }).join('') + '</div>';
   }
+  // つかむ所（≡）。why があれば動かせない（理由を出す）
+  function gripHtml(why) {
+    return '<span class="lu-grip' + (why ? ' off' : '') + '" data-grip="1"' + (why ? ' data-nodrag="1"' : '') + ' title="' + esc(why || 'ドラッグで並び替え') + '">≡</span>';
+  }
   // ステージの1行（開発の一覧と、展示の並びで同じ描画。オーナー 11/12）: 難易度の札・タイトル（押すと開く）・使う魔法・クリア方法・右のボタン。
-  //   it: { open（'tut:id'・'all:名前'・'my:名前'。なければ押せない）, title, def, diff, btns（右のボタン）, lead（頭に足すもの）, note（魔法の欄の代わりに出す文）, cls, attrs }
-  //   ボタンがない行も、列をそろえるために右の欄は空けておく
+  //   it: { open（'tut:id'・'all:名前'・'my:名前'。なければ押せない）, title, def, diff, btns（右のボタン）, lead（頭の欄: つかむ所 ≡ など）, note（魔法の欄の代わりに出す文）, cls, attrs }
+  //   つかむ所・ボタンがない行も、列をそろえるために頭と右の欄は空けておく
   function stageRow(it) {
-    return '<div class="home-row' + (it.cls ? ' ' + it.cls : '') + '"' + (it.attrs || '') + '>' + (it.lead || '') +
+    return '<div class="home-row' + (it.cls ? ' ' + it.cls : '') + '"' + (it.attrs || '') + '><span class="row-lead">' + (it.lead || '') + '</span>' +
       '<span class="diff-tag' + (it.diff ? ' diff-' + it.diff : ' diff-none') + '">' + esc(diffName(it.diff)) + '</span>' +
       (it.open ? '<button type="button" class="home-stage home-title" data-open="' + esc(it.open) + '">' + esc(SIO.plainTitle(it.title)) + '</button>'
         : '<span class="home-title trash-name">' + esc(SIO.plainTitle(it.title)) + '</span>') +
@@ -3844,7 +3851,6 @@
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
     if (b.hasAttribute('data-sdel')) { deleteShared(b.getAttribute('data-sdel')); return; }
     if (b.hasAttribute('data-tdel')) { tutDelete(b.getAttribute('data-tdel')); return; }
-    if (b.hasAttribute('data-tut-add')) { tutAdd((el.home.querySelector('#tutAddFrom') || {}).value || ''); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }
     if (b.hasAttribute('data-import')) { var pick = el.home.querySelector('[data-import-file]'); if (pick) { pick.value = ''; pick.click(); } return; }
     if (b.hasAttribute('data-open')) openStage(b.getAttribute('data-open'));

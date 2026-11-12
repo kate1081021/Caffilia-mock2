@@ -182,6 +182,13 @@ eq([S.moveTo(mvList, 2, 1), S.moveTo(mvList, 0, 1), S.moveTo(mvList, 3, 0), S.mo
 eq([S.moveTo(mvList, 0, -1), S.moveTo(mvList, 3, 4), S.moveTo(mvList, 1, 1), S.moveTo(mvList, 0.5, 1)], [mvList, mvList, mvList, mvList], '端より先・同じ所・正しくない位置は、同じ並び');
 eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない');
 eq(S.applyOrder(['tut1', 'tut2', 'ex3'], S.moveTo(['tut1', 'tut2', 'ex3'], 2, 0)), ['ex3', 'tut1', 'tut2'], '動かした並びを順番として当てると、その順');
+// ドラッグで落とした所へ入れる（オーナー 11/13）: すぐ下に見えている行の前。なければ、すぐ上に見えている行の後ろ。どちらもなければ末尾
+eq([S.placeAt(mvList, 'd', 'b', 'a'), S.placeAt(mvList, 'a', null, 'd'), S.placeAt(mvList, 'c', 'a', null)], [['a', 'd', 'b', 'c'], ['b', 'c', 'd', 'a'], ['c', 'a', 'b', 'd']], '間へ・一番下へ・一番上へ');
+eq(S.placeAt(mvList, 'b', 'c', 'a'), mvList, '同じ所に落としたら、同じ並び');
+eq([S.placeAt(mvList, 'x', 'c', 'b'), S.placeAt(mvList, 'x', null, null), S.placeAt([], 'x', null, null)], [['a', 'b', 'x', 'c', 'd'], ['a', 'b', 'c', 'd', 'x'], ['x']], 'ほかの枠から来たものは足す（空の枠にも落とせる）');
+eq(S.placeAt(['a', 'h1', 'b', 'h2', 'c'], 'c', 'b', 'a'), ['a', 'h1', 'c', 'b', 'h2'], '札で絞っていて見えない行（h1・h2）は、その場に残る');
+eq([S.placeAt(mvList, 'a', 'zz', 'c'), S.placeAt(mvList, 'a', 'zz', 'yy')], [['b', 'c', 'a', 'd'], ['b', 'c', 'd', 'a']], '知らない行を指していたら、上の行の後ろ・末尾');
+eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない（placeAt）');
 
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;

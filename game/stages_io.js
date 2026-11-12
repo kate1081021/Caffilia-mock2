@@ -15,7 +15,7 @@
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
  *   tutorialIds(map, first) … チュートリアルの id の並び（初めからある①②③が先、足したものは足した順）
  *   tutorialSource(shared, cache) … チュートリアルを、置き場所・このブラウザの控え・コードのどれから出すか
- *   applyOrder(keys, order) / moveTo(list, from, to) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
+ *   applyOrder(keys, order) / moveTo(list, from, to) / placeAt(list, key, before, prev) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
  *   blankTexts(name) / linesToText(lines) / textToLines(text) … 会話の窓の文（texts.js の stages.<id> と同じ形）
  */
@@ -334,12 +334,21 @@
   //   applyOrder(keys, order): keys（今あるもの）を、手で決めた順番 order に並べる。order にないもの（新しいステージ）は、keys の順のまま末尾に足す。
   //     order にあっても今ないもの（消したステージ）は飛ばす
   //   moveTo(list, from, to): from 番目を to 番目へ動かした、新しい並び（元の並びは変えない。動かせないときは同じ並び）
+  //   placeAt(list, key, before, prev): ドラッグで落とした所へ key を入れた、新しい並び（オーナー 11/13）。
+  //     before（落とした所のすぐ下に見えている行）の前。なければ prev（すぐ上に見えている行）の後ろ。どちらもなければ末尾。
+  //     key が並びになければ足す（ほかの枠から来たもの）。札で絞っていて見えない行は、その場に残る
   // ---------------------------------------------------------------
   function applyOrder(keys, order) {
     var has = {}, used = {}, out = [];
     keys.forEach(function (k) { has[k] = true; });
     (Array.isArray(order) ? order : []).forEach(function (k) { if (has[k] && !used[k]) { used[k] = true; out.push(k); } });
     keys.forEach(function (k) { if (!used[k]) { used[k] = true; out.push(k); } });
+    return out;
+  }
+  function placeAt(list, key, before, prev) {
+    var out = list.filter(function (k) { return k !== key; });
+    var has = function (k) { return k !== undefined && k !== null && out.indexOf(k) >= 0; };
+    out.splice(has(before) ? out.indexOf(before) : has(prev) ? out.indexOf(prev) + 1 : out.length, 0, key);
     return out;
   }
   function moveTo(list, from, to) {
@@ -440,7 +449,7 @@
   }
 
   var api = {
-    PREFIX: PREFIX, tutorialSource: tutorialSource, tutorialIds: tutorialIds, applyOrder: applyOrder, moveTo: moveTo, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, tutorialSource: tutorialSource, tutorialIds: tutorialIds, applyOrder: applyOrder, moveTo: moveTo, placeAt: placeAt, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
