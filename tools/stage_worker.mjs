@@ -5,11 +5,14 @@
  *     stages … みんなのステージ { 名前: { def, texts, at } }（盤面の定義と会話の文。at は共有した時刻）
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
  *     settings … 設定 { colors, tiles, magics, synergies, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
+ *   ステージの背番号（def.uid。オーナー 11/10・11/12）: 見えない番号で、プレイ集の記録はこれでステージを指す（名前では指さない）。
+ *     同じ名前で上書きしても・ゴミ箱から戻しても（「名前（2）」になっても）変わらない。
+ *     背番号のない前からのステージには、最初に読んだとき（GET /api/all）に付ける（'n:' ＋ 名前）
  *     trash  … ゴミ箱 { 鍵: { name, def, texts, at, deletedAt } }（消したみんなのステージ。戻せる。オーナー 11/03。鍵はふつう名前、重なれば「名前（2）」）
  *     plays  … プレイ集の記録 { id: { id, name, stage: { kind, uid, name }, turns, at } }（チュートリアル・みんなのステージの分。game/plays.js。オーナー 11/10）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
  *     GET    /api/all             … { stages, lineup, trash, settings, plays }（trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
- *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き）。本文 { def, texts }
+ *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts }。答えの uid が置いた背番号
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
@@ -85,6 +88,17 @@ function okPlay(b, id) {
     Array.isArray(b.turns) && b.turns.length > 0 && b.turns.length <= 100 &&
     b.turns.every(function (t) { return Array.isArray(t) && t.length <= 200 && t.every(okOp); });
 }
+// ステージの背番号（def.uid）。okUid: 使える形か。stampUids: 背番号のないステージに付ける（付けたら true）
+function okUid(u) { return typeof u === 'string' && u.length > 0 && u.length <= 80; }
+function newUid() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function stampUids(map, nameOf) {
+  let changed = false;
+  Object.keys(map).forEach(function (k) {
+    const d = map[k] && map[k].def;
+    if (d && typeof d === 'object' && !okUid(d.uid)) { d.uid = 'n:' + nameOf(k, map[k]); changed = true; }
+  });
+  return changed;
+}
 function inLineup(lineup, name) { const r = 'all:' + name; return !!lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(r) >= 0; }); }
 
 // /api/ の1件に答える。kv は Workers KV（get(key, 'json')・put(key, text)）
@@ -94,7 +108,11 @@ export async function handleApi(req, kv) {
   const path = new URL(req.url).pathname.replace(/^\/api\//, '');
   try {
     if (req.method === 'GET' && path === 'all') {
-      return json({ ok: true, stages: (await kv.get('stages', 'json')) || {}, lineup: (await kv.get('lineup', 'json')) || null, trash: (await kv.get('trash', 'json')) || {},
+      // 背番号のない前からのステージ・ゴミ箱の中身には、ここで付けて置き直す（1回だけ。どのパソコンから読んでも同じ番号になる）
+      const stages = (await kv.get('stages', 'json')) || {}, trash = (await kv.get('trash', 'json')) || {};
+      if (stampUids(stages, function (k) { return k; })) await kv.put('stages', JSON.stringify(stages));
+      if (stampUids(trash, function (k, it) { return okName(it.name) ? it.name : k; })) await kv.put('trash', JSON.stringify(trash));
+      return json({ ok: true, stages: stages, lineup: (await kv.get('lineup', 'json')) || null, trash: trash,
         settings: (await kv.get('settings', 'json')) || null, plays: (await kv.get('plays', 'json')) || {} });
     }
     const m = /^stages\/(.+)$/.exec(path);
@@ -107,9 +125,14 @@ export async function handleApi(req, kv) {
         if (!b || typeof b.def !== 'object' || !b.def || !Array.isArray(b.def.rows)) return fail('ステージの中身が正しくない');
         if (!stages[name] && Object.keys(stages).length >= MAX_STAGES) return fail('みんなのステージがいっぱい（' + MAX_STAGES + '）');
         const at = Date.now();
+        // 背番号: 同じ名前の上書きは、前の背番号のまま（記録がついていく）。新しく置くときは送られてきた背番号。
+        //   なければ・ほかのステージがもう使っていれば、新しい背番号
+        const old = stages[name] && stages[name].def;
+        const taken = function (u) { return Object.keys(stages).some(function (n) { return n !== name && stages[n].def && stages[n].def.uid === u; }); };
+        b.def.uid = old ? (okUid(old.uid) ? old.uid : 'n:' + name) : okUid(b.def.uid) && !taken(b.def.uid) ? b.def.uid : newUid();
         stages[name] = { def: b.def, texts: b.texts && typeof b.texts === 'object' ? b.texts : null, at: at };
         await kv.put('stages', JSON.stringify(stages));
-        return json({ ok: true, at: at });
+        return json({ ok: true, at: at, uid: b.def.uid });
       }
       if (req.method === 'DELETE') {
         if (!stages[name]) return json({ ok: true });

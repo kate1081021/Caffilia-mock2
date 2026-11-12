@@ -13,6 +13,7 @@
  *     turns は ['fire'] で区切る（最後のターンは、勝った手で終わる）
  *
  *   uidOf(rec, name) / newId(head)     … ステージの背番号・新しい背番号
+ *   stamp(stages, trash)               … 背番号のない前からの自分のステージ・ゴミ箱の中身に、背番号を付ける
  *   apply(R, s, op) / run(R, s, ops)   … 手を1つ・並びを打つ（R.move・R.act・R.reorderStance・R.endTurn・R.claimSeal）
  *   check(R, start, rec)               … 頭から最後まで打って、クリアになるか（ならなければ、何ターン目で・なぜ）
  *   tidy(R, start, ops)                … 迷った手（動き直し・構え直し）を、ターンごとに最後の形だけにまとめる（結果が変わるターンはそのまま）
@@ -30,10 +31,23 @@
   // ---------------------------------------------------------------
   // ステージの背番号（オーナー 11/10「名前を変えたら記録が迷子になる、をなくしたい」）
   //   ステージの定義（def）の uid に持つ。名前を変えても・ゴミ箱から戻しても変わらない。写す（〜のコピー）と新しい背番号。
-  //   背番号のない前からのステージは、名前から決まる背番号（'n:名前'）を使う（開いて直したときに、それを定義に書く）
+  //   背番号のない前からのステージには、最初に読んだときに付ける（stamp。名前から決まる 'n:名前'。前に取った記録もそのまま指せる）
   // ---------------------------------------------------------------
   function newId(head) { return (head || '') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function uidOf(rec, name) { return (rec && rec.def && typeof rec.def.uid === 'string' && rec.def.uid) || ('n:' + name); }
+
+  // 自分のステージ（{ 名前: { def, … } }）とゴミ箱（{ 鍵: { name, rec, … } }）の、背番号のないものに付ける。
+  //   { stages, trash, changed }（どちらも新しい入れ物。changed なら置き直す）。ゴミ箱の中身は、消す前の名前から決める
+  function stamp(stages, trash) {
+    stages = clone(stages || {}); trash = clone(trash || {});
+    var changed = false;
+    var put = function (rec, name) {
+      if (rec && rec.def && typeof rec.def === 'object' && !(typeof rec.def.uid === 'string' && rec.def.uid)) { rec.def.uid = 'n:' + name; changed = true; }
+    };
+    Object.keys(stages).forEach(function (n) { put(stages[n], n); });
+    Object.keys(trash).forEach(function (k) { put(trash[k] && trash[k].rec, (trash[k] && trash[k].name) || k); });
+    return { stages: stages, trash: trash, changed: changed };
+  }
 
   // ---------------------------------------------------------------
   // 手を打つ（遊ぶ画面が呼ぶのと同じルールの関数）
@@ -225,7 +239,7 @@
   }
 
   var api = {
-    KINDS: KINDS, newId: newId, uidOf: uidOf, okOp: okOp, apply: apply, run: run, check: check,
+    KINDS: KINDS, newId: newId, uidOf: uidOf, stamp: stamp, okOp: okOp, apply: apply, run: run, check: check,
     split: split, flat: flat, tidy: tidy, sameState: sameState, valid: valid, playlist: playlist
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

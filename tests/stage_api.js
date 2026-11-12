@@ -147,6 +147,44 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq((await call('PUT', 'plays/' + encodeURIComponent('../x'), PLAY)).status, 400, 'id の形');
     eq((await call('GET', 'all')).data.plays, {});
   });
+  // ステージの背番号（オーナー 11/10・11/12）: 記録は背番号でステージを指す。名前では指さない
+  await test('背番号: 共有すると付く。同じ名前で上書きしても、背番号はそのまま', async function () {
+    var n = encodeURIComponent('背番号の森');
+    var a = await call('PUT', 'stages/' + n, { def: Object.assign({ uid: 'sAAA' }, DEF), texts: null });
+    eq([a.status, a.data.uid], [200, 'sAAA'], '送った背番号で置く');
+    var b = await call('PUT', 'stages/' + n, { def: Object.assign({ uid: 'sBBB' }, DEF, { rows: ['F.....'] }), texts: null });
+    eq(b.data.uid, 'sAAA', '上書きは前の背番号のまま');
+    var c = await call('PUT', 'stages/' + n, { def: { rows: ['M.....'], allies: [], enemies: [] }, texts: null });
+    eq(c.data.uid, 'sAAA', '背番号を送らない古い画面から上書きしても、前の背番号のまま');
+    eq((await call('GET', 'all')).data.stages['背番号の森'].def.uid, 'sAAA');
+  });
+  await test('背番号: ほかのステージがもう使っている背番号・背番号なしで新しく置くと、新しい背番号', async function () {
+    var a = await call('PUT', 'stages/' + encodeURIComponent('背番号の山'), { def: Object.assign({ uid: 'sAAA' }, DEF), texts: null });
+    ok(a.data.uid && a.data.uid !== 'sAAA', '重なったら新しい背番号: ' + a.data.uid);
+    var b = await call('PUT', 'stages/' + encodeURIComponent('背番号の川'), { def: DEF, texts: null });
+    ok(b.data.uid && b.data.uid !== a.data.uid && b.data.uid !== 'sAAA', '背番号なしなら新しい背番号: ' + b.data.uid);
+  });
+  await test('背番号: ゴミ箱へ移して戻しても（名前（2）になっても）、背番号はそのまま', async function () {
+    var n = encodeURIComponent('背番号の森');
+    ok((await call('DELETE', 'stages/' + n)).data.ok);
+    ok((await call('PUT', 'stages/' + n, { def: Object.assign({ uid: 'sCCC' }, DEF), texts: null })).data.ok, '同じ名前で別のステージを置く');
+    var back = await call('POST', 'trash/' + n + '/restore');
+    eq(back.data.name, '背番号の森（2）');
+    var all = (await call('GET', 'all')).data.stages;
+    eq([all['背番号の森（2）'].def.uid, all['背番号の森'].def.uid], ['sAAA', 'sCCC'], '戻したものは前の背番号、置いたものは別の背番号');
+  });
+  await test('背番号: 背番号のない前からのステージ・ゴミ箱の中身には、最初に読んだときに付けて置き直す', async function () {
+    var st = JSON.parse(mem.stages), tr = JSON.parse(mem.trash || '{}');
+    st['前からの森'] = { def: DEF, texts: null, at: 1 };
+    tr['前からの山（2）'] = { name: '前からの山', def: DEF, texts: null, at: 1, deletedAt: 2 };
+    mem.stages = JSON.stringify(st); mem.trash = JSON.stringify(tr);
+    var r = (await call('GET', 'all')).data;
+    eq([r.stages['前からの森'].def.uid, r.trash['前からの山（2）'].def.uid], ['n:前からの森', 'n:前からの山'], '名前から決まる背番号（ゴミ箱は消す前の名前）');
+    eq([JSON.parse(mem.stages)['前からの森'].def.uid, JSON.parse(mem.trash)['前からの山（2）'].def.uid], ['n:前からの森', 'n:前からの山'], '置き場所にも書いてある');
+    eq(r.stages['背番号の森'].def.uid, 'sCCC', '背番号のあるものは変えない');
+    var back = await call('POST', 'trash/' + encodeURIComponent('前からの山（2）') + '/restore');
+    eq((await call('GET', 'all')).data.stages[back.data.name].def.uid, 'n:前からの山', '戻しても同じ背番号');
+  });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);
   });

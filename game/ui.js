@@ -11,6 +11,12 @@
   // 【一斉】画面に出す文（texts.js）。文章パネルで書き換えられるので、使うたびに読む
   function TX() { return window.TEXTS || {}; }
   function ui(k, fallback) { var u = TX().ui || {}; return u[k] !== undefined && u[k] !== '' ? u[k] : (fallback || ''); }
+  // プレイ集の文（texts.js の plays）。{0}・{1} に、あとの引数を入れる
+  function pt(k) {
+    var p = TX().plays || {}, s = p[k] !== undefined ? String(p[k]) : k;
+    for (var i = 1; i < arguments.length; i++) s = s.split('{' + (i - 1) + '}').join(arguments[i]);
+    return s;
+  }
   function finName(n) { var f = TX().finishers || {}; return f[n] || n; }
   // 出来事の文。シナジーの名前は設定で変えた名前で出す（ルールが作る文は元の名前。オーナー 11/03）
   function evText(e) { var n = e && e.type === 'finisher' && e.name, f = n && finName(n); return f && f !== n ? String(e.text || '').split(n).join(f) : e.text; }
@@ -802,6 +808,15 @@
   //   作りかけは「作りかけ」「1つ前の作りかけ」、前の保存はその名前で。中身が同じ自分のステージがあれば足さない。
   //   今の形に直せないものは移さない。元のデータは消さずに残す
   function draftSlot() { try { var r = window.localStorage.getItem(DRAFT_KEY); return (r && JSON.parse(r)) || {}; } catch (e) { return {}; } }
+  // 背番号（オーナー 11/10・11/12）: 背番号のない今までの自分のステージ・ゴミ箱の中身に、最初に読んだときに付けて置き直す
+  function stampOwnUids() {
+    var stages = stageStore(), trash = trashStore();
+    if (!stages) return;
+    var r = P.stamp(stages, trash || {});
+    if (!r.changed) return;
+    stageStoreSet(r.stages, true);
+    if (trash) trashStoreSet(r.trash);
+  }
   function migrateInfo() { try { return JSON.parse(window.localStorage.getItem(MIGRATED_KEY) || 'null'); } catch (e) { return null; } }
   function migrateOldStages() {
     var stages = stageStore();
@@ -2372,6 +2387,7 @@
       rec.def.uid = cloud ? P.uidOf(cloud, name) : d.uid && !taken ? d.uid : P.newId('s');
       api('PUT', 'stages/' + encodeURIComponent(name), { def: rec.def, texts: rec.texts }).then(function (res) {
         if (!res.ok) { stop('共有できませんでした: ' + netWhy(res)); return; }
+        if (res.data.uid) rec.def.uid = res.data.uid;   // 置き場所が決めた背番号（上書きなら前のまま）
         app.shared.stages[name] = { def: rec.def, texts: rec.texts, at: res.data.at };
         d.base = stageSig(rec);
         keepDraft();
@@ -2743,7 +2759,7 @@
   //   記録はステージの背番号を指すので、ステージの名前を変えてもついていく。
   //   一覧を開いたら、どの記録も頭から最後まで打って確かめ、クリアにならないものは ⚠（まとめて流すときは外す）
   // ---------------------------------------------------------------
-  var KIND_NAME = { tut: 'チュートリアル', all: 'みんなのステージ', mine: '自分のステージ' };
+  function kindName(k) { return pt(k === 'tut' ? 'kindTut' : k === 'all' ? 'kindAll' : 'kindMine'); }
   // 今遊んでいるステージ（記録が指すもの）。{ kind, uid, name } か null
   function curStageRef() {
     var id = app.scenario, p = id ? R.findPreset(id) : null;
@@ -2799,18 +2815,18 @@
   }
   function findPlay(id) { return allPlays().filter(function (r) { return r.id === id; })[0] || null; }
   function playsWhy() {
-    if (!app.shared.loaded) return '共有の置き場所を読み込み中…';
-    if (!app.shared.ok) return app.shared.why + '（チュートリアル・みんなのステージの記録は、つながると出ます・保存できます）';
-    if (!app.shared.hasPlays) return '共有の置き場所がまだ古いので、チュートリアル・みんなのステージの記録は保存できません（公開すると使えます。node tests/serve.js で開けば手元で試せます）';
+    if (!app.shared.loaded) return pt('whyLoading');
+    if (!app.shared.ok) return pt('whyOffline', app.shared.why);
+    if (!app.shared.hasPlays) return pt('whyOld');
     return '';
   }
   // 記録を置く・消す。done(ok, なぜ)
   function putPlay(rec, done) {
     if (rec.stage.kind === 'mine') {
       var own = ownPlays();
-      if (!own) { done(false, 'このブラウザに残せません'); return; }
+      if (!own) { done(false, pt('cantKeep')); return; }
       own[rec.id] = rec;
-      done(ownPlaysSet(own), 'このブラウザに残せません');
+      done(ownPlaysSet(own), pt('cantKeep'));
       return;
     }
     if (playsWhy()) { done(false, playsWhy()); return; }
@@ -2823,9 +2839,9 @@
   function dropPlay(rec, done) {
     if (rec.stage.kind === 'mine') {
       var own = ownPlays();
-      if (!own) { done(false, 'このブラウザに残せません'); return; }
+      if (!own) { done(false, pt('cantKeep')); return; }
       delete own[rec.id];
-      done(ownPlaysSet(own), 'このブラウザに残せません');
+      done(ownPlaysSet(own), pt('cantKeep'));
       return;
     }
     api('DELETE', 'plays/' + encodeURIComponent(rec.id)).then(function (res) {
@@ -2843,29 +2859,29 @@
     b.hidden = !on;
     if (!on) return;
     b.disabled = !!app.recSaved || app.busy;
-    b.textContent = app.recSaved ? '保存した ✓' : '★ この攻略を保存する';
-    b.title = app.recSaved ? 'プレイ集に「' + app.recSaved + '」として保存した' : 'プレイ集に保存する（開発の最初の画面の「プレイ集」で流せる）';
+    b.textContent = app.recSaved ? pt('saved') : pt('save');
+    b.title = app.recSaved ? pt('savedTitle', app.recSaved) : pt('saveTitle');
   }
   // 保存: 迷った手をまとめ、頭から打ち直してクリアになるのを確かめてから、名前を付けて置く
   function savePlay() {
     var ref = curStageRef();
     if (!ref || app.state.result !== 'win' || !app.rec.length || app.recSaved || app.replay) return;
-    if (ref.kind !== 'mine' && playsWhy()) { window.alert('保存できません: ' + playsWhy()); return; }
+    if (ref.kind !== 'mine' && playsWhy()) { window.alert(pt('cantSave', playsWhy())); return; }
     if (ref.kind === 'mine') keepDraft();   // 背番号をステージに書いておく
     var st = stageStart(ref);
-    if (!st) { window.alert('ステージが見つからないので、保存できません'); return; }
+    if (!st) { window.alert(pt('noStage')); return; }
     var ops = P.tidy(R, st.state, app.rec), chk = P.check(R, st.state, { turns: P.split(ops) });
     if (!chk.ok) { ops = app.rec.slice(); chk = P.check(R, st.state, { turns: P.split(ops) }); }
-    if (!chk.ok) { window.alert('この攻略は、頭から流し直すとクリアになりませんでした（' + chk.why + '）。保存しません'); return; }
+    if (!chk.ok) { window.alert(pt('notClear', chk.why)); return; }
     var same = allPlays().filter(function (r) { return r.stage.kind === ref.kind && r.stage.uid === ref.uid; }).length;
-    var name = window.prompt('記録の名前（プレイ集に出る）', SIO.plainTitle(ref.name) + '・' + chk.turns + 'ターン' + (same ? '（' + (same + 1) + '）' : ''));
+    var name = window.prompt(pt('askName'), pt('defaultName', SIO.plainTitle(ref.name), chk.turns) + (same ? '（' + (same + 1) + '）' : ''));
     if (name === null) return;
-    name = String(name).trim().slice(0, 40) || '名前なし';
+    name = String(name).trim().slice(0, 40) || pt('noName');
     var rec = { id: P.newId('p'), name: name, stage: ref, turns: P.split(ops), at: Date.now() };
     putPlay(rec, function (ok, why) {
-      if (!ok) { window.alert('保存できませんでした: ' + why); return; }
+      if (!ok) { window.alert(pt('saveFailed', why)); return; }
       app.recSaved = name;
-      say('プレイ集に「' + name + '」を保存しました');
+      say(pt('savedSay', name));
       render();
     });
   }
@@ -2874,11 +2890,11 @@
   var playChecks = {};
   function playStatus(rec) {
     var f = findStage(rec.stage);
-    if (!f) return { ok: false, missing: true, why: 'ステージが見つからない' };
+    if (!f) return { ok: false, missing: true, why: pt('missing') };
     var sig = JSON.stringify([rec.turns, f.def, f.name]), c = playChecks[rec.id];
     if (c && c.sig === sig) return c.res;
     var st = stageStart(rec.stage);
-    var res = st ? P.check(R, st.state, rec) : { ok: false, why: '盤面を作れない' };
+    var res = st ? P.check(R, st.state, rec) : { ok: false, why: pt('cantBuild') };
     playChecks[rec.id] = { sig: sig, res: res };
     return res;
   }
@@ -2934,35 +2950,35 @@
     var recRow = function (x) {
       var r = x.rec, st = x.st;
       return '<div class="home-row pl-row' + (st.ok ? '' : ' drift') + '">' +
-        '<label class="pl-check" title="選ぶ"><input type="checkbox" data-pl-sr="' + esc(r.id) + '"' + (sel.recs[r.id] ? ' checked' : '') + '></label>' +
+        '<label class="pl-check" title="' + esc(pt('pick')) + '"><input type="checkbox" data-pl-sr="' + esc(r.id) + '"' + (sel.recs[r.id] ? ' checked' : '') + '></label>' +
         '<span class="home-title pl-name">' + esc(r.name) + '</span>' +
-        '<span class="pl-info">' + r.turns.length + 'ターン・' + esc(fmtTime(r.at)) + '</span>' +
-        '<span class="pl-state' + (st.ok ? '' : ' danger') + '">' + esc(st.ok ? '✓ クリア' : '⚠ ' + st.why) + '</span>' +
-        '<span class="row-btns"><button type="button" data-pl-play-r="' + esc(r.id) + '"' + (st.missing ? ' disabled' : '') + ' title="' + (st.ok ? 'この記録だけ流す' : 'どこでずれるかを見る') + '">▶</button>' +
-        '<button type="button" data-pl-rename="' + esc(r.id) + '">名前</button>' +
-        '<button type="button" class="home-del" data-pl-del="' + esc(r.id) + '">消す</button></span></div>';
+        '<span class="pl-info">' + esc(pt('turns', r.turns.length)) + '・' + esc(fmtTime(r.at)) + '</span>' +
+        '<span class="pl-state' + (st.ok ? '' : ' danger') + '">' + esc(st.ok ? pt('ok') : pt('drifted', st.why)) + '</span>' +
+        '<span class="row-btns"><button type="button" data-pl-play-r="' + esc(r.id) + '"' + (st.missing ? ' disabled' : '') + ' title="' + esc(st.ok ? pt('playOne') : pt('playDrift')) + '">▶</button>' +
+        '<button type="button" data-pl-rename="' + esc(r.id) + '">' + esc(pt('rename')) + '</button>' +
+        '<button type="button" class="home-del" data-pl-del="' + esc(r.id) + '">' + esc(pt('del')) + '</button></span></div>';
     };
     var group = function (g) {
       var okN = g.recs.filter(function (x) { return x.st.ok; }).length;
       return '<section class="home-sec pl-group' + (g.found ? '' : ' missing') + '"><h3 class="pl-head">' +
         '<label class="pl-check"><input type="checkbox" data-pl-sg="' + esc(g.key) + '"' + (sel.stages[g.key] ? ' checked' : '') + (g.found ? '' : ' disabled') + '> ' + esc(SIO.plainTitle(g.name)) + '</label>' +
-        ' <small>' + esc(KIND_NAME[g.kind] + (g.found ? '' : '・ステージが見つからない')) + '</small>' +
-        (okN ? ' <button type="button" class="pl-play" data-pl-play-g="' + esc(g.key) + '">▶ このステージ（' + okN + '）</button>' : '') + '</h3>' +
+        ' <small>' + esc(kindName(g.kind) + (g.found ? '' : pt('groupMissing'))) + '</small>' +
+        (okN ? ' <button type="button" class="pl-play" data-pl-play-g="' + esc(g.key) + '">' + esc(pt('playGroup', okN)) + '</button>' : '') + '</h3>' +
         '<div class="home-rows">' + g.recs.map(recRow).join('') + '</div></section>';
     };
-    el.home.innerHTML = '<h2>プレイ集 <small>クリアした攻略を流す（見ているだけで楽しいかの確かめ・映像用）</small></h2>' +
+    el.home.innerHTML = '<h2>' + esc(pt('title')) + ' <small>' + esc(pt('lead')) + '</small></h2>' +
       '<section class="home-sec pl-opts">' +
-      row('順番', chip('data-pl-order', 'seq', o.order, '順番どおり') + chip('data-pl-order', 'random', o.order, 'ランダム')) +
-      row('最後まで', chip('data-pl-end', 'stop', o.end, '止まる') + chip('data-pl-end', 'loop', o.end, '頭に戻ってループ')) +
-      row('速さ', B.plays.speeds.map(function (v) { return chip('data-pl-speed', String(v), String(o.speed), '×' + v); }).join('')) +
-      '<div class="home-list pl-go"><button type="button" class="primary home-new" data-pl-play="1"' + (n ? '' : ' disabled') + '>▶ ' +
-      (anySel ? '選んだものを流す（' + n + '）' : '全部流す（' + n + '）') + '</button>' +
-      (anySel ? '<button type="button" class="home-new" data-pl-clear="1">選ぶのをやめる</button>' : '') + '</div>' +
-      '<p class="note">流している間は、マウスを動かすと「■ 止める」が出ます（Esc でも止まる）。⚠ の記録は、まとめて流すときは外します。</p>' +
+      row(pt('order'), chip('data-pl-order', 'seq', o.order, pt('seq')) + chip('data-pl-order', 'random', o.order, pt('random'))) +
+      row(pt('end'), chip('data-pl-end', 'stop', o.end, pt('stop')) + chip('data-pl-end', 'loop', o.end, pt('loop'))) +
+      row(pt('speed'), B.plays.speeds.map(function (v) { return chip('data-pl-speed', String(v), String(o.speed), '×' + v); }).join('')) +
+      '<div class="home-list pl-go"><button type="button" class="primary home-new" data-pl-play="1"' + (n ? '' : ' disabled') + '>' +
+      esc(anySel ? pt('playSel', n) : pt('playAll', n)) + '</button>' +
+      (anySel ? '<button type="button" class="home-new" data-pl-clear="1">' + esc(pt('clearSel')) + '</button>' : '') + '</div>' +
+      '<p class="note">' + esc(pt('note')) + '</p>' +
       '</section>' +
       (why ? '<p class="note">' + esc(why) + '</p>' : '') +
-      (gs.length ? gs.map(group).join('') : '<section class="home-sec"><p class="muted">まだありません。ステージをクリアしたら、上のバーの「★ この攻略を保存する」で増えます。</p></section>') +
-      '<div class="home-list"><button type="button" class="home-new" data-pl-back="1">一覧に戻る</button></div>';
+      (gs.length ? gs.map(group).join('') : '<section class="home-sec"><p class="muted">' + esc(pt('empty')) + '</p></section>') +
+      '<div class="home-list"><button type="button" class="home-new" data-pl-back="1">' + esc(pt('back')) + '</button></div>';
   }
   function playsAction(b) {
     var o = app.playOpt, id;
@@ -2977,18 +2993,18 @@
     if ((id = b.getAttribute('data-pl-rename'))) {
       var r = findPlay(id);
       if (!r) return;
-      var name = window.prompt('記録の名前', r.name);
+      var name = window.prompt(pt('askRename'), r.name);
       if (name === null || !String(name).trim() || String(name).trim() === r.name) return;
       var nr = SIO.clone(r);
       nr.name = String(name).trim().slice(0, 40);
-      putPlay(nr, function (ok, why) { if (!ok) window.alert('名前を変えられませんでした: ' + why); if (app.home && app.homeView === 'plays') renderPlays(); });
+      putPlay(nr, function (ok, why) { if (!ok) window.alert(pt('renameFailed', why)); if (app.home && app.homeView === 'plays') renderPlays(); });
       return;
     }
     if ((id = b.getAttribute('data-pl-del'))) {
       var d = findPlay(id);
-      if (!d || !window.confirm('記録「' + d.name + '」を消します。元に戻せません。' + (d.stage.kind === 'mine' ? '' : '\n⚠ どのパソコンのプレイ集からも消えます。') + '消しますか？')) return;
+      if (!d || !window.confirm(pt('confirmDel', d.name) + (d.stage.kind === 'mine' ? '' : '\n' + pt('confirmDelAll')) + pt('confirmDelAsk'))) return;
       dropPlay(d, function (ok, why) {
-        if (!ok) window.alert('消せませんでした: ' + why);
+        if (!ok) window.alert(pt('delFailed', why));
         delete o.sel.recs[id];
         playOptSave();
         if (app.home && app.homeView === 'plays') renderPlays();
@@ -3079,13 +3095,13 @@
   function rpBarText() {
     var rp = app.replay;
     if (!rp || !el.rpNow) return;
-    el.rpNow.textContent = rp.ended ? 'おわり（Esc で一覧へ）' : rp.cur ? '▶ ' + SIO.plainTitle(rp.cur.stage) + '「' + rp.cur.rec.name + '」' : '';
+    el.rpNow.textContent = rp.ended ? pt('ended') : rp.cur ? pt('nowPlaying', SIO.plainTitle(rp.cur.stage), rp.cur.rec.name) : '';
     el.rpSpeed.innerHTML = B.plays.speeds.map(function (v) {
       return '<button type="button" class="chip' + (v === rp.speed ? ' on' : '') + '" data-rpspeed="' + v + '">×' + v + '</button>';
     }).join('');
   }
   function startReplay(items) {
-    if (!items.length) { window.alert('流せる記録がありません'); return; }
+    if (!items.length) { window.alert(pt('nothing')); return; }
     if (app.draft) keepDraft();
     var o = app.playOpt;
     app.replay = { list: P.playlist(items, { order: o.order, end: o.end }), size: items.length, speed: o.speed, cur: null, timer: null, ended: false };
@@ -3115,14 +3131,14 @@
   function rpStep() {
     var rp = app.replay, c = rp && rp.cur;
     if (!c) return;
-    if (app.state.result || c.i >= c.ops.length) { rpEnd(app.state.result === 'win' ? '' : '最後まで流してもクリアにならない'); return; }
+    if (app.state.result || c.i >= c.ops.length) { rpEnd(app.state.result === 'win' ? '' : pt('driftNoClear')); return; }
     var op = c.ops[c.i++], turn = 1;
     for (var k = 0; k < c.i - 1; k++) if (c.ops[k][0] === 'fire') turn++;
-    var fail = function (why) { rpEnd(turn + 'ターン目で打てない手がある（' + why + '）'); };
+    var fail = function (why) { rpEnd(pt('driftOp', turn, why)); };
     var next = function () { rpLater(rpStep, rpMs('gapMs')); };
     if (op[0] === 'move' || op[0] === 'act') {
       var u = R.findUnit(app.state, op[1]);
-      if (!u) { fail('味方がいない'); return; }
+      if (!u) { fail(pt('noAlly')); return; }
       app.sel = u.id; app.plan = { dir: u.facing };   // 選ぶ（動ける所が緑に光る）
       render();
       rpLater(function () {
@@ -3177,7 +3193,7 @@
     if (!rp) return;
     app.sel = null; app.plan = null;
     render();
-    if (drift) rpCard('記録とずれました', drift, true);
+    if (drift) rpCard(pt('drift'), drift, true);
     rpLater(function () { rpCard(null); rpNext(0); }, rpMs('endMs') + (drift ? 1500 : 0));
   }
   // 最後まで流した（止まる）: 最後の盤面のまま、止めるボタンの欄を出しておく
@@ -3208,7 +3224,8 @@
     showHome(true, 'plays');
     render();
   }
-  if (el.rpStop) el.rpStop.addEventListener('click', stopReplay);
+  if (el.rpStop) { el.rpStop.innerHTML = esc(pt('stopBtn')) + ' <kbd>Esc</kbd>'; el.rpStop.addEventListener('click', stopReplay); }
+  if (el.rpSpeed) el.rpSpeed.setAttribute('aria-label', pt('speedLabel'));
   if (el.rpSpeed) el.rpSpeed.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-rpspeed]'), rp = app.replay;
     if (!b || !rp) return;
@@ -3265,7 +3282,7 @@
       '<input type="file" accept=".json,application/json" hidden data-import-file="1">' +
       '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button>' +
       '<button type="button" class="home-new" data-settings="1">設定</button>' +
-      '<button type="button" class="home-new" data-plays="1" title="クリアした攻略を流す（見ているだけで楽しいかの確かめ・映像用）">プレイ集</button></div>' +
+      '<button type="button" class="home-new" data-plays="1" title="' + esc(pt('homeBtnTitle')) + '">' + esc(pt('homeBtn')) + '</button></div>' +
       trashSection();
   }
   // 一覧（オーナー 11/03。IMPROVE_ステージ一覧 段2）: 1行に1つ。難易度の札・タイトル・使う魔法・クリア方法。上の札で難易度ごとに絞れる
@@ -3492,7 +3509,7 @@
     var r = SIO.fromFiles(R, text);
     var why = r.errors.map(function (e) { return e.name + ': ' + e.error; }).join('／');
     if (!r.items.length) { homeNote('「' + fileName + '」から読めるステージがありませんでした（' + why + '）'); return; }
-    var a = SIO.addOwn(stages, r.items);
+    var a = SIO.addOwn(stages, r.items, null, function () { return P.newId('s'); });   // 読んだものは写しなので、新しい背番号
     if (!stageStoreSet(a.stages)) { window.alert('自分のステージに残せませんでした'); return; }
     addLog('「' + fileName + '」から自分のステージに入れた: ' + a.names.join('・'), 'system');
     homeNote('「' + fileName + '」から ' + a.names.length + 'ステージを、自分のステージに入れた' + (r.errors.length ? '（読めなかったもの ' + r.errors.length + '件: ' + why + '）' : ''));
@@ -3649,6 +3666,7 @@
     render();
   } else {
     migrateOldStages();   // 段0: 前の作りかけ・前の保存を、自分のステージに一度だけ移す
+    stampOwnUids();       // 背番号のない前からの自分のステージに、背番号を付ける（プレイ集の記録が指す番号）
     app.state = begin(app.state);
     app.resetPoint = R.clone(app.state);
     showHome(true);

@@ -136,5 +136,24 @@ ok(added.stages['あ（2）'].at > added.stages['い'].at, 'ファイルの順�
 eq(added.stages['い'].texts.goal, '守る', '目標とヒントの文も入る');
 ok(S.build(R, added.stages['い'].def).ok, '足したものはそのまま遊べる');
 
+// ステージごとに変えてよい数値は、守るターン数と敵の歩数だけ（オーナー 11/12「魔法が場面によって別のはたらきをするのはおかしい」）
+var lockBase = S.toDef(R, R.loadPreset('tut1'), '上書きの確かめ');
+var lockOk = Object.assign({}, lockBase, { overrides: { 'mission.defense.turns': 4, 'enemy.rushMove': 2 } });
+ok(S.build(R, lockOk).ok, '守るターン数と敵の歩数は、ステージごとに変えられる');
+[{ 'spread.maxLength': 5 }, { 'ideas.grassWater': false }, { 'waterLength': 2 }, { 'shapes.mount': [[0, 1]] }, { 'mission.defense.turns': 4, 'lineLength': 6 }].forEach(function (ov) {
+  ok(R.validOverrides(ov), 'ルールが知っている項目: ' + JSON.stringify(ov));
+  var lb = S.build(R, Object.assign({}, lockBase, { overrides: ov }));
+  ok(!lb.ok && /守るターン数と敵の歩数だけ/.test(lb.error), '魔法の効き方を変える上書きのあるステージは読まない: ' + JSON.stringify(ov) + ' → ' + JSON.stringify(lb.error || lb.ok));
+});
+ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', name: 'だめ', def: Object.assign({}, lockBase, { overrides: { 'spread.maxLength': 5 } }) })).ok, 'ファイルから読むときも断る');
+R.TUTORIALS.concat(R.PRESETS.filter(function (p) { return p.tutorial || p.ex; })).forEach(function (p) {
+  ok(Object.keys(p.overrides || {}).every(function (k) { return S.STAGE_OVERRIDES.indexOf(k) >= 0; }), '内蔵のステージ「' + p.id + '」も、変えているのはこの2つだけ');
+});
+// 読んだステージの背番号（プレイ集の記録が指す番号）: 写しなので新しい背番号。作る関数がなければ付けない（最初に読んだときに付く）
+var uidItems = [{ name: 'う', def: Object.assign({ uid: 'sOLD' }, dd), texts: null }];
+var nUid = 0;
+eq(S.addOwn({}, uidItems, 5, function () { return 'sNEW' + (++nUid); }).stages['う'].def.uid, 'sNEW1', 'ファイルから読んだものは新しい背番号');
+eq(S.addOwn({}, uidItems, 5).stages['う'].def.uid, undefined, '作る関数がなければ、ファイルの背番号は持ちこまない');
+
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;

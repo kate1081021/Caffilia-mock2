@@ -22,6 +22,23 @@ function start(id) { return R.startBattle(R.loadPreset(id)).state; }
 function idOf(s, magic) { return R.controllableOf(s).filter(function (a) { return a.magic === magic; })[0].id; }
 function rec(ops, stage) { return { id: 'p1', name: 'テスト', stage: stage || { kind: 'tut', uid: 'tut:tut1', name: '①' }, turns: P.split(ops), at: 1 }; }
 
+console.log('\n■ ステージの背番号');
+test('背番号のない前からのステージ・ゴミ箱の中身に付ける（名前から決まる。ゴミ箱は消す前の名前）。あるものは変えない', function () {
+  var stages = { '森': { def: { rows: ['.'] }, at: 1 }, '山': { def: { rows: ['.'], uid: 'sXYZ' }, at: 2 } };
+  var trash = { '川（2）': { name: '川', rec: { def: { rows: ['.'] } }, deletedAt: 3 } };
+  var r = P.stamp(stages, trash);
+  eq([r.changed, r.stages['森'].def.uid, r.stages['山'].def.uid, r.trash['川（2）'].rec.def.uid], [true, 'n:森', 'sXYZ', 'n:川']);
+  eq([stages['森'].def.uid, trash['川（2）'].rec.def.uid], [undefined, undefined], '元の入れ物は変えない');
+  eq(P.stamp(r.stages, r.trash).changed, false, '2回目は何も変わらない');
+  eq(P.uidOf(r.stages['森'], '森の新しい名前'), 'n:森', '付けたあとは、名前を変えても同じ背番号');
+});
+test('ゴミ箱へ移して戻すと「名前（2）」になっても、背番号はそのまま（記録がついていく）', function () {
+  var st = P.stamp({ '森': { def: { rows: ['.'] }, at: 1 } }, {}).stages;
+  var t = S.trashPut(st, {}, '森', 10);
+  var back = S.trashRestore(Object.assign({ '森': { def: { rows: ['.'], uid: 'sNEW' }, at: 2 } }, t.stages), t.trash, t.key);
+  eq([back.name, P.uidOf(back.stages[back.name], back.name), P.uidOf(back.stages['森'], '森')], ['森（2）', 'n:森', 'sNEW']);
+});
+
 console.log('\n■ 打って確かめる');
 test('① 火を (1,2) から上 → 発動で燃え広がり、クリア', function () {
   var s = start('tut1'), f = idOf(s, 'fire');

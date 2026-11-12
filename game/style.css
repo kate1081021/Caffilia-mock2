@@ -1287,3 +1287,9 @@ html.replaying.rp-idle, html.replaying.rp-idle * { cursor: none !important; }
 .rp-charge-cell { position: absolute; z-index: 31; transform: translate(-50%, -50%); border-radius: 6px; pointer-events: none;
   background: rgba(253, 224, 71, .45); box-shadow: 0 0 14px 4px rgba(250, 204, 21, .6); animation: rpChargeCell 1.1s ease-in forwards; }
 @keyframes rpChargeCell { 0% { opacity: 0; } 50% { opacity: .5; } 75% { opacity: .3; } 100% { opacity: 1; } }
+/* 流している間は、構えた形の輪郭を発動まで少し濃く残す（あとで効いてくる一手を追えるように。オーナー 11/10） */
+html.replaying .so-line { border-style: solid; filter: drop-shadow(0 0 3px var(--so, #1d4ed8)); }
+html.replaying .so-line.e-t { border-top-width: 5px; }
+html.replaying .so-line.e-r { border-right-width: 5px; }
+html.replaying .so-line.e-b { border-bottom-width: 5px; }
+html.replaying .so-line.e-l { border-left-width: 5px; }
