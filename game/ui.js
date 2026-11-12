@@ -73,6 +73,7 @@
   var MIGRATED_KEY = 'cafilia-mock-stages-migrated';   // 前の作りかけ・前の保存を移したしるし { at, moved, failed }
   // プレイ集（オーナー 11/10）: 記録の形と流す順番は plays.js。チュートリアル・みんなのステージの記録は共有の置き場所、自分のステージの記録はこのブラウザ
   var P = window.Plays;
+  var TUT_CACHE_KEY = 'cafilia-mock-tutorials-cache';   // チュートリアルの控え { tutorials: { id: { def, texts, at } }, at }。つながっているときに読んだものを写しておく（オーナー 11/12）
   var PLAYS_KEY = 'cafilia-mock-plays-v1';        // 自分のステージの記録 { id: 記録 }
   var PLAYS_OPT_KEY = 'cafilia-mock-plays-opt';   // プレイ集の流し方 { order, end, speed, sel: { stages, recs } }
   // 【育つ】つながると1枚の大きな絵になる自然（名前は見た目だけ）
@@ -2334,7 +2335,7 @@
           tutorials: res.data.tutorials || null, hasTutorials: res.data.tutorials !== undefined,
           order: res.data.order || {}, hasOrder: res.data.order !== undefined, why: '' }
         : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, order: {}, hasOrder: false, why: netWhy(res) };
-      applyTutorials();   // チュートリアル: 置き場所にあれば、その中身で遊ぶ
+      applyTutorials();   // チュートリアル: 置き場所にあればその中身、つながらなければこのブラウザの控え、控えもなければコードの①②③
       // 設定: 置き場所にあれば（まだ誰も保存していなければ元の色と名前）当てて、このブラウザにも写す。設定の画面で直している間は当てない
       if (app.shared.hasSettings && !(app.home && app.homeView === 'settings')) {
         if (CS) CS.cacheSet(app.shared.settings);
@@ -2348,33 +2349,55 @@
   }
   // ---------------------------------------------------------------
   // チュートリアルをデータにする（オーナー 11/12）: 中身（盤面の定義と文）は、みんなのステージと同じ形 { def, texts } で共有の置き場所に置く。
-  //   コードの①②③（rules.js の TUTORIALS と texts.js の stages）は、最初の中身（一度だけ置く）と、つながらないときの控え。
-  //   置き場所から読めたら、R.TUTORIALS と文（TEXTS.stages）をその中身に差し替える。id（tut1 など）は変わらないので、
+  //   コードの①②③（rules.js の TUTORIALS と texts.js の stages）は、最初の中身（一度だけ置く）と、控えもないときに出すもの。
+  //   つながっているときに読んだ中身は、このブラウザに控えておく（TUT_CACHE_KEY）。つながらないときは、その控えを出す。
+  //   控えがない（一度もつながったことがない）ときだけ、コードの①②③を出す。どれを出しているかは app.tutSource（開発の一覧に出す）。
+  //   出す中身が決まったら、R.TUTORIALS と文（TEXTS.stages）をその中身に差し替える。id（tut1 など）は変わらないので、
   //   展示の並び（tut:tut1）・プレイ集の記録・やり直し・ヒントは、今までどおり同じ道で動く。
   //   texts はそのステージの文の全部（scenes { 場面: 文の並び }）。場面を足せば、シナリオも一緒に持てる
   // ---------------------------------------------------------------
   var TUT_BUILTIN = {};
   R.TUTORIALS.forEach(function (p) { TUT_BUILTIN[p.id] = { def: p, texts: SIO.clone(stageTexts(p.id)) }; });
   function isTutId(id) { return EXHIBIT_STAGES.indexOf(id) >= 0; }
+  function tutCacheGet() { try { var raw = window.localStorage.getItem(TUT_CACHE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+  function tutCacheSet(t) { try { window.localStorage.setItem(TUT_CACHE_KEY, JSON.stringify({ tutorials: t, at: Date.now() })); } catch (e) { /* 控えられなくても遊べる（つながらないときは、コードの①②③になる） */ } }
+  // 今どれを出しているか。from: 'cloud'（置き場所）・'cache'（このブラウザの控え）・'code'（コード）。at: 控えた時刻。bad: 読めずにコードの形で出しているもの
+  app.tutSource = { from: 'code', at: 0, bad: [] };
   function applyTutorials() {
-    var t = app.shared.tutorials;
-    if (!t) return;
+    if (app.shared.ok && app.shared.tutorials) tutCacheSet(app.shared.tutorials);   // つながっているときに読んだものを控える
+    var src = SIO.tutorialSource(app.shared, app.shared.ok ? null : tutCacheGet()), t = src.tutorials || {}, bad = [];
     EXHIBIT_STAGES.forEach(function (id) {
-      var rec = t[id];
-      if (!rec || !SIO.build(R, rec.def).ok) return;   // 読めないものは、コードの控えのまま
-      var def = SIO.clone(rec.def);
-      def.id = id; delete def.custom; delete def.uid;
-      if (!def.tutorial) def.tutorial = TUT_BUILTIN[id].def.tutorial;
+      var rec = t[id], base = TUT_BUILTIN[id], use = !!(rec && SIO.build(R, rec.def).ok);
+      if (src.tutorials && !use) bad.push(id);   // 読めないものは、コードの形で出す
+      var def = use ? SIO.clone(rec.def) : base.def;
+      if (use) {
+        def.id = id; delete def.custom; delete def.uid;
+        if (!def.tutorial) def.tutorial = base.def.tutorial;
+      }
       for (var i = 0; i < R.TUTORIALS.length; i++) if (R.TUTORIALS[i].id === id) R.TUTORIALS[i] = def;
-      if (rec.texts) customTexts[id] = rec.texts;
+      customTexts[id] = use && rec.texts ? rec.texts : SIO.clone(base.texts);
     });
     injectTexts();
+    app.tutSource = { from: src.from, at: src.at, bad: bad };
+  }
+  // 開発の一覧に出す札と、その説明
+  function tutSourceTag() {
+    var s = app.tutSource, sh = app.shared;
+    if (!sh.loaded) return '<span class="src-tag src-wait" title="共有の置き場所を読み込み中…">読み込み中…</span>';
+    var name = s.from === 'cloud' ? '置き場所' : s.from === 'cache' ? '控え' : 'コード';
+    var why = s.from === 'cloud' ? '共有の置き場所のチュートリアルを出しています'
+      : s.from === 'cache' ? 'つながらないので、このブラウザの控え（' + fmtTime(s.at) + ' に読んだもの）を出しています'
+      : !sh.ok ? 'つながらず、このブラウザに控えもないので、コードに入っている①②③を出しています'
+      : !sh.hasTutorials ? '共有の置き場所がまだ古いので、コードに入っている①②③を出しています'
+      : '共有の置き場所にまだチュートリアルがないので、コードに入っている①②③を出しています';
+    if (s.bad.length) why += '（読めないもの ' + s.bad.length + 'つは、コードの形）';
+    return '<span class="src-tag src-' + s.from + '" title="' + esc(why) + '">' + name + (s.from === 'cache' ? '（' + esc(fmtTime(s.at)) + '）' : '') + (s.bad.length ? ' ⚠' : '') + '</span>';
   }
   function seedTutorials() {
     var src = {};
     EXHIBIT_STAGES.forEach(function (id) { src[id] = { def: SIO.clone(TUT_BUILTIN[id].def), texts: SIO.clone(TUT_BUILTIN[id].texts) }; });
     return api('PUT', 'tutorials', { tutorials: src }).then(function (res) {
-      if (res.ok && res.data.tutorials) { app.shared.tutorials = res.data.tutorials; applyTutorials(); }
+      if (res.ok && res.data.tutorials) { app.shared.tutorials = res.data.tutorials; applyTutorials(); if (app.home && app.homeView === 'list') renderHome(); }
       return app.shared;
     });
   }
@@ -3421,7 +3444,7 @@
     el.home.innerHTML = '<h2>開発 <small>ステージを押すと遊べる。E（✎ エディット）で作る側へ</small></h2>' +
       (app.homeNote ? '<p class="home-note">' + esc(app.homeNote.text) + (app.homeNote.ref ? ' <button type="button" data-tr-restore="' + esc(app.homeNote.ref) + '">戻す</button>' : '') + '</p>' : '') +
       filterChips() +
-      '<section class="home-sec"><h3>チュートリアル <small>作る側（E）にすると、元を直して保存するか、写しを自分のステージに作るかを選べる。▲▼ で並び替え</small></h3>' +
+      '<section class="home-sec"><h3>チュートリアル ' + tutSourceTag() + ' <small>作る側（E）にすると、元を直して保存するか、写しを自分のステージに作るかを選べる。▲▼ で並び替え</small></h3>' +
       homeRows(tutList().map(function (id) { var p = R.findPreset(id); return { open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial' }; }), '', 'tut') +
       '</section>' +
       '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる。▲▼ で並び替え（新しいものは末尾）</small></h3>' +

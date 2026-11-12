@@ -155,6 +155,16 @@ var nUid = 0;
 eq(S.addOwn({}, uidItems, 5, function () { return 'sNEW' + (++nUid); }).stages['う'].def.uid, 'sNEW1', 'ファイルから読んだものは新しい背番号');
 eq(S.addOwn({}, uidItems, 5).stages['う'].def.uid, undefined, '作る関数がなければ、ファイルの背番号は持ちこまない');
 
+// チュートリアルをどこから出すか（オーナー 11/12）: 置き場所 → このブラウザの控え → コード
+var tCloud = { tut1: { def: {} } }, tCache = { tutorials: { tut1: { def: {} }, tut2: { def: {} } }, at: 123 };
+eq(S.tutorialSource({ ok: true, tutorials: tCloud }, tCache).from, 'cloud', 'つながっていて置いてあれば、置き場所');
+ok(S.tutorialSource({ ok: true, tutorials: tCloud }, tCache).tutorials === tCloud, '置き場所の中身を出す');
+eq([S.tutorialSource({ ok: false, tutorials: null }, tCache).from, S.tutorialSource({ ok: false, tutorials: null }, tCache).at], ['cache', 123], 'つながらないときは、控え（控えた時刻つき）');
+ok(S.tutorialSource({ ok: false }, tCache).tutorials === tCache.tutorials, '控えの中身を出す');
+eq([S.tutorialSource({ ok: false }, null).from, S.tutorialSource({ ok: false }, {}).from, S.tutorialSource({ ok: false }, { tutorials: {} }).from, S.tutorialSource(null, null).from], ['code', 'code', 'code', 'code'], '控えがない（一度もつながったことがない）ときだけ、コード');
+eq(S.tutorialSource({ ok: false }, null).tutorials, null, 'コードのときは中身なし（画面がコードの①②③を出す）');
+eq([S.tutorialSource({ ok: true, tutorials: null }, tCache).from, S.tutorialSource({ ok: true, tutorials: {} }, tCache).from], ['code', 'code'], 'つながっているのにまだ置いていないときは、控えではなくコード（最初の中身を置く前）');
+
 // 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びで同じものを使う
 eq(S.applyOrder(['a', 'b', 'c'], null), ['a', 'b', 'c'], '順番がなければ、今の並びのまま');
 eq(S.applyOrder(['a', 'b', 'c'], ['c', 'a']), ['c', 'a', 'b'], '手で決めた順番が先。入っていない新しいものは末尾');

@@ -1044,6 +1044,12 @@ body.at-home .topbar .buttons > :not(#btnHowto) { display: none !important; }
 .row-btns .home-del { color: var(--muted); font-size: 12px; padding: 0 10px; min-height: 32px; }
 .diff-tag { justify-self: start; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #fff; }
 .diff-tag:empty { visibility: hidden; }
+/* チュートリアルを今どこから出しているか（置き場所・控え・コード。オーナー 11/12）。開発の一覧の見出しに出す */
+.src-tag { display: inline-block; margin: 0 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: 1px; border: 1px solid var(--line); cursor: help; }
+.src-tag.src-cloud { background: #dcfce7; border-color: #86efac; color: #166534; }
+.src-tag.src-cache { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+.src-tag.src-code { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+.src-tag.src-wait { color: var(--muted); }
 .diff-tutorial { background: #0f766e; }
 .diff-easy { background: #4d8b3f; }
 .diff-normal { background: #b45309; }

@@ -107,7 +107,7 @@
 - ゲーム本体（`index.html` と `game/`）は、素の HTML / CSS / JavaScript だけ。外部ライブラリ・ビルド・`npm install` なし。ES Modules は使わず、普通の `<script src>` で読む。
 - `index.html` をダブルクリック（file://）でも、公開した URL でも、同じように遊べる。
 - ルールは `game/rules.js` の純粋な関数（状態 → 新しい状態＋出来事）。画面は `game/ui.js`、数値は `game/balance.js`、画面の文は `game/texts.js`。
-- ネットを使うのは共有だけ。みんなのステージと展示の並びは、Cloudflare の置き場所（`tools/stage_worker.mjs`。Workers KV）に置く。つながらないとき（ネットがない など）も、共有なしで遊べるように作る（展示はチュートリアル①②③だけになる）。
+- ネットを使うのは共有だけ。みんなのステージと展示の並びは、Cloudflare の置き場所（`tools/stage_worker.mjs`。Workers KV）に置く。つながらないとき（ネットがない など）も、共有なしで遊べるように作る（展示はチュートリアル①②③だけになる。中身は、そのブラウザが前につながったときの控え。控えがなければコードの①②③）。
   - file:// で開いて共有すると、公開先の本物の置き場所に書きこむ。試すときは `node tests/serve.js` で開く（手元に同じ置き場所が立つ）。
   - `tools/stage_worker.mjs` は Cloudflare で動くので ES Modules で書く（ゲーム本体の決まりの例外）。
 

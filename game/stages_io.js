@@ -13,6 +13,7 @@
  *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか）
  *   setHp(R, s, id, hp)          … 敵のHP
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
+ *   tutorialSource(shared, cache) … チュートリアルを、置き場所・このブラウザの控え・コードのどれから出すか
  *   applyOrder(keys, order) / moveTo(list, from, to) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
  *   blankTexts(name) / linesToText(lines) / textToLines(text) … 会話の窓の文（texts.js の stages.<id> と同じ形）
@@ -306,6 +307,20 @@
   function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
 
   // ---------------------------------------------------------------
+  // チュートリアルをどこから出すか（オーナー 11/12）
+  //   shared: 共有の置き場所を読んだ結果 { ok, tutorials }。cache: このブラウザの控え { tutorials, at }（なければ null）
+  //   つながっていて置いてあれば 置き場所（cloud）。つながらないときは 控え（cache）。
+  //   控えがない（一度もつながったことがない）ときと、つながっているのにまだ置いていないときは コード（code）
+  // ---------------------------------------------------------------
+  function hasTuts(t) { return isObj(t) && Object.keys(t).length > 0; }
+  function tutorialSource(shared, cache) {
+    var ok = !!(shared && shared.ok);
+    if (ok && hasTuts(shared.tutorials)) return { from: 'cloud', tutorials: shared.tutorials, at: 0 };
+    if (!ok && isObj(cache) && hasTuts(cache.tutorials)) return { from: 'cache', tutorials: cache.tutorials, at: cache.at || 0 };
+    return { from: 'code', tutorials: null, at: 0 };
+  }
+
+  // ---------------------------------------------------------------
   // 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びの3か所で、同じこの2つを使う
   //   applyOrder(keys, order): keys（今あるもの）を、手で決めた順番 order に並べる。order にないもの（新しいステージ）は、keys の順のまま末尾に足す。
   //     order にあっても今ないもの（消したステージ）は飛ばす
@@ -416,7 +431,7 @@
   }
 
   var api = {
-    PREFIX: PREFIX, applyOrder: applyOrder, moveTo: moveTo, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, tutorialSource: tutorialSource, applyOrder: applyOrder, moveTo: moveTo, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
