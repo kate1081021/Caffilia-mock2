@@ -13,6 +13,7 @@
  *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか）
  *   setHp(R, s, id, hp)          … 敵のHP
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
+ *   tutorialIds(map, first) … チュートリアルの id の並び（初めからある①②③が先、足したものは足した順）
  *   tutorialSource(shared, cache) … チュートリアルを、置き場所・このブラウザの控え・コードのどれから出すか
  *   applyOrder(keys, order) / moveTo(list, from, to) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
@@ -312,6 +313,14 @@
   //   つながっていて置いてあれば 置き場所（cloud）。つながらないときは 控え（cache）。
   //   控えがない（一度もつながったことがない）ときと、つながっているのにまだ置いていないときは コード（code）
   // ---------------------------------------------------------------
+  // チュートリアルの id を、順番を決めていないときの並びで返す: first（初めからある①②③）のうち今あるものが先、足したものは足した順（at）
+  function tutorialIds(map, first) {
+    if (!isObj(map)) return [];
+    var head = (first || []).filter(function (id) { return !!map[id]; });
+    var rest = Object.keys(map).filter(function (id) { return head.indexOf(id) < 0 && !!map[id]; })
+      .sort(function (a, b) { return ((map[a].at || 0) - (map[b].at || 0)) || (a < b ? -1 : a > b ? 1 : 0); });
+    return head.concat(rest);
+  }
   function hasTuts(t) { return isObj(t) && Object.keys(t).length > 0; }
   function tutorialSource(shared, cache) {
     var ok = !!(shared && shared.ok);
@@ -431,7 +440,7 @@
   }
 
   var api = {
-    PREFIX: PREFIX, tutorialSource: tutorialSource, applyOrder: applyOrder, moveTo: moveTo, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, tutorialSource: tutorialSource, tutorialIds: tutorialIds, applyOrder: applyOrder, moveTo: moveTo, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone

@@ -201,9 +201,32 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     ok(a.status === 200 && a.data.ok && a.data.at > 0, JSON.stringify(a.data));
     var r = (await call('GET', 'all')).data.tutorials;
     eq([r.tut1.def.rows, r.tut1.texts.name, r.tut1.texts.scenes.story1.length, r.tut2.def.rows], [['F.....'], '① 直した', 1, DEF.rows], 'tut1 だけ変わる。場面を足した文もそのまま持つ');
-    eq((await call('PUT', 'tutorials/tut9', { def: DEF })).status, 404, '置いていない id');
+    eq((await call('PUT', 'tutorials/' + encodeURIComponent('TUT 1'), { def: DEF })).status, 400, 'id の形（小文字と数字だけ）');
     eq((await call('PUT', 'tutorials/tut1', { def: {} })).status, 400, '盤面がない');
     eq((await call('PUT', 'tutorials/' + encodeURIComponent('だめ'), { def: DEF })).status, 400, 'id の形');
+  });
+  await test('チュートリアル: 新しい id で足せる。消せる（最後の1つは消せない）。みんなのステージ・展示の並びは変わらない', async function () {
+    var before = (await call('GET', 'all')).data;
+    var a = await call('PUT', 'tutorials/tnew1', { def: DEF, texts: { name: '足した' } });
+    ok(a.status === 200 && a.data.ok, JSON.stringify(a.data));
+    var r = (await call('GET', 'all')).data;
+    eq([Object.keys(r.tutorials), r.tutorials.tnew1.texts.name], [['tut1', 'tut2', 'tnew1'], '足した'], '足したものが入る');
+    ok((await call('DELETE', 'tutorials/tut1')).data.ok, '初めからあるものも消せる');
+    ok((await call('DELETE', 'tutorials/tut1')).data.ok, 'もうないものを消しても ok');
+    ok((await call('DELETE', 'tutorials/tut2')).data.ok);
+    eq((await call('DELETE', 'tutorials/tnew1')).status, 409, '最後の1つは消せない');
+    var after = (await call('GET', 'all')).data;
+    eq([Object.keys(after.tutorials), after.stages, after.lineup], [['tnew1'], before.stages, before.lineup], 'チュートリアルだけが変わる');
+    eq((await call('DELETE', 'tutorials/' + encodeURIComponent('だめ'))).status, 400, 'id の形');
+  });
+  await test('チュートリアル: 最初の中身を置く前は足せない。いっぱいなら足せない', async function () {
+    var empty = { get: function () { return Promise.resolve(null); }, put: function () { throw new Error('書いてはいけない'); } };
+    eq((await call('PUT', 'tutorials/tnew1', { def: DEF }, empty)).status, 404);
+    var full = {};
+    for (var i = 0; i < 50; i++) full['t' + i] = { def: DEF };
+    var store = { get: function () { return Promise.resolve(JSON.parse(JSON.stringify(full))); }, put: function () { return Promise.resolve(); } };
+    eq((await call('PUT', 'tutorials/tnew1', { def: DEF }, store)).status, 409, 'いっぱい');
+    ok((await call('PUT', 'tutorials/t0', { def: DEF }, store)).data.ok, 'いっぱいでも、あるものは直せる');
   });
   await test('チュートリアル: 最初の中身が正しくなければ置かない', async function () {
     var store = { get: function () { return Promise.resolve(null); }, put: function () { throw new Error('書いてはいけない'); } };

@@ -30,7 +30,7 @@
   //   どちらのモードも、ターンの形は一斉（③も「つながる」）、数値は balance.js の値のまま。
   //   調整パネル・ターンの形・魔法の出し方の切り替えなどは IMPROVE_v3 段1（オーナー 10/30）でアーカイブした（archive/開発モード_20261030/）
   var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
-  var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // チュートリアル①②③（展示の並びの初めの形）
+  var EXHIBIT_STAGES = ['tut1', 'tut2', 'ex3'];   // 初めからあるチュートリアル①②③（コードに入っているもの。展示の並びの初めの形）。今あるチュートリアルは tutIds()（足す・消すで変わる）
   var EXHIBIT_NEXT_MS = 400;                      // クリアしてから右下の「次へ」を受け付けるまでの間（勢いの連打で飛ばさないように）
 
   // 展示ステージ③（s.ex）: 画面の見せ方（ミッション）
@@ -2358,25 +2358,30 @@
   // ---------------------------------------------------------------
   var TUT_BUILTIN = {};
   R.TUTORIALS.forEach(function (p) { TUT_BUILTIN[p.id] = { def: p, texts: SIO.clone(stageTexts(p.id)) }; });
-  function isTutId(id) { return EXHIBIT_STAGES.indexOf(id) >= 0; }
+  // 今あるチュートリアルの id（足す・消すで変わる。オーナー 11/12）。順番を決めていないときの並び（①②③が先、足したものは足した順）
+  function tutIds() { return R.TUTORIALS.map(function (p) { return p.id; }); }
+  function isTutId(id) { return tutIds().indexOf(id) >= 0; }
   function tutCacheGet() { try { var raw = window.localStorage.getItem(TUT_CACHE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
   function tutCacheSet(t) { try { window.localStorage.setItem(TUT_CACHE_KEY, JSON.stringify({ tutorials: t, at: Date.now() })); } catch (e) { /* 控えられなくても遊べる（つながらないときは、コードの①②③になる） */ } }
   // 今どれを出しているか。from: 'cloud'（置き場所）・'cache'（このブラウザの控え）・'code'（コード）。at: 控えた時刻。bad: 読めずにコードの形で出しているもの
   app.tutSource = { from: 'code', at: 0, bad: [] };
   function applyTutorials() {
     if (app.shared.ok && app.shared.tutorials) tutCacheSet(app.shared.tutorials);   // つながっているときに読んだものを控える
-    var src = SIO.tutorialSource(app.shared, app.shared.ok ? null : tutCacheGet()), t = src.tutorials || {}, bad = [];
-    EXHIBIT_STAGES.forEach(function (id) {
-      var rec = t[id], base = TUT_BUILTIN[id], use = !!(rec && SIO.build(R, rec.def).ok);
-      if (src.tutorials && !use) bad.push(id);   // 読めないものは、コードの形で出す
+    var src = SIO.tutorialSource(app.shared, app.shared.ok ? null : tutCacheGet()), t = src.tutorials, bad = [], defs = [];
+    // 出すチュートリアル: 置き場所・控えにあるものだけ（足したものも出る。消したものは①②③でも出ない）。コードのときは①②③
+    (t ? SIO.tutorialIds(t, EXHIBIT_STAGES) : EXHIBIT_STAGES).forEach(function (id) {
+      var rec = t && t[id], base = TUT_BUILTIN[id], use = !!(rec && SIO.build(R, rec.def).ok);
+      if (t && !use) { bad.push(id); if (!base) return; }   // 読めないもの: ①②③はコードの形で出す。足したものは出さない
       var def = use ? SIO.clone(rec.def) : base.def;
       if (use) {
         def.id = id; delete def.custom; delete def.uid;
-        if (!def.tutorial) def.tutorial = base.def.tutorial;
+        if (!def.tutorial) def.tutorial = base ? base.def.tutorial : true;
       }
-      for (var i = 0; i < R.TUTORIALS.length; i++) if (R.TUTORIALS[i].id === id) R.TUTORIALS[i] = def;
-      customTexts[id] = use && rec.texts ? rec.texts : SIO.clone(base.texts);
+      defs.push(def);
+      customTexts[id] = use && rec.texts ? rec.texts : base ? SIO.clone(base.texts) : SIO.blankTexts(def.name);
     });
+    R.TUTORIALS.length = 0;   // 同じ並び（R.findPreset が見ているもの）の中身を入れ替える
+    defs.forEach(function (d) { R.TUTORIALS.push(d); });
     injectTexts();
     app.tutSource = { from: src.from, at: src.at, bad: bad };
   }
@@ -2390,7 +2395,7 @@
       : !sh.ok ? 'つながらず、このブラウザに控えもないので、コードに入っている①②③を出しています'
       : !sh.hasTutorials ? '共有の置き場所がまだ古いので、コードに入っている①②③を出しています'
       : '共有の置き場所にまだチュートリアルがないので、コードに入っている①②③を出しています';
-    if (s.bad.length) why += '（読めないもの ' + s.bad.length + 'つは、コードの形）';
+    if (s.bad.length) why += '（読めないものが ' + s.bad.length + 'つ。①②③はコードの形で出し、足したものは出さない）';
     return '<span class="src-tag src-' + s.from + '" title="' + esc(why) + '">' + name + (s.from === 'cache' ? '（' + esc(fmtTime(s.at)) + '）' : '') + (s.bad.length ? ' ⚠' : '') + '</span>';
   }
   function seedTutorials() {
@@ -2431,6 +2436,65 @@
       ['このチュートリアルを直す', function () { startDraft(draftFromTut(id)); enterEdit(false); }],
       ['写しを作る（自分のステージに）', function () { startDraft(draftFromScenario()); enterEdit(false); }]
     ]);
+  }
+  // ---------------------------------------------------------------
+  // チュートリアルを足す・消す（オーナー 11/12）: 開発の一覧の「チュートリアル」の欄から。どちらも共有の置き場所をすぐ変える（どのパソコンでも変わる）。
+  //   足す: 空のステージ（味方3人・敵1体）から作るか、みんなのステージを写す。新しい id（t＋時刻）で置く。
+  //         足しただけでは展示モードには出ない（出すのは「展示の並び」で）。一覧では末尾に入り、▲▼ で並び替えられる。
+  //   消す: 確かめてから消す（元に戻せない）。展示の並びに入っていれば、そのことも窓に出す（展示では飛ばす。決めてある並びには「見つからない」と残る）。
+  //         最後の1つは消せない（チュートリアルが空になると、コードの①②③に戻ってしまうため）
+  // ---------------------------------------------------------------
+  function tutEditWhy() {
+    var sh = app.shared;
+    return !sh.loaded ? '読み込み中…' : !sh.ok ? sh.why + '（つながると、足す・消すができます）' :
+      !sh.hasTutorials ? '共有の置き場所がまだ古いので、足す・消すができません（公開すると使えます）' :
+      !sh.tutorials ? '共有の置き場所に、まだチュートリアルが置かれていません' : '';
+  }
+  function newTutId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+  function tutAdd(from) {
+    var why = tutEditWhy();
+    if (why) { window.alert(why); return; }
+    var name, def, texts, taken = {};
+    tutIds().forEach(function (id) { taken[stageName(R.findPreset(id))] = true; });
+    if (from) {
+      var nm = refId(from), rec = app.shared.stages[nm];
+      if (!rec || !SIO.build(R, rec.def).ok) { window.alert('みんなのステージに「' + nm + '」が見つかりません（消されたかもしれません）'); return; }
+      name = uniqueName(nm, taken); def = SIO.clone(rec.def); texts = fillTexts(rec.texts, name);
+    } else {
+      name = uniqueName('新しいチュートリアル', taken); def = SIO.toDef(R, newStage(B.boardSize).state, name); texts = fillTexts(null, name);
+    }
+    var id = newTutId();
+    def.id = id; def.name = name; def.short = name; def.tutorial = true;
+    delete def.custom; delete def.uid; delete def.difficulty;
+    api('PUT', 'tutorials/' + id, { def: def, texts: texts }).then(function (res) {
+      if (!res.ok) { window.alert('チュートリアルを足せませんでした: ' + netWhy(res)); return; }
+      app.shared.tutorials[id] = { def: def, texts: texts, at: res.data.at };
+      applyTutorials();
+      addLog('チュートリアル「' + name + '」を足した', 'system');
+      if (from) { homeNote('チュートリアル「' + name + '」を足した（みんなのステージ「' + refId(from) + '」の写し）'); return; }
+      // 空から作ったときは、そのまま作る側で開く（直したら「チュートリアルに保存する」）
+      showHome(false);
+      startDraft(draftFromTut(id));
+      enterEdit(false);
+      say('チュートリアル「' + name + '」を足しました（味方3人・敵1体から。直したら「チュートリアルに保存する」）');
+    });
+  }
+  function tutDelete(id) {
+    var why = tutEditWhy() || (tutIds().length <= 1 ? '最後の1つは消せません' : ''), p = R.findPreset(id);
+    if (why) { window.alert(why); return; }
+    if (!p) return;
+    var name = stageName(p);
+    if (!window.confirm('チュートリアル「' + name + '」を消します。\n⚠ どのパソコンからも消えます。元に戻せません。' +
+      (inLineup('tut:' + id) ? '\n⚠ 展示の並びに入っています。消すと、展示モードでは出なくなります' +
+        (app.shared.lineup ? '（展示の並びには「見つからない」と残ります）。' : '。') : '') + '\n消しますか？')) return;
+    api('DELETE', 'tutorials/' + id).then(function (res) {
+      if (!res.ok) window.alert('消せませんでした: ' + netWhy(res));
+      fetchShared().then(function () {
+        if (!app.home) return;
+        if (res.ok) { addLog('チュートリアル「' + name + '」を消した', 'system'); homeNote('チュートリアル「' + name + '」を消した'); }
+        else renderHome();
+      });
+    });
   }
   function renderTutShare() {
     var d = app.draft, sh = app.shared, dirty = tutDirty(), other = tutSig(tutNow(d.tut)) !== d.base;
@@ -2587,7 +2651,11 @@
   //   { start: はじめから遊ぶ の順番, pick: 選んで遊ぶ に出すもの }。中身は 'tut:tut1'（チュートリアル）か 'all:名前'（みんなのステージ）。
   //   共有の置き場所（Cloudflare）に置く（段4。段3 のこのブラウザの並び cafilia-mock-exhibit-lineup はもう読まない）
   // ---------------------------------------------------------------
-  function lineupDefault() { return { start: EXHIBIT_STAGES.map(function (id) { return 'tut:' + id; }), pick: [] }; }
+  // 初めの形: 初めからある①②③のうち、今あるもの（消したものは入れない）。①②③が1つもなければ、今あるチュートリアル
+  function lineupDefault() {
+    var ids = EXHIBIT_STAGES.filter(isTutId);
+    return { start: (ids.length ? ids : tutList()).map(function (id) { return 'tut:' + id; }), pick: [] };
+  }
   function lineupGet() {
     var v = app.shared.lineup;
     return v && Array.isArray(v.start) && Array.isArray(v.pick) ? { start: v.start.slice(), pick: v.pick.slice() } : lineupDefault();
@@ -2596,7 +2664,7 @@
   function refId(ref) { return String(ref).slice(String(ref).indexOf(':') + 1); }
   // 並びの1つが、今あるステージか（みんなのステージが読めないときは見つからない）
   function refOk(ref) {
-    if (refKind(ref) === 'tut') return EXHIBIT_STAGES.indexOf(refId(ref)) >= 0;
+    if (refKind(ref) === 'tut') return isTutId(refId(ref));
     var rec = refKind(ref) === 'all' ? app.shared.stages[refId(ref)] : null;
     return !!(rec && SIO.build(R, rec.def).ok);
   }
@@ -3393,7 +3461,7 @@
     return SIO.applyOrder(Object.keys(st).sort(function (a, b) { return (st[a].at || 0) - (st[b].at || 0); }), (app.shared.order || {}).all);
   }
   // チュートリアルの並び: 手で決めた順番（order.tut）。なければ①②③の順
-  function tutList() { return SIO.applyOrder(EXHIBIT_STAGES, (app.shared.order || {}).tut); }
+  function tutList() { return SIO.applyOrder(tutIds(), (app.shared.order || {}).tut); }
   // ---------------------------------------------------------------
   // 並び替えの部品（オーナー 11/12）: ▲▼ のボタンと、押したときの動きは、どの一覧でもここの1つ。
   //   一覧ごとに違うのは「今の並び（get）」と「新しい並びの置き先（set）」だけ（MOVERS）。並べ方そのものは SIO.moveTo。
@@ -3445,7 +3513,15 @@
       (app.homeNote ? '<p class="home-note">' + esc(app.homeNote.text) + (app.homeNote.ref ? ' <button type="button" data-tr-restore="' + esc(app.homeNote.ref) + '">戻す</button>' : '') + '</p>' : '') +
       filterChips() +
       '<section class="home-sec"><h3>チュートリアル ' + tutSourceTag() + ' <small>作る側（E）にすると、元を直して保存するか、写しを自分のステージに作るかを選べる。▲▼ で並び替え</small></h3>' +
-      homeRows(tutList().map(function (id) { var p = R.findPreset(id); return { open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial' }; }), '', 'tut') +
+      homeRows(tutList().map(function (id, i, all) {
+        var p = R.findPreset(id), why = tutEditWhy() || (all.length <= 1 ? '最後の1つは消せません' : '');
+        return { open: 'tut:' + id, title: stageName(p), def: p, diff: 'tutorial',
+          btns: '<button type="button" class="home-del" data-tdel="' + esc(id) + '" title="' + esc(why || 'チュートリアル「' + stageName(p) + '」を消す（確かめてから。元に戻せない）') + '"' + (why ? ' disabled' : '') + '>消す</button>' };
+      }), '', 'tut') +
+      // 足す（オーナー 11/12）: 空のステージから作るか、みんなのステージを写す。足したものは一覧の末尾に入り、▲▼ で並び替えられる
+      '<div class="row tut-add"><select id="tutAddFrom" aria-label="足すチュートリアルの中身"><option value="">空のステージから作る</option>' +
+      sharedList().map(function (nm) { return '<option value="all:' + esc(nm) + '">みんなのステージ「' + esc(nm) + '」を写す</option>'; }).join('') + '</select>' +
+      '<button type="button" data-tut-add="1"' + (tutEditWhy() ? ' disabled title="' + esc(tutEditWhy()) + '"' : '') + '>＋ チュートリアルを足す</button></div>' +
       '</section>' +
       '<section class="home-sec"><h3>みんなのステージ <small>共有したもの。どのパソコンからも遊べる。作る側にすると、自分のステージに写しができる。▲▼ で並び替え（新しいものは末尾）</small></h3>' +
       (!app.shared.loaded ? '<p class="muted">読み込み中…</p>' : !app.shared.ok ? '<p class="note">' + esc(app.shared.why) + '</p>' :
@@ -3767,6 +3843,8 @@
     if (b.hasAttribute('data-tr-purge')) { purgeTrash(b.getAttribute('data-tr-purge')); return; }
     if (b.hasAttribute('data-del')) { deleteOwn(b.getAttribute('data-del')); return; }
     if (b.hasAttribute('data-sdel')) { deleteShared(b.getAttribute('data-sdel')); return; }
+    if (b.hasAttribute('data-tdel')) { tutDelete(b.getAttribute('data-tdel')); return; }
+    if (b.hasAttribute('data-tut-add')) { tutAdd((el.home.querySelector('#tutAddFrom') || {}).value || ''); return; }
     if (b.hasAttribute('data-new')) { newFromHome(); return; }
     if (b.hasAttribute('data-import')) { var pick = el.home.querySelector('[data-import-file]'); if (pick) { pick.value = ''; pick.click(); } return; }
     if (b.hasAttribute('data-open')) openStage(b.getAttribute('data-open'));

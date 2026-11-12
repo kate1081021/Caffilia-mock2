@@ -165,6 +165,13 @@ eq([S.tutorialSource({ ok: false }, null).from, S.tutorialSource({ ok: false }, 
 eq(S.tutorialSource({ ok: false }, null).tutorials, null, 'コードのときは中身なし（画面がコードの①②③を出す）');
 eq([S.tutorialSource({ ok: true, tutorials: null }, tCache).from, S.tutorialSource({ ok: true, tutorials: {} }, tCache).from], ['code', 'code'], 'つながっているのにまだ置いていないときは、控えではなくコード（最初の中身を置く前）');
 
+// チュートリアルの id の並び（足す・消す。オーナー 11/12）: 初めからある①②③が先、足したものは足した順。消したものは出ない
+var FIRST = ['tut1', 'tut2', 'ex3'];
+eq(S.tutorialIds({ ex3: { at: 1 }, tut1: { at: 1 }, tut2: { at: 1 } }, FIRST), FIRST, '①②③の順');
+eq(S.tutorialIds({ tb: { at: 30 }, ex3: { at: 1 }, ta: { at: 20 }, tut1: { at: 99 } }, FIRST), ['tut1', 'ex3', 'ta', 'tb'], '消した②は出ない。足したものは足した順に末尾');
+eq([S.tutorialIds(null, FIRST), S.tutorialIds({}, FIRST)], [[], []], '何もなければ空');
+eq(S.applyOrder(S.tutorialIds({ tut1: {}, ta: { at: 5 }, tb: { at: 9 } }, FIRST), ['ta', 'tut2', 'tut1']), ['ta', 'tut1', 'tb'], '手で決めた順番に乗る（新しく足した tb は末尾・消した tut2 は飛ばす）');
+
 // 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びで同じものを使う
 eq(S.applyOrder(['a', 'b', 'c'], null), ['a', 'b', 'c'], '順番がなければ、今の並びのまま');
 eq(S.applyOrder(['a', 'b', 'c'], ['c', 'a']), ['c', 'a', 'b'], '手で決めた順番が先。入っていない新しいものは末尾');

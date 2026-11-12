@@ -22,7 +22,8 @@
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
  *     PUT    /api/tutorials       … チュートリアルの最初の中身を置く。本文 { tutorials: { id: { def, texts } } }。もう置いてあれば何も変えない（答えの seeded が false）。答えの tutorials が今の中身
- *     PUT    /api/tutorials/<id>  … チュートリアルを直す（置いてある id だけ。上書き）。本文 { def, texts }
+ *     PUT    /api/tutorials/<id>  … チュートリアルを直す（上書き）・新しく足す（まだない id。オーナー 11/12）。本文 { def, texts }。最初の中身を置く前は足せない
+ *     DELETE /api/tutorials/<id>  … チュートリアルを消す（元に戻せない。最後の1つは消せない。展示の並びに入っていても消せる。画面が先に確かめる）
  *     PUT    /api/order/<tut|all> … 一覧の順番を置く。本文 { order: [...] }（tut は id、all は名前）
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
  *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
@@ -144,11 +145,22 @@ export async function handleApi(req, kv) {
       }
       const id = decodeURIComponent(tu[1]);
       if (!okTutId(id)) return fail('チュートリアルの名前が正しくない');
-      if (!now || !now[id]) return fail('チュートリアルに見つからない', 404);
+      if (!now) return fail('チュートリアルがまだ置かれていない', 404);
       if (!okStage(b)) return fail('ステージの中身が正しくない');
+      if (!now[id] && Object.keys(now).length >= MAX_TUTS) return fail('チュートリアルがいっぱい（' + MAX_TUTS + '）', 409);
       now[id] = { def: b.def, texts: texts(b.texts), at: Date.now() };
       await kv.put('tutorials', JSON.stringify(now));
       return json({ ok: true, at: now[id].at });
+    }
+    if (tu && tu[1] !== undefined && req.method === 'DELETE') {
+      const id = decodeURIComponent(tu[1]);
+      if (!okTutId(id)) return fail('チュートリアルの名前が正しくない');
+      const now = await kv.get('tutorials', 'json');
+      if (!now || !now[id]) return json({ ok: true });
+      if (Object.keys(now).length <= 1) return fail('最後の1つは消せない', 409);
+      delete now[id];
+      await kv.put('tutorials', JSON.stringify(now));
+      return json({ ok: true });
     }
     const m = /^stages\/(.+)$/.exec(path);
     if (m) {
