@@ -53,15 +53,19 @@ var w2 = S.setWin(R, w, 'boss', 0, s3.ex);
 eq([S.winOf(R, w2), w2.ex, w2.overrides], ['boss', s3.ex, undefined], 'ボスに戻すと③の決まりが戻る（ターン数は外れる）');
 eq(S.setWin(R, R.loadPreset('tut1'), 'boss').ex, {}, '新しくボスにすると、湧かないボスの決まり');
 var ws = S.setWin(R, s3, 'seal', 3);
-ok(R.validOverrides(ws.overrides), 'ふさぐの数値は正しい形');
-eq([S.winOf(R, ws), S.turnsOf(R, ws), ws.overrides['mission.defense.sealWin']], ['defense', 3, undefined], '前の「道をふさぐ」（seal）を選ぶと村を守る（sealWin は書かない）');
+eq([S.winOf(R, ws), S.turnsOf(R, ws), ws.overrides], ['defense', 3, undefined], '前の「道をふさぐ」（seal）を選ぶと村を守る（守るターン数は条件に入り、上書きは書かない）');
 var WINS_IDS = S.WINS.map(function (x) { return x.id; });
 ok(WINS_IDS.indexOf('seal') < 0 && WINS_IDS.indexOf('defense') >= 0, '勝ち方の一覧に「道をふさぐ」はない（村を守るだけ）');
 var oldDef = S.toDef(R, w, '前の防衛');
 oldDef.overrides = { 'mission.defense.turns': 4, 'mission.defense.sealWin': false };
 var ob = S.build(R, oldDef);
 ok(ob.ok, ob.error);
-eq(ob.ok && [S.winOf(R, ob.state), ob.state.overrides], ['defense', { 'mission.defense.turns': 4 }], '前の JSON の sealWin の上書きは捨てて読む（村を守る・4ターン）');
+eq(ob.ok && [S.winOf(R, ob.state), S.turnsOf(R, ob.state), ob.state.overrides], ['defense', 7, undefined], '条件（conditions）が書いてあれば、前の形の上書きより条件が勝つ（上書きは捨てる）');
+delete oldDef.conditions; delete oldDef.counters; delete oldDef.template;   // 前の形のステージ（条件を持たない）
+var ob2 = S.build(R, oldDef);
+ok(ob2.ok, ob2.error);
+eq(ob2.ok && [S.winOf(R, ob2.state), S.turnsOf(R, ob2.state), ob2.state.overrides, R.conditionsOf(ob2.state).some(function (c) { return c.id === 'seal'; })], ['defense', 4, undefined, true],
+  '前の JSON は、読むときに村を守るのひな形へ（4ターン。sealWin の上書きは捨てて、ふさいだらクリアはいつも入る）');
 
 // 難易度と一覧の1行（オーナー 11/03。IMPROVE_ステージ一覧 段1・段2）
 eq(S.DIFFICULTIES.map(function (d) { return d.name; }), ['チュートリアル', 'やさしい', 'ふつう', 'むずかしい'], '難易度は4段');

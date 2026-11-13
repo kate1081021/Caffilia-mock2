@@ -1829,8 +1829,8 @@ test('村が残ったまま決まったターンのターン終了を迎える�
   R.addAlly(s, 'fire', 0, 4, 'up');
   R.addEnemy(s, 'fire', 4, 0, 'down');
   R.addObject(s, 'village', 2, 4);
-  for (var i = 1; i < B.mission.defense.turns; i++) { s = R.endTurn(s).state; eq(s.result, null, 'ターン' + i + 'ではまだ'); }
-  eq(s.turn, B.mission.defense.turns);
+  for (var i = 1; i < R.DEFAULT_TURNS; i++) { s = R.endTurn(s).state; eq(s.result, null, 'ターン' + i + 'ではまだ'); }
+  eq(s.turn, R.DEFAULT_TURNS);
   s = R.endTurn(s).state;
   eq(s.result, 'win');
 });
@@ -2915,7 +2915,7 @@ test('盤面: 6×6。山使い・水使い（上向き）、村4つ（HP1）、�
   eq(R.objectsOf(s0, 'village').map(function (v) { return [v.x, v.y, v.hp]; }), [[2, 5, 1], [3, 5, 1], [4, 5, 1], [5, 5, 1]]);
   eq(R.enemiesOf(s0).map(function (e) { return [e.x, e.y, e.stand]; }), [[3, 0, 'rush'], [4, 0, 'rush']]);
   eq(s0.mission.type, 'defense');
-  eq(R.missionInfo(s0).win, 'ターン5の終わりまで村を守る（村への道をふさいだら、その場でクリアにできる。敵の全滅でも勝ち）');
+  eq(R.missionInfo(s0).win, 'ターン5の終わりまで村を守る／村への道をふさいだら、その場でクリアにできる／敵を全員倒す', '勝ち方の文は、条件の説明の文（text）を並べたもの（オーナー 11/13）');
   eq(R.magicName('mount'), '山', '土の魔法は「山」と表示');
   ok(R.TUTORIALS.some(function (t) { return t.id === 'tut2' && t.tutorial === 2 && /2人で守る/.test(t.name); }), 'チュートリアルの一覧に入っている');
   ok(!R.inBounds(s0, 6, 0) && R.inBounds(s0, 5, 5) && !R.inBounds(s0, 0, 6), '盤の外');
@@ -3185,7 +3185,7 @@ test('ふさいだかは増援の出てくる所も数える。泥沼もふさ�
 });
 test('村を守るは、どの防衛でもふさいだらクリアにできる。突進の敵がいなければ、ふさいだことにならず文にも出さない（オーナー 11/03）', function () {
   var s = R.startBattle(R.loadPreset('mDefense')).state;   // 敵は「動き」2体（突進ではない）
-  eq(R.withOverrides(s, function () { return B.mission.defense.sealWin; }), true, '標準で入');
+  ok(R.conditionsOf(s).some(function (c) { return c.id === 'seal' && c.then === 'canClear'; }), '防衛のひな形に、ふさいだらクリアにできる条件が入っている');
   ok(!/ふさい/.test(R.missionInfo(s).win), R.missionInfo(s).win);
   ok(!R.sealReady(s), 'ふさいだことにならない');
   ok(/ふさい/.test(R.missionInfo(tut2()).win), '突進の敵がいる②では文に出る');
@@ -3209,7 +3209,7 @@ test('overrides: このシナリオの中だけで効き、ほかのシナリオ
   var st = t2Solved(tut2());
   R.endTurn(st); R.forecast(st);
   eq(JSON.stringify(B), before, 'BALANCE は元のまま');
-  eq([B.tutorial.slope, B.waterLength, B.ally.move, B.enemy.rushMove, B.mission.defense.sealWin], [true, 1, 2, 3, true], '標準の値（②の上書きは突進1マス・5ターン。道をふさいだらクリアは標準で入 11/03）');
+  eq([B.tutorial.slope, B.waterLength, B.ally.move, B.enemy.rushMove, B.mission.defense], [true, 1, 2, 3, undefined], '標準の値（②の上書きは突進1マス。守るターン数とふさいだらクリアは、ステージの条件が持つ 11/13）');
   // ほかのシナリオでも、山に水は斜面を下る（オーナー 10/29 から、どの山も同じ決め方）
   var o = empty(7);
   var st2 = fire(o, R.addAlly(o, 'mount', 3, 6, 'up'), 'up').state;

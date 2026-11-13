@@ -10,7 +10,8 @@
  *   toDef(R, s, name)            … エディットの盤面（遊び始める前の状態）から、ステージの定義を作る
  *   build(R, def)                … 定義を確かめてから盤面を作る（R.buildPreset）。{ ok, state } か { ok: false, error }
  *   resize(R, s, w, h)           … 盤面の横・縦を変える。置いた物は同じ位置のまま、はみ出した物は外す。{ state, dropped }
- *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか）
+ *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか ＝ 条件のひな形）。選ぶと、ひな形の条件が展開されて入る
+ *   keepEx(R, s)                 … 外すボスの決まり（とミッションの条件）を覚えておく中身
  *   setHp(R, s, id, hp)          … 敵のHP
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
@@ -22,9 +23,10 @@
   var PREFIX = 'my:';
   var FORMAT = 'cafilia-stage';
 
-  // 勝ち方。ルールにある勝ち負けの決まりから選ぶ（新しい決まりは作らない）
-  //   boss: ステージ③の決まり（s.ex。ボスを倒せば勝ち・味方が1人でも倒れたら負け）
-  //   defense: お題の防衛（mission.defense.turns ターン守る。突進の敵の道をふさいだら、その場でクリアにもできる）。
+  // 勝ち方 ＝ 条件のひな形（rules.js の expandTemplate）。選ぶと、ひな形の条件がステージに展開されて入る（.claude/IMPROVE_条件.md）。
+  //   ステージが持つのは展開した条件（conditions）で、template はどのひな形から作ったかの札。
+  //   boss: ボスを倒せば勝ち・味方が1人でも倒れたら負け。取り巻きの湧き・ヒントなどは、今までどおり s.ex が持つ
+  //   defense: 決めたターンまで村を守る。突進の敵の道をふさいだら、その場でクリアにもできる。
   //     前の「道をふさぐ」（seal）は「村を守る」と同じなので1つにした（オーナー 11/03）。前のステージの seal・sealWin の上書きは、読むと村を守るになる
   var WINS = [
     { id: 'annihilate', name: '敵を全員倒す' },
@@ -33,7 +35,6 @@
     { id: 'escort', name: 'トロッコをゴールへ' },
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
-  var OV_TURNS = 'mission.defense.turns', OV_SEAL = 'mission.defense.sealWin';
   // 難易度（オーナー 11/03。IMPROVE_ステージ一覧 段1）: 定義の difficulty に持つ。ないものは「なし」。内蔵の①②③はチュートリアル
   var DIFFICULTIES = [
     { id: 'tutorial', name: 'チュートリアル' },
@@ -91,7 +92,13 @@
     if (s.spawn) def.spawn = clone(s.spawn);
     if (s.ex) def.ex = clone(s.ex);
     if (s.enemyOnlyMagics && s.enemyOnlyMagics.length) def.enemyOnly = s.enemyOnlyMagics.slice();
-    if (s.overrides && Object.keys(s.overrides).length) def.overrides = clone(s.overrides);
+    var ov = R.splitOverrides(s.overrides).rest;   // 前の形の守るターン数などは、条件に入っている
+    if (ov) def.overrides = clone(ov);
+    // 条件（勝ち負け・ふさぎ・ミッション）は、展開して持つ。template はどのひな形から作ったかの札
+    def.template = R.templateOf(s);
+    def.conditions = R.conditionsOf(s);
+    var counters = R.countersOf(s);
+    if (Object.keys(counters).length) def.counters = counters;
     return def;
   }
 
@@ -145,7 +152,17 @@
     if (d.mission !== undefined && !R.MISSION_INFO[d.mission]) return '知らないお題がある';
     if (d.difficulty !== undefined && !diffOf(d)) return '知らない難易度がある';
     if (d.enemyOnly !== undefined && !(Array.isArray(d.enemyOnly) && d.enemyOnly.every(function (m) { return R.MAGIC_INFO[m]; }))) return '敵だけの魔法に知らない魔法がある';
-    if (d.overrides !== undefined && !R.validOverrides(d.overrides)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
+    if (d.overrides !== undefined) {
+      if (!isObj(d.overrides)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
+      var rest = R.splitOverrides(d.overrides).rest;   // 前の形の守るターン数などは、読むときに条件へ読み替える
+      if (rest && !R.validOverrides(rest)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
+    }
+    if (d.template !== undefined && !R.TEMPLATE_INFO[d.template]) return '知らない勝ち方のひな形（template）がある';
+    if (d.conditions !== undefined || d.counters !== undefined) {
+      if (d.conditions === undefined) return '数え（counters）だけがあって、条件（conditions）がない';
+      var badCond = R.checkConditions(d.conditions, d.counters);
+      if (badCond) return badCond;
+    }
     if (d.spawn !== undefined) {
       var sp = d.spawn;
       if (!isObj(sp) || !inside([sp.x, sp.y]) || !R.MAGIC_INFO[sp.magic] || (sp.facing && !R.DIRS[sp.facing]) ||
@@ -163,8 +180,8 @@
     if (err) return { ok: false, error: err };
     var s;
     try { s = R.buildPreset(def); } catch (e) { return { ok: false, error: '盤面を作れない（' + e.message + '）' }; }
-    // 前のステージの「道をふさぐ」の入・切（sealWin の上書き）は捨てる。村を守るはいつも、ふさいだらクリアにできる（オーナー 11/03）
-    if (s.overrides && s.overrides[OV_SEAL] !== undefined) { delete s.overrides[OV_SEAL]; if (!Object.keys(s.overrides).length) delete s.overrides; }
+    // 前のステージの形（お題の名前・守るターン数の上書き・ボスの決まり）は、R.buildPreset がひな形の条件に読み替える。
+    //   前の「道をふさぐ」の入・切（sealWin の上書き）は捨てる。村を守るはいつも、ふさいだらクリアにできる（オーナー 11/03）
     for (var i = 0; i < s.units.length; i++) {
       var bad = fits(R, s, s.units[i]);
       if (bad) return { ok: false, error: R.unitLabel(s, s.units[i]) + ': ' + bad };
@@ -199,34 +216,34 @@
     return { state: s, dropped: dropped };
   }
 
-  function turnsOf(R, s) {
-    var ov = s.overrides || {};
-    return ov[OV_TURNS] !== undefined ? ov[OV_TURNS] : R.BALANCE.mission.defense.turns;
+  function turnsOf(R, s) { return R.templateParams(s).turns; }
+  function winOf(R, s) { return R.templateOf(s); }
+  function missionConds(R, s) { return R.conditionsOf(s).filter(function (c) { return c.then === 'mission'; }); }
+  // ボスの決まりを外すときに覚えておく中身: s.ex（取り巻きの湧き方など）と、ミッションの条件。ボスに戻したら使う
+  function keepEx(R, s) {
+    if (!s.ex) return null;
+    var keep = clone(s.ex), ms = missionConds(R, s);
+    if (ms.length) keep.conditions = ms;
+    return keep;
   }
-  function winOf(R, s) {
-    if (s.ex) return 'boss';
-    var t = (s.mission && s.mission.type) || 'annihilate';
-    return t;
-  }
-  // exKeep: ボスの決まりを外したときに覚えておいた中身（③の取り巻きの湧き方・ミッション）。ボスに戻したら使う
+  // 勝ち方を選ぶ ＝ ひな形の条件に入れ替える。turns: 守るターン数（村を守るの条件の数と文に入る）。
+  //   exKeep: ボスの決まりを外したときに覚えておいた中身（keepEx。前の形の ex.missions も読める）。ボスに戻したら使う
   function setWin(R, s0, kind, turns, exKeep) {
-    var s = R.clone(s0);
-    if (!s.mission) s.mission = { type: 'annihilate', goal: [], exit: [], treasure: null, carrier: null, lost: 0 };
-    var ov = s.overrides = s.overrides || {};
-    delete ov[OV_TURNS]; delete ov[OV_SEAL];
+    var s = R.clone(s0), missions = [];
+    if (kind === 'seal') kind = 'defense';   // 前の「道をふさぐ」
     if (kind === 'boss') {
-      s.ex = s0.ex ? clone(s0.ex) : exKeep ? clone(exKeep) : {};
-      s.mission.type = 'annihilate';
-    } else {
-      delete s.ex;
-      if (kind === 'seal') kind = 'defense';   // 前の「道をふさぐ」
-      s.mission.type = kind;
-      if (kind === 'defense') {
-        var n = Math.round(Number(turns) || R.BALANCE.mission.defense.turns);
-        ov[OV_TURNS] = Math.max(1, Math.min(30, n));
+      if (s0.ex) missions = missionConds(R, s0);
+      else {
+        var keep = exKeep ? clone(exKeep) : {};
+        missions = Array.isArray(keep.conditions) ? keep.conditions :
+          (Array.isArray(keep.missions) ? keep.missions : []).filter(function (m) { return isObj(m) && m.id && R.TILE_INFO[m.tile]; }).map(R.tileMission);
+        delete keep.conditions; delete keep.missions;
+        s.ex = keep;
       }
-    }
-    if (!Object.keys(ov).length) delete s.overrides;
+    } else delete s.ex;
+    s = R.setTemplate(s, kind, { turns: turns }, missions);
+    var ov = R.splitOverrides(s.overrides).rest;   // 前の形の守るターン数の上書きは、もう使わない
+    if (ov) s.overrides = ov; else delete s.overrides;
     return s;
   }
 
@@ -288,8 +305,8 @@
   ];
   function winKind(def) {
     if (!def) return '';
-    if (def.ex) return 'boss';
-    if (def.mission === 'defense' || def.mission === 'escort' || def.mission === 'retrieve') return def.mission;
+    var t = Array.isArray(def.conditions) && def.template ? def.template : (def.ex ? 'boss' : def.mission);   // 前の形は、ボスの決まりとお題の名前から
+    if (t === 'boss' || t === 'defense' || t === 'escort' || t === 'retrieve') return t;
     return 'battle';
   }
   function winLabel(R, def) { var k = winKind(def), w = WIN_KINDS.filter(function (x) { return x.id === k; })[0]; return w ? w.name : ''; }
@@ -387,7 +404,7 @@
   var api = {
     PREFIX: PREFIX, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
-    winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
+    winOf: winOf, setWin: setWin, turnsOf: turnsOf, keepEx: keepEx, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

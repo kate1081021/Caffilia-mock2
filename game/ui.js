@@ -334,10 +334,10 @@
     });
   }
 
-  // 展示ステージ③: ミッションの名前（texts.js の stages.ex3.missions）
-  function exMissionName(id) {
-    var stx = stageTexts(app.state && app.state.stage), m = ((exOf() || {}).missions || []).filter(function (x) { return x.id === id; })[0];
-    return (stx && stx.missions && stx.missions[id]) || (m && m.name) || id;
+  // ミッションの名前: texts.js の stages.<id>.missions にあればそれ（文章パネルで書き換えた名前）、なければ条件の説明の文（text）
+  function missionName(m) {
+    var stx = stageTexts(app.state && app.state.stage);
+    return (stx && stx.missions && stx.missions[m.id]) || m.text || m.id;
   }
 
   // 出来事をログに足し、演出を出す
@@ -995,11 +995,10 @@
       if (fw && fw.wagon) info.status.splice(2, 0, 'この手なら ' + (fw.wagon.steps === null ? '道がない' : (fw.wagon.steps + '歩')));
     }
     var stx = stageTexts(app.state.stage);   // チュートリアルの目標（texts.js）
-    // 展示ステージ③: ミッション（最初から出す。達成したら ✔）
-    var exm = ((exOf() || {}).missions || []).map(function (m) {
-      var done = !!(app.state.exDone && app.state.exDone[m.id]);
-      return '<span class="m-ex-mission' + (done ? ' done' : '') + '">' +
-        '<b>' + esc(ui('exMission', 'ミッション')) + '</b> ' + esc(exMissionName(m.id)) + ' <span class="m-check">' + (done ? '✔ ' + esc(ui('exMissionDone', 'ミッション達成！')) : '□') + '</span></span>';
+    // ミッション（then が mission の条件。最初から出す。達成したら ✔）
+    var exm = (info.missions || []).map(function (m) {
+      return '<span class="m-ex-mission' + (m.done ? ' done' : '') + '">' +
+        '<b>' + esc(ui('exMission', 'ミッション')) + '</b> ' + esc(missionName(m)) + ' <span class="m-check">' + (m.done ? '✔ ' + esc(ui('exMissionDone', 'ミッション達成！')) : '□') + '</span></span>';
     }).join('');
     var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') + exm +
       '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
@@ -2154,7 +2153,7 @@
   // 勝ち方（ボスの決まりを外すときは中身を覚えておき、ボスに戻したら使う）
   function applyWin() {
     var st = app.state;
-    if (st.ex) app.draft.exKeep = SIO.clone(st.ex);
+    if (st.ex) app.draft.exKeep = SIO.keepEx(R, st);   // 外すボスの決まりと、ミッションの条件を覚えておく
     pushHistory();
     app.state = SIO.setWin(R, st, el.winSelect.value, el.winTurns.value, app.draft.exKeep);
     render();

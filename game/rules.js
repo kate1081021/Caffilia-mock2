@@ -378,9 +378,9 @@
   }
   function isFixed(u) { return u.side === 'object' && OBJECT_INFO[u.kind].fixed; }
 
-  // お題の状態。goal: トロッコのゴール、exit: 帰り口、treasure: 落ちている宝の位置（持たれていたら null）、carrier: 宝を持つ味方の id、lost: 壊れた村の数
+  // お題の状態。goal: トロッコのゴール、exit: 帰り口、treasure: 落ちている宝の位置（持たれていたら null）、carrier: 宝を持つ味方の id
   function newMission(type) {
-    return { type: MISSION_INFO[type] ? type : 'annihilate', goal: [], exit: [], treasure: null, carrier: null, lost: 0 };
+    return { type: MISSION_INFO[type] ? type : 'annihilate', goal: [], exit: [], treasure: null, carrier: null };
   }
   function missionType(s) { return (s.mission && s.mission.type) || 'annihilate'; }
   function inCells(list, x, y) { return (list || []).some(function (c) { return c[0] === x && c[1] === y; }); }
@@ -392,6 +392,7 @@
     var s = { version: 2, size: size, tiles: [], units: [], enemyActs: enemyActs !== false, turn: 1, result: null, seq: 0, fireAge: {}, mission: newMission('annihilate') };
     if (h !== size) s.h = h;
     for (var i = 0; i < size * h; i++) s.tiles.push('empty');
+    putConditions(s, expandTemplate('annihilate'));
     return s;
   }
 
@@ -457,9 +458,10 @@
     var dead = s.units.filter(function (u) { return u.hp <= 0; });
     dead.forEach(function (u) {
       var verb = u.side === 'object' ? 'は壊れた' : 'は倒れた';
-      ev.push({ type: 'death', side: u.side, kind: u.kind, id: u.id, npc: !!u.npc, text: unitLabel(s, u) + verb, cells: [[u.x, u.y]] });
+      var view = unitView(s, u);   // 条件の「このとき倒れた」と、倒れたで増える数えが見る
+      ev.push({ type: 'death', side: u.side, kind: u.kind, id: u.id, npc: !!u.npc, unit: view, text: unitLabel(s, u) + verb, cells: [[u.x, u.y]] });
+      countDeath(s, view);
       var m = s.mission;
-      if (u.kind === 'village' && m) m.lost = (m.lost || 0) + 1;
       // 宝を持つ味方が倒れたら、宝はそのマスに落ちる（ほかの味方が拾える）
       if (m && m.carrier === u.id) {
         m.carrier = null;
@@ -477,32 +479,383 @@
     ev.push({ type: 'result', result: result, text: text });
   }
 
-  // 勝敗。どのお題でも、味方が全員倒れたら負け。負けを先に見る（同じ1発で村が壊れて敵が全滅しても負け）
-  function checkResult(s, ev) {
+  // ---------------------------------------------------------------
+  // 条件（.claude/IMPROVE_条件.md）
+  //   勝ち負け・クリアできるようにする・ミッションは、ステージのデータ（s.conditions）に書く。ここにあるのは、盤面に問いかける部品と、条件を読むしくみだけ。
+  //   1つの条件: { id, when: [いつ見るか…], if: 何を見るか, then: 'win' | 'lose' | 'canClear' | 'mission', once, text: 説明の文, done: 成り立ったときの文, showIf: 文を出すとき }
+  //   いつ見るか（WHENS）:
+  //     afterDamage … ダメージを当てたあと・トロッコが進んだあと・ターン終了処理のダメージのあと
+  //     turnEnd     … ターン終了処理が終わったあと（増援・次のターンの敵の移動より前）
+  //     allyMoved   … 味方が自分で移動を終えたとき
+  //     afterShot   … 魔法を1発撃ち終わるたび（敵の魔法も）
+  //     afterFire   … 味方の一回の発動がぜんぶ終わったあと（一斉: 構えを全員ぶん撃ち終えたあと／1人ずつ: その味方が撃ち終えたあと・構える味方が撃ち終えたあと）
+  //     always      … いつ聞いても（盤面だけで決まる）。canClear 専用
+  //   部品（if の { see: … }）: units ユニットの数／unitIn ユニットがマスのどれかにいる／tiles タイルの種類と数／turn ターン数／
+  //     died このとき倒れた・壊れた／counter 数え／path 道がつながっているか／spawn 増援の出てくる所がある。
+  //     組み合わせは { all: […] } かつ・{ any: […] } または・{ not: … } ではない。数は min（以上）・max（以下）・eq（ちょうど）。書かなければ「1以上」
+  //   数え（s.counters: { 名前: { add: 何で増えるか, on: いつ数えるか, reset: 'never' か条件, keepOnRetry } }）。今の値と、一度きりの覚えは s.cond = { n, done }
+  //   同じときに成り立ったら、負けが勝ちより先。同じ側は s.conditions の並び順で先のもの
+  // ---------------------------------------------------------------
+  var WHENS = ['afterDamage', 'turnEnd', 'allyMoved', 'afterShot', 'afterFire', 'always'];
+  var THENS = ['win', 'lose', 'canClear', 'mission'];
+  var SEES = ['units', 'unitIn', 'tiles', 'turn', 'died', 'counter', 'path', 'spawn'];
+  var WHERE_KEYS = ['side', 'kind', 'stand', 'npc', 'magic', 'carrying', 'not'];
+  // 通り方（道の部品と、敵の動きが同じものを使う）。rush: 突進の敵（通れる地形で、水たまり・泥沼でない）／foot: 通れる地形
+  var WALKS = {
+    rush: function (t) { return isPassable(t) && !RUSH_BLOCK[t]; },
+    foot: function (t) { return isPassable(t); }
+  };
+  var DEFAULT_TURNS = 5;   // 防衛のひな形: 守るターン数（決めなかったとき）
+  var LEGACY_OV = { turns: 'mission.defense.turns', loseAt: 'mission.defense.loseAt', sealWin: 'mission.defense.sealWin' };   // 前の形の上書き（読むときに条件へ読み替える）
+
+  // ひな形（お題ごとの条件の組）。選ぶと s.conditions に展開して入る。入ったあとは普通の条件（1つずつ外せる・足せる）
+  var TEMPLATE_INFO = {
+    annihilate: { name: '敵を全員倒す', mission: 'annihilate' },
+    defense:    { name: '村を守る', mission: 'defense' },
+    escort:     { name: 'トロッコをゴールへ', mission: 'escort' },
+    retrieve:   { name: '宝を持って帰り口へ', mission: 'retrieve' },
+    boss:       { name: 'ボスを倒す', mission: 'annihilate' }
+  };
+  var TEMPLATES = Object.keys(TEMPLATE_INFO);
+  function clampTurns(n) { n = Math.round(Number(n) || DEFAULT_TURNS); return Math.max(1, Math.min(30, n)); }
+  function expandTemplate(name, params) {
+    if (!TEMPLATE_INFO[name]) name = 'annihilate';
+    params = params || {};
+    var turns = clampTurns(params.turns), loseAt = Math.max(1, Math.round(Number(params.loseAt) || 1));
+    var enemy = { side: 'enemy' }, ally = { side: 'ally' };
+    var npcDown = { id: 'npcDown', when: ['afterDamage'], 'if': { see: 'died', where: { side: 'ally', npc: true } }, then: 'lose',
+      text: '構える味方が倒れる', done: '構える味方が倒れた…（失敗）', showIf: { see: 'units', where: { side: 'ally', npc: true }, min: 1 } };
+    var allDown = { id: 'allDown', when: ['afterDamage'],
+      'if': { all: [{ see: 'died', where: ally }, { see: 'units', where: { side: 'ally', npc: false }, eq: 0 }] }, then: 'lose',
+      text: '味方が全員倒れる', done: '味方が全員倒れた…（敗北）' };
+    var killAll = { id: 'killAll', when: ['afterDamage'],
+      'if': { all: [{ see: 'died', where: enemy }, { see: 'units', where: enemy, eq: 0 }] }, then: 'win',
+      text: '敵を全員倒す', done: '敵を全員倒した！（勝利）' };
+    var out = { template: name, conditions: [], counters: {} };
+    if (name === 'boss') {
+      out.conditions = [
+        { id: 'anyDown', when: ['afterDamage'], 'if': { see: 'died', where: ally }, then: 'lose',
+          text: '味方が1人でも倒れる（ステージの頭からやり直し）', done: '味方が倒れた…（ステージの頭からやり直し）' },
+        { id: 'bossDown', when: ['afterDamage'],
+          'if': { all: [{ see: 'died', where: enemy }, { see: 'units', where: { side: 'enemy', stand: 'boss' }, eq: 0 }] }, then: 'win',
+          text: 'ボスを倒す', done: 'ボスを倒した！（勝利）' }
+      ];
+    } else if (name === 'defense') {
+      out.counters = { lostVillages: { add: { see: 'died', where: { kind: 'village' } }, reset: 'never' } };
+      out.conditions = [npcDown, allDown,
+        { id: 'villageLost', when: ['afterDamage'], 'if': { see: 'counter', name: 'lostVillages', min: loseAt }, then: 'lose',
+          text: '村が' + loseAt + 'つ壊れる', done: '村が壊された…（敗北）' },
+        { id: 'hold', when: ['turnEnd'], 'if': { all: [{ see: 'turn', min: turns }, { see: 'units', where: { kind: 'village' }, min: 1 }] }, then: 'win',
+          text: 'ターン' + turns + 'の終わりまで村を守る', done: 'ターン{turn}を守り切った。村は無事！（勝利）' },
+        // 村への道をふさぎきったら、その場でクリアにできる（勝手には勝たない。オーナー 10/17）。敵が全員突進のときだけ。人は数えず、地形だけで見る
+        { id: 'seal', when: ['always'],
+          'if': { all: [
+            { see: 'units', where: { kind: 'village' }, min: 1 },
+            { see: 'units', where: { side: 'enemy', not: { stand: 'rush' } }, eq: 0 },
+            { see: 'path', from: [{ units: enemy }, 'spawn'], to: { nextTo: { kind: 'village' } }, walk: 'rush', people: 'ignore', is: 'closed' }] },
+          then: 'canClear', text: '村への道をふさいだら、その場でクリアにできる', done: '村への道をふさいだ！（勝利）',
+          showIf: { any: [{ see: 'units', where: { side: 'enemy', stand: 'rush' }, min: 1 }, { see: 'spawn', where: { stand: 'rush' } }] } },
+        killAll];
+    } else if (name === 'escort') {
+      out.conditions = [npcDown, allDown,
+        { id: 'wagonLost', when: ['afterDamage'],
+          'if': { all: [{ see: 'died', where: { kind: 'wagon' } }, { see: 'units', where: { kind: 'wagon' }, eq: 0 }] }, then: 'lose',
+          text: 'トロッコが壊れる', done: 'トロッコが壊された…（敗北）' },
+        { id: 'wagonGoal', when: ['afterDamage'], 'if': { see: 'unitIn', where: { kind: 'wagon' }, cells: 'goal' }, then: 'win',
+          text: 'トロッコがゴールに入る', done: 'トロッコがゴールに着いた！（勝利）' }];
+    } else if (name === 'retrieve') {
+      out.conditions = [npcDown, allDown,
+        // 自分で移動を終えたときに加えて、風で運ばれて帰り口に入っても勝ち（オーナー 11/13）
+        { id: 'bringBack', when: ['allyMoved', 'afterDamage'], 'if': { see: 'unitIn', where: { side: 'ally', carrying: true }, cells: 'exit' }, then: 'win',
+          text: '宝を持って帰り口に入る', done: '宝を持ち帰った！（勝利）' }];
+    } else {
+      out.conditions = [npcDown, allDown, killAll];
+    }
+    return clone(out);
+  }
+  // 「この自然を作る」ミッションの条件（前の ex.missions: [{ id, tile, name }] と同じ見方: 撃ったあとに、その自然が盤面にあれば達成）
+  function tileMission(m) {
+    return { id: String(m.id), when: ['afterShot'], once: true, 'if': { see: 'tiles', tile: m.tile, min: 1 }, then: 'mission',
+      text: m.name || (tileName(m.tile) + 'を作る') };
+  }
+
+  // 前の形（お題の名前 mission・ボスの決まり ex・overrides の守るターン数）を、ひな形と条件に読み替える。
+  //   src: { mission: お題の名前, ex, overrides }。戻り値 { template, conditions, counters, overrides（読み替えた項目を除いたもの）, ex（missions を除いたもの） }
+  function splitOverrides(ov) {
+    var rest = {}, old = {};
+    Object.keys(ov || {}).forEach(function (k) {
+      var hit = Object.keys(LEGACY_OV).filter(function (n) { return LEGACY_OV[n] === k; })[0];
+      if (hit) old[hit] = ov[k]; else rest[k] = ov[k];
+    });
+    return { rest: Object.keys(rest).length ? rest : undefined, old: old };
+  }
+  function readLegacy(src) {
+    src = src || {};
+    var sp = splitOverrides(src.overrides);
+    var name = src.ex ? 'boss' : (TEMPLATE_INFO[src.mission] && src.mission !== 'boss' ? src.mission : 'annihilate');
+    var t = expandTemplate(name, { turns: sp.old.turns, loseAt: sp.old.loseAt });
+    var ex = src.ex ? clone(src.ex) : undefined;
+    if (ex && Array.isArray(ex.missions)) {
+      ex.missions.forEach(function (m) { if (m && m.id && TILE_INFO[m.tile]) t.conditions.push(tileMission(m)); });
+      delete ex.missions;
+    }
+    return { template: t.template, conditions: t.conditions, counters: t.counters, overrides: sp.rest, ex: ex };
+  }
+  // ステージの定義（か前の「配置」）から、条件まわりを決める。conditions が書いてあればそれ、なければ前の形から読み替える
+  function readConditions(src) {
+    var L = readLegacy(src);
+    if (Array.isArray(src.conditions)) {
+      L.conditions = clone(src.conditions);
+      L.counters = src.counters ? clone(src.counters) : {};
+      if (TEMPLATE_INFO[src.template]) L.template = src.template;
+    }
+    return L;
+  }
+  function putConditions(s, L) {
+    s.template = L.template;
+    s.conditions = L.conditions;
+    if (L.counters && Object.keys(L.counters).length) s.counters = L.counters; else delete s.counters;
+    delete s.cond;
+  }
+  // 状態の条件（条件を持たない前の状態は、お題の名前とボスの決まりから読み替える）
+  function legacyOf(s) { return readLegacy({ mission: missionType(s), ex: s.ex, overrides: s.overrides }); }
+  function condsOf(s) { return s.conditions || legacyOf(s).conditions; }
+  function countersOf(s) { return s.conditions ? (s.counters || {}) : legacyOf(s).counters; }
+  function templateOf(s) { return s.conditions && TEMPLATE_INFO[s.template] ? s.template : legacyOf(s).template; }
+  // ひな形を選ぶ: 勝ち負けの条件をひな形のものに入れ替える。お題の名前（トロッコが進む・宝を拾う・的の狙い）も合わせる。
+  //   missions: いっしょに持たせるミッションの条件（省略で、今あるミッションをそのまま残す）
+  function setTemplate(s, name, params, missions) {
+    if (!TEMPLATE_INFO[name]) name = 'annihilate';
+    var keep = missions || condsOf(s).filter(function (c) { return c.then === 'mission'; });
+    var t = expandTemplate(name, params);
+    if (!s.mission) s.mission = newMission(TEMPLATE_INFO[name].mission);
+    s.mission.type = TEMPLATE_INFO[name].mission;
+    t.conditions = t.conditions.concat(clone(keep));
+    putConditions(s, t);
+    return s;
+  }
+  // ひな形で決めた数（今は守るターン数）: 条件 hold の「ターン数」から読む
+  function templateParams(s) {
+    var turns = DEFAULT_TURNS;
+    var find = function (c) {
+      if (!c || typeof c !== 'object') return;
+      if (c.see === 'turn' && c.min !== undefined) turns = c.min;
+      (c.all || c.any || []).forEach(find);
+      if (c.not) find(c.not);
+    };
+    condsOf(s).forEach(function (c) { if (c.id === 'hold') find(c['if']); });
+    return { turns: turns };
+  }
+
+  // 条件の形を確かめる（ほかの人のファイルも読むので）。よければ ''、だめなら理由の文
+  function checkConditions(list, counters) {
+    var isObj = function (o) { return !!o && typeof o === 'object' && !Array.isArray(o); };
+    var isNum = function (n) { return typeof n === 'number' && isFinite(n); };
+    if (!Array.isArray(list)) return '条件（conditions）が並びになっていない';
+    if (list.length > 40) return '条件が多すぎる（40 まで）';
+    counters = counters === undefined ? {} : counters;
+    if (!isObj(counters)) return '数え（counters）が正しくない';
+    var cellsOk = function (c) { return c === 'goal' || c === 'exit' || (Array.isArray(c) && c.every(function (p) { return Array.isArray(p) && p.length >= 2 && isNum(p[0]) && isNum(p[1]); })); };
+    var whereOk = function (w, depth) {
+      if (w === undefined) return true;
+      if (!isObj(w) || depth > 3) return false;
+      return Object.keys(w).every(function (k) {
+        if (WHERE_KEYS.indexOf(k) < 0) return false;
+        if (k === 'not') return whereOk(w.not, depth + 1);
+        if (k === 'npc' || k === 'carrying') return typeof w[k] === 'boolean';
+        if (k === 'side') return w[k] === 'ally' || w[k] === 'enemy' || w[k] === 'object';
+        if (k === 'kind') return !!OBJECT_INFO[w[k]];
+        if (k === 'stand') return !!PERSONA.stand[w[k]];
+        return !!MAGIC_INFO[w[k]];
+      });
+    };
+    var numsOk = function (p) { return ['min', 'max', 'eq'].every(function (k) { return p[k] === undefined || isNum(p[k]); }); };
+    var partOk = function (p, depth) {
+      if (!isObj(p) || depth > 6) return false;
+      if (p.all || p.any) { var l = p.all || p.any; return Array.isArray(l) && l.length > 0 && l.every(function (x) { return partOk(x, depth + 1); }); }
+      if (p.not !== undefined && p.see === undefined) return partOk(p.not, depth + 1);
+      if (SEES.indexOf(p.see) < 0 || !numsOk(p)) return false;
+      if (p.see === 'units' || p.see === 'died') return whereOk(p.where, 0);
+      if (p.see === 'unitIn') return whereOk(p.where, 0) && cellsOk(p.cells);
+      if (p.see === 'tiles') return !!TILE_INFO[p.tile] && (p['in'] === undefined || cellsOk(p['in']));
+      if (p.see === 'counter') return typeof p.name === 'string' && !!counters[p.name];
+      if (p.see === 'spawn') return p.where === undefined || isObj(p.where);
+      if (p.see === 'path') {
+        var from = [].concat(p.from === undefined ? [] : p.from), to = p.to;
+        return from.length > 0 && from.every(function (f) { return f === 'spawn' || (isObj(f) && ((f.units !== undefined && whereOk(f.units, 0)) || (f.cells !== undefined && cellsOk(f.cells)))); }) &&
+          isObj(to) && ((to.nextTo !== undefined && whereOk(to.nextTo, 0)) || (to.cells !== undefined && cellsOk(to.cells))) &&
+          (p.walk === undefined || !!WALKS[p.walk]) && (p.people === undefined || p.people === 'ignore' || p.people === 'block') &&
+          (p.is === undefined || p.is === 'open' || p.is === 'closed');
+      }
+      return true;
+    };
+    var names = Object.keys(counters);
+    for (var k = 0; k < names.length; k++) {
+      var d = counters[names[k]];
+      if (!isObj(d) || !partOk(d.add, 0) || d.add.see === 'counter') return '数え「' + names[k] + '」の増え方（add）が正しくない';
+      if (d.on !== undefined && (WHENS.indexOf(d.on) < 0 || d.on === 'always')) return '数え「' + names[k] + '」の数えるとき（on）が正しくない';
+      if (d.reset !== undefined && d.reset !== 'never' && !partOk(d.reset, 0)) return '数え「' + names[k] + '」の戻し方（reset）が正しくない';
+    }
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i], label = '条件' + (i + 1) + (isObj(c) && c.id ? '「' + c.id + '」' : '');
+      if (!isObj(c) || typeof c.id !== 'string' || !c.id) return label + ': 名前（id）がない';
+      if (seen[c.id]) return label + ': 同じ名前（id）が2つある';
+      seen[c.id] = true;
+      if (!Array.isArray(c.when) || !c.when.length || c.when.some(function (w) { return WHENS.indexOf(w) < 0; })) return label + ': いつ見るか（when）が正しくない';
+      if (THENS.indexOf(c.then) < 0) return label + ': 起きること（then）が正しくない';
+      var always = c.when.indexOf('always') >= 0;
+      if (always !== (c.then === 'canClear') || (always && c.when.length > 1)) return label + ': 「いつでも」（always）と「クリアできるようにする」（canClear）は、2つで1組';
+      if (!partOk(c['if'], 0)) return label + ': 何を見るか（if）が正しくない';
+      if (c.showIf !== undefined && !partOk(c.showIf, 0)) return label + ': 文を出すとき（showIf）が正しくない';
+      if ((c.text !== undefined && typeof c.text !== 'string') || (c.done !== undefined && typeof c.done !== 'string')) return label + ': 文（text・done）が正しくない';
+    }
+    return '';
+  }
+
+  // ---- 部品 ----
+  function numOk(n, p, base) {
+    if (p.eq === undefined && p.min === undefined && p.max === undefined) return n >= (base === undefined ? 1 : base);
+    return (p.eq === undefined || n === p.eq) && (p.min === undefined || n >= p.min) && (p.max === undefined || n <= p.max);
+  }
+  // 絞り方に使う、ユニットの見え方（倒れた出来事にも同じものを持たせる）
+  function unitView(s, u) {
+    var v = { side: u.side, npc: !!u.npc };
+    if (u.kind) v.kind = u.kind;
+    if (u.stand) v.stand = u.stand;
+    if (u.magic) v.magic = u.magic;
+    if (s.mission && s.mission.carrier === u.id) v.carrying = true;
+    return v;
+  }
+  function viewMatch(v, w) {
+    if (!w) return true;
+    if (w.side !== undefined && v.side !== w.side) return false;
+    if (w.kind !== undefined && v.kind !== w.kind) return false;
+    if (w.stand !== undefined && v.stand !== w.stand) return false;
+    if (w.magic !== undefined && v.magic !== w.magic) return false;
+    if (w.npc !== undefined && !!v.npc !== !!w.npc) return false;
+    if (w.carrying !== undefined && !!v.carrying !== !!w.carrying) return false;
+    if (w.not !== undefined && viewMatch(v, w.not)) return false;
+    return true;
+  }
+  function unitsWhere(s, w) { return s.units.filter(function (u) { return viewMatch(unitView(s, u), w); }); }
+  function cellsOf(s, c) {
+    if (c === 'goal' || c === 'exit') return (s.mission && s.mission[c]) || [];
+    return Array.isArray(c) ? c : [];
+  }
+  // 道: 出発点のどれかから、通り方のとおりに縦横へたどって、行き先のどれかに着けるか。
+  //   is 'open' ＝ 着ける／'closed' ＝ 出発点が1つ以上あって、どこからも着けない。people 'ignore'（省略）＝ 人はいないものとして見る／'block' ＝ 人のいるマスは通れない
+  function pathPart(s, p) {
+    var open = WALKS[p.walk] || WALKS.foot, block = p.people === 'block';
+    var seen = {}, queue = [], goal = {}, to = p.to || {}, reached = false;
+    var start = function (x, y) { if (inBounds(s, x, y) && !seen[key(x, y)]) { seen[key(x, y)] = true; queue.push([x, y]); } };
+    [].concat(p.from === undefined ? [] : p.from).forEach(function (f) {
+      if (f === 'spawn') { if (s.spawn) start(s.spawn.x, s.spawn.y); }
+      else if (f && f.units !== undefined) unitsWhere(s, f.units).forEach(function (u) { start(u.x, u.y); });
+      else if (f && f.cells !== undefined) cellsOf(s, f.cells).forEach(function (c) { start(c[0], c[1]); });
+    });
+    if (to.nextTo !== undefined) unitsWhere(s, to.nextTo).forEach(function (u) { neighbors(s, u.x, u.y).forEach(function (n) { goal[key(n.x, n.y)] = true; }); });
+    if (to.cells !== undefined) cellsOf(s, to.cells).forEach(function (c) { goal[key(c[0], c[1])] = true; });
+    var any = queue.length > 0;
+    while (queue.length && !reached) {
+      var c = queue.shift();
+      if (goal[key(c[0], c[1])]) { reached = true; break; }
+      neighbors(s, c[0], c[1]).forEach(function (n) {
+        var k = key(n.x, n.y);
+        if (seen[k] || !open(getTile(s, n.x, n.y)) || (block && unitAt(s, n.x, n.y))) return;
+        seen[k] = true;
+        queue.push([n.x, n.y]);
+      });
+    }
+    return p.is === 'closed' ? (any && !reached) : reached;
+  }
+  // 何を見るか。ev: この操作（1手・ターン終了のひとまとまり）の中で、ここまでに起きた出来事（died が見る）
+  function evalCond(s, c, ev) {
+    if (!c || typeof c !== 'object') return false;
+    if (c.all) return c.all.every(function (x) { return evalCond(s, x, ev); });
+    if (c.any) return c.any.some(function (x) { return evalCond(s, x, ev); });
+    if (c.see === undefined && c.not !== undefined) return !evalCond(s, c.not, ev);
+    if (c.see === 'units') return numOk(unitsWhere(s, c.where).length, c);
+    if (c.see === 'unitIn') { var cs = cellsOf(s, c.cells); return numOk(unitsWhere(s, c.where).filter(function (u) { return inCells(cs, u.x, u.y); }).length, c); }
+    if (c.see === 'tiles') {
+      var n = 0;
+      if (c['in'] !== undefined) cellsOf(s, c['in']).forEach(function (p) { if (inBounds(s, p[0], p[1]) && getTile(s, p[0], p[1]) === c.tile) n++; });
+      else for (var i = 0; i < s.tiles.length; i++) if (s.tiles[i] === c.tile) n++;
+      return numOk(n, c);
+    }
+    if (c.see === 'turn') return numOk(s.turn, c);
+    if (c.see === 'died') return numOk((ev || []).filter(function (e) { return e.type === 'death' && viewMatch(e.unit || e, c.where); }).length, c);
+    if (c.see === 'counter') return numOk((s.cond && s.cond.n && s.cond.n[c.name]) || 0, c);
+    if (c.see === 'path') return pathPart(s, c);
+    if (c.see === 'spawn') return !!s.spawn && Object.keys(c.where || {}).every(function (k) { return s.spawn[k] === c.where[k]; });
+    return false;
+  }
+
+  // ---- 数え ----
+  function condState(s) {
+    if (!s.cond) s.cond = { n: {}, done: {} };
+    if (!s.cond.n) s.cond.n = {};
+    if (!s.cond.done) s.cond.done = {};
+    return s.cond;
+  }
+  // 倒れた・壊れたで増える数え（倒れたそのときに数える）
+  function countDeath(s, view) {
+    var defs = countersOf(s);
+    Object.keys(defs).forEach(function (name) {
+      var d = defs[name];
+      if (!d.add || d.add.see !== 'died' || !viewMatch(view, d.add.where)) return;
+      var st = condState(s);
+      st.n[name] = (st.n[name] || 0) + 1;
+    });
+  }
+  // そのほかの数え: 数えるとき（on。省略でターン終了処理のあと）に、add が成り立っていれば1増える。reset の条件が成り立ったら0に戻す
+  function bumpCounters(s, when, ev) {
+    var defs = countersOf(s);
+    Object.keys(defs).forEach(function (name) {
+      var d = defs[name];
+      if (d.add && d.add.see !== 'died' && (d.on || 'turnEnd') === when && evalCond(s, d.add, ev)) {
+        var st = condState(s);
+        st.n[name] = (st.n[name] || 0) + 1;
+      }
+      if (d.reset && d.reset !== 'never' && s.cond && s.cond.n && s.cond.n[name] && evalCond(s, d.reset, ev)) s.cond.n[name] = 0;
+    });
+  }
+
+  // ---- 条件を見る ----
+  function condText(s, c, done) { return String((done && c.done) || c.text || c.id).replace(/\{turn\}/g, s.turn); }
+  function runConditions(s, when, ev) {
     if (s.result) return;
-    var type = missionType(s), m = s.mission || {};
-    var enemyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'enemy'; });
-    var allyDied = ev.some(function (e) { return e.type === 'death' && e.side === 'ally'; });
-    // 展示ステージ③: 味方が1人でも倒れたら負け（ステージの頭からやり直し）。ボスを倒したら勝ち（取り巻きは倒しきれないので数えない）
-    if (s.ex) {
-      if (allyDied) { setResult(s, ev, 'lose', '味方が倒れた…（ステージの頭からやり直し）'); return; }
-      if (enemyDied && !enemiesOf(s).some(function (e) { return e.stand === 'boss'; })) { setResult(s, ev, 'win', 'ボスを倒した！（勝利）'); return; }
-    }
-    // 構える味方（チュートリアルの相方）が倒れたら失敗（同じ1発で自分も倒れたときも、こちらを出す）
-    if (ev.some(function (e) { return e.type === 'death' && e.npc; })) { setResult(s, ev, 'lose', '構える味方が倒れた…（失敗）'); return; }
-    // 動かせる味方が全員倒れたら負け（構える味方しか残っていなくても負け）
-    if (allyDied && controllableOf(s).length === 0) { setResult(s, ev, 'lose', '味方が全員倒れた…（敗北）'); return; }
-    if (type === 'defense' && (m.lost || 0) >= B.mission.defense.loseAt) { setResult(s, ev, 'lose', '村が壊された…（敗北）'); return; }
-    if (type === 'escort' && ev.some(function (e) { return e.type === 'death' && e.kind === 'wagon'; }) && !objectsOf(s, 'wagon').length) {
-      setResult(s, ev, 'lose', 'トロッコが壊された…（敗北）'); return;
-    }
-    if (type === 'escort') {
-      var w = objectsOf(s, 'wagon')[0];
-      if (w && inCells(m.goal, w.x, w.y)) { setResult(s, ev, 'win', 'トロッコがゴールに着いた！（勝利）'); return; }
-    }
-    if ((type === 'annihilate' || type === 'defense') && enemyDied && enemiesOf(s).length === 0) {
-      setResult(s, ev, 'win', '敵を全員倒した！（勝利）');
-    }
+    bumpCounters(s, when, ev);
+    var hit = condsOf(s).filter(function (c) {
+      if (c.when.indexOf(when) < 0 || c.then === 'canClear') return false;
+      if ((c.once || c.then === 'mission') && s.cond && s.cond.done && s.cond.done[c.id]) return false;
+      return evalCond(s, c['if'], ev);
+    });
+    if (!hit.length) return;
+    hit.forEach(function (c) {
+      if (c.once || c.then === 'mission') condState(s).done[c.id] = true;
+      if (c.then === 'mission') ev.push({ type: 'mission', id: c.id, cells: [], text: 'ミッション達成: ' + condText(s, c) });
+    });
+    // 負けを先に見る（同じ1発で村が壊れて敵が全滅しても負け）。同じ側は並び順
+    var end = hit.filter(function (c) { return c.then === 'lose'; })[0] || hit.filter(function (c) { return c.then === 'win'; })[0];
+    if (end) setResult(s, ev, end.then, condText(s, end, true));
+  }
+  // 勝敗（ダメージを当てたあと・トロッコが進んだあと・ターン終了処理のダメージのあと）
+  function checkResult(s, ev) { runConditions(s, 'afterDamage', ev); }
+  // クリアできるようにする条件（canClear）のうち、いま成り立っている最初のもの。なければ null
+  function clearReady(s) {
+    if (s.result) return null;
+    return condsOf(s).filter(function (c) { return c.then === 'canClear' && evalCond(s, c['if'], []); })[0] || null;
+  }
+  // 画面に出す文: 勝ち方（win・canClear）・負け方（lose）・ミッション。showIf があれば、成り立つときだけ出す
+  function condLines(s) {
+    var out = { win: [], lose: [], missions: [] };
+    condsOf(s).forEach(function (c) {
+      if (c.showIf && !evalCond(s, c.showIf, [])) return;
+      if (c.then === 'mission') out.missions.push({ id: c.id, text: condText(s, c), done: !!(s.cond && s.cond.done && s.cond.done[c.id]) });
+      else out[c.then === 'lose' ? 'lose' : 'win'].push(condText(s, c));
+    });
+    return out;
   }
 
   // 水か氷が当たると、火傷が治る
@@ -1691,7 +2044,7 @@
     castEv.text = castEv.text.replace(/ → $/, '');
     applyHits(s, ctx, ev);
     ctx.after.forEach(function (fn) { fn(); });
-    if (s.ex) exMissions(s, ev);   // 展示ステージ③: ミッション（火山を作る）
+    runConditions(s, 'afterShot', ev);   // 条件: 撃ったあと（ミッション「火山を作る」など）
     return ctx;
   }
 
@@ -1838,20 +2191,18 @@
     moveUnit(s, u, to[0], to[1], dist, ev);
     u.moved = { from: origin, to: [to[0], to[1]] };
   }
-  // 奪取: 宝のマスで止まると宝を持つ。持ったまま帰り口で止まったら勝ち（勝ったら true）
+  // 味方が自分で移動を終えたとき。奪取: 宝のマスで止まると宝を持つ。条件（味方が移動を終えたとき）を見て、決着したら true
   function arrive(s, u, ev) {
     var m = s.mission;
-    if (!m || missionType(s) !== 'retrieve') return false;
-    if (!m.carrier && m.treasure && m.treasure[0] === u.x && m.treasure[1] === u.y) {
+    if (m && missionType(s) === 'retrieve' && !m.carrier && m.treasure && m.treasure[0] === u.x && m.treasure[1] === u.y) {
       m.carrier = u.id; m.treasure = null;
       ev.push({ type: 'treasure', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'が宝を持った（持っている間は撃てない）' });
     }
-    if (m.carrier === u.id && inCells(m.exit, u.x, u.y)) {
+    if (m && m.carrier === u.id && inCells(m.exit, u.x, u.y)) {
       ev.push({ type: 'treasure', id: u.id, cells: [[u.x, u.y]], text: unitLabel(s, u) + 'が宝を持って帰り口に着いた' });
-      setResult(s, ev, 'win', '宝を持ち帰った！（勝利）');
-      return true;
     }
-    return false;
+    runConditions(s, 'allyMoved', ev);
+    return !!s.result;
   }
 
   // ---------------------------------------------------------------
@@ -1915,6 +2266,7 @@
         text: unitLabel(s, u) + 'は' + DIRS[dir].name + 'を向いて' + magicName(u.magic) + 'の魔法を' + (first ? '構えた' : '構え直した') + '（発動 ' + no + '番目）' });
     } else {
       shoot(s, u, dir, ev);
+      runConditions(s, 'afterFire', ev);   // 条件: 一回の発動がぜんぶ終わったあと（1人ずつでは、その味方が撃ち終えたら）
     }
     step();
     return { ok: true, state: s, events: ev, steps: steps };
@@ -2302,7 +2654,7 @@
   var RUSH_BLOCK = { puddle: true, mud: true };
   function rushOpen(s, e, x, y) {
     var t = getTile(s, x, y), o = unitAt(s, x, y);
-    return isPassable(t) && !RUSH_BLOCK[t] && (!o || o === e);
+    return WALKS.rush(t) && (!o || o === e);   // 地形の決まりは、条件の道の部品（walk: 'rush'）と同じもの
   }
   function villageNextTo(s, x, y) {
     var vs = objectsOf(s, 'village');
@@ -2365,35 +2717,16 @@
     var v = reach ? villageNextTo(s, goal[0], goal[1]) : null;
     return { id: e.id, from: [e.x, e.y], path: path, reach: reach, village: v ? v.id : null, stop: stop };
   }
-  // ステージ②（mission.defense.sealWin）: 村への道をふさぎきったら、プレイヤーがキーでクリアにできる（勝手には勝たない。オーナー 10/17）
-  function sealReady(s) { return !s.result && missionType(s) === 'defense' && !!B.mission.defense.sealWin && rushSealed(s); }
+  // クリアできるようにする条件（canClear。防衛のひな形の「村への道をふさぎきったら」）が成り立っていたら、プレイヤーがキーでクリアにできる
+  //   （勝手には勝たない。オーナー 10/17）。条件の中身は expandTemplate の seal: 敵が全員突進の敵で、どの敵からも増援の出てくる所からも、
+  //   突進の敵の通り方（WALKS.rush）でどの村の隣へも行けない。人は動くので数えず、地形だけで見る（味方が道に立っているだけでは、ふさいだことにならない）
+  function sealReady(s) { return !!clearReady(s); }
   function claimSeal(s0) {
-    if (!sealReady(s0)) return fail(s0, 'まだ村への道をふさいでいない');
+    var c = clearReady(s0);
+    if (!c) return fail(s0, 'まだ村への道をふさいでいない');
     var s = clone(s0), ev = [];
-    setResult(s, ev, 'win', '村への道をふさいだ！（勝利）');
+    setResult(s, ev, 'win', condText(s, c, true));
     return { ok: true, state: s, events: ev, steps: [{ state: clone(s), events: ev.slice() }] };
-  }
-  // ふさぎきったか: 敵が全員突進の敵で、どの敵からも増援の出てくる所からも、どの村の隣へも行けない。
-  //   人は動くので数えず、地形（と村）だけで見る。味方が道に立っているだけでは、ふさいだことにならない
-  function rushSealed(s) {
-    var es = enemiesOf(s);
-    if (!objectsOf(s, 'village').length || es.some(function (e) { return e.stand !== 'rush'; })) return false;
-    var starts = es.map(function (e) { return [e.x, e.y]; });
-    if (s.spawn) starts.push([s.spawn.x, s.spawn.y]);
-    var seen = {}, queue = [];
-    starts.forEach(function (c) { if (!seen[key(c[0], c[1])]) { seen[key(c[0], c[1])] = true; queue.push(c); } });
-    if (!queue.length) return false;
-    while (queue.length) {
-      var c = queue.shift();
-      if (villageNextTo(s, c[0], c[1])) return false;
-      neighbors(s, c[0], c[1]).forEach(function (n) {
-        var k = key(n.x, n.y), t = getTile(s, n.x, n.y), o = unitAt(s, n.x, n.y);
-        if (seen[k] || !isPassable(t) || RUSH_BLOCK[t] || (o && o.kind === 'village')) return;
-        seen[k] = true;
-        queue.push([n.x, n.y]);
-      });
-    }
-    return true;
   }
   // 突進の敵が走る（＋体当たり）。使った道を返す
   function rushMove(s, e, ev, step) {
@@ -2429,7 +2762,7 @@
   //   ボス: 大きい体（size×size）。1ターンに1マス、向いている方へ進み（体の全部が入れるときだけ）、体の前の stage3.bossReach 列に一撃を予告する。
   //   取り巻き: 浮いている。地形に関係なく、風の人へまっすぐ進む（縦横で差の大きい方から。味方・敵・村のマスは通り抜けるが、止まれない）。
   //            風の人の隣に来たら体当たりを予告する。ボスの後ろから stage3.spawnEvery ターンごとに湧き続ける（上限 stage3.spawnMax）
-  //   火山の熱（timePasses）・桜吹雪の扇（doSakuraStorm）・ミッション（exMissions）・ヒントの数え（exTurnEnd）
+  //   火山の熱（timePasses）・桜吹雪の扇（doSakuraStorm）・ヒントの数え（exTurnEnd）。ボスの勝ち負けとミッションは条件（ひな形 boss・tileMission）
   // ---------------------------------------------------------------
   function bodyCells(u, x, y) {
     var n = u.size || 1, out = [];
@@ -2486,15 +2819,6 @@
     // 通り抜けの途中で進めなくなったら、止まれるマスまで戻る
     while (path.length && !free(x, y)) { path.pop(); x = path.length ? path[path.length - 1][0] : e.x; y = path.length ? path[path.length - 1][1] : e.y; }
     return { path: path, to: [x, y], adjacent: near(x, y), target: w.id };
-  }
-  // ミッション（s.ex.missions: [{ id, tile }]）: その自然が盤面に初めてできたら達成
-  function exMissions(s, ev) {
-    (s.ex.missions || []).forEach(function (m) {
-      s.exDone = s.exDone || {};
-      if (s.exDone[m.id] || s.tiles.indexOf(m.tile) < 0) return;
-      s.exDone[m.id] = true;
-      ev.push({ type: 'mission', id: m.id, cells: [], text: 'ミッション達成: ' + (m.name || m.id) });
-    });
   }
   // ターン終了処理のあと: ヒントの数え（山がないまま・火山があるのに桜吹雪なし）と、取り巻きが湧く
   function exTurnEnd(s, ev, step) {
@@ -2743,11 +3067,15 @@
       if (stanceList(s).length) {
         ev.push({ type: 'phase', text: '── 構えの発動（構えた順） ──' });
         fireStances(s, ev, step);
+        runConditions(s, 'afterFire', ev);   // 条件: 一回の発動がぜんぶ終わったあと
+        step();
       }
       alliesOf(s).forEach(function (a) { delete a.stance; });
     } else if (alliesOf(s).some(function (a) { return a.npc && a.intent; })) {
       ev.push({ type: 'phase', text: '── 構える味方の発動 ──' });
       allyFirePhase(s, ev, step);
+      runConditions(s, 'afterFire', ev);   // 条件: 一回の発動がぜんぶ終わったあと（構える味方が撃ち終えたら）
+      step();
     }
 
     // 3. 敵の魔法の発動
@@ -2772,11 +3100,8 @@
       timePasses(s, ev, step);
     }
 
-    // 4b. 防衛: 決まったターンのターン終了処理が終わったとき、村が残っていれば勝ち
-    if (!s.result && missionType(s) === 'defense' && s.turn >= B.mission.defense.turns && objectsOf(s, 'village').length) {
-      setResult(s, ev, 'win', 'ターン' + s.turn + 'を守り切った。村は無事！（勝利）');
-      step();
-    }
+    // 4b. 条件: ターン終了処理のあと（防衛「決まったターンまで村が残れば勝ち」など）
+    if (!s.result) { runConditions(s, 'turnEnd', ev); step(); }
 
     // 4c. 構える味方がいるシナリオ: 敵が残ったままターン終了を迎えた回数（外したときのヒントに使う）
     if (!s.result && alliesOf(s).some(isNpc) && enemiesOf(s).length) s.misses = (s.misses || 0) + 1;
@@ -2885,6 +3210,7 @@
       grows = grows.concat(ctx.grows);
       cells[a.id] = ctx.cells;
     });
+    runConditions(sim, 'afterFire', ev);
     var tileChanges = [];
     for (var i = 0; i < sim.tiles.length; i++) {
       if (sim.tiles[i] !== startTiles[i]) tileChanges.push({ x: i % sim.size, y: Math.floor(i / sim.size), from: startTiles[i], to: sim.tiles[i] });
@@ -3025,6 +3351,7 @@
     if (simulOn()) {   // 【一斉】味方の構え（構えた順。構える味方は最後）
       stanceList(s).forEach(function (a0) { fire(out.allies, a0, true); });
     } else alliesOf(s).filter(function (a) { return a.npc && a.intent; }).forEach(function (a0) { fire(out.allies, a0); });
+    if (out.allies.length) runConditions(sim, 'afterFire', []);   // 条件: 一回の発動がぜんぶ終わったあと（ここで決着するなら、敵の予告は消える）
     if (s.enemyActs) enemiesOf(s).filter(function (e) { return e.intent; }).forEach(function (e0) { fire(out.enemies, e0); });
     if (sim.result) return out;
     // 「進む」敵: 発動のあとの盤面で、次に進むマスと、そこから撃つ魔法（enemies に入る。from は進んだ先）
@@ -3051,8 +3378,8 @@
       if (!sum[e.id]) { sum[e.id] = { id: e.id, amount: 0, side: e.side }; out.burn.push(sum[e.id]); }
       sum[e.id].amount += e.amount;
     });
-    var held = missionType(later) === 'defense' && later.turn >= B.mission.defense.turns && objectsOf(later, 'village').length;   // 守り切って終わる
-    if (s.enemyActs && !later.result && !held) {
+    runConditions(later, 'turnEnd', laterEv);   // 条件: ターン終了処理のあと（守り切って終わるなら、増援も突進もない）
+    if (s.enemyActs && !later.result) {
       spawnPhase(later, [], function () {});
       enemiesOf(later).filter(function (e) { return e.stand === 'rush'; }).map(function (e) { return e.id; }).forEach(function (id) {
         var e = findUnit(later, id);
@@ -3121,8 +3448,7 @@
   function editSetMission(s0, type) {
     if (!MISSION_INFO[type]) return fail(s0, 'お題がない');
     var s = clone(s0);
-    if (!s.mission) s.mission = newMission(type);
-    s.mission.type = type;
+    setTemplate(s, type, templateParams(s0));
     return ok(s);
   }
 
@@ -3254,10 +3580,18 @@
     s.fireAge = {};
     if (s.fireLife) s.fireLife = {};
     delete s.misses;
-    delete s.exDone; delete s.exCount; delete s.exHints;   // 展示ステージ③: ミッション・ヒントの数え
+    delete s.exCount; delete s.exHints;   // 展示ステージ③: ヒントの数え
     if (!s.mission) s.mission = newMission('annihilate');
+    if (!s.conditions) {   // 条件を持たない前の状態は、お題の名前・ボスの決まり・守るターン数の上書きから読み替えて持たせる
+      var L = legacyOf(s);
+      putConditions(s, L);
+      if (L.overrides) s.overrides = L.overrides; else delete s.overrides;
+      if (L.ex) s.ex = L.ex;
+    }
+    delete s.cond;                                       // 条件の数えと、一度きりの覚え（ミッション達成など）
+    if (s.condKeep) { s.cond = { n: clone(s.condKeep), done: {} }; delete s.condKeep; }   // やり直しをまたいで残す数え（keepOnRetry）
     var m = s.mission;
-    m.lost = 0;
+    delete m.lost;   // 前の形の「壊れた村の数」（今は数え lostVillages）
     if (m.carrier) {
       var c = findUnit(s, m.carrier);
       m.treasure = c ? [c.x, c.y] : m.treasure;
@@ -3283,6 +3617,7 @@
     return JSON.stringify({
       version: 2, size: s.size, h: s.h || undefined, tiles: s.tiles, enemyActs: s.enemyActs, enemyOnlyMagics: s.enemyOnlyMagics || undefined,
       overrides: s.overrides || undefined, spawn: s.spawn || undefined,
+      template: templateOf(s), conditions: condsOf(s), counters: s.conditions ? (s.counters || undefined) : (Object.keys(countersOf(s)).length ? countersOf(s) : undefined),
       mission: { type: m.type, goal: m.goal || [], exit: m.exit || [], treasure: carrier ? [carrier.x, carrier.y] : (m.treasure || null) },
       units: s.units.map(function (u) {
         if (u.side === 'object') return { side: 'object', kind: u.kind, x: u.x, y: u.y };
@@ -3309,9 +3644,14 @@
       if (d.enemyOnlyMagics.some(function (m) { return !MAGIC_INFO[m]; })) return { ok: false, error: '敵だけの魔法に知らない魔法がある' };
       s.enemyOnlyMagics = d.enemyOnlyMagics.slice();
     }
-    if (d.overrides !== undefined && d.overrides !== null) {
-      if (!validOverrides(d.overrides)) return { ok: false, error: 'このシナリオだけの数値（overrides）に知らない項目か、型の違う値がある' };
-      s.overrides = clone(d.overrides);
+    var ovRest = d.overrides !== undefined && d.overrides !== null ? splitOverrides(d.overrides).rest : undefined;   // 前の形の守るターン数などは、条件へ読み替える
+    if (ovRest) {
+      if (!validOverrides(ovRest)) return { ok: false, error: 'このシナリオだけの数値（overrides）に知らない項目か、型の違う値がある' };
+      s.overrides = clone(ovRest);
+    }
+    if (d.conditions !== undefined) {
+      var bad0 = checkConditions(d.conditions, d.counters);
+      if (bad0) return { ok: false, error: bad0 };
     }
     if (d.spawn !== undefined && d.spawn !== null) {
       var sp = d.spawn;
@@ -3343,6 +3683,7 @@
       }
       if (bad) return { ok: false, error: '敵の個性が正しくない' };
     }
+    putConditions(s, readConditions({ mission: missionType(s), overrides: d.overrides || undefined, conditions: d.conditions, counters: d.counters, template: d.template }));
     return { ok: true, state: s };
   }
 
@@ -3354,7 +3695,7 @@
   var PRESETS = [
     {
       id: 'mDefense', name: '【お題】防衛', mission: 'defense',
-      desc: '【お題】防衛。味方 草・土・火、敵2体（A: 的＝村を狙う／B: 人数）。下の段の村2つを、' + B.mission.defense.turns + 'ターン目の終わりまで守る（敵の全滅でも勝ち）。村が1つでも壊れたら負け。村はHP' + B.mission.village.hp + 'で動かない。味方の魔法でも壊れる。',
+      desc: '【お題】防衛。味方 草・土・火、敵2体（A: 的＝村を狙う／B: 人数）。下の段の村2つを、' + DEFAULT_TURNS + 'ターン目の終わりまで守る（敵の全滅でも勝ち）。村が1つでも壊れたら負け。村はHP' + B.mission.village.hp + 'で動かない。味方の魔法でも壊れる。',
       rows: ['.......', '.......', '..F.F..', '..F.F..', '.......', '.......', '.......'],
       allies: [['grass', 2, 6], ['earth', 3, 6], ['fire', 4, 6]],
       enemies: [['fire', 1, 0, { aim: 'target' }], ['fire', 5, 0, { aim: 'count' }]],
@@ -3519,7 +3860,7 @@
       // やり直したときに盤面の上に1行だけ出すヒントは texts.js（stages.tut2.hint。ターンの形ごと）
       // 突進は1ターンに1マス、5ターン目の終わりまで守れば勝ち。道をふさぎきったらキーでクリアにできる（オーナー 10/17）
       //   オーナー 10/29: ルールの上書き（水は正面1マス・山の頂上と腕・移動2）は外した。どのシナリオとも同じ値で動く。残すのはステージの中身（敵の動き・勝ち方）だけ
-      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5 }
+      overrides: { 'enemy.rushMove': 1, 'mission.defense.turns': 5 }   // 守るターン数は前の形のまま持っている（読むときに、防衛のひな形の条件へ読み替える）
     },
     {
       // 展示ステージ③（.claude/IMPROVE_stage3.md）。①②で覚えた「敵のいないところに撃つ」「魔法同士をつなぐ」を、3人と3段でいちばん大きな形にする締め
@@ -3542,7 +3883,7 @@
       enemyOnly: ['smash', 'bite'],
       ex: {
         spawn: { magic: 'bite', hp: 1 },                                     // 湧く取り巻き（間隔と上限は stage3.spawnEvery・spawnMax）
-        missions: [{ id: 'volcano', tile: 'volcano', name: '火山を作る' }],   // 最初から出すミッション（表示名は texts.js の stages.ex3.mission）
+        missions: [{ id: 'volcano', tile: 'volcano' }],   // 最初から出すミッション（読むときに条件 tileMission になる。表示名は texts.js の stages.ex3.missions、なければ「火山を作る」）
         fireModes: true      // 魔法の出し方（ターンの終わりにつながる／撃った瞬間に発動）を画面で切り替える（開発モードだけ。展示・作るモードはつながる）。「1段ずつ」はオーナー 10/30 で外した
         // 光るヒント・桜吹雪の前のため・倒したあとの大きな絵・ミッション達成の札と紙吹雪・桜吹雪の舞う花びらは、オーナー 10/17「いらない」で外した
         // 予測を形だけにする shapeOnly は、オーナー 10/29 からどのシナリオでも（balance.js の preview.shapeOnly）
@@ -3579,6 +3920,9 @@
     if (!p) return null;
     var s = buildPreset(p);
     s.tries = (s0.tries || 0) + 1;
+    var defs = countersOf(s), keep = {};
+    Object.keys(defs).forEach(function (k) { if (defs[k].keepOnRetry && s0.cond && s0.cond.n && s0.cond.n[k]) keep[k] = s0.cond.n[k]; });
+    if (Object.keys(keep).length) s.condKeep = keep;
     return withOverrides(s.overrides, function () { return startBattle(s); });
   }
   // やり直したとき（2回目以降の開始時）に盤面の上に出すヒント（1文）。なければ null
@@ -3607,7 +3951,8 @@
   }
   function buildPresetIn(p) {
     var s = blankState(p.rows[0].length, p.enemyActs !== false, p.rows.length);   // 横は1行の文字数、縦は行の数（enemyActs: false で敵は何もしない）
-    if (p.overrides) s.overrides = clone(p.overrides);
+    var L = readConditions(p);   // 条件（勝ち負け・ふさぎ・ミッション）。前の形は、読むときにひな形へ展開する
+    if (L.overrides) s.overrides = L.overrides;
     p.rows.forEach(function (row, y) {
       for (var x = 0; x < row.length; x++) setTile(s, x, y, CH[row[x]]);
     });
@@ -3628,9 +3973,10 @@
     });
     if (p.enemyOnly) s.enemyOnlyMagics = p.enemyOnly.slice();
     if (p.spawn) s.spawn = clone(p.spawn);
-    if (p.ex) s.ex = clone(p.ex);     // 展示ステージ③（ボス・取り巻き・火山の熱・桜吹雪の扇・ミッション・ヒント・画面の見せ方）
+    if (L.ex) s.ex = L.ex;            // 展示ステージ③（取り巻きの湧き・ヒント・画面の見せ方）。ボスの勝ち負けとミッションは条件
     if (p.tutorial) s.stage = p.id;   // やり直し（retryStage）とヒント（stageHint）に使う
     s.mission = newMission(p.mission || 'annihilate');
+    putConditions(s, L);
     (p.villages || []).forEach(function (c) { addObject(s, 'village', c[0], c[1]); });
     if (p.wagon) addObject(s, 'wagon', p.wagon[0], p.wagon[1]);
     if (p.goal) s.mission.goal = p.goal.map(function (c) { return c.slice(); });
@@ -3639,31 +3985,25 @@
     return s;
   }
 
-  // 画面に常に出す、お題の名前・勝ち方・負け方・残りの数
+  // 画面に常に出す、お題の名前・勝ち方・負け方・ミッション・残りの数。
+  //   勝ち方（win）・負け方（lose）・ミッション（missions: [{ id, text, done }]）は、条件の説明の文（text）から出す。
+  //   残りの数（status）は、ひな形（template）ごとに今までどおり
   function missionInfo(s) {
-    var type = missionType(s), m = s.mission || {};
-    var info = { type: type, name: MISSION_INFO[type].name, win: '', lose: '味方が全員倒れる', status: [] };
-    if (s.ex) {   // 展示ステージ③: ボスを倒せば勝ち（取り巻きは湧き続ける）。味方が1人でも倒れたら頭からやり直し
+    var type = missionType(s), m = s.mission || {}, tpl = templateOf(s), lines = condLines(s);
+    var info = { type: type, template: tpl, name: MISSION_INFO[type].name, win: lines.win.join('／'), lose: lines.lose.join('／'), missions: lines.missions, status: [] };
+    if (tpl === 'boss') {   // ボスを倒せば勝ち（取り巻きは湧き続ける）
       var boss = enemiesOf(s).filter(function (e) { return e.stand === 'boss'; })[0];
-      info.win = 'ボスを倒す';
-      info.lose = '味方が1人でも倒れる（ステージの頭からやり直し）';
       info.status.push(boss ? 'ボス HP ' + boss.hp + '/' + boss.maxHp : 'ボスを倒した');
       info.status.push('取り巻き ' + enemiesOf(s).filter(function (e) { return e.stand === 'float'; }).length + '体');
       return info;
     }
     if (type === 'annihilate') {
-      info.win = '敵を全員倒す';
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'defense') {
-      var T = B.mission.defense.turns;
-      var canSeal = B.mission.defense.sealWin && (enemiesOf(s).some(function (e) { return e.stand === 'rush'; }) || !!(s.spawn && s.spawn.stand === 'rush'));   // ふさぐ相手（突進）がいるときだけ書く
-      info.win = 'ターン' + T + 'の終わりまで村を守る（' + (canSeal ? '村への道をふさいだら、その場でクリアにできる。' : '') + '敵の全滅でも勝ち）';
-      info.lose = '村が' + B.mission.defense.loseAt + 'つ壊れる／味方が全員倒れる';
+      var T = templateParams(s).turns;
       // 「ターン4/5」の形だけ（決着の前とあとで長さを変えない。村の行は出さない。村の HP は村のマスを押すと出る。IMPROVE_controls 3-1）
       info.status.push('ターン' + Math.min(s.turn, T) + '/' + T);
     } else if (type === 'escort') {
-      info.win = 'トロッコがゴールに入る';
-      info.lose = 'トロッコが壊れる／味方が全員倒れる';
       var w = objectsOf(s, 'wagon')[0];
       if (w) {
         var r = wagonRoute(s);
@@ -3673,7 +4013,6 @@
       } else info.status.push('トロッコがない');
       info.status.push('敵 残り' + enemiesOf(s).length + '体');
     } else if (type === 'retrieve') {
-      info.win = '宝を持って帰り口で移動を終える';
       var c = carrierOf(s);
       if (c) {
         var best = null;
@@ -3727,7 +4066,13 @@
     slopeMap: withStage(slopeMap), mountainSlopes: withStage(mountainSlopes),   // 山の斜面（10/29 からどの山にも）
     // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,
-    sealReady: withStage(sealReady), claimSeal: withStage(claimSeal),   // ステージ②: ふさぎきったらキーでクリア
+    sealReady: withStage(sealReady), claimSeal: withStage(claimSeal),   // クリアできるようにする条件（canClear）が成り立っていたら、キーでクリア
+    // 条件（勝ち負け・ふさぎ・ミッションを、ステージのデータに書く）
+    WHENS: WHENS, TEMPLATE_INFO: TEMPLATE_INFO, TEMPLATES: TEMPLATES, DEFAULT_TURNS: DEFAULT_TURNS, WALKS: WALKS,
+    expandTemplate: expandTemplate, setTemplate: function (s0, name, params, missions) { return setTemplate(clone(s0), name, params, missions); },
+    templateOf: templateOf, templateParams: templateParams, conditionsOf: function (s) { return clone(condsOf(s)); }, countersOf: function (s) { return clone(countersOf(s)); },
+    checkConditions: checkConditions, readConditions: readConditions, splitOverrides: splitOverrides, tileMission: tileMission,
+    evalCond: withStage(function (s, c, ev) { return evalCond(s, c, ev || []); }), clearReady: withStage(clearReady),
     withOverrides: function (s, fn) { return withOverrides(s && s.overrides, fn); },
     // 【一斉】ターンの形（構えて、ターンの終わりに一斉に発動）
     simulOn: simulOn, stanceList: stanceList, stanceOrder: stanceOrder, reorderStance: withStage(reorderStance),
