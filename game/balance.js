@@ -53,6 +53,13 @@
       //   rules.js の expandTemplate('defense')）。前のステージの overrides['mission.defense.turns'] などは、読むときに条件へ読み替える
     },
 
+    // ステージの前後の会話（まえげき・あとげき。オーナー 11/13）: 並びごとに、出す・出さない。
+    //   tutorial チュートリアル／shared みんなのステージ／own 自分のステージ（テストプレイも）／exhibit 展示モード（どの並びでも）。
+    //   展示でどうするかは未定なので、今は切（展示モードの動きは変えない）。試遊で見るときは exhibit を true にする
+    talk: {
+      show: { tutorial: true, shared: true, own: true, exhibit: false }
+    },
+
     // 敵だけの魔法。ここに入れた魔法は、味方のエディットの選択肢に出さない（シナリオごとにも足せる）
     enemyOnlyMagics: [],
 

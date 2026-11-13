@@ -36,6 +36,7 @@
 | [docs/自然と魔法とシナジー.md](docs/自然と魔法とシナジー.md) | 魔法の動詞と形・自然の性質・魔法 × 自然の表・シナジー・時間で変わるもの・試しのもの |
 | [docs/画面構成.md](docs/画面構成.md) | 展示モードと開発モード・遊ぶ画面の配置・エディット・見た目・保存と共有 |
 | [docs/条件の書き方.md](docs/条件の書き方.md) | 勝ち・負け・「クリアする」・ミッションを、ステージのデータに条件として書く形（部品・数え・ひな形） |
+| [docs/会話の書き方.md](docs/会話の書き方.md) | ステージの前後の会話（まえげき・あとげき）と、会話に出すキャラの登録 |
 | [CLAUDE.md](CLAUDE.md) | 作るときの約束。コア・目指すもの・段階・シナジーの生まれ方・柱・制約・やらないこと（ここまでオーナーが決める）・案の出し方・書き換えのルール・技術の約束（公開も）・進め方 |
 | [NOTES.md](NOTES.md) | 遊んで分かったこと・今の課題 |
 | [archive/](archive/README.md) | 活動ログ（決めたことの記録・仕様書・調査）と昔の版 |
@@ -53,6 +54,8 @@ game/        ゲーム本体
   ui.js        画面
   balance.js   数（魔法の形・ダメージ・入切）
   texts.js     画面に出る文
+  chars.js     会話に出すキャラの登録（名前・色・絵）
+  talk.js      ステージの前後の会話（まえげき・あとげき）の画面
   stages_io.js エディットのステージの読み書き
   mode.js      展示 ⇄ 開発・見た目の切り替え
   settings.js  設定（画面の主な色と、自然・魔法・シナジーの名前）
@@ -80,7 +83,7 @@ node tests/scenarios.js
 node tests/serve.js
 ```
 
-- `tests/run.js` はルールのテスト、`tests/scenarios.js` は決まった手順を最後まで動かして確かめる。ほかに `tests/simul.js`（一斉発動・チュートリアル）・`tests/ex3.js`（③）・`tests/stages.js`（エディットのステージ）・`tests/stage_api.js`（共有の置き場所）・`tests/settings.js`（設定の色と名前）・`tests/conditions.js`（勝ち負けの条件）・`tests/plays.js`（プレイ集の記録と背番号）。ルールを変えたら全部通す（11/03 にすべて通るようにした）。
+- `tests/run.js` はルールのテスト、`tests/scenarios.js` は決まった手順を最後まで動かして確かめる。ほかに `tests/simul.js`（一斉発動・チュートリアル）・`tests/ex3.js`（③）・`tests/stages.js`（エディットのステージ）・`tests/stage_api.js`（共有の置き場所）・`tests/settings.js`（設定の色と名前）・`tests/conditions.js`（勝ち負けの条件）・`tests/talk.js`（会話とキャラの登録）・`tests/plays.js`（プレイ集の記録と背番号）。ルールを変えたら全部通す（11/03 にすべて通るようにした）。
 - `tests/` のほかのファイル（`_play.js`・`autoplay.js`・`mission_search.js`・`ex3_search.js` など）は、手を探したり数を見たりする調べもの用の道具。
 - `tests/serve.js` は http://localhost:8765 で画面を開く（共有の置き場所も手元で動く）。
 - Cloudflare への公開は、Claude Code に「クラウドフレアにあげて」（`.claude/skills/cloudflare-publish`）。

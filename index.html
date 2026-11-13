@@ -145,6 +145,17 @@
           <label>やり直しのヒント（一斉） <input id="txHintSimul" type="text"></label>
           <label>やり直しのヒント（1人ずつ） <input id="txHintSingle" type="text"></label>
         </div>
+        <div class="edit-group stage-talk">
+          <h3>会話 <small>ステージの前と、勝ったあとに出る。1行が1つの文</small></h3>
+          <p class="note">書き方: <code>左 キャラA「文」</code> <code>右 キャラB「文」</code>。キャラ: <span id="talkChars"></span></p>
+          <label>まえげき（初めて始めたとき。目的を伝える） <textarea id="txTalkBefore" rows="4" spellcheck="false"></textarea></label>
+          <label>あとげき（初めて勝ったとき。起きたことの仕組みを伝える） <textarea id="txTalkAfter" rows="4" spellcheck="false"></textarea></label>
+          <div class="row">
+            <button id="btnTalkBefore" type="button">まえげきを見る</button>
+            <button id="btnTalkAfter" type="button">あとげきを見る</button>
+            <button id="btnTalkForget" type="button" title="このブラウザの「もう見た」のしるしを消す。どのステージも、次に始めたとき・勝ったときにまた会話が出る">見たしるしを消す</button>
+          </div>
+        </div>
         <p class="note">テストプレイを始めたときの盤面が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
         <button id="btnEditDone" type="button" class="primary">▶ テストプレイ <kbd>E</kbd></button>
       </div>
@@ -180,10 +191,12 @@
 
   <script src="game/balance.js"></script>
   <script src="game/texts.js"></script>
+  <script src="game/chars.js"></script>
   <script src="game/stages_io.js"></script>
   <script src="game/rules.js"></script>
   <script src="game/plays.js"></script>
   <script src="game/ui.js"></script>
+  <script src="game/talk.js"></script>
   <!-- 会話の窓（texts_ui.js）は、じゃまなのでなくした（オーナー 10/31。archive/会話の窓_20261031/） -->
 </body>
 </html>

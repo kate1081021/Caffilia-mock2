@@ -19,6 +19,7 @@
  *   applyOrder(keys, order) / moveTo(list, from, to) / placeAt(list, key, before, prev) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
  *   blankTexts(name) / linesToText(lines) / textToLines(text) … 会話の窓の文（texts.js の stages.<id> と同じ形）
+ *   checkTalk(talk) / talkToText(lines, chars) / textToTalk(text, chars) / setTalk(R, s, kind, lines) / talkDue(o) … ステージの前後の会話（まえげき・あとげき）
  */
 (function (root) {
   'use strict';
@@ -102,6 +103,7 @@
     else if (m.treasure) def.treasure = cell(m.treasure);
     if (s.spawn) def.spawn = clone(s.spawn);
     if (s.ex) def.ex = clone(s.ex);
+    if (s.talk) def.talk = clone(s.talk);   // 会話（まえげき・あとげき）
     if (s.enemyOnlyMagics && s.enemyOnlyMagics.length) def.enemyOnly = s.enemyOnlyMagics.slice();
     var ov = R.splitOverrides(s.overrides).rest;   // 前の形の守るターン数などは、条件に入っている
     if (ov) def.overrides = clone(ov);
@@ -170,6 +172,7 @@
     }
     var locked = Object.keys(d.overrides || {}).filter(function (p) { return STAGE_OVERRIDES.indexOf(p) < 0; });
     if (locked.length) return 'ステージごとに変えられるのは、守るターン数と敵の歩数だけ（魔法の効き方は、どのステージでも同じ。' + locked.join('・') + ' は変えられない）';
+    if (d.talk !== undefined) { var badTalk = checkTalk(d.talk); if (badTalk) return badTalk; }
     if (d.template !== undefined && !R.TEMPLATE_INFO[d.template]) return '知らない勝ち方のひな形（template）がある';
     if (d.conditions !== undefined || d.counters !== undefined) {
       if (d.conditions === undefined) return '数え（counters）だけがあって、条件（conditions）がない';
@@ -291,6 +294,75 @@
       var m = /^([^「」\s]{1,16})「([\s\S]*)」$/.exec(t);
       return m ? { who: m[1], text: m[2], mode: mode } : { who: '', text: t, mode: mode };
     });
+  }
+
+  // ---------------------------------------------------------------
+  // ステージの前後の会話（まえげき・あとげき。オーナー 11/13）。ステージの定義の talk: { before: [行…], after: [行…] }
+  //   1行は { who: キャラの id（chars.js。登録のない名前も書ける。空なら語り）, side: 'left' | 'right', text: 文, face: 表情（省略で normal） }
+  //   talk は 名前 → 行の並び。before（まえげき）・after（あとげき）のほかの名前は、のちにステージの途中の会話に使う（今は出ない）
+  //   エディットの欄は1行が1つの文: 「左 キャラA「文」」「右 キャラB:笑う「文」」。左・右を書かなければ、そのキャラが前にいた側（初めてなら空いている側）。
+  //   「」のない行は語り（キャラなし）
+  // ---------------------------------------------------------------
+  var TALK_MAX_LINES = 60, TALK_MAX_TEXT = 200, TALK_MAX_WHO = 24;
+  function checkTalk(talk) {
+    if (!isObj(talk)) return '会話（talk）が正しくない';
+    var names = Object.keys(talk);
+    if (names.length > 20) return '会話（talk）の場面が多すぎる（20 まで）';
+    for (var i = 0; i < names.length; i++) {
+      var lines = talk[names[i]];
+      if (!Array.isArray(lines) || lines.length > TALK_MAX_LINES) return '会話「' + names[i] + '」が正しくない（' + TALK_MAX_LINES + '行まで）';
+      var bad = lines.some(function (l) {
+        return !isObj(l) || typeof l.text !== 'string' || !l.text || l.text.length > TALK_MAX_TEXT ||
+          (l.who !== undefined && (typeof l.who !== 'string' || l.who.length > TALK_MAX_WHO)) ||
+          (l.side !== undefined && l.side !== 'left' && l.side !== 'right') ||
+          (l.face !== undefined && (typeof l.face !== 'string' || l.face.length > TALK_MAX_WHO));
+      });
+      if (bad) return '会話「' + names[i] + '」に、正しくない行がある（文は' + TALK_MAX_TEXT + '字まで。側は left か right）';
+    }
+    return '';
+  }
+  var SIDE_TEXT = { left: '左', right: '右' };
+  function charName(chars, who) { return chars && chars[who] ? chars[who].name : who; }
+  function charId(chars, name) {
+    var ids = Object.keys(chars || {});
+    for (var i = 0; i < ids.length; i++) if (ids[i] === name || chars[ids[i]].name === name) return ids[i];
+    return name;   // 登録のない名前は、そのまま（仮の絵で出る）
+  }
+  function talkToText(lines, chars) {
+    return (lines || []).map(function (l) {
+      if (!l.who) return l.text;
+      return SIDE_TEXT[l.side === 'right' ? 'right' : 'left'] + ' ' + charName(chars, l.who) + (l.face ? ':' + l.face : '') + '「' + l.text + '」';
+    }).join('\n');
+  }
+  function textToTalk(text, chars) {
+    var where = {};   // キャラ → 前にいた側
+    return String(text || '').split(/\r?\n/).map(function (t) { return t.replace(/^\s+|\s+$/g, ''); }).filter(Boolean).map(function (t) {
+      var m = /^(?:(左|右)[\s　]*)?([^「」\s　:：]{1,24})(?:[:：]([^「」\s　]{1,24}))?「([\s\S]*)」$/.exec(t);
+      if (!m || !m[4]) return { who: '', side: 'left', text: (m ? t : t).slice(0, TALK_MAX_TEXT) };
+      var who = charId(chars, m[2]);
+      var used = Object.keys(where).map(function (k) { return where[k]; });
+      var side = m[1] === '左' ? 'left' : m[1] === '右' ? 'right' : where[who] || (used.indexOf('left') < 0 ? 'left' : 'right');
+      where[who] = side;
+      var line = { who: who, side: side, text: m[4].slice(0, TALK_MAX_TEXT) };
+      if (m[3]) line.face = m[3];
+      return line;
+    }).slice(0, TALK_MAX_LINES);
+  }
+  // エディットの盤面の会話を書きかえる（新しい状態を返す）。kind: 'before' | 'after'
+  function setTalk(R, s0, kind, lines) {
+    var s = R.clone(s0);
+    s.talk = isObj(s.talk) ? s.talk : {};
+    if (!s.talk.before) s.talk.before = [];
+    if (!s.talk.after) s.talk.after = [];
+    s.talk[kind] = clone(lines || []);
+    return s;
+  }
+  // 会話を出すか。o: { kind: 'before' | 'after', lines, context: 'tutorial' | 'shared' | 'own' | 'exhibit', show: 並びごとの入切, seen: もう出したか, editMode, replay }
+  //   まえげきは「そのステージを初めて始めたとき」、あとげきは「初めて勝ったとき」に呼ぶ（やり直し・負けでは呼ばない。呼ぶ側は talk.js）
+  function talkDue(o) {
+    if (!o || o.editMode || o.replay || o.seen) return false;
+    if (!Array.isArray(o.lines) || !o.lines.length) return false;
+    return !!(o.show && o.show[o.context]);
   }
 
   // ---------------------------------------------------------------
@@ -471,6 +543,7 @@
     PREFIX: PREFIX, tutorialSource: tutorialSource, tutorialIds: tutorialIds, applyOrder: applyOrder, moveTo: moveTo, placeAt: placeAt, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, keepEx: keepEx, setHp: setHp,
+    checkTalk: checkTalk, talkToText: talkToText, textToTalk: textToTalk, setTalk: setTalk, talkDue: talkDue,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

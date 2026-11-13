@@ -130,6 +130,7 @@
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'saveDiff', 'stageSaveNote', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
+    'txTalkBefore', 'txTalkAfter', 'btnTalkBefore', 'btnTalkAfter', 'btnTalkForget', 'talkChars',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose', 'btnView',
     'btnSavePlay', 'rpCard', 'rpBar', 'rpStop', 'rpSpeed', 'rpNow'].forEach(function (id) { el[id] = $(id); });
@@ -462,11 +463,12 @@
     app.chain = null; app.chainCombo = null;
     render(true);
     if (pb.done) pb.done();
+    if (app.onPlaybackEnd) app.onPlaybackEnd();   // 会話（きっかけ: 初めて勝ったときのあとげき。talk.js）
     exAfterPlayback();
     exhibitAfterPlayback();
   }
   // 展示モード: ステージをクリアしたら、右下の「次へ」（か Enter）で次へ（IMPROVE_v3 段3・IMPROVE_controls 5-2）。
-  //   会話の窓はなくした（オーナー 10/31）。app.afterDialog などのきっかけは、窓を戻すときのために残している
+  //   あとげき（talk.js）が出ているときは、読み終えてから「次へ」を出す（app.afterDialog）。遊んでいる最中の会話の窓はなくした（オーナー 10/31）
   //   はじめから遊ぶ: 並びの次のステージへ。最後のあとは「ありがとう！」。選んで遊ぶ: 「クリア！」
   function exhibitAfterPlayback() {
     var st = app.state, run = app.run;
@@ -514,7 +516,7 @@
     var u = R.findUnit(app.state, app.sel);
     return u && (!u.acted || simul()) ? u : null;   // 【一斉】構えた・待機した味方も、発動まではいつでも選べる（オーナー 11/03）。1人ずつでは行動した味方は選べない
   }
-  function canControl() { return !app.busy && !app.editMode && !app.replay && !app.state.result; }
+  function canControl() { return !app.busy && !app.editMode && !app.replay && !app.talking && !app.state.result; }   // talking: 会話（まえげき・あとげき）が出ている間
 
   // 移動（オーナー 10/30）: 緑のマスを押した時点で本当に動く（R.move）。撃つ・構える・待機までは、元の位置から数えて動き直せる
   //   （元の位置を押すと取り消し）。ほかを押して選ぶのをやめても、動いた所に立ったまま。
@@ -2019,6 +2021,12 @@
     el.stageSaveNote.textContent = d.tut ? '「チュートリアルに保存する」を押すまで変わらない' : '直すたびに自動で残る';
     put(el.txHintSimul, hint.simul || '');
     put(el.txHintSingle, hint.single || '');
+    // 会話（まえげき・あとげき）: 盤面（エディットの状態）が持っている
+    var talk = st.talk || {}, CH = window.CHARS || {};
+    put(el.txTalkBefore, SIO.talkToText(talk.before, CH));
+    put(el.txTalkAfter, SIO.talkToText(talk.after, CH));
+    var names = Object.keys(CH).map(function (id) { return CH[id].name; }).join('・');
+    if (el.talkChars.textContent !== names) el.talkChars.textContent = names;
   }
 
   // 押したマスの情報（オーナー 10/30・IMPROVE_controls 3-2）: いつも2行。盤面が変わったら今の中身で出し直す
@@ -2284,6 +2292,23 @@
     app.draft.difficulty = v;
     render();
   });
+  // 会話（まえげき・あとげき）の欄: 書きかえたら、盤面（エディットの状態）の talk に入れる。「見る」は、今の欄の中身をその場で流す
+  [['txTalkBefore', 'before', 'btnTalkBefore'], ['txTalkAfter', 'after', 'btnTalkAfter']].forEach(function (p) {
+    var read = function () { return SIO.textToTalk(el[p[0]].value, window.CHARS || {}); };
+    el[p[0]].addEventListener('change', function () {
+      if (!app.editMode) return;
+      var lines = read(), cur = (app.state.talk && app.state.talk[p[1]]) || [];
+      if (JSON.stringify(lines) === JSON.stringify(cur)) return;
+      pushHistory();
+      app.state = SIO.setTalk(R, app.state, p[1], lines);
+      render();
+    });
+    el[p[2]].addEventListener('click', function () {
+      var t = {}; t[p[1]] = read();
+      if (!app.talk || !app.talk.preview(p[1], t)) say(p[1] === 'before' ? 'まえげきの文がまだありません' : 'あとげきの文がまだありません');
+    });
+  });
+  el.btnTalkForget.addEventListener('click', function () { if (app.talk) { app.talk.forget(); say('会話の「見たしるし」を消しました'); } });
   [['txHintSimul', 'simul'], ['txHintSingle', 'single']].forEach(function (p) {
     el[p[0]].addEventListener('change', function () {
       var t = app.draft.texts;
@@ -2374,6 +2399,7 @@
       var def = use ? SIO.clone(rec.def) : base.def;
       if (use) {
         def.id = id; delete def.custom; delete def.uid;
+        if (def.talk === undefined && base && base.def.talk) def.talk = SIO.clone(base.def.talk);   // 会話をまだ持っていない①②③には、コードの会話を出す（保存すると、置き場所のものになる）
         if (!def.tutorial) def.tutorial = base ? base.def.tutorial : true;
       }
       defs.push(def);
@@ -2699,6 +2725,7 @@
   function exhibitScreen(view) {
     if (app.busy) skipPlayback();
     if (app.closeDialog) app.closeDialog();
+    if (app.onNewPlayer) app.onNewPlayer();   // 会話: 次の人には、まえげき・あとげきをまた出す（talk.js）
     app.run = null;
     app.sel = null; clearPlans();
     app.history = [];
