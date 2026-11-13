@@ -1230,8 +1230,9 @@ html.view-depth .unit.big {
   pointer-events: none;
 }
 /* 絵が入った駒（img/。ui.js の unitImg）: 丸い駒の代わりに絵を立てる。名前は絵で分かるので出さず、HP は足もとの札 */
-html.view-depth .unit.has-img { width: 100%; height: 165%; background: none; border: 0; border-radius: 0; box-shadow: none; justify-content: flex-end; }
-html.view-depth .unit.object.has-img { height: 110%; }
+/*   高さは設定で変えられる（--piece-k・--object-k。元の高さに対する倍率。ui.js の renderBoard。オーナー 11/13）。幅も同じ倍率で広げ、足もとの真ん中はそのまま */
+html.view-depth .unit.has-img { width: calc(100% * var(--piece-k, 1)); height: calc(165% * var(--piece-k, 1)); background: none; border: 0; border-radius: 0; box-shadow: none; justify-content: flex-end; }
+html.view-depth .unit.object.has-img { width: calc(100% * var(--object-k, 1)); height: calc(110% * var(--object-k, 1)); }
 html.view-depth .unit.has-img::before, html.view-depth .unit.has-img::after { display: none; }
 html.view-depth .unit.has-img .u-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; pointer-events: none; }
 html.view-depth .unit.has-img .u-name { display: none; }
@@ -1391,3 +1392,6 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .ch-cast th small { color: var(--muted); font-weight: normal; }
 .ch-def { margin-top: 10px; }
 .ch-def small { color: var(--muted); }
+/* 絵の大きさの欄（設定。オーナー 11/13）: 数と % を横に並べる */
+.set-names label.set-pctl { flex-direction: row; align-items: center; gap: 4px; font-size: 14px; }
+.set-names input.set-pct { width: 6em; }

@@ -29,11 +29,14 @@ test('最初の中身: 仮の2人とデフォルト敵。名前・色・会話�
     ok(typeof c.battle === 'string', id + ' の戦闘の絵');
   });
   eq(CC.now().cast, { ally: {}, enemy: {}, enemyDefault: 'enemy' });
+  eq(CC.now().objects, { village: '', wagon: '' }, '村・トロッコの絵（空なら前の決まった名前の絵か、今の形）');
 });
 test('形を整える: 知らない項目・正しくない絵・いないキャラへの割り当ては捨てる。normal はいつもある', function () {
   var d = CC.clean({ list: { a: { name: ' A ', color: 'red', faces: { 笑う: 'up:x1', 'a b': '', bad: 'https://x/y.png' }, battle: 'javascript:1', hp: 3 }, 'b-c': { name: 'x' } },
     cast: { ally: { fire: 'a', water: 'nobody' }, enemy: { Fire: 'a' }, enemyDefault: 'nobody' }, junk: 1 });
-  eq(d, { list: { a: { name: 'A', color: '#57534e', faces: { normal: '', 笑う: 'up:x1' }, battle: '' } }, cast: { ally: { fire: 'a' }, enemy: {}, enemyDefault: '' } });
+  eq(d, { list: { a: { name: 'A', color: '#57534e', faces: { normal: '', 笑う: 'up:x1' }, battle: '' } }, cast: { ally: { fire: 'a' }, enemy: {}, enemyDefault: '' }, objects: { village: '', wagon: '' } });
+  var o = CC.clean({ objects: { village: 'up:v1', wagon: 'nope', castle: 'up:c1' } });
+  eq([o.objects, CC.objectRef('village', o), CC.imgIds(o)], [{ village: 'up:v1', wagon: '' }, 'up:v1', ['v1']]);
   eq(CC.clean(null).list, {});
 });
 test('駒 → キャラ: 味方は魔法、敵は魔法 → なければデフォルト敵（ボス・取り巻きも）。置きものはなし', function () {

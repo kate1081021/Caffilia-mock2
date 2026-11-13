@@ -2,7 +2,9 @@
  * settings.js — 設定: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）を変える（オーナー 11/03。archive/仕様と調査/IMPROVE_設定.md）
  *   設定は共有の置き場所（Cloudflare の KV の settings。tools/stage_worker.mjs）に置き、展示モードもその設定で出す。
  *   このブラウザにも写し（CACHE_KEY）を覚えて、開いたらすぐ（つながる前に）その色で出す。つながらないときは写しか、元の色と名前。
- *   形: { colors: { '--bg': '#rrggbb', … }, tiles: { forest: { name, label } }, magics: { grass: '草' }, synergies: { 燃え広がり: '…' }, at }
+ *   形: { colors: { '--bg': '#rrggbb', … }, tiles: { forest: { name, label } }, magics: { grass: '草' }, synergies: { 燃え広がり: '…' },
+ *         pieces: { size: キャラの高さ, object: 置きものの高さ, boards: { '5x5': キャラの高さ } }, at }
+ *     pieces（オーナー 11/13）: 盤面に立てる絵の高さ（マスの何%）。boards は盤面の大きさ（横x縦）ごとの、キャラの高さ（なければ size）
  *     どれも元と違うものだけを持つ（空なら元のまま）。ルールが見分けに使う名前は変えない。画面に出す名前だけを変える。
  *   game/mode.js のすぐあとに読む（色を早く当てて、元の色が一瞬見えないように）。名前は ui.js が rules.js を読んでから当てる。
  */
@@ -26,6 +28,10 @@
   var CACHE_KEY = 'cafilia-mock-settings';
   var MAX_NAME = 12;   // 名前の長さ
   var MAX_LABEL = 3;   // マップに出る字の長さ
+  // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）。元の値は style.css の .unit.has-img と同じ
+  var PIECES = { size: 165, object: 110, min: 50, max: 400 };
+  function okPct(v) { return typeof v === 'number' && Math.round(v) === v && v >= PIECES.min && v <= PIECES.max; }
+  function okBoard(k) { return typeof k === 'string' && /^([1-9]|[1-3][0-9])x([1-9]|[1-3][0-9])$/.test(k); }
 
   function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
   function isHex(v) { return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v); }
@@ -35,7 +41,15 @@
   // 設定の形を整える（知らない項目・正しくない値・元と同じ色・空の名前は捨てる）。いつも4つの入れ物を持つ形で返す
   function clean(s) {
     s = isObj(s) ? s : {};
-    var out = { colors: {}, tiles: {}, magics: {}, synergies: {} };
+    var out = { colors: {}, tiles: {}, magics: {}, synergies: {}, pieces: {} };
+    if (isObj(s.pieces)) {
+      var p = s.pieces;
+      if (okPct(p.size) && p.size !== PIECES.size) out.pieces.size = p.size;
+      if (okPct(p.object) && p.object !== PIECES.object) out.pieces.object = p.object;
+      if (isObj(p.boards)) Object.keys(p.boards).forEach(function (k) {
+        if (okBoard(k) && okPct(p.boards[k])) { out.pieces.boards = out.pieces.boards || {}; out.pieces.boards[k] = p.boards[k]; }
+      });
+    }
     if (isObj(s.colors)) Object.keys(s.colors).forEach(function (k) {
       var v = s.colors[k], d = colorDef(k);
       if (d && isHex(v) && v.toLowerCase() !== d) out.colors[k] = v.toLowerCase();
@@ -61,7 +75,7 @@
   }
   function isEmpty(s) {
     s = clean(s);
-    return !Object.keys(s.colors).length && !Object.keys(s.tiles).length && !Object.keys(s.magics).length && !Object.keys(s.synergies).length;
+    return !Object.keys(s.colors).length && !Object.keys(s.tiles).length && !Object.keys(s.magics).length && !Object.keys(s.synergies).length && !Object.keys(s.pieces).length;
   }
   // 色 ⇄ RGB（0〜255 の3つの数）
   function rgbOf(hex) { return isHex(hex) ? [1, 3, 5].map(function (i) { return parseInt(hex.slice(i, i + 2), 16); }) : [0, 0, 0]; }
@@ -106,6 +120,12 @@
     }
   }
 
+  // 盤面に立てる絵の高さ（マスの何%）。w×h の盤面のキャラと、置きもの
+  function pieceSize(s, w, h) {
+    var p = clean(s).pieces, b = p.boards && p.boards[w + 'x' + h];
+    return { size: b || p.size || PIECES.size, object: p.object || PIECES.object };
+  }
+
   // このブラウザの写し（読めない・書けない環境では何もしない）
   function cacheGet() { try { var raw = root.localStorage.getItem(CACHE_KEY); return raw ? clean(JSON.parse(raw)) : null; } catch (e) { return null; } }
   function cacheSet(s) {
@@ -116,7 +136,7 @@
   }
 
   var api = {
-    COLORS: COLORS, MAX_NAME: MAX_NAME, MAX_LABEL: MAX_LABEL, CACHE_KEY: CACHE_KEY,
+    COLORS: COLORS, MAX_NAME: MAX_NAME, MAX_LABEL: MAX_LABEL, CACHE_KEY: CACHE_KEY, PIECES: PIECES, okBoard: okBoard, okPct: okPct, pieceSize: pieceSize,
     clean: clean, isEmpty: isEmpty, rgbOf: rgbOf, hexOf: hexOf, colorDef: colorDef,
     applyColors: applyColors, applyNames: applyNames, originals: function (R, T) { return originals(R, T); },
     cacheGet: cacheGet, cacheSet: cacheSet

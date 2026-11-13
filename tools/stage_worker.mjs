@@ -9,8 +9,8 @@
  *     order  … 一覧の順番 { tut: [id…], all: [名前…], at }（開発モードの一覧で、手で決めた順番。オーナー 11/12）。
  *       入っていないもの（新しいステージ）は画面が末尾に足す。もうないものが入っていても画面が飛ばす。まだ誰も並べていなければ null
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
- *     settings … 設定 { colors, tiles, magics, synergies, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
- *     chars … キャラ { list, cast, at }（キャラの一覧と、魔法 → キャラ。game/chars.js。オーナー 11/13。.claude/IMPROVE_キャラ.md）。まだなければ null
+ *     settings … 設定 { colors, tiles, magics, synergies, pieces, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
+ *     chars … キャラ { list, cast, objects, at }（objects は村・トロッコの絵）（キャラの一覧と、魔法 → キャラ。game/chars.js。オーナー 11/13。.claude/IMPROVE_キャラ.md）。まだなければ null
  *     img:<id> … 開発モードから上げた絵（data URL の字。1枚 MAX_IMG まで）。同じ id の絵は変わらない
  *     imgs … 上げた絵の一覧 { id: { at, size } }（数を数える・使っていない絵を消すため）
  *   ステージの背番号（def.uid。オーナー 11/10・11/12）: 見えない番号で、プレイ集の記録はこれでステージを指す（名前では指さない）。
@@ -34,7 +34,7 @@
  *     PUT    /api/order/<tut|all> … 一覧の順番を置く。本文 { order: [...] }（tut は id、all は名前）
  *     PUT    /api/lineup          … 展示の並びを変える。本文 { start, pick }
  *     PUT    /api/settings        … 設定を変える。本文 { colors, tiles, magics, synergies }（形を確かめてから置く）
- *     PUT    /api/chars           … キャラを置く。本文 { list, cast }（形を確かめてから置く）。
+ *     PUT    /api/chars           … キャラを置く。本文 { list, cast, objects }（形を確かめてから置く）。
  *       置いたあと、どのキャラも指していない絵で、上げてから1日より前のものを消す（下書きで上げたばかりの絵は残す）
  *     PUT    /api/img/<id>        … 絵を上げる。本文 { data: 'data:image/png;base64,…' }（png・webp・jpeg・gif）。同じ id はもう置けない
  *     GET    /api/img/<id>        … 絵を読む。答えの data が data URL
@@ -87,11 +87,18 @@ function okSettings(b) {
   const isObj = function (o) { return !!o && typeof o === 'object' && !Array.isArray(o); };
   const okStr = function (v, max) { return typeof v === 'string' && v.length <= max; };
   if (!isObj(b)) return false;
-  const parts = ['colors', 'tiles', 'magics', 'synergies'];
+  const parts = ['colors', 'tiles', 'magics', 'synergies', 'pieces'];
   if (Object.keys(b).some(function (k) { return parts.indexOf(k) < 0; })) return false;
   const c = b.colors || {}, t = b.tiles || {}, m = b.magics || {}, s = b.synergies || {};
   if (![c, t, m, s].every(isObj)) return false;
   if (Object.keys(c).length + Object.keys(t).length + Object.keys(m).length + Object.keys(s).length > 300) return false;
+  // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）
+  const pc = b.pieces === undefined ? {} : b.pieces;
+  const pct = function (v) { return typeof v === 'number' && Math.round(v) === v && v >= 50 && v <= 400; };
+  if (!isObj(pc) || Object.keys(pc).some(function (k) { return ['size', 'object', 'boards'].indexOf(k) < 0; })) return false;
+  if ((pc.size !== undefined && !pct(pc.size)) || (pc.object !== undefined && !pct(pc.object))) return false;
+  if (pc.boards !== undefined && !(isObj(pc.boards) && Object.keys(pc.boards).length <= 100 &&
+    Object.keys(pc.boards).every(function (k) { return /^([1-9]|[1-3][0-9])x([1-9]|[1-3][0-9])$/.test(k) && pct(pc.boards[k]); }))) return false;
   return Object.keys(c).every(function (k) { return /^--[a-z-]{1,30}$/.test(k) && /^#[0-9a-f]{6}$/i.test(c[k]); }) &&
     Object.keys(t).every(function (k) { return /^[a-z]{1,20}$/.test(k) && isObj(t[k]) && Object.keys(t[k]).every(function (f) { return (f === 'name' && okStr(t[k][f], 12)) || (f === 'label' && okStr(t[k][f], 3)); }); }) &&
     Object.keys(m).every(function (k) { return /^[a-z]{1,20}$/.test(k) && okStr(m[k], 12); }) &&
@@ -115,7 +122,9 @@ function okChars(b) {
   };
   if (!ids.every(okChar)) return false;
   const okCast = function (m) { return isObj(m) && Object.keys(m).length <= 50 && Object.keys(m).every(function (k) { return /^[a-z]{1,20}$/.test(k) && !!b.list[m[k]]; }); };
-  return okCast(b.cast.ally || {}) && okCast(b.cast.enemy || {}) && (!b.cast.enemyDefault || !!b.list[b.cast.enemyDefault]);
+  const ob = b.objects === undefined ? {} : b.objects;
+  const okObjects = isObj(ob) && Object.keys(ob).every(function (k) { return (k === 'village' || k === 'wagon') && okImgRef(ob[k]); });
+  return okObjects && okCast(b.cast.ally || {}) && okCast(b.cast.enemy || {}) && (!b.cast.enemyDefault || !!b.list[b.cast.enemyDefault]);
 }
 function charImgIds(chars) {
   const ids = {};
@@ -123,6 +132,7 @@ function charImgIds(chars) {
     const c = chars.list[k];
     Object.keys(c.faces).map(function (f) { return c.faces[f]; }).concat([c.battle || '']).forEach(function (r) { if (/^up:/.test(r)) ids[r.slice(3)] = 1; });
   });
+  Object.keys(chars.objects || {}).forEach(function (k) { const r = chars.objects[k]; if (/^up:/.test(r)) ids[r.slice(3)] = 1; });
   return ids;
 }
 // プレイ集の記録の形（game/plays.js の valid と同じ決まり。正しくなければ断る）
@@ -285,14 +295,14 @@ export async function handleApi(req, kv) {
     if (req.method === 'PUT' && path === 'settings') {
       const b = await body(req);
       if (!okSettings(b)) return fail('設定の形が正しくない');
-      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, at: Date.now() };
+      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, pieces: b.pieces || {}, at: Date.now() };
       await kv.put('settings', JSON.stringify(settings));
       return json({ ok: true, at: settings.at });
     }
     if (req.method === 'PUT' && path === 'chars') {
       const b = await body(req);
       if (!okChars(b)) return fail('キャラの形が正しくない');
-      const chars = { list: b.list, cast: { ally: b.cast.ally || {}, enemy: b.cast.enemy || {}, enemyDefault: b.cast.enemyDefault || '' }, at: Date.now() };
+      const chars = { list: b.list, cast: { ally: b.cast.ally || {}, enemy: b.cast.enemy || {}, enemyDefault: b.cast.enemyDefault || '' }, objects: b.objects || {}, at: Date.now() };
       await kv.put('chars', JSON.stringify(chars));
       // 使っていない絵を消す（どのキャラも指していなくて、上げてから IMG_KEEP_MS より前のもの）
       const imgs = (await kv.get('imgs', 'json')) || {}, used = charImgIds(chars);

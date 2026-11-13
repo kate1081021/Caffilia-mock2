@@ -339,6 +339,22 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq(r.data.removed, 1);
     eq([(await call('GET', 'img/ia2')).status, (await call('GET', 'img/ia1')).status, (await call('GET', 'img/ic1')).status], [404, 200, 200]);
   });
+  await test('設定の絵の高さ（pieces）: 置ける。外れた値・知らない形は断る（オーナー 11/13）', async function () {
+    ok((await call('PUT', 'settings', { pieces: { size: 180, object: 100, boards: { '5x5': 200 } } })).data.ok);
+    eq((await call('GET', 'all')).data.settings.pieces, { size: 180, object: 100, boards: { '5x5': 200 } });
+    var bad = [{ pieces: { size: 10 } }, { pieces: { size: 150.5 } }, { pieces: { boards: { five: 100 } } }, { pieces: { zoom: 1 } }, { pieces: [] }];
+    for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
+  });
+  await test('キャラ: 村・トロッコの絵（objects）も置ける。ほかの置きもの・よその絵は断る', async function () {
+    var c = JSON.parse(JSON.stringify(CH));
+    c.objects = { village: 'up:ia1', wagon: '' };
+    ok((await call('PUT', 'chars', c)).data.ok);
+    eq((await call('GET', 'all')).data.chars.objects, { village: 'up:ia1', wagon: '' });
+    c.objects = { castle: '' };
+    eq((await call('PUT', 'chars', c)).status, 400);
+    c.objects = { village: 'https://x/y.png' };
+    eq((await call('PUT', 'chars', c)).status, 400);
+  });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);
   });

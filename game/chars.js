@@ -3,7 +3,8 @@
  *   キャラの一覧と「魔法 → キャラ」は、開発モードの「キャラ」の画面でオーナーが登録し、共有の置き場所（KV の chars）に置く。
  *   ここにあるのは、その形と、置き場所にまだないときの最初の中身（DEFAULT）、控え、絵の読み込み。
  *
- *   形: { list: { id: キャラ }, cast: { ally: { 魔法: id }, enemy: { 魔法: id }, enemyDefault: id }, at }
+ *   形: { list: { id: キャラ }, cast: { ally: { 魔法: id }, enemy: { 魔法: id }, enemyDefault: id }, objects: { village: 絵, wagon: 絵 }, at }
+ *     objects: 置きもの（村・トロッコ）の盤面の絵（オーナー 11/13）。空なら前の決まった名前の絵か、今の形
  *     キャラ: { name: 名札の名前, color: 名札と仮の絵の色,
  *               faces: { 表情: 絵 }（会話の絵。'normal' がふだんの絵で、いつもある）, battle: 絵（戦闘の立ち絵。空なら faces.normal） }
  *     絵: 'up:<id>'（開発モードから上げた絵。置き場所の img:<id>）か 'game/img/…'（リポジトリの絵）。空（''）は絵なし（色の仮の絵）
@@ -18,8 +19,10 @@
       charB: { name: 'キャラB', color: '#1d4ed8', faces: { normal: '' }, battle: '' },
       enemy: { name: '敵', color: '#b91c1c', faces: { normal: '' }, battle: '' }
     },
-    cast: { ally: {}, enemy: {}, enemyDefault: 'enemy' }
+    cast: { ally: {}, enemy: {}, enemyDefault: 'enemy' },
+    objects: { village: '', wagon: '' }
   };
+  var OBJECTS = ['village', 'wagon'];   // 絵を替えられる置きもの（rules.js の OBJECT_INFO の鍵）
   var CACHE_KEY = 'cafilia-mock-chars';
   var IMG_PREFIX = 'cafilia-mock-img-';
   var MAX_CHARS = 50, MAX_FACES = 12, MAX_NAME = 12, MAX_FACE = 12;
@@ -38,7 +41,9 @@
   // 形を整える（知らない項目・正しくない値は捨てる）。いつも list と cast を持つ形で返す
   function clean(d) {
     d = isObj(d) ? d : {};
-    var out = { list: {}, cast: { ally: {}, enemy: {}, enemyDefault: '' } };
+    var out = { list: {}, cast: { ally: {}, enemy: {}, enemyDefault: '' }, objects: {} };
+    var ob = isObj(d.objects) ? d.objects : {};
+    OBJECTS.forEach(function (k) { out.objects[k] = okRef(ob[k]) ? ob[k] : ''; });
     var src = isObj(d.list) ? d.list : {};
     Object.keys(src).slice(0, MAX_CHARS).forEach(function (id) {
       var c = src[id];
@@ -89,6 +94,7 @@
   // キャラの絵（会話: 表情。なければふだん／戦闘: battle。なければふだん）
   function faceRef(id, face, d) { var c = (d || now).list[id]; return c ? (c.faces[face || 'normal'] || c.faces.normal || '') : ''; }
   function battleRef(id, d) { var c = (d || now).list[id]; return c ? (c.battle || c.faces.normal || '') : ''; }
+  function objectRef(kind, d) { return (d || now).objects[kind] || ''; }
   // そのデータが指している上げた絵の id
   function imgIds(d) {
     d = clean(d || now);
@@ -97,6 +103,7 @@
       var c = d.list[k];
       Object.keys(c.faces).map(function (f) { return c.faces[f]; }).concat([c.battle]).forEach(function (r) { if (/^up:/.test(r)) ids[r.slice(3)] = 1; });
     });
+    OBJECTS.forEach(function (k) { var r = d.objects[k]; if (/^up:/.test(r)) ids[r.slice(3)] = 1; });
     return Object.keys(ids);
   }
   // 新しいキャラの id（変わらない。会話の行の who が指す）
@@ -170,7 +177,7 @@
   }
 
   var api = {
-    DEFAULT: DEFAULT, CHARS: CHARS, CACHE_KEY: CACHE_KEY, IMG_PREFIX: IMG_PREFIX,
+    DEFAULT: DEFAULT, CHARS: CHARS, OBJECTS: OBJECTS, objectRef: objectRef, CACHE_KEY: CACHE_KEY, IMG_PREFIX: IMG_PREFIX,
     MAX_CHARS: MAX_CHARS, MAX_FACES: MAX_FACES, MAX_NAME: MAX_NAME, MAX_FACE: MAX_FACE, MAX_IMG: MAX_IMG,
     clean: clean, clone: clone, apply: apply, now: function () { return now; },
     okId: okId, okFace: okFace, okRef: okRef, okImgId: okImgId, okImgData: okImgData,

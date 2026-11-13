@@ -55,8 +55,10 @@
   var CC = window.CafiliaChars;   // キャラ（game/chars.js。オーナー 11/13。.claude/IMPROVE_キャラ.md）
   var SHORT0 = {};
   Object.keys(SHORT).forEach(function (t) { SHORT0[t] = SHORT[t]; });
+  var curSettings = {};   // 今当たっている設定（盤面に立てる絵の高さに使う）
   function applySettings(s) {
     if (!CS) return;
+    curSettings = CS.clean(s);
     CS.applyColors(document, s);
     CS.applyNames(R, TX(), s);
     var c = CS.clean(s);
@@ -1175,7 +1177,7 @@
   // キャラの戦闘の絵（オーナー 11/13）: 駒のキャラ（味方は魔法、敵は魔法 → デフォルト敵）の絵が先。
   //   undefined: キャラの絵がない（前の決まった名前の絵を見る）／null: 読み込み中／字: その絵
   function castImg(u) {
-    var cid = CC && CC.castOf(u), ref = cid ? CC.battleRef(cid) : '';
+    var cid = CC && CC.castOf(u), ref = u.side === 'object' ? (CC ? CC.objectRef(u.kind) : '') : cid ? CC.battleRef(cid) : '';   // 村・トロッコは置きものの絵
     if (!ref) return undefined;
     var src = CC.url(ref);
     if (!src) return null;
@@ -1355,6 +1357,12 @@
     var n = st.size, rows = R.rowsOf(st);   // 横 n・縦 rows（チュートリアル②は 5×8）
     el.board.style.setProperty('--n', n);
     el.board.style.setProperty('--rows', rows);
+    // 盤面に立てる絵の高さ（設定。オーナー 11/13）: 元の高さ（style.css）に対する倍率。盤面の大きさごとに変えられる
+    if (CS) {
+      var ps = CS.pieceSize(curSettings, n, rows);
+      el.board.style.setProperty('--piece-k', ps.size / CS.PIECES.size);
+      el.board.style.setProperty('--object-k', ps.object / CS.PIECES.object);
+    }
 
     // 動きのアニメーション用: 描き直す前の位置（奥行きの見た目では、傾ける前の盤面の上の位置）
     var before = {}, depth = viewNow() === 'depth';
@@ -2799,6 +2807,21 @@
     app.homeView = 'settings';
     renderSettings();
   }
+  // 今あるステージの盤面の大きさ（'横x縦' → ステージの名前の並び）: チュートリアル・みんなのステージ・自分のステージ
+  function boardSizes() {
+    var out = {}, add = function (def, name) {
+      var rows = def && def.rows;
+      if (!Array.isArray(rows) || !rows.length || typeof rows[0] !== 'string') return;
+      var k = rows[0].length + 'x' + rows.length;
+      if (!CS.okBoard(k)) return;
+      (out[k] = out[k] || []).push(name);
+    };
+    R.TUTORIALS.forEach(function (p) { add(p, SIO.plainTitle(p.short || p.name || p.id)); });
+    Object.keys(app.shared.stages || {}).forEach(function (n) { add(app.shared.stages[n].def, n); });
+    var own = stageStore() || {};
+    Object.keys(own).forEach(function (n) { add(own[n] && own[n].def, n + '（自分）'); });
+    return out;
+  }
   function settingsBack() {
     if (settingsDirty() && !window.confirm('設定で変えたところを捨てて、一覧に戻りますか？')) return;
     applySettings(settingsSaved());   // 下書きで見ていた色と名前を、保存した設定に戻す
@@ -2834,12 +2857,28 @@
       return '<div class="set-row set-names"><span class="set-name"><b>' + esc(o.synergies[k]) + '</b></span>' +
         '<label>名前' + nameInput('data-sname', k, d.synergies[k], o.synergies[k], CS.MAX_NAME, o.synergies[k] + 'の名前') + '</label></div>';
     }).join('');
+    // 盤面に立てる絵の高さ（オーナー 11/13）: ふだん・置きもの・盤面の大きさごと（今あるステージの大きさを並べる）
+    var P = CS.PIECES, pc = d.pieces, sizes = boardSizes(), bk = Object.keys(sizes);
+    Object.keys(pc.boards || {}).forEach(function (k) { if (!sizes[k]) { sizes[k] = []; bk.push(k); } });
+    bk.sort(function (a, b) { var x = a.split('x').map(Number), y = b.split('x').map(Number); return x[0] - y[0] || x[1] - y[1]; });
+    var pctInput = function (attr, key, val, ph, label) {
+      return '<input type="number" class="set-pct" min="' + P.min + '" max="' + P.max + '" step="5" inputmode="numeric" ' + attr + '="' + esc(key) + '" value="' + (val || '') + '" placeholder="' + ph + '" aria-label="' + esc(label) + '">';
+    };
+    var pieceRows =
+      '<div class="set-row set-names"><span class="set-name"><b>キャラ</b><small>どの盤面でも（下で盤面ごとに変えられる）</small></span><label class="set-pctl">' + pctInput('data-pc', 'size', pc.size, P.size, 'キャラの高さ') + '%</label></div>' +
+      '<div class="set-row set-names"><span class="set-name"><b>村・トロッコ</b><small>置きもの</small></span><label class="set-pctl">' + pctInput('data-pc', 'object', pc.object, P.object, '置きものの高さ') + '%</label></div>' +
+      bk.map(function (k) {
+        var used = sizes[k];
+        return '<div class="set-row set-names"><span class="set-name"><b>' + esc(k.replace('x', '×')) + ' の盤面のキャラ</b><small>' + esc(used.length ? used.slice(0, 3).join('・') + (used.length > 3 ? ' ほか' + (used.length - 3) : '') : '今はこの大きさのステージがない') + '</small></span>' +
+          '<label class="set-pctl">' + pctInput('data-pc-board', k, (pc.boards || {})[k], pc.size || P.size, k + 'の盤面のキャラの高さ') + '%</label></div>';
+      }).join('');
     el.home.innerHTML = '<h2>設定 <small>画面の色と名前。展示モードも、保存した設定で出る</small></h2>' +
       '<p class="lu-warn">⚠ 「この設定で保存する」を押すと、展示モードの色と名前がどのパソコンでも変わります</p>' +
       '<section class="home-sec"><h3>色 <small>RGB（0〜255）か、色の四角を押して選ぶ。変えるとすぐ画面に出る（保存するまでは、このページだけ）</small></h3>' + colorRows + '</section>' +
       '<section class="home-sec"><h3>自然の名前 <small>表示名（押したマスの情報・ログ など）と、マップに出る字（' + CS.MAX_LABEL + '文字まで）。空なら元の名前</small></h3>' + tileRows + '</section>' +
       '<section class="home-sec"><h3>魔法の名前 <small>駒の字・ログ など。空なら元の名前</small></h3>' + magicRows + '</section>' +
       '<section class="home-sec"><h3>シナジーの名前 <small>真ん中に出る文字・ログ など。空なら元の名前</small></h3>' + synRows + '</section>' +
+      '<section class="home-sec"><h3>盤面に立てる絵の大きさ <small>マスの高さの何%か（' + P.min + '〜' + P.max + '）。絵を入れた駒だけに効く（奥行きの見た目）。空なら元の大きさ。幅も同じ割合で変わる</small></h3>' + pieceRows + '</section>' +
       '<div class="home-list set-actions"><button type="button" class="primary" data-set-save="1">この設定で保存する</button>' +
       '<button type="button" data-set-back="1"></button>' +
       '<button type="button" data-set-clear="1">ぜんぶ元に戻す</button></div>' +
@@ -2897,6 +2936,11 @@
     else if (t.hasAttribute('data-tlabel')) put(d.tiles, t.getAttribute('data-tlabel'), 'label', t.value);
     else if (t.hasAttribute('data-mname')) put(d.magics, t.getAttribute('data-mname'), null, t.value);
     else if (t.hasAttribute('data-sname')) put(d.synergies, t.getAttribute('data-sname'), null, t.value);
+    else if (t.hasAttribute('data-pc') || t.hasAttribute('data-pc-board')) {
+      var pk = t.getAttribute('data-pc'), bkey = t.getAttribute('data-pc-board'), num = t.value === '' ? null : Math.round(Number(t.value));
+      var box = pk ? d.pieces : (d.pieces.boards = d.pieces.boards || {}), key2 = pk || bkey;
+      if (num === null || !CS.okPct(num)) delete box[key2]; else box[key2] = num;   // 範囲の外は、打ち終わるまで元の大きさ
+    }
     else return;
     app.settingsNote = '';
     var note = el.home.querySelector('.set-note');
@@ -3007,6 +3051,11 @@
       '<section class="home-sec"><h3>魔法とキャラ <small>駒の魔法で、どのキャラの戦闘の絵を立てるか。ボス・取り巻きも、その敵の魔法で決まる</small></h3>' +
         '<table class="ch-cast"><thead><tr><th>魔法</th><th>味方</th><th>敵</th></tr></thead><tbody>' + castRows + '</tbody></table>' +
         '<p class="ch-def"><label>デフォルト敵 <small>敵で、魔法にキャラを決めていないとき</small> <select data-cast="def">' + opt(d.cast.enemyDefault, '（なし。今の駒）') + '</select></label></p></section>' +
+      '<section class="home-sec"><h3>村・トロッコ <small>盤面に立てる絵（オーナー 11/13）。空なら今の形</small></h3><div class="ch-body">' +
+        CC.OBJECTS.map(function (k) {
+          return '<div class="ch-battle"><h4>' + esc((R.OBJECT_INFO[k] || {}).name || k) + '</h4>' + charThumb(d.objects[k], true) +
+            '<div class="ch-btns">' + pick('', 'obj:' + k) + (d.objects[k] ? '<button type="button" data-ch-clear="" data-slot="obj:' + k + '">絵を外す</button>' : '') + '</div></div>';
+        }).join('') + '</div></section>' +
       '<div class="home-list set-actions"><button type="button" class="primary" data-ch-save="1">このキャラで保存する</button>' +
       '<button type="button" data-ch-back="1"></button></div>' +
       '<p class="note ch-dup"' + (dup.length ? '' : ' hidden') + '>同じ名前のキャラがいます（' + esc(dup.join('・')) + '）。名前を変えてから保存してください</p>' +
@@ -3023,6 +3072,7 @@
     if (dn) { dn.hidden = !dup.length; dn.textContent = '同じ名前のキャラがいます（' + dup.join('・') + '）。名前を変えてから保存してください'; }
   }
   function charsSet(id, slot, ref) {
+    if (slot.indexOf('obj:') === 0) { app.charsDraft.objects[slot.slice(4)] = ref; return; }   // 村・トロッコ
     var c = app.charsDraft.list[id];
     if (!c) return;
     if (slot === 'battle') c.battle = ref;
