@@ -14,6 +14,9 @@
  *   keepEx(R, s)                 … 外すボスの決まり（とミッションの条件）を覚えておく中身
  *   setHp(R, s, id, hp)          … 敵のHP
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
+ *   tutorialIds(map, first) … チュートリアルの id の並び（初めからある①②③が先、足したものは足した順）
+ *   tutorialSource(shared, cache) … チュートリアルを、置き場所・このブラウザの控え・コードのどれから出すか
+ *   applyOrder(keys, order) / moveTo(list, from, to) / placeAt(list, key, before, prev) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
  *   blankTexts(name) / linesToText(lines) / textToLines(text) … 会話の窓の文（texts.js の stages.<id> と同じ形）
  */
@@ -35,6 +38,14 @@
     { id: 'escort', name: 'トロッコをゴールへ' },
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
+  // 前の形の上書き（守るターン数・道をふさぐの入切）。今はステージの条件（conditions）が持つので、読むときに条件へ読み替えて捨てる（rules.js の readLegacy）
+  var OV_TURNS = 'mission.defense.turns', OV_SEAL = 'mission.defense.sealWin';
+  // ステージごとに変えてよい数値は、敵の歩数（突進の敵が1ターンに進むマス数）だけ（オーナー 11/12「魔法が場面によって別のはたらきをするのはおかしい」）。
+  //   守るターン数は、数値の上書きではなく条件（防衛のひな形の hold）に書く（オーナー 11/13）。魔法の形・シナジーの長さ・案の入切は、どのステージでも同じ。
+  //   ほかの項目が書いてあるステージは、読むときに断る（checkDef）。OV_TURNS・OV_SEAL は前のステージに残っているしるしで、読むのは断らない
+  //   敵の歩数は、ほんとうはステージではなく敵の種類のもの。敵の種類を作ったら、そちらへ移してここから外す（オーナー 11/12）
+  var OV_RUSH = 'enemy.rushMove';
+  var STAGE_OVERRIDES = [OV_TURNS, OV_RUSH, OV_SEAL];
   // 難易度（オーナー 11/03。IMPROVE_ステージ一覧 段1）: 定義の difficulty に持つ。ないものは「なし」。内蔵の①②③はチュートリアル
   var DIFFICULTIES = [
     { id: 'tutorial', name: 'チュートリアル' },
@@ -157,6 +168,8 @@
       var rest = R.splitOverrides(d.overrides).rest;   // 前の形の守るターン数などは、読むときに条件へ読み替える
       if (rest && !R.validOverrides(rest)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
     }
+    var locked = Object.keys(d.overrides || {}).filter(function (p) { return STAGE_OVERRIDES.indexOf(p) < 0; });
+    if (locked.length) return 'ステージごとに変えられるのは、守るターン数と敵の歩数だけ（魔法の効き方は、どのステージでも同じ。' + locked.join('・') + ' は変えられない）';
     if (d.template !== undefined && !R.TEMPLATE_INFO[d.template]) return '知らない勝ち方のひな形（template）がある';
     if (d.conditions !== undefined || d.counters !== undefined) {
       if (d.conditions === undefined) return '数え（counters）だけがあって、条件（conditions）がない';
@@ -314,6 +327,57 @@
   function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
 
   // ---------------------------------------------------------------
+  // チュートリアルをどこから出すか（オーナー 11/12）
+  //   shared: 共有の置き場所を読んだ結果 { ok, tutorials }。cache: このブラウザの控え { tutorials, at }（なければ null）
+  //   つながっていて置いてあれば 置き場所（cloud）。つながらないときは 控え（cache）。
+  //   控えがない（一度もつながったことがない）ときと、つながっているのにまだ置いていないときは コード（code）
+  // ---------------------------------------------------------------
+  // チュートリアルの id を、順番を決めていないときの並びで返す: first（初めからある①②③）のうち今あるものが先、足したものは足した順（at）
+  function tutorialIds(map, first) {
+    if (!isObj(map)) return [];
+    var head = (first || []).filter(function (id) { return !!map[id]; });
+    var rest = Object.keys(map).filter(function (id) { return head.indexOf(id) < 0 && !!map[id]; })
+      .sort(function (a, b) { return ((map[a].at || 0) - (map[b].at || 0)) || (a < b ? -1 : a > b ? 1 : 0); });
+    return head.concat(rest);
+  }
+  function hasTuts(t) { return isObj(t) && Object.keys(t).length > 0; }
+  function tutorialSource(shared, cache) {
+    var ok = !!(shared && shared.ok);
+    if (ok && hasTuts(shared.tutorials)) return { from: 'cloud', tutorials: shared.tutorials, at: 0 };
+    if (!ok && isObj(cache) && hasTuts(cache.tutorials)) return { from: 'cache', tutorials: cache.tutorials, at: cache.at || 0 };
+    return { from: 'code', tutorials: null, at: 0 };
+  }
+
+  // ---------------------------------------------------------------
+  // 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びの3か所で、同じこの2つを使う
+  //   applyOrder(keys, order): keys（今あるもの）を、手で決めた順番 order に並べる。order にないもの（新しいステージ）は、keys の順のまま末尾に足す。
+  //     order にあっても今ないもの（消したステージ）は飛ばす
+  //   moveTo(list, from, to): from 番目を to 番目へ動かした、新しい並び（元の並びは変えない。動かせないときは同じ並び）
+  //   placeAt(list, key, before, prev): ドラッグで落とした所へ key を入れた、新しい並び（オーナー 11/13）。
+  //     before（落とした所のすぐ下に見えている行）の前。なければ prev（すぐ上に見えている行）の後ろ。どちらもなければ末尾。
+  //     key が並びになければ足す（ほかの枠から来たもの）。札で絞っていて見えない行は、その場に残る
+  // ---------------------------------------------------------------
+  function applyOrder(keys, order) {
+    var has = {}, used = {}, out = [];
+    keys.forEach(function (k) { has[k] = true; });
+    (Array.isArray(order) ? order : []).forEach(function (k) { if (has[k] && !used[k]) { used[k] = true; out.push(k); } });
+    keys.forEach(function (k) { if (!used[k]) { used[k] = true; out.push(k); } });
+    return out;
+  }
+  function placeAt(list, key, before, prev) {
+    var out = list.filter(function (k) { return k !== key; });
+    var has = function (k) { return k !== undefined && k !== null && out.indexOf(k) >= 0; };
+    out.splice(has(before) ? out.indexOf(before) : has(prev) ? out.indexOf(prev) + 1 : out.length, 0, key);
+    return out;
+  }
+  function moveTo(list, from, to) {
+    var out = list.slice();
+    if (!(from % 1 === 0 && to % 1 === 0) || from < 0 || to < 0 || from >= out.length || to >= out.length || from === to) return out;
+    out.splice(to, 0, out.splice(from, 1)[0]);
+    return out;
+  }
+
+  // ---------------------------------------------------------------
   // 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）。stages・trash はこのブラウザの入れ物（{ 名前: 中身 }）
   //   消す → ゴミ箱へ（中身はそのまま。消した時刻を足す）。戻す → 同じ名前があれば「名前（2）」。どちらも新しい入れ物を返す
   // ---------------------------------------------------------------
@@ -386,13 +450,15 @@
   }
   // 読んだステージを、自分のステージ（{ 名前: 記録 }）に足す。同じ名前があれば「名前（2）」にする（上書きしない）。
   //   ファイルの順に、一覧（新しく直した順）の上から並ぶように、時刻を1ずつずらす
-  function addOwn(stages, items, now) {
+  //   背番号（def.uid。プレイ集の記録が指す番号）: 読んだものは写しなので、新しい背番号（newUid() が作る。なければ付けずに置き、最初に読んだときに付く）
+  function addOwn(stages, items, now, newUid) {
     stages = clone(stages || {});
     now = now || Date.now();
     var names = items.map(function (it, i) {
       var name = freeName(it.name, stages);
       var def = clone(it.def);
       def.id = PREFIX + name; def.name = name; def.custom = true; def.tutorial = true;   // エディットで作ったステージと同じ（やり直し・ヒントが効く）
+      if (newUid) def.uid = newUid(); else delete def.uid;
       var texts = clone(it.texts) || blankTexts(name);
       texts.name = name;
       stages[name] = { def: def, texts: texts, exKeep: null, base: null, at: now - i };
@@ -402,7 +468,7 @@
   }
 
   var api = {
-    PREFIX: PREFIX, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, tutorialSource: tutorialSource, tutorialIds: tutorialIds, applyOrder: applyOrder, moveTo: moveTo, placeAt: placeAt, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
     winOf: winOf, setWin: setWin, turnsOf: turnsOf, keepEx: keepEx, setHp: setHp,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
