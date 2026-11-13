@@ -12,7 +12,8 @@ function eq(a, b, msg) { var x = JSON.stringify(a), y = JSON.stringify(b); if (x
 var mem = {};
 var kv = {
   get: function (k, type) { return Promise.resolve(k in mem ? (type === 'json' ? JSON.parse(mem[k]) : mem[k]) : null); },
-  put: function (k, v) { mem[k] = String(v); return Promise.resolve(); }
+  put: function (k, v) { mem[k] = String(v); return Promise.resolve(); },
+  delete: function (k) { delete mem[k]; return Promise.resolve(); }
 };
 var DEF = { rows: ['......', '......'], allies: [], enemies: [] };
 
@@ -295,6 +296,48 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
   await test('チュートリアルを置いても、みんなのステージ・展示の並びは前のまま読める', async function () {
     var r = (await call('GET', 'all')).data;
     ok(Object.keys(r.stages).length > 0 && r.lineup && Array.isArray(r.lineup.start), JSON.stringify([Object.keys(r.stages), r.lineup]));
+  });
+  // キャラと絵（オーナー 11/13。.claude/IMPROVE_キャラ.md）
+  var PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  var CH = { list: { enemy: { name: '敵', color: '#b91c1c', faces: { normal: 'up:ia1' }, battle: '' },
+    hero: { name: 'ヒーロー', color: '#1d4ed8', faces: { normal: 'up:ia2', 笑う: '' }, battle: 'game/img/hero.png' } },
+    cast: { ally: { fire: 'hero' }, enemy: {}, enemyDefault: 'enemy' } };
+  await test('キャラ: はじめはない（null）。絵を上げて、キャラを置いて、読める', async function () {
+    eq((await call('GET', 'all')).data.chars, null);
+    ok((await call('PUT', 'img/ia1', { data: PNG })).data.ok);
+    ok((await call('PUT', 'img/ia2', { data: PNG })).data.ok);
+    eq((await call('GET', 'img/ia1')).data.data, PNG);
+    eq((await call('GET', 'img/nope')).status, 404);
+    var r = await call('PUT', 'chars', CH);
+    ok(r.data.ok, JSON.stringify(r.data));
+    var c = (await call('GET', 'all')).data.chars;
+    eq([c.list, c.cast, c.at > 0], [CH.list, CH.cast, true]);
+  });
+  await test('絵: 同じ id はもう置けない。絵でないもの・大きすぎるものは受け取らない', async function () {
+    eq((await call('PUT', 'img/ia1', { data: PNG })).status, 409);
+    eq((await call('PUT', 'img/ib1', { data: 'data:text/html;base64,PGI+' })).status, 400);
+    eq((await call('PUT', 'img/ib2', { data: 'data:image/png;base64,' + new Array(1500001).join('A') })).status, 400);
+    eq((await call('PUT', 'img/I_X', { data: PNG })).status, 404, 'id の形でない');
+  });
+  await test('キャラ: 形の正しくないものは受け取らない', async function () {
+    var bad = function (f) { var c = JSON.parse(JSON.stringify(CH)); f(c); return call('PUT', 'chars', c); };
+    eq((await bad(function (c) { delete c.list.hero.faces.normal; })).status, 400, 'ふだんの絵がない');
+    eq((await bad(function (c) { c.list.hero.color = 'red'; })).status, 400, '色');
+    eq((await bad(function (c) { c.list.hero.faces['a b'] = ''; })).status, 400, '表情の名前に空白');
+    eq((await bad(function (c) { c.list.hero.battle = 'https://example.com/a.png'; })).status, 400, 'よその絵');
+    eq((await bad(function (c) { c.cast.ally.water = 'nobody'; })).status, 400, 'いないキャラへの割り当て');
+    eq((await bad(function (c) { c.cast.enemyDefault = 'nobody'; })).status, 400, 'いないデフォルト敵');
+  });
+  await test('キャラを置くと、どのキャラも指していない古い絵（1日より前）だけ消える。上げたばかりの絵は残る', async function () {
+    ok((await call('PUT', 'img/ic1', { data: PNG })).data.ok);
+    var imgs = JSON.parse(mem.imgs);
+    imgs.ia2.at -= 2 * 24 * 3600 * 1000;   // ia2 を古くする
+    mem.imgs = JSON.stringify(imgs);
+    var c = JSON.parse(JSON.stringify(CH));
+    c.list.hero.faces.normal = '';         // ia2 を指さなくする
+    var r = await call('PUT', 'chars', c);
+    eq(r.data.removed, 1);
+    eq([(await call('GET', 'img/ia2')).status, (await call('GET', 'img/ia1')).status, (await call('GET', 'img/ic1')).status], [404, 200, 200]);
   });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);

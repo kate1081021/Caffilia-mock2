@@ -6,7 +6,8 @@
 var R = require('../game/rules.js');
 var S = require('../game/stages_io.js');
 var B = require('../game/balance.js');
-var CHARS = require('../game/chars.js');
+var CC = require('../game/chars.js');
+var CHARS = CC.CHARS;
 
 var passed = 0, failed = [];
 function test(name, fn) {
@@ -16,16 +17,39 @@ function test(name, fn) {
 function eq(a, b, msg) { var x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) throw new Error((msg ? msg + ': ' : '') + 'expected ' + y + ' but got ' + x); }
 function ok(c, msg) { if (!c) throw new Error(msg || 'assertion failed'); }
 
-console.log('\n■ キャラの登録');
-test('仮のキャラが2人いる。名前・色・ふだんの絵（normal。空なら仮の絵）を持つ', function () {
+console.log('\n■ キャラの登録（game/chars.js。最初の中身と、形の整え方）');
+test('最初の中身: 仮の2人とデフォルト敵。名前・色・会話の絵（normal はいつもある）・戦闘の絵を持つ', function () {
   var ids = Object.keys(CHARS);
-  eq(ids, ['charA', 'charB']);
+  eq(ids, ['charA', 'charB', 'enemy']);
   ids.forEach(function (id) {
     var c = CHARS[id];
     ok(typeof c.name === 'string' && c.name, id + ' の名前');
     ok(/^#[0-9a-f]{6}$/i.test(c.color), id + ' の色');
     ok(c.faces && typeof c.faces.normal === 'string', id + ' のふだんの絵（表情は faces に足せる）');
+    ok(typeof c.battle === 'string', id + ' の戦闘の絵');
   });
+  eq(CC.now().cast, { ally: {}, enemy: {}, enemyDefault: 'enemy' });
+});
+test('形を整える: 知らない項目・正しくない絵・いないキャラへの割り当ては捨てる。normal はいつもある', function () {
+  var d = CC.clean({ list: { a: { name: ' A ', color: 'red', faces: { 笑う: 'up:x1', 'a b': '', bad: 'https://x/y.png' }, battle: 'javascript:1', hp: 3 }, 'b-c': { name: 'x' } },
+    cast: { ally: { fire: 'a', water: 'nobody' }, enemy: { Fire: 'a' }, enemyDefault: 'nobody' }, junk: 1 });
+  eq(d, { list: { a: { name: 'A', color: '#57534e', faces: { normal: '', 笑う: 'up:x1' }, battle: '' } }, cast: { ally: { fire: 'a' }, enemy: {}, enemyDefault: '' } });
+  eq(CC.clean(null).list, {});
+});
+test('駒 → キャラ: 味方は魔法、敵は魔法 → なければデフォルト敵（ボス・取り巻きも）。置きものはなし', function () {
+  var d = CC.clean({ list: { h: { name: 'H', color: '#000000', faces: { normal: 'up:n1' }, battle: '' }, e: { name: 'E', color: '#000000', faces: { normal: '' }, battle: 'game/img/e.png' },
+    w: { name: 'W', color: '#000000', faces: { normal: '' }, battle: '' } }, cast: { ally: { fire: 'h' }, enemy: { wind: 'w' }, enemyDefault: 'e' } });
+  eq([CC.castOf({ side: 'ally', magic: 'fire' }, d), CC.castOf({ side: 'ally', magic: 'water' }, d), CC.castOf({ side: 'enemy', magic: 'wind' }, d),
+    CC.castOf({ side: 'enemy', magic: 'fire', stand: 'boss' }, d), CC.castOf({ side: 'object', kind: 'village' }, d)], ['h', null, 'w', 'e', null]);
+  eq([CC.battleRef('h', d), CC.battleRef('e', d), CC.battleRef('w', d), CC.faceRef('h', '笑う', d)], ['up:n1', 'game/img/e.png', '', 'up:n1'], '戦闘の絵が空ならふだんの絵。ない表情はふだんの絵');
+  eq(CC.imgIds(d), ['n1']);
+});
+test('キャラを入れ替えても window.CHARS は同じ入れ物（会話の画面が先に掴んでいても届く）', function () {
+  var box = CC.CHARS;
+  CC.apply({ list: { z: { name: 'Z', color: '#000000', faces: { normal: '' } } }, cast: {} });
+  ok(CC.CHARS === box && Object.keys(box).join() === 'z');
+  CC.apply(CC.DEFAULT);
+  eq(Object.keys(box), ['charA', 'charB', 'enemy']);
 });
 
 console.log('\n■ ステージのデータ');

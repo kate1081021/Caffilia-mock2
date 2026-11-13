@@ -52,6 +52,7 @@
   // 設定（オーナー 11/03。game/settings.js・archive/仕様と調査/IMPROVE_設定.md）: 画面の主な色と、名前（自然・マップの字・魔法・シナジー）。
   //   開いたらすぐ、このブラウザの写しを当てる。共有の置き場所から読んだら、そちらを当てる（fetchShared）
   var CS = window.CafiliaSettings;
+  var CC = window.CafiliaChars;   // キャラ（game/chars.js。オーナー 11/13。.claude/IMPROVE_キャラ.md）
   var SHORT0 = {};
   Object.keys(SHORT).forEach(function (t) { SHORT0[t] = SHORT[t]; });
   function applySettings(s) {
@@ -1161,17 +1162,31 @@
     base.forEach(function (b) { names.push(b + '_koma', b); });
     return names;
   }
-  function probeImg(name) {
-    if (imgState[name]) return imgState[name];
-    imgState[name] = 'wait';
+  function probeUrl(src) {
+    if (imgState[src]) return imgState[src];
+    imgState[src] = 'wait';
     var im = new Image();
-    im.onload = function () { imgState[name] = 'ok'; renderBoard(false); };
-    im.onerror = function () { imgState[name] = 'none'; renderBoard(false); };
-    im.src = IMG_DIR + name + '.png';
+    im.onload = function () { imgState[src] = 'ok'; renderBoard(false); };
+    im.onerror = function () { imgState[src] = 'none'; renderBoard(false); };
+    im.src = src;
     return 'wait';
+  }
+  function probeImg(name) { return probeUrl(IMG_DIR + name + '.png'); }
+  // キャラの戦闘の絵（オーナー 11/13）: 駒のキャラ（味方は魔法、敵は魔法 → デフォルト敵）の絵が先。
+  //   undefined: キャラの絵がない（前の決まった名前の絵を見る）／null: 読み込み中／字: その絵
+  function castImg(u) {
+    var cid = CC && CC.castOf(u), ref = cid ? CC.battleRef(cid) : '';
+    if (!ref) return undefined;
+    var src = CC.url(ref);
+    if (!src) return null;
+    if (/^(data|blob):/.test(src)) return src;
+    var st = probeUrl(src);
+    return st === 'ok' ? src : st === 'wait' ? null : undefined;
   }
   function unitImg(u) {
     if (viewNow() !== 'depth') return null;
+    var ci = castImg(u);
+    if (ci !== undefined) return ci;
     var names = imgNames(u);
     for (var i = 0; i < names.length; i++) {
       var s = probeImg(names[i]);
@@ -2325,7 +2340,7 @@
   var SITE_API = 'https://caffilia-jkwzvlbc7.kate108superstar.workers.dev/api/';
   var API = window.CAFILIA_API || (/^https?:$/.test(window.location.protocol) ? '/api/' : SITE_API);
   var NET_MS = 8000;   // これより待っても答えがなければ、つながっていないことにする
-  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, order: {}, hasOrder: false, why: '' };
+  app.shared = { ok: false, loaded: false, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, order: {}, hasOrder: false, chars: null, hasChars: false, why: '' };
   function api(method, path, body) {
     return new Promise(function (resolve) {
       var done = false, finish = function (r) { if (!done) { done = true; resolve(r); } };
@@ -2350,8 +2365,9 @@
       app.shared = res.ok ? { ok: true, loaded: true, stages: res.data.stages || {}, lineup: res.data.lineup || null, trash: res.data.trash || null,
           settings: res.data.settings || null, hasSettings: res.data.settings !== undefined, plays: res.data.plays || {}, hasPlays: res.data.plays !== undefined,
           tutorials: res.data.tutorials || null, hasTutorials: res.data.tutorials !== undefined,
-          order: res.data.order || {}, hasOrder: res.data.order !== undefined, why: '' }
-        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, order: {}, hasOrder: false, why: netWhy(res) };
+          order: res.data.order || {}, hasOrder: res.data.order !== undefined,
+          chars: res.data.chars || null, hasChars: res.data.chars !== undefined, why: '' }
+        : { ok: false, loaded: true, stages: {}, lineup: null, trash: null, settings: null, hasSettings: false, plays: {}, hasPlays: false, tutorials: null, hasTutorials: false, order: {}, hasOrder: false, chars: null, hasChars: false, why: netWhy(res) };
       applyTutorials();   // チュートリアル: 置き場所にあればその中身、つながらなければこのブラウザの控え、控えもなければコードの①②③
       // 設定: 置き場所にあれば（まだ誰も保存していなければ元の色と名前）当てて、このブラウザにも写す。設定の画面で直している間は当てない
       if (app.shared.hasSettings && !(app.home && app.homeView === 'settings')) {
@@ -2359,6 +2375,7 @@
         applySettings(app.shared.settings);
         if (!app.home) render();
       }
+      applyChars();
       // チュートリアルがまだ置かれていない置き場所には、コードの①②③を最初の中身として一度だけ置く（開発モードだけ）
       if (!EXHIBIT && app.shared.hasTutorials && !app.shared.tutorials) return seedTutorials();
       return app.shared;
@@ -2888,6 +2905,253 @@
     settingsButtons();
   }
   el.home.addEventListener('input', function (e) { if (!EXHIBIT && app.home && app.homeView === 'settings' && CS) settingsInput(e.target); });
+
+  // ---------------------------------------------------------------
+  // キャラ（オーナー 11/13。.claude/IMPROVE_キャラ.md。データの形と絵の読み込みは game/chars.js）
+  //   キャラの一覧（名前・色・会話の絵（表情ごと）・戦闘の絵）と、魔法 → キャラ。共有の置き場所の chars に置く。
+  //   出す順: 置き場所 → このブラウザの控え → コード（chars.js の DEFAULT）。絵は置き場所の img:<id> から読み、1枚ずつ控える
+  // ---------------------------------------------------------------
+  if (CC) {
+    CC.setFetcher(function (id) { return api('GET', 'img/' + id).then(function (res) { return res.ok && res.data ? res.data.data : null; }); });
+    CC.onImg(function () {
+      if (!app.home) renderBoard(false);
+      else if (app.homeView === 'chars') renderChars();
+    });
+    CC.preload(CC.now());
+  }
+  function charsSaved() {
+    if (app.shared.ok && app.shared.hasChars) return CC.clean(app.shared.chars || CC.DEFAULT);
+    return CC.cacheGet() || CC.clean(CC.DEFAULT);
+  }
+  // 置き場所から読んだら当てる（つながっていれば控えにも写す）
+  function applyChars() {
+    if (!CC) return;
+    var d = CC.apply(charsSaved());
+    if (app.shared.ok && app.shared.hasChars) { CC.cacheSet(d); CC.pruneCache(d); }
+    CC.preload(d);
+    if (!app.home) renderBoard(false);
+  }
+  function charsBare(x) { x = CC.clean(x); delete x.at; return JSON.stringify(x); }
+  function charsDirty() { return charsBare(app.charsDraft) !== charsBare(charsSaved()); }
+  function charsWhy() {
+    if (!app.shared.loaded) return '共有の置き場所を読み込み中…';
+    if (!app.shared.ok) return app.shared.why + '（つながると保存・絵を上げられます）';
+    if (!app.shared.hasChars) return '共有の置き場所がまだ古いので、保存できません（公開すると使えます。node tests/serve.js で開けば手元で試せます）';
+    return '';
+  }
+  // 同じ名前のキャラ（会話の欄は名前で書くので、重なると見分けられない）
+  function charsDupNames(d) {
+    var seen = {}, dup = [];
+    Object.keys(d.list).forEach(function (id) { var n = d.list[id].name; if (seen[n] && dup.indexOf(n) < 0) dup.push(n); seen[n] = 1; });
+    return dup;
+  }
+  function openChars() {
+    if (!CC) return;
+    app.charsDraft = charsSaved();
+    app.charsNote = '';
+    app.charsUp = 0;
+    app.homeView = 'chars';
+    renderChars();
+  }
+  function charsBack() {
+    if (charsDirty() && !window.confirm('キャラで変えたところを捨てて、一覧に戻りますか？')) return;
+    app.homeView = 'list';
+    renderHome();
+  }
+  function charThumb(ref, big) {
+    var src = CC.url(ref);
+    return '<span class="ch-thumb' + (big ? ' big' : '') + '">' + (src ? '<img src="' + esc(src) + '" alt="">' : '<small>' + (ref ? '読み込み中…' : '絵なし') + '</small>') + '</span>';
+  }
+  function renderChars() {
+    var d = app.charsDraft = CC.clean(app.charsDraft), why = charsWhy(), ids = Object.keys(d.list);
+    var off = why || app.charsUp ? ' disabled title="' + esc(why || '絵を上げています…') + '"' : '';
+    var pick = function (id, slot) { return '<button type="button" data-ch-pick="' + esc(id) + '" data-slot="' + esc(slot) + '"' + off + '>絵を選ぶ</button>'; };
+    var cards = ids.map(function (id) {
+      var c = d.list[id];
+      var faces = Object.keys(c.faces).map(function (f) {
+        var normal = f === 'normal';
+        return '<div class="ch-face">' + charThumb(c.faces[f]) +
+          (normal ? '<span class="ch-fname"><b>ふだん</b><small>normal</small></span>'
+            : '<input type="text" class="ch-fname" data-ch-face="' + esc(id) + '" data-old="' + esc(f) + '" value="' + esc(f) + '" maxlength="' + CC.MAX_FACE + '" aria-label="表情の名前">') +
+          pick(id, 'face:' + f) +
+          (normal ? (c.faces[f] ? '<button type="button" data-ch-clear="' + esc(id) + '" data-slot="face:normal">絵を外す</button>' : '')
+            : '<button type="button" data-ch-delface="' + esc(id) + '" data-face="' + esc(f) + '">消す</button>') + '</div>';
+      }).join('');
+      var used = ['ally', 'enemy'].reduce(function (n, s) { return n + Object.keys(d.cast[s]).filter(function (m) { return d.cast[s][m] === id; }).length; }, 0) + (d.cast.enemyDefault === id ? 1 : 0);
+      return '<div class="ch-card" data-ch="' + esc(id) + '">' +
+        '<div class="ch-head"><input type="color" data-ch-color="' + esc(id) + '" value="' + c.color + '" aria-label="' + esc(c.name) + 'の色">' +
+          '<input type="text" class="ch-name" data-ch-name="' + esc(id) + '" value="' + esc(c.name) + '" maxlength="' + CC.MAX_NAME + '" aria-label="名前">' +
+          '<small class="ch-id">' + esc(id) + (used ? '・魔法 ' + used + 'つ' : '') + '</small>' +
+          '<button type="button" class="home-del" data-ch-del="' + esc(id) + '">このキャラを消す</button></div>' +
+        '<div class="ch-body">' +
+          '<div class="ch-battle"><h4>戦闘の絵 <small>盤面に立てる。空なら会話のふだんの絵</small></h4>' + charThumb(c.battle || c.faces.normal, true) +
+            '<div class="ch-btns">' + pick(id, 'battle') + (c.battle ? '<button type="button" data-ch-clear="' + esc(id) + '" data-slot="battle">会話の絵と同じにする</button>' : '') + '</div></div>' +
+          '<div class="ch-talk"><h4>会話の絵 <small>表情ごと。会話の欄で「名前:表情「文」」</small></h4>' + faces +
+            (Object.keys(c.faces).length < CC.MAX_FACES ? '<button type="button" data-ch-addface="' + esc(id) + '">＋ 表情を足す</button>' : '') + '</div>' +
+        '</div></div>';
+    }).join('');
+    var opt = function (sel, none) {
+      return '<option value="">' + esc(none) + '</option>' + ids.map(function (id) { return '<option value="' + esc(id) + '"' + (sel === id ? ' selected' : '') + '>' + esc(d.list[id].name) + '</option>'; }).join('');
+    };
+    var magics = Object.keys(R.MAGIC_INFO);
+    var castRows = magics.map(function (m) {
+      return '<tr><th>' + esc(R.magicName(m)) + ' <small>' + esc(m) + '</small></th>' +
+        '<td><select data-cast="ally" data-m="' + m + '" aria-label="' + esc(R.magicName(m)) + 'の味方">' + opt(d.cast.ally[m], '（なし。今の駒）') + '</select></td>' +
+        '<td><select data-cast="enemy" data-m="' + m + '" aria-label="' + esc(R.magicName(m)) + 'の敵">' + opt(d.cast.enemy[m], '（デフォルト敵）') + '</select></td></tr>';
+    }).join('');
+    var dup = charsDupNames(d);
+    el.home.innerHTML = '<h2>キャラ <small>会話に出す人と、盤面に立てる絵。展示モードも、保存したキャラで出る</small></h2>' +
+      '<p class="lu-warn">⚠ 「このキャラで保存する」を押すと、どのパソコンの会話と駒の絵も変わります。絵は選んだときに置き場所へ上がります（保存するまでは、どこにも使われない）</p>' +
+      '<section class="home-sec"><h3>キャラの一覧 <small>名前は会話の欄で使う（同じ名前は2人に付けられない）</small></h3>' + cards +
+        '<div class="home-list"><button type="button" class="home-new" data-ch-add="1"' + (ids.length >= CC.MAX_CHARS ? ' disabled' : '') + '>＋ キャラを足す</button></div></section>' +
+      '<section class="home-sec"><h3>魔法とキャラ <small>駒の魔法で、どのキャラの戦闘の絵を立てるか。ボス・取り巻きも、その敵の魔法で決まる</small></h3>' +
+        '<table class="ch-cast"><thead><tr><th>魔法</th><th>味方</th><th>敵</th></tr></thead><tbody>' + castRows + '</tbody></table>' +
+        '<p class="ch-def"><label>デフォルト敵 <small>敵で、魔法にキャラを決めていないとき</small> <select data-cast="def">' + opt(d.cast.enemyDefault, '（なし。今の駒）') + '</select></label></p></section>' +
+      '<div class="home-list set-actions"><button type="button" class="primary" data-ch-save="1">このキャラで保存する</button>' +
+      '<button type="button" data-ch-back="1"></button></div>' +
+      '<p class="note ch-dup"' + (dup.length ? '' : ' hidden') + '>同じ名前のキャラがいます（' + esc(dup.join('・')) + '）。名前を変えてから保存してください</p>' +
+      '<p class="note set-why"' + (why ? '' : ' hidden') + '>' + esc(why) + '</p>' +
+      '<p class="note set-note"' + (app.charsNote ? '' : ' hidden') + '>' + esc(app.charsNote || '') + '</p>' +
+      '<input type="file" accept="image/png,image/webp,image/jpeg,image/gif" hidden data-ch-file="1">';
+    charsButtons();
+  }
+  function charsButtons() {
+    var dirty = charsDirty(), why = charsWhy(), dup = charsDupNames(app.charsDraft);
+    var save = el.home.querySelector('[data-ch-save]'), back = el.home.querySelector('[data-ch-back]'), dn = el.home.querySelector('.ch-dup');
+    if (save) { save.disabled = !dirty || !!why || !!dup.length || !!app.charsUp; save.title = why || (dup.length ? '同じ名前のキャラがいます' : ''); }
+    if (back) back.textContent = dirty ? 'やめて一覧に戻る（変えたところは捨てる）' : '一覧に戻る';
+    if (dn) { dn.hidden = !dup.length; dn.textContent = '同じ名前のキャラがいます（' + dup.join('・') + '）。名前を変えてから保存してください'; }
+  }
+  function charsSet(id, slot, ref) {
+    var c = app.charsDraft.list[id];
+    if (!c) return;
+    if (slot === 'battle') c.battle = ref;
+    else if (slot.indexOf('face:') === 0) c.faces[slot.slice(5)] = ref;
+  }
+  // 選んだ絵を、長い辺 IMG_SIDE までに縮める（透明はそのまま。webp、使えなければ png）
+  var IMG_SIDE = 768;
+  function shrinkImage(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error('ファイルを読めませんでした')); };
+      fr.onload = function () {
+        var im = new Image();
+        im.onerror = function () { reject(new Error('絵として読めませんでした')); };
+        im.onload = function () {
+          var k = Math.min(1, IMG_SIDE / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round(im.naturalWidth * k));
+          cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+          cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+          var out = cv.toDataURL('image/webp', 0.9);
+          if (!/^data:image\/webp/.test(out) || out.length > CC.MAX_IMG) out = cv.toDataURL('image/png');
+          if (out.length > CC.MAX_IMG) { reject(new Error('縮めても大きすぎました')); return; }
+          resolve(out);
+        };
+        im.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  function charsUpload(file) {
+    var to = app.charsPick;
+    app.charsPick = null;
+    if (!file || !to) return;
+    app.charsUp++;
+    app.charsNote = '絵を上げています…';
+    renderChars();
+    var fail = function (msg) { app.charsUp--; app.charsNote = ''; window.alert('絵を上げられませんでした: ' + msg); if (app.home && app.homeView === 'chars') renderChars(); };
+    shrinkImage(file).then(function (data) {
+      var id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      return api('PUT', 'img/' + id, { data: data }).then(function (res) {
+        if (!res.ok) { fail(netWhy(res)); return; }
+        CC.remember(id, data);
+        app.charsUp--;
+        charsSet(to.id, to.slot, 'up:' + id);
+        app.charsNote = '絵を上げました（まだ保存していない）';
+        if (app.home && app.homeView === 'chars') renderChars();
+      });
+    }, function (e) { fail(e.message); });
+  }
+  function charsAction(b) {
+    var d = app.charsDraft;
+    if (b.hasAttribute('data-ch-back')) { charsBack(); return; }
+    app.charsNote = '';
+    if (b.hasAttribute('data-ch-add')) {
+      var nid = CC.newId(d), n = 1;
+      while (charsDupNames({ list: Object.assign({ x: { name: '新しいキャラ' + n } }, d.list) }).length) n++;
+      d.list[nid] = { name: '新しいキャラ' + n, color: '#57534e', faces: { normal: '' }, battle: '' };
+      renderChars();
+      return;
+    }
+    if (b.hasAttribute('data-ch-del')) {
+      var id = b.getAttribute('data-ch-del');
+      if (!window.confirm('「' + d.list[id].name + '」を消しますか？（会話でこのキャラを使っているステージは、名前だけの仮の絵になります。魔法の割り当ても外れます）')) return;
+      delete d.list[id];
+      renderChars();
+      return;
+    }
+    if (b.hasAttribute('data-ch-pick')) {
+      app.charsPick = { id: b.getAttribute('data-ch-pick'), slot: b.getAttribute('data-slot') };
+      var f = el.home.querySelector('[data-ch-file]');
+      f.value = '';
+      f.click();
+      return;
+    }
+    if (b.hasAttribute('data-ch-clear')) { charsSet(b.getAttribute('data-ch-clear'), b.getAttribute('data-slot'), ''); renderChars(); return; }
+    if (b.hasAttribute('data-ch-addface')) {
+      var c = d.list[b.getAttribute('data-ch-addface')], k = 2;
+      while (c.faces['表情' + k] !== undefined) k++;
+      c.faces['表情' + k] = '';
+      renderChars();
+      return;
+    }
+    if (b.hasAttribute('data-ch-delface')) { delete d.list[b.getAttribute('data-ch-delface')].faces[b.getAttribute('data-face')]; renderChars(); return; }
+    if (b.hasAttribute('data-ch-save')) {
+      var body = CC.clean(d);
+      delete body.at;
+      b.disabled = true;
+      api('PUT', 'chars', body).then(function (res) {
+        if (!res.ok) { window.alert('保存できませんでした: ' + netWhy(res)); charsButtons(); return; }
+        body.at = res.data && res.data.at;
+        app.shared.chars = body;
+        applyChars();
+        app.charsNote = '保存しました。会話と駒の絵が、このキャラで出ます（ほかのパソコンには1分ほどで届きます）';
+        if (app.home && app.homeView === 'chars') renderChars();
+      });
+    }
+  }
+  // 名前・色は打つたびに下書きへ（画面は作り直さない）。表情の名前・魔法の割り当て・絵のファイルは、決まったとき
+  el.home.addEventListener('input', function (e) {
+    if (EXHIBIT || !app.home || app.homeView !== 'chars' || !CC) return;
+    var t = e.target, d = app.charsDraft;
+    if (t.hasAttribute('data-ch-name')) d.list[t.getAttribute('data-ch-name')].name = t.value.trim() || t.getAttribute('data-ch-name');
+    else if (t.hasAttribute('data-ch-color')) d.list[t.getAttribute('data-ch-color')].color = t.value.toLowerCase();
+    else return;
+    app.charsNote = '';
+    charsButtons();
+  });
+  el.home.addEventListener('change', function (e) {
+    if (EXHIBIT || !app.home || app.homeView !== 'chars' || !CC) return;
+    var t = e.target, d = app.charsDraft;
+    if (t.hasAttribute('data-ch-file')) { charsUpload(t.files && t.files[0]); return; }
+    if (t.hasAttribute('data-cast')) {
+      var side = t.getAttribute('data-cast'), m = t.getAttribute('data-m');
+      if (side === 'def') d.cast.enemyDefault = t.value;
+      else if (t.value) d.cast[side][m] = t.value;
+      else delete d.cast[side][m];
+      charsButtons();
+      return;
+    }
+    if (t.hasAttribute('data-ch-face')) {
+      var c = d.list[t.getAttribute('data-ch-face')], old = t.getAttribute('data-old'), nw = t.value.trim();
+      if (nw === old) return;
+      if (!CC.okFace(nw) || c.faces[nw] !== undefined) { window.alert('表情の名前は、1〜' + CC.MAX_FACE + '字で、空白と「」: を使わず、ほかの表情と重ならない名前にしてください'); t.value = old; return; }
+      var faces = {};
+      Object.keys(c.faces).forEach(function (f) { faces[f === old ? nw : f] = c.faces[f]; });   // 並びはそのまま
+      c.faces = faces;
+      renderChars();
+    }
+  });
 
   function lineupAction(b) {
     var d = app.lineupDraft;
@@ -3529,6 +3793,7 @@
     if (EXHIBIT) { renderExhibitHome(app.homeView); return; }
     if (app.homeView === 'lineup') { renderLineup(); return; }
     if (app.homeView === 'settings') { renderSettings(); return; }
+    if (app.homeView === 'chars') { renderChars(); return; }
     if (app.homeView === 'plays') { renderPlays(); return; }
     var stages = stageStore(), mine = ownList(), mig = migrateInfo();
     var del = function (attr, nm, title) { return '<button type="button" class="home-del" ' + attr + '="' + esc(nm) + '" title="' + esc(title) + '">消す</button>'; };
@@ -3562,6 +3827,7 @@
       '<input type="file" accept=".json,application/json" hidden data-import-file="1">' +
       '<button type="button" class="home-new" data-lineup="1"' + (app.shared.ok ? '' : ' disabled title="' + esc(app.shared.why || '読み込み中…') + '"') + '>展示の並び</button>' +
       '<button type="button" class="home-new" data-settings="1">設定</button>' +
+      '<button type="button" class="home-new" data-chars="1" title="会話に出す人と、盤面に立てる絵">キャラ</button>' +
       '<button type="button" class="home-new" data-plays="1" title="' + esc(pt('homeBtnTitle')) + '">' + esc(pt('homeBtn')) + '</button></div>' +
       trashSection();
   }
@@ -3703,7 +3969,8 @@
     el.banner.classList.remove('show');
     if (on) {
       renderHome();
-      if (app.homeView !== 'lineup' && app.homeView !== 'settings') fetchShared().then(function () { if (app.home && app.homeView !== 'lineup' && app.homeView !== 'settings') renderHome(); });   // みんなのステージ・展示の並びを読み直す
+      var keep = function () { return app.homeView === 'lineup' || app.homeView === 'settings' || app.homeView === 'chars'; };   // 下書きのある画面は読み直さない
+      if (!keep()) fetchShared().then(function () { if (app.home && !keep()) renderHome(); });   // みんなのステージ・展示の並びを読み直す
     }
   }
   // みんなのステージを遊ぶ（E で作る側へ。自分のステージに写しができる）
@@ -3759,6 +4026,7 @@
     if (app.home) {
       if (app.homeView === 'lineup' && (!lineupDirty() || window.confirm('展示の並びで変えたところを捨てて、一覧に戻りますか？'))) { app.homeView = 'list'; renderHome(); }
       if (app.homeView === 'settings') settingsBack();
+      if (app.homeView === 'chars') charsBack();
       return;
     }
     if (testing()) setEditMode(true);
@@ -3848,8 +4116,10 @@
     if (b.hasAttribute('data-mv')) { moveAction(b); return; }   // ▲▼（一覧でも、展示の並びでも同じ部品）
     if (app.homeView === 'lineup') { lineupAction(b); return; }
     if (app.homeView === 'settings') { settingsAction(b); return; }
+    if (app.homeView === 'chars') { charsAction(b); return; }
     if (app.homeView === 'plays') { playsAction(b); return; }
     if (b.hasAttribute('data-settings')) { openSettings(); return; }
+    if (b.hasAttribute('data-chars')) { openChars(); return; }
     if (b.hasAttribute('data-plays')) { app.homeView = 'plays'; renderPlays(); fetchShared().then(function () { if (app.home && app.homeView === 'plays') renderPlays(); }); return; }
     if (b.hasAttribute('data-lineup')) { app.lineupDraft = lineupGet(); app.lineupSaved = false; app.homeView = 'lineup'; renderLineup(); return; }
     if (b.hasAttribute('data-filter')) {

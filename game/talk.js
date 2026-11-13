@@ -1,6 +1,6 @@
 /*
  * talk.js — ステージの前後の会話（まえげき・あとげき。オーナー 11/13）
- *   ui.js のあとに読み込む。会話の中身はステージのデータ（定義の talk: { before: […], after: […] }）、キャラは chars.js。
+ *   ui.js のあとに読み込む。会話の中身はステージのデータ（定義の talk: { before: […], after: […] }）、キャラは chars.js（開発モードの「キャラ」で登録）。
  *   1行は { who: キャラの id（chars.js。登録のない名前を書くと、その名前の仮の絵）, side: 'left' | 'right', text: 文, face: 表情（省略で normal） }
  *
  *   見せ方: ステージの画面の上に重ねる（後ろに盤面が見える）。キャラが左右に大きく出て、向かい合って喋る。
@@ -21,6 +21,7 @@
   var R = window.Rules, SIO = window.StagesIO, B = window.BALANCE;
   if (!app || !R || !SIO) return;
   var CHARS = window.CHARS || {};
+  var CC = window.CafiliaChars;
   var EXHIBIT = window.CAFILIA_MODE === 'exhibit';
   var SEEN_KEY = 'cafilia-mock-talk-seen-v1';
 
@@ -87,7 +88,7 @@
   // キャラの絵。絵のファイルがなければ、色と名前の頭文字で作った仮の絵
   function portrait(line, side, speaking) {
     if (!line) return '<div class="talk-char ' + side + ' empty"></div>';
-    var c = charOf(line.who), img = (c.faces && (c.faces[line.face || 'normal'] || c.faces.normal)) || '';
+    var c = charOf(line.who), img = (CC ? CC.url(CC.faceRef(line.who, line.face)) : (c.faces && (c.faces[line.face || 'normal'] || c.faces.normal))) || '';   // 上げた絵を読み込み中なら、仮の絵
     var body = img
       ? '<img class="talk-img" src="' + esc(img) + '" alt="' + esc(c.name) + '">'
       : '<div class="talk-dummy" style="--c:' + esc(c.color || '#57534e') + '"><span class="talk-head"></span><span class="talk-body"><b>' + esc(String(c.name || '？').slice(-1)) + '</b></span></div>';
@@ -141,6 +142,8 @@
     now.i++;
     render();
   }
+  // 上げた絵を読み終えたら、出ている会話を描き直す
+  if (CC) CC.onImg(function () { if (now) render(); });
   el.addEventListener('click', function (e) {
     e.preventDefault(); e.stopPropagation();
     if (e.target.closest('[data-talk="skip"]')) close(); else next();
