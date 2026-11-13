@@ -11,7 +11,7 @@
  *     切り替えたことは sessionStorage に覚える（このタブだけ。読み込み直しても続く。新しいタブ・開き直しは URL の印どおり）。
  *     印のない URL で開いた展示モードでは、切り替えは何もしない。ボタン（右下の点・2秒長押し）は ui.js。
  *   ほかのファイルより先に読む（<body> の頭）。window.CAFILIA_MODE（'exhibit' / 'dev'）と、<html> の class（mode-exhibit / mode-dev）を決める。
- *   見た目（真上 view-flat ／ 奥行き view-depth）の印も、ここで最初に付ける（下の EXHIBIT_VIEW）。
+ *   見た目の印（遊ぶときはいつも奥行き view-depth）も、ここで最初に付ける。
  */
 (function (root) {
   'use strict';
@@ -34,24 +34,13 @@
   // 開いたまま URL の印を付け外ししたら、読み込み直してモードを切り替える
   if (root.addEventListener) root.addEventListener('hashchange', function () { if (modeNow() !== mode) loc.reload(); });
 
-  // 見た目（HD-2D の方針 10/31。.claude/HD-2D_方針_20261031.md）: 真上（flat）と奥行き（depth）。
-  //   展示モードは EXHIBIT_VIEW で決める（奥行きができあがるまでは真上。できたらここを 'depth' にする）。
-  //   開発モードは上のバーの「見た目」と V キーで切り替え、選んだ方を localStorage に覚える。エディットはいつも真上（ui.js）
-  var EXHIBIT_VIEW = 'flat';
-  var VIEW_KEY = 'cafilia-mock-view';
-  function savedView() { try { return root.localStorage.getItem(VIEW_KEY) === 'flat' ? 'flat' : 'depth'; } catch (e) { return 'depth'; } }
-  var view = mode === 'exhibit' ? EXHIBIT_VIEW : savedView();
-  if (root.document && root.document.documentElement) root.document.documentElement.classList.add('view-' + view);
+  // 見た目（HD-2D の方針 10/31。.claude/HD-2D_方針_20261031.md）: 遊ぶときは、展示モードも開発モードも奥行き（斜め上から見下ろす）。
+  //   遊ぶときの真上と、その切り替え（「見た目」ボタン・V キー）はなくした（オーナー 11/14）。エディットはいつも真上（ui.js）
+  if (root.document && root.document.documentElement) root.document.documentElement.classList.add('view-depth');
 
   root.CafiliaMode = {
-    // 遊ぶときの見た目（'flat' / 'depth'）と、開発モードで切り替える
-    view: function () { return view; },
-    setView: function (v) {
-      if (mode === 'exhibit') return false;
-      view = v === 'flat' ? 'flat' : 'depth';
-      try { root.localStorage.setItem(VIEW_KEY, view); } catch (e) { /* 覚えられなくても、このページの間は切り替わる */ }
-      return true;
-    },
+    // 遊ぶときの見た目（いつも 'depth'）
+    view: function () { return 'depth'; },
     // 切り替えられるか（印のない URL で開いた展示モードでは切り替えない）
     canToggle: function () { return urlMode() !== 'exhibit'; },
     // 開発モード → 展示モード、（切り替えた）展示モード → 開発モード。読み込み直して、そのモードの始まりから表示する

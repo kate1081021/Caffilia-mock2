@@ -132,7 +132,7 @@
     'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
     'txTalkBefore', 'txTalkAfter', 'btnTalkBefore', 'btnTalkAfter', 'btnTalkForget', 'talkChars',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
-    'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose', 'btnView',
+    'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose',
     'btnSavePlay', 'rpCard', 'rpBar', 'rpStop', 'rpSpeed', 'rpNow'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
@@ -977,20 +977,13 @@
   // ---------------------------------------------------------------
   // 描画
   // ---------------------------------------------------------------
-  // 見た目（HD-2D の方針 10/31）: 真上 view-flat ／ 奥行き view-depth を <html> に付ける。エディットはいつも真上。
-  //   展示モードは mode.js の EXHIBIT_VIEW、開発モードは上のバーの「見た目」と V キーで切り替える（mode.js が覚える）
+  // 見た目（HD-2D の方針 10/31）: 遊ぶときはいつも奥行き view-depth（展示モードも開発モードも。オーナー 11/14）。
+  //   エディットは、駒を置きやすいように真上 view-flat
   function viewNow() { return app.editMode || !window.CafiliaMode ? 'flat' : window.CafiliaMode.view(); }
   function applyView() {
     var h = document.documentElement, depth = viewNow() === 'depth';
     h.classList.toggle('view-depth', depth);
     h.classList.toggle('view-flat', !depth);
-    if (el.btnView && window.CafiliaMode) el.btnView.innerHTML = '見た目: ' + (window.CafiliaMode.view() === 'depth' ? '奥行き' : '真上') + ' <kbd>V</kbd>';
-  }
-  function toggleView() {
-    var M = window.CafiliaMode;
-    if (!M || !M.setView(M.view() === 'depth' ? 'flat' : 'depth')) return;
-    if (el.btnView) el.btnView.blur();
-    render();
   }
 
   function render(animate) {
@@ -1155,7 +1148,7 @@
   // 駒の絵（HD-2D の方針 10/31）: img/ に決まった名前の画像を入れると、奥行きの見た目でその駒が絵に変わる。ないものは今の駒を立てる（仮置き）。
   //   名前（.png）: 味方 ally_<魔法>（ally_fire など）／敵 enemy_<魔法> → なければ enemy／ボス boss／取り巻き minion／村 village／トロッコ trolley。
   //   立ち絵と駒を分けたいときは、同じ名前に _koma を付けた画像を入れると、駒だけその絵になる（ally_fire_koma.png など）。
-  //   あるかどうかは、奥行きの見た目で駒を描くときに1枚ずつ確かめる（真上の見た目と展示モードの真上では読みに行かない）
+  //   あるかどうかは、奥行きの見た目で駒を描くときに1枚ずつ確かめる（エディットの真上では読みに行かない）
   var IMG_DIR = 'game/img/', imgState = {};   // 名前 → 'wait' | 'ok' | 'none'
   function imgNames(u) {
     var base = [];
@@ -3883,7 +3876,6 @@
   });
   el.btnHome.addEventListener('click', goHome);
   if (el.btnSavePlay) el.btnSavePlay.addEventListener('click', savePlay);
-  if (el.btnView) el.btnView.addEventListener('click', toggleView);
   // 展示モードの左上「⌂ タイトル」: 確かめてから最初の画面へ（遊んでいたステージは続きから戻れない。オーナー 10/31）
   el.btnTitle.addEventListener('click', function () {
     el.btnTitle.blur();
@@ -3909,10 +3901,9 @@
     }
     // キーはおまけ（IMPROVE_controls 6章）。展示モード: 味方 1〜、向き 矢印・WASD、魔法 Enter、1手戻す Z、取り消し Esc（待機のキーはない。オーナー 10/31）。
     //   誰も選んでいないときの Enter は、右下のボタンと同じ（発動・クリアする・次へ・やり直す。advance）
-    //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Delete、見た目（真上 ⇄ 奥行き）の V を足す
+    //   開発モードは、これに エディット ⇄ テストプレイ の E と、エディットで駒を消す Deleteを足す
     if (!(/^[1-9]$/.test(k) || KEY_DIR[k] || /^(Enter|z|Z|Escape)$/.test(k) || (!EXHIBIT && /^([eE]|[vV]|Delete|Backspace)$/.test(k)))) return;
     if (k === 'z' || k === 'Z') { undo(); return; }
-    if (k === 'v' || k === 'V') { toggleView(); return; }
     if (k === 'e' || k === 'E') { setEditMode(!app.editMode); return; }
     if (app.editMode) {
       if (k === 'Escape') { if (app.editPick) app.editPick = null; else app.editTool = 'pick'; render(); }   // 選んだ駒を外す → 道具を外す
