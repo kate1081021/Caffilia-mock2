@@ -31,8 +31,16 @@ test('RGB ⇄ 色: 0〜255 に収める', function () {
 test('形を整える: 知らない色・正しくない値・元と同じ色は捨てる', function () {
   var c = S.clean({ colors: { '--bg': '#112233', '--panel': '#FFFDF8', '--nope': '#000000', '--ink': 'red' } });
   eq(c.colors, { '--bg': '#112233' });
-  eq(S.clean(null), { colors: {}, tiles: {}, magics: {}, synergies: {} }, '空でも4つの入れ物');
+  eq(S.clean(null), { colors: {}, tiles: {}, magics: {}, synergies: {}, pieces: {} }, '空でも5つの入れ物（絵の高さ pieces はオーナー 11/13）');
   ok(S.isEmpty({ colors: { '--bg': '#f4f1ea' } }), '元と同じだけなら空');
+});
+test('盤面に立てる絵の高さ: 元の値（キャラ165%・置きもの110%）・盤面の大きさごと。外れた値・知らない形は捨てる（オーナー 11/13）', function () {
+  eq(S.pieceSize({}, 5, 5), { size: 165, object: 110 });
+  var s = { pieces: { size: 150, object: 120, boards: { '5x5': 200, '6x6': 180, 'x': 100, '7x7': 10, '8x8': 120.5 } } };
+  eq(S.clean(s).pieces, { size: 150, object: 120, boards: { '5x5': 200, '6x6': 180 } });
+  eq([S.pieceSize(s, 5, 5), S.pieceSize(s, 6, 6), S.pieceSize(s, 5, 8)], [{ size: 200, object: 120 }, { size: 180, object: 120 }, { size: 150, object: 120 }]);
+  eq(S.clean({ pieces: { size: 165, object: 110 } }).pieces, {}, '元と同じ値は持たない');
+  ok(!S.isEmpty({ pieces: { boards: { '5x5': 200 } } }));
 });
 test('色を当てる: 設定にない色は元に戻す', function () {
   var props = {};
