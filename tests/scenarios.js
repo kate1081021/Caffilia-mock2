@@ -80,21 +80,22 @@ function build(rows, enemyActs, allies, enemies) {
 }
 
 // ---------------------------------------------------------------
-scenario('1. 草で森のかたまり → 火で森に点火 → 炎の後ろに回って風 → 燃え広がりで、森の上の敵を巻き込む',
+scenario('1. 草で草むらのかたまり → 火で草むらに点火 → 炎の後ろに回って風 → 燃え広がりで、森の上の敵を巻き込む',
   function () {
     // 味方 P1 草(2,5) / P2 火(1,5) / P3 風(3,5)。敵A（火）は (2,0) の森の上で何もしない設定
     return build(['..F...', '......', '......', '......', '......', '......'], false,
       [['grass', 2, 5], ['fire', 1, 5], ['wind', 3, 5]], [['fire', 2, 0]]);
   },
   function (g) {
-    g.act('P1', [2, 5], 'up');            // 草: (2,3) と (1,2)(2,2)(3,2) に森
-    g.expectLog('森ができた×4');
-    g.act('P2', [1, 3], 'right');         // 火: (1,3) から右隣 (2,3) の森に火
-    g.expectLog('森が燃えた');
+    g.act('P1', [2, 5], 'up');            // 草: (2,3) と (1,2)(2,2)(3,2) に草むら（森にするのは水。11/10）
+    g.expectLog('草むらができた×4');
+    g.act('P2', [1, 3], 'right');         // 火: (1,3) から右隣 (2,3) の草むらに火（草むらも燃える）
+    g.expectLog('草むらが燃えた');
     g.act('P3', [2, 4], 'up');            // 風: 炎の真後ろ (2,4) から上へ → 燃え広がり
-    g.expectLog('燃え広がり！ 上へ3マス走り、森4つが燃えた');
+    g.expectLog('燃え広がり！ 上へ3マス走り、森1つと草むら1マスが燃えた');   // 燃えるのは通り道の (2,2) 草むらと (2,0) 森だけ（11/11）
     check(g.state.result === 'win', '燃えた森の上の敵Aに強い炎（20）が入って倒れる');
-    check(['2,2', '1,2', '3,2'].every(function (k) { var c = k.split(',').map(Number); return g.tile(c[0], c[1]) !== 'forest'; }), 'かたまりの森は全部燃えた');
+    check(g.tile(2, 2) === 'fire' && g.tile(2, 0) === 'fire', '通り道の草むらと森が燃えた');
+    check(g.tile(1, 2) === 'thicket' && g.tile(3, 2) === 'thicket', '通り道から外れた横の草むらは燃えない');
     check(R.alliesOf(g.state).length === 3, '味方は巻き込まれていない');
   });
 
@@ -399,7 +400,7 @@ scenario('13. ステージ② 2人で守る: 1ターン目は何もしない →
     g.expectLog('村への道をふさいだ！（勝利）');
     check(g.state.result === 'win' && g.state.turn === 2 && R.objectsOf(g.state, 'village').length === 4, 'ターン2のうちに、村は4つとも残って勝ち');
     check(!g.log.some(function (l) { return /体当たり/.test(l); }), '一度も体当たりされない');
-    check(B.waterLength === 1 && B.tutorial.slope === true && B.mission.defense.turns === 5 && B.mission.defense.sealWin === true, 'このステージの数値はほかに漏れていない（標準の値のまま）');
+    check(B.waterLength === 1 && B.tutorial.slope === true && B.enemy.rushMove === 3 && B.mission.defense === undefined, 'このステージの数値はほかに漏れていない（標準の値のまま）');
   });
 
 console.log('\n' + (failures ? failures + ' 件の確認に失敗' : 'すべてのシナリオが期待どおり'));

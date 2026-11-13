@@ -28,9 +28,9 @@
       <button id="btnUndo" type="button">1手戻す <kbd>Z</kbd></button>
       <button id="btnReset" type="button">リセット</button>
       <button id="btnEdit" type="button">エディット <kbd>E</kbd></button>
-      <!-- 開発モード: 見た目を 真上 ⇄ 奥行き（HD-2D の方針 10/31。mode.js）。エディットの間はいつも真上 -->
-      <button id="btnView" type="button" title="遊ぶときの見た目を 真上 ⇄ 奥行き で切り替える（エディットはいつも真上）">見た目: 奥行き <kbd>V</kbd></button>
       <button id="btnHowto" type="button">遊び方</button>
+      <!-- プレイ集（オーナー 11/10）: 開発モードでクリアしたら出る。押すと、この攻略をプレイ集に保存する（ui.js） -->
+      <button id="btnSavePlay" type="button" class="save-play" hidden>★ この攻略を保存する</button>
     </div>
   </header>
 
@@ -125,7 +125,7 @@
         <!-- ステージ（IMPROVE_v3 段0・段2・段4）: 保存ボタンはない。直すたびに、このブラウザの「自分のステージ」に自動で残る。
              一覧・開く・消す・新しく作るは、開発の最初の画面（⌂）にある。「共有する」で、みんなのステージ（どのパソコンからも）に置く -->
         <div class="edit-group">
-          <h3>ステージ <small>直すたびに自動で残る</small></h3>
+          <h3>ステージ <small id="stageSaveNote">直すたびに自動で残る</small></h3>
           <div class="row">
             <label>名前 <input id="saveName" type="text" placeholder="ステージの名前" maxlength="40"></label>
           </div>
@@ -142,6 +142,17 @@
           <h3>やり直しのヒント <small>やり直したとき、盤面の上に1行で出る</small></h3>
           <label>やり直しのヒント（一斉） <input id="txHintSimul" type="text"></label>
           <label>やり直しのヒント（1人ずつ） <input id="txHintSingle" type="text"></label>
+        </div>
+        <div class="edit-group stage-talk">
+          <h3>会話 <small>ステージの前と、勝ったあとに出る。1行が1つの文</small></h3>
+          <p class="note">書き方: <code>左 キャラA「文」</code> <code>右 キャラB「文」</code>。キャラ: <span id="talkChars"></span></p>
+          <label>まえげき（初めて始めたとき。目的を伝える） <textarea id="txTalkBefore" rows="4" spellcheck="false"></textarea></label>
+          <label>あとげき（初めて勝ったとき。起きたことの仕組みを伝える） <textarea id="txTalkAfter" rows="4" spellcheck="false"></textarea></label>
+          <div class="row">
+            <button id="btnTalkBefore" type="button">まえげきを見る</button>
+            <button id="btnTalkAfter" type="button">あとげきを見る</button>
+            <button id="btnTalkForget" type="button" title="このブラウザの「もう見た」のしるしを消す。どのステージも、次に始めたとき・勝ったときにまた会話が出る">見たしるしを消す</button>
+          </div>
         </div>
         <p class="note">テストプレイを始めたときの盤面が「リセット」の戻り先になります（HP は満タン、ターン1 に戻ります）。</p>
         <button id="btnEditDone" type="button" class="primary">▶ テストプレイ <kbd>E</kbd></button>
@@ -165,14 +176,25 @@
     </div>
   </div>
 
+  <!-- プレイ集を流しているとき（ui.js。オーナー 11/10）: ステージ名の札と、マウスを動かすと出る「■ 止める」（Esc でも止まる） -->
+  <div id="rpCard" class="rp-card" hidden aria-live="polite"></div>
+  <div id="rpBar" class="rp-bar" hidden>
+    <button id="rpStop" type="button" class="primary">■ 止める <kbd>Esc</kbd></button>
+    <span id="rpSpeed" class="rp-speed" role="group" aria-label="速さ"></span>
+    <span id="rpNow" class="rp-now"></span>
+  </div>
+
   <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どちらのモードでも同じ位置・同じ見た目 -->
   <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
 
   <script src="game/balance.js"></script>
   <script src="game/texts.js"></script>
+  <script src="game/chars.js"></script>
   <script src="game/stages_io.js"></script>
   <script src="game/rules.js"></script>
+  <script src="game/plays.js"></script>
   <script src="game/ui.js"></script>
+  <script src="game/talk.js"></script>
   <!-- 会話の窓（texts_ui.js）は、じゃまなのでなくした（オーナー 10/31。archive/会話の窓_20261031/） -->
 </body>
 </html>

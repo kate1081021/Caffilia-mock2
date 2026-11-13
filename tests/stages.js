@@ -53,15 +53,19 @@ var w2 = S.setWin(R, w, 'boss', 0, s3.ex);
 eq([S.winOf(R, w2), w2.ex, w2.overrides], ['boss', s3.ex, undefined], 'ボスに戻すと③の決まりが戻る（ターン数は外れる）');
 eq(S.setWin(R, R.loadPreset('tut1'), 'boss').ex, {}, '新しくボスにすると、湧かないボスの決まり');
 var ws = S.setWin(R, s3, 'seal', 3);
-ok(R.validOverrides(ws.overrides), 'ふさぐの数値は正しい形');
-eq([S.winOf(R, ws), S.turnsOf(R, ws), ws.overrides['mission.defense.sealWin']], ['defense', 3, undefined], '前の「道をふさぐ」（seal）を選ぶと村を守る（sealWin は書かない）');
+eq([S.winOf(R, ws), S.turnsOf(R, ws), ws.overrides], ['defense', 3, undefined], '前の「道をふさぐ」（seal）を選ぶと村を守る（守るターン数は条件に入り、上書きは書かない）');
 var WINS_IDS = S.WINS.map(function (x) { return x.id; });
 ok(WINS_IDS.indexOf('seal') < 0 && WINS_IDS.indexOf('defense') >= 0, '勝ち方の一覧に「道をふさぐ」はない（村を守るだけ）');
 var oldDef = S.toDef(R, w, '前の防衛');
 oldDef.overrides = { 'mission.defense.turns': 4, 'mission.defense.sealWin': false };
 var ob = S.build(R, oldDef);
 ok(ob.ok, ob.error);
-eq(ob.ok && [S.winOf(R, ob.state), ob.state.overrides], ['defense', { 'mission.defense.turns': 4 }], '前の JSON の sealWin の上書きは捨てて読む（村を守る・4ターン）');
+eq(ob.ok && [S.winOf(R, ob.state), S.turnsOf(R, ob.state), ob.state.overrides], ['defense', 7, undefined], '条件（conditions）が書いてあれば、前の形の上書きより条件が勝つ（上書きは捨てる）');
+delete oldDef.conditions; delete oldDef.counters; delete oldDef.template;   // 前の形のステージ（条件を持たない）
+var ob2 = S.build(R, oldDef);
+ok(ob2.ok, ob2.error);
+eq(ob2.ok && [S.winOf(R, ob2.state), S.turnsOf(R, ob2.state), ob2.state.overrides, R.conditionsOf(ob2.state).some(function (c) { return c.id === 'seal'; })], ['defense', 4, undefined, true],
+  '前の JSON は、読むときに村を守るのひな形へ（4ターン。sealWin の上書きは捨てて、ふさいだらクリアはいつも入る）');
 
 // 難易度と一覧の1行（オーナー 11/03。IMPROVE_ステージ一覧 段1・段2）
 eq(S.DIFFICULTIES.map(function (d) { return d.name; }), ['チュートリアル', 'やさしい', 'ふつう', 'むずかしい'], '難易度は4段');
@@ -119,6 +123,76 @@ var old = S.fromFile(R, R.exportLayout(R.loadPreset('tut2')), '前の配置');
 ok(old.ok && old.name === '前の配置', '前の「配置」の JSON');
 var file = S.fromFile(R, S.toFile({ name: '③の改造', def: S.toDef(R, s3, '③の改造'), texts: { scenes: { start: lines } } }));
 eq([file.ok, file.name, file.texts.scenes.start.length], [true, '③の改造', 3], 'ステージのファイル（名前と文も）');
+
+// ファイルから読む（オーナー 11/10）: まとめたファイルからいくつでも。読めないものは飛ばして理由を残す。同じ名前は上書きしない
+var one = JSON.parse(S.toFile({ name: 'あ', def: S.toDef(R, R.loadPreset('tut1'), 'あ') }));
+var two = JSON.parse(S.toFile({ name: 'い', def: S.toDef(R, R.loadPreset('tut2'), 'い'), texts: { goal: '守る', hint: { simul: 'ヒント', single: 'ヒント' } } }));
+var bad = { format: 'cafilia-stage', name: 'う', def: { rows: ['...'], allies: [], enemies: [] } };
+var many = S.fromFiles(R, JSON.stringify({ format: S.FORMAT_MANY, stages: [one, bad, two] }));
+eq([many.items.map(function (it) { return it.name; }), many.errors.map(function (e) { return e.name; })], [['あ', 'い'], ['う']], 'まとめたファイル: 読めるものだけ読み、読めないものは理由つきで残す');
+eq(S.fromFiles(R, JSON.stringify([one, two])).items.length, 2, '並び（配列）でも読める');
+eq(S.fromFiles(R, JSON.stringify(one)).items.length, 1, 'ステージのファイル1つでも読める');
+eq(S.fromFiles(R, '{').errors.length, 1, '壊れた JSON は読まない');
+var added = S.addOwn({ 'あ': { def: {}, at: 1 } }, many.items, 1000);
+eq(added.names, ['あ（2）', 'い'], '同じ名前があれば番号を付ける（上書きしない）');
+eq([added.stages['あ'].at, added.stages['あ（2）'].def.id, added.stages['あ（2）'].def.custom, added.stages['あ（2）'].texts.name], [1, 'my:あ（2）', true, 'あ（2）'], '元の自分のステージは変わらず、足したものは自分のステージの形');
+ok(added.stages['あ（2）'].at > added.stages['い'].at, 'ファイルの順に、一覧の上から並ぶ（新しく直した順）');
+eq(added.stages['い'].texts.goal, '守る', '目標とヒントの文も入る');
+ok(S.build(R, added.stages['い'].def).ok, '足したものはそのまま遊べる');
+
+// ステージごとに変えてよい数値は、守るターン数と敵の歩数だけ（オーナー 11/12「魔法が場面によって別のはたらきをするのはおかしい」）
+var lockBase = S.toDef(R, R.loadPreset('tut1'), '上書きの確かめ');
+var lockOk = Object.assign({}, lockBase, { overrides: { 'mission.defense.turns': 4, 'enemy.rushMove': 2 } });
+ok(S.build(R, lockOk).ok, '守るターン数と敵の歩数は、ステージごとに変えられる');
+[{ 'spread.maxLength': 5 }, { 'ideas.grassWater': false }, { 'waterLength': 2 }, { 'shapes.mount': [[0, 1]] }, { 'mission.defense.turns': 4, 'lineLength': 6 }].forEach(function (ov) {
+  ok(R.validOverrides(R.splitOverrides(ov).rest), 'ルールが知っている項目（守るターン数は、前の形の上書きとして条件へ読み替える 11/13）: ' + JSON.stringify(ov));
+  var lb = S.build(R, Object.assign({}, lockBase, { overrides: ov }));
+  ok(!lb.ok && /守るターン数と敵の歩数だけ/.test(lb.error), '魔法の効き方を変える上書きのあるステージは読まない: ' + JSON.stringify(ov) + ' → ' + JSON.stringify(lb.error || lb.ok));
+});
+ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', name: 'だめ', def: Object.assign({}, lockBase, { overrides: { 'spread.maxLength': 5 } }) })).ok, 'ファイルから読むときも断る');
+R.TUTORIALS.concat(R.PRESETS.filter(function (p) { return p.tutorial || p.ex; })).forEach(function (p) {
+  ok(Object.keys(p.overrides || {}).every(function (k) { return S.STAGE_OVERRIDES.indexOf(k) >= 0; }), '内蔵のステージ「' + p.id + '」も、変えているのはこの2つだけ');
+});
+// 読んだステージの背番号（プレイ集の記録が指す番号）: 写しなので新しい背番号。作る関数がなければ付けない（最初に読んだときに付く）
+var uidItems = [{ name: 'う', def: Object.assign({ uid: 'sOLD' }, dd), texts: null }];
+var nUid = 0;
+eq(S.addOwn({}, uidItems, 5, function () { return 'sNEW' + (++nUid); }).stages['う'].def.uid, 'sNEW1', 'ファイルから読んだものは新しい背番号');
+eq(S.addOwn({}, uidItems, 5).stages['う'].def.uid, undefined, '作る関数がなければ、ファイルの背番号は持ちこまない');
+
+// チュートリアルをどこから出すか（オーナー 11/12）: 置き場所 → このブラウザの控え → コード
+var tCloud = { tut1: { def: {} } }, tCache = { tutorials: { tut1: { def: {} }, tut2: { def: {} } }, at: 123 };
+eq(S.tutorialSource({ ok: true, tutorials: tCloud }, tCache).from, 'cloud', 'つながっていて置いてあれば、置き場所');
+ok(S.tutorialSource({ ok: true, tutorials: tCloud }, tCache).tutorials === tCloud, '置き場所の中身を出す');
+eq([S.tutorialSource({ ok: false, tutorials: null }, tCache).from, S.tutorialSource({ ok: false, tutorials: null }, tCache).at], ['cache', 123], 'つながらないときは、控え（控えた時刻つき）');
+ok(S.tutorialSource({ ok: false }, tCache).tutorials === tCache.tutorials, '控えの中身を出す');
+eq([S.tutorialSource({ ok: false }, null).from, S.tutorialSource({ ok: false }, {}).from, S.tutorialSource({ ok: false }, { tutorials: {} }).from, S.tutorialSource(null, null).from], ['code', 'code', 'code', 'code'], '控えがない（一度もつながったことがない）ときだけ、コード');
+eq(S.tutorialSource({ ok: false }, null).tutorials, null, 'コードのときは中身なし（画面がコードの①②③を出す）');
+eq([S.tutorialSource({ ok: true, tutorials: null }, tCache).from, S.tutorialSource({ ok: true, tutorials: {} }, tCache).from], ['code', 'code'], 'つながっているのにまだ置いていないときは、控えではなくコード（最初の中身を置く前）');
+
+// チュートリアルの id の並び（足す・消す。オーナー 11/12）: 初めからある①②③が先、足したものは足した順。消したものは出ない
+var FIRST = ['tut1', 'tut2', 'ex3'];
+eq(S.tutorialIds({ ex3: { at: 1 }, tut1: { at: 1 }, tut2: { at: 1 } }, FIRST), FIRST, '①②③の順');
+eq(S.tutorialIds({ tb: { at: 30 }, ex3: { at: 1 }, ta: { at: 20 }, tut1: { at: 99 } }, FIRST), ['tut1', 'ex3', 'ta', 'tb'], '消した②は出ない。足したものは足した順に末尾');
+eq([S.tutorialIds(null, FIRST), S.tutorialIds({}, FIRST)], [[], []], '何もなければ空');
+eq(S.applyOrder(S.tutorialIds({ tut1: {}, ta: { at: 5 }, tb: { at: 9 } }, FIRST), ['ta', 'tut2', 'tut1']), ['ta', 'tut1', 'tb'], '手で決めた順番に乗る（新しく足した tb は末尾・消した tut2 は飛ばす）');
+
+// 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びで同じものを使う
+eq(S.applyOrder(['a', 'b', 'c'], null), ['a', 'b', 'c'], '順番がなければ、今の並びのまま');
+eq(S.applyOrder(['a', 'b', 'c'], ['c', 'a']), ['c', 'a', 'b'], '手で決めた順番が先。入っていない新しいものは末尾');
+eq(S.applyOrder(['a', 'b', 'c', 'd'], ['c', 'x', 'a', 'c']), ['c', 'a', 'b', 'd'], 'もうないもの・重なりは飛ばす。新しいものは今の並びの順に末尾');
+eq(S.applyOrder([], ['a']), [], '何もなければ空');
+var mvList = ['a', 'b', 'c', 'd'];
+eq([S.moveTo(mvList, 2, 1), S.moveTo(mvList, 0, 1), S.moveTo(mvList, 3, 0), S.moveTo(mvList, 0, 3)], [['a', 'c', 'b', 'd'], ['b', 'a', 'c', 'd'], ['d', 'a', 'b', 'c'], ['b', 'c', 'd', 'a']], '上へ・下へ・離れた所へ（札で絞ったときの、見えている隣）');
+eq([S.moveTo(mvList, 0, -1), S.moveTo(mvList, 3, 4), S.moveTo(mvList, 1, 1), S.moveTo(mvList, 0.5, 1)], [mvList, mvList, mvList, mvList], '端より先・同じ所・正しくない位置は、同じ並び');
+eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない');
+eq(S.applyOrder(['tut1', 'tut2', 'ex3'], S.moveTo(['tut1', 'tut2', 'ex3'], 2, 0)), ['ex3', 'tut1', 'tut2'], '動かした並びを順番として当てると、その順');
+// ドラッグで落とした所へ入れる（オーナー 11/13）: すぐ下に見えている行の前。なければ、すぐ上に見えている行の後ろ。どちらもなければ末尾
+eq([S.placeAt(mvList, 'd', 'b', 'a'), S.placeAt(mvList, 'a', null, 'd'), S.placeAt(mvList, 'c', 'a', null)], [['a', 'd', 'b', 'c'], ['b', 'c', 'd', 'a'], ['c', 'a', 'b', 'd']], '間へ・一番下へ・一番上へ');
+eq(S.placeAt(mvList, 'b', 'c', 'a'), mvList, '同じ所に落としたら、同じ並び');
+eq([S.placeAt(mvList, 'x', 'c', 'b'), S.placeAt(mvList, 'x', null, null), S.placeAt([], 'x', null, null)], [['a', 'b', 'x', 'c', 'd'], ['a', 'b', 'c', 'd', 'x'], ['x']], 'ほかの枠から来たものは足す（空の枠にも落とせる）');
+eq(S.placeAt(['a', 'h1', 'b', 'h2', 'c'], 'c', 'b', 'a'), ['a', 'h1', 'c', 'b', 'h2'], '札で絞っていて見えない行（h1・h2）は、その場に残る');
+eq([S.placeAt(mvList, 'a', 'zz', 'c'), S.placeAt(mvList, 'a', 'zz', 'yy')], [['b', 'c', 'a', 'd'], ['b', 'c', 'd', 'a']], '知らない行を指していたら、上の行の後ろ・末尾');
+eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない（placeAt）');
 
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;

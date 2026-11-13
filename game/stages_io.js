@@ -10,11 +10,16 @@
  *   toDef(R, s, name)            … エディットの盤面（遊び始める前の状態）から、ステージの定義を作る
  *   build(R, def)                … 定義を確かめてから盤面を作る（R.buildPreset）。{ ok, state } か { ok: false, error }
  *   resize(R, s, w, h)           … 盤面の横・縦を変える。置いた物は同じ位置のまま、はみ出した物は外す。{ state, dropped }
- *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか）
+ *   winOf(R, s) / setWin(R, s, kind, turns, exKeep) … 勝ち方（WINS のどれか ＝ 条件のひな形）。選ぶと、ひな形の条件が展開されて入る
+ *   keepEx(R, s)                 … 外すボスの決まり（とミッションの条件）を覚えておく中身
  *   setHp(R, s, id, hp)          … 敵のHP
  *   fits(R, s, u, x, y)          … 体（大きい敵は size×size）が盤に収まり、通れるマスで、ほかと重ならないか。だめなら理由の文
+ *   tutorialIds(map, first) … チュートリアルの id の並び（初めからある①②③が先、足したものは足した順）
+ *   tutorialSource(shared, cache) … チュートリアルを、置き場所・このブラウザの控え・コードのどれから出すか
+ *   applyOrder(keys, order) / moveTo(list, from, to) / placeAt(list, key, before, prev) … 並び替えの部品（チュートリアル・みんなのステージ・展示の並びで同じものを使う）
  *   toFile(stage) / fromFile(R, text) … 書き出すファイル（JSON）。前の「配置」の JSON（exportLayout）も読める
  *   blankTexts(name) / linesToText(lines) / textToLines(text) … 会話の窓の文（texts.js の stages.<id> と同じ形）
+ *   checkTalk(talk) / talkToText(lines, chars) / textToTalk(text, chars) / setTalk(R, s, kind, lines) / talkDue(o) … ステージの前後の会話（まえげき・あとげき）
  */
 (function (root) {
   'use strict';
@@ -22,9 +27,10 @@
   var PREFIX = 'my:';
   var FORMAT = 'cafilia-stage';
 
-  // 勝ち方。ルールにある勝ち負けの決まりから選ぶ（新しい決まりは作らない）
-  //   boss: ステージ③の決まり（s.ex。ボスを倒せば勝ち・味方が1人でも倒れたら負け）
-  //   defense: お題の防衛（mission.defense.turns ターン守る。突進の敵の道をふさいだら、その場でクリアにもできる）。
+  // 勝ち方 ＝ 条件のひな形（rules.js の expandTemplate）。選ぶと、ひな形の条件がステージに展開されて入る（.claude/IMPROVE_条件.md）。
+  //   ステージが持つのは展開した条件（conditions）で、template はどのひな形から作ったかの札。
+  //   boss: ボスを倒せば勝ち・味方が1人でも倒れたら負け。取り巻きの湧き・ヒントなどは、今までどおり s.ex が持つ
+  //   defense: 決めたターンまで村を守る。突進の敵の道をふさいだら、その場でクリアにもできる。
   //     前の「道をふさぐ」（seal）は「村を守る」と同じなので1つにした（オーナー 11/03）。前のステージの seal・sealWin の上書きは、読むと村を守るになる
   var WINS = [
     { id: 'annihilate', name: '敵を全員倒す' },
@@ -33,7 +39,14 @@
     { id: 'escort', name: 'トロッコをゴールへ' },
     { id: 'retrieve', name: '宝を持って帰り口へ' }
   ];
+  // 前の形の上書き（守るターン数・道をふさぐの入切）。今はステージの条件（conditions）が持つので、読むときに条件へ読み替えて捨てる（rules.js の readLegacy）
   var OV_TURNS = 'mission.defense.turns', OV_SEAL = 'mission.defense.sealWin';
+  // ステージごとに変えてよい数値は、敵の歩数（突進の敵が1ターンに進むマス数）だけ（オーナー 11/12「魔法が場面によって別のはたらきをするのはおかしい」）。
+  //   守るターン数は、数値の上書きではなく条件（防衛のひな形の hold）に書く（オーナー 11/13）。魔法の形・シナジーの長さ・案の入切は、どのステージでも同じ。
+  //   ほかの項目が書いてあるステージは、読むときに断る（checkDef）。OV_TURNS・OV_SEAL は前のステージに残っているしるしで、読むのは断らない
+  //   敵の歩数は、ほんとうはステージではなく敵の種類のもの。敵の種類を作ったら、そちらへ移してここから外す（オーナー 11/12）
+  var OV_RUSH = 'enemy.rushMove';
+  var STAGE_OVERRIDES = [OV_TURNS, OV_RUSH, OV_SEAL];
   // 難易度（オーナー 11/03。IMPROVE_ステージ一覧 段1）: 定義の difficulty に持つ。ないものは「なし」。内蔵の①②③はチュートリアル
   var DIFFICULTIES = [
     { id: 'tutorial', name: 'チュートリアル' },
@@ -90,8 +103,15 @@
     else if (m.treasure) def.treasure = cell(m.treasure);
     if (s.spawn) def.spawn = clone(s.spawn);
     if (s.ex) def.ex = clone(s.ex);
+    if (s.talk) def.talk = clone(s.talk);   // 会話（まえげき・あとげき）
     if (s.enemyOnlyMagics && s.enemyOnlyMagics.length) def.enemyOnly = s.enemyOnlyMagics.slice();
-    if (s.overrides && Object.keys(s.overrides).length) def.overrides = clone(s.overrides);
+    var ov = R.splitOverrides(s.overrides).rest;   // 前の形の守るターン数などは、条件に入っている
+    if (ov) def.overrides = clone(ov);
+    // 条件（勝ち負け・ふさぎ・ミッション）は、展開して持つ。template はどのひな形から作ったかの札
+    def.template = R.templateOf(s);
+    def.conditions = R.conditionsOf(s);
+    var counters = R.countersOf(s);
+    if (Object.keys(counters).length) def.counters = counters;
     return def;
   }
 
@@ -145,7 +165,20 @@
     if (d.mission !== undefined && !R.MISSION_INFO[d.mission]) return '知らないお題がある';
     if (d.difficulty !== undefined && !diffOf(d)) return '知らない難易度がある';
     if (d.enemyOnly !== undefined && !(Array.isArray(d.enemyOnly) && d.enemyOnly.every(function (m) { return R.MAGIC_INFO[m]; }))) return '敵だけの魔法に知らない魔法がある';
-    if (d.overrides !== undefined && !R.validOverrides(d.overrides)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
+    if (d.overrides !== undefined) {
+      if (!isObj(d.overrides)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
+      var rest = R.splitOverrides(d.overrides).rest;   // 前の形の守るターン数などは、読むときに条件へ読み替える
+      if (rest && !R.validOverrides(rest)) return 'このステージだけの数値（overrides）に知らない項目か、型の違う値がある';
+    }
+    var locked = Object.keys(d.overrides || {}).filter(function (p) { return STAGE_OVERRIDES.indexOf(p) < 0; });
+    if (locked.length) return 'ステージごとに変えられるのは、守るターン数と敵の歩数だけ（魔法の効き方は、どのステージでも同じ。' + locked.join('・') + ' は変えられない）';
+    if (d.talk !== undefined) { var badTalk = checkTalk(d.talk); if (badTalk) return badTalk; }
+    if (d.template !== undefined && !R.TEMPLATE_INFO[d.template]) return '知らない勝ち方のひな形（template）がある';
+    if (d.conditions !== undefined || d.counters !== undefined) {
+      if (d.conditions === undefined) return '数え（counters）だけがあって、条件（conditions）がない';
+      var badCond = R.checkConditions(d.conditions, d.counters);
+      if (badCond) return badCond;
+    }
     if (d.spawn !== undefined) {
       var sp = d.spawn;
       if (!isObj(sp) || !inside([sp.x, sp.y]) || !R.MAGIC_INFO[sp.magic] || (sp.facing && !R.DIRS[sp.facing]) ||
@@ -163,8 +196,8 @@
     if (err) return { ok: false, error: err };
     var s;
     try { s = R.buildPreset(def); } catch (e) { return { ok: false, error: '盤面を作れない（' + e.message + '）' }; }
-    // 前のステージの「道をふさぐ」の入・切（sealWin の上書き）は捨てる。村を守るはいつも、ふさいだらクリアにできる（オーナー 11/03）
-    if (s.overrides && s.overrides[OV_SEAL] !== undefined) { delete s.overrides[OV_SEAL]; if (!Object.keys(s.overrides).length) delete s.overrides; }
+    // 前のステージの形（お題の名前・守るターン数の上書き・ボスの決まり）は、R.buildPreset がひな形の条件に読み替える。
+    //   前の「道をふさぐ」の入・切（sealWin の上書き）は捨てる。村を守るはいつも、ふさいだらクリアにできる（オーナー 11/03）
     for (var i = 0; i < s.units.length; i++) {
       var bad = fits(R, s, s.units[i]);
       if (bad) return { ok: false, error: R.unitLabel(s, s.units[i]) + ': ' + bad };
@@ -199,34 +232,34 @@
     return { state: s, dropped: dropped };
   }
 
-  function turnsOf(R, s) {
-    var ov = s.overrides || {};
-    return ov[OV_TURNS] !== undefined ? ov[OV_TURNS] : R.BALANCE.mission.defense.turns;
+  function turnsOf(R, s) { return R.templateParams(s).turns; }
+  function winOf(R, s) { return R.templateOf(s); }
+  function missionConds(R, s) { return R.conditionsOf(s).filter(function (c) { return c.then === 'mission'; }); }
+  // ボスの決まりを外すときに覚えておく中身: s.ex（取り巻きの湧き方など）と、ミッションの条件。ボスに戻したら使う
+  function keepEx(R, s) {
+    if (!s.ex) return null;
+    var keep = clone(s.ex), ms = missionConds(R, s);
+    if (ms.length) keep.conditions = ms;
+    return keep;
   }
-  function winOf(R, s) {
-    if (s.ex) return 'boss';
-    var t = (s.mission && s.mission.type) || 'annihilate';
-    return t;
-  }
-  // exKeep: ボスの決まりを外したときに覚えておいた中身（③の取り巻きの湧き方・ミッション）。ボスに戻したら使う
+  // 勝ち方を選ぶ ＝ ひな形の条件に入れ替える。turns: 守るターン数（村を守るの条件の数と文に入る）。
+  //   exKeep: ボスの決まりを外したときに覚えておいた中身（keepEx。前の形の ex.missions も読める）。ボスに戻したら使う
   function setWin(R, s0, kind, turns, exKeep) {
-    var s = R.clone(s0);
-    if (!s.mission) s.mission = { type: 'annihilate', goal: [], exit: [], treasure: null, carrier: null, lost: 0 };
-    var ov = s.overrides = s.overrides || {};
-    delete ov[OV_TURNS]; delete ov[OV_SEAL];
+    var s = R.clone(s0), missions = [];
+    if (kind === 'seal') kind = 'defense';   // 前の「道をふさぐ」
     if (kind === 'boss') {
-      s.ex = s0.ex ? clone(s0.ex) : exKeep ? clone(exKeep) : {};
-      s.mission.type = 'annihilate';
-    } else {
-      delete s.ex;
-      if (kind === 'seal') kind = 'defense';   // 前の「道をふさぐ」
-      s.mission.type = kind;
-      if (kind === 'defense') {
-        var n = Math.round(Number(turns) || R.BALANCE.mission.defense.turns);
-        ov[OV_TURNS] = Math.max(1, Math.min(30, n));
+      if (s0.ex) missions = missionConds(R, s0);
+      else {
+        var keep = exKeep ? clone(exKeep) : {};
+        missions = Array.isArray(keep.conditions) ? keep.conditions :
+          (Array.isArray(keep.missions) ? keep.missions : []).filter(function (m) { return isObj(m) && m.id && R.TILE_INFO[m.tile]; }).map(R.tileMission);
+        delete keep.conditions; delete keep.missions;
+        s.ex = keep;
       }
-    }
-    if (!Object.keys(ov).length) delete s.overrides;
+    } else delete s.ex;
+    s = R.setTemplate(s, kind, { turns: turns }, missions);
+    var ov = R.splitOverrides(s.overrides).rest;   // 前の形の守るターン数の上書きは、もう使わない
+    if (ov) s.overrides = ov; else delete s.overrides;
     return s;
   }
 
@@ -264,6 +297,75 @@
   }
 
   // ---------------------------------------------------------------
+  // ステージの前後の会話（まえげき・あとげき。オーナー 11/13）。ステージの定義の talk: { before: [行…], after: [行…] }
+  //   1行は { who: キャラの id（chars.js。登録のない名前も書ける。空なら語り）, side: 'left' | 'right', text: 文, face: 表情（省略で normal） }
+  //   talk は 名前 → 行の並び。before（まえげき）・after（あとげき）のほかの名前は、のちにステージの途中の会話に使う（今は出ない）
+  //   エディットの欄は1行が1つの文: 「左 キャラA「文」」「右 キャラB:笑う「文」」。左・右を書かなければ、そのキャラが前にいた側（初めてなら空いている側）。
+  //   「」のない行は語り（キャラなし）
+  // ---------------------------------------------------------------
+  var TALK_MAX_LINES = 60, TALK_MAX_TEXT = 200, TALK_MAX_WHO = 24;
+  function checkTalk(talk) {
+    if (!isObj(talk)) return '会話（talk）が正しくない';
+    var names = Object.keys(talk);
+    if (names.length > 20) return '会話（talk）の場面が多すぎる（20 まで）';
+    for (var i = 0; i < names.length; i++) {
+      var lines = talk[names[i]];
+      if (!Array.isArray(lines) || lines.length > TALK_MAX_LINES) return '会話「' + names[i] + '」が正しくない（' + TALK_MAX_LINES + '行まで）';
+      var bad = lines.some(function (l) {
+        return !isObj(l) || typeof l.text !== 'string' || !l.text || l.text.length > TALK_MAX_TEXT ||
+          (l.who !== undefined && (typeof l.who !== 'string' || l.who.length > TALK_MAX_WHO)) ||
+          (l.side !== undefined && l.side !== 'left' && l.side !== 'right') ||
+          (l.face !== undefined && (typeof l.face !== 'string' || l.face.length > TALK_MAX_WHO));
+      });
+      if (bad) return '会話「' + names[i] + '」に、正しくない行がある（文は' + TALK_MAX_TEXT + '字まで。側は left か right）';
+    }
+    return '';
+  }
+  var SIDE_TEXT = { left: '左', right: '右' };
+  function charName(chars, who) { return chars && chars[who] ? chars[who].name : who; }
+  function charId(chars, name) {
+    var ids = Object.keys(chars || {});
+    for (var i = 0; i < ids.length; i++) if (ids[i] === name || chars[ids[i]].name === name) return ids[i];
+    return name;   // 登録のない名前は、そのまま（仮の絵で出る）
+  }
+  function talkToText(lines, chars) {
+    return (lines || []).map(function (l) {
+      if (!l.who) return l.text;
+      return SIDE_TEXT[l.side === 'right' ? 'right' : 'left'] + ' ' + charName(chars, l.who) + (l.face ? ':' + l.face : '') + '「' + l.text + '」';
+    }).join('\n');
+  }
+  function textToTalk(text, chars) {
+    var where = {};   // キャラ → 前にいた側
+    return String(text || '').split(/\r?\n/).map(function (t) { return t.replace(/^\s+|\s+$/g, ''); }).filter(Boolean).map(function (t) {
+      var m = /^(?:(左|右)[\s　]*)?([^「」\s　:：]{1,24})(?:[:：]([^「」\s　]{1,24}))?「([\s\S]*)」$/.exec(t);
+      if (!m || !m[4]) return { who: '', side: 'left', text: (m ? t : t).slice(0, TALK_MAX_TEXT) };
+      var who = charId(chars, m[2]);
+      var used = Object.keys(where).map(function (k) { return where[k]; });
+      var side = m[1] === '左' ? 'left' : m[1] === '右' ? 'right' : where[who] || (used.indexOf('left') < 0 ? 'left' : 'right');
+      where[who] = side;
+      var line = { who: who, side: side, text: m[4].slice(0, TALK_MAX_TEXT) };
+      if (m[3]) line.face = m[3];
+      return line;
+    }).slice(0, TALK_MAX_LINES);
+  }
+  // エディットの盤面の会話を書きかえる（新しい状態を返す）。kind: 'before' | 'after'
+  function setTalk(R, s0, kind, lines) {
+    var s = R.clone(s0);
+    s.talk = isObj(s.talk) ? s.talk : {};
+    if (!s.talk.before) s.talk.before = [];
+    if (!s.talk.after) s.talk.after = [];
+    s.talk[kind] = clone(lines || []);
+    return s;
+  }
+  // 会話を出すか。o: { kind: 'before' | 'after', lines, context: 'tutorial' | 'shared' | 'own' | 'exhibit', show: 並びごとの入切, seen: もう出したか, editMode, replay }
+  //   まえげきは「そのステージを初めて始めたとき」、あとげきは「初めて勝ったとき」に呼ぶ（やり直し・負けでは呼ばない。呼ぶ側は talk.js）
+  function talkDue(o) {
+    if (!o || o.editMode || o.replay || o.seen) return false;
+    if (!Array.isArray(o.lines) || !o.lines.length) return false;
+    return !!(o.show && o.show[o.context]);
+  }
+
+  // ---------------------------------------------------------------
   // 一覧の1行（オーナー 11/03。IMPROVE_ステージ一覧 段2）: 定義から、使う魔法とクリア方法を出す
   // ---------------------------------------------------------------
   // 使う魔法: 味方の魔法を並びの順に（同じ魔法は1つ）。構える味方（指示できない仲間）の魔法には「（仲間）」
@@ -288,13 +390,64 @@
   ];
   function winKind(def) {
     if (!def) return '';
-    if (def.ex) return 'boss';
-    if (def.mission === 'defense' || def.mission === 'escort' || def.mission === 'retrieve') return def.mission;
+    var t = Array.isArray(def.conditions) && def.template ? def.template : (def.ex ? 'boss' : def.mission);   // 前の形は、ボスの決まりとお題の名前から
+    if (t === 'boss' || t === 'defense' || t === 'escort' || t === 'retrieve') return t;
     return 'battle';
   }
   function winLabel(R, def) { var k = winKind(def), w = WIN_KINDS.filter(function (x) { return x.id === k; })[0]; return w ? w.name : ''; }
   // 名前に入っている区分の印（【チュートリアル】など）は、一覧では難易度の札に任せて外す
   function plainTitle(name) { return String(name || '').replace(/^【[^】]*】\s*/, ''); }
+
+  // ---------------------------------------------------------------
+  // チュートリアルをどこから出すか（オーナー 11/12）
+  //   shared: 共有の置き場所を読んだ結果 { ok, tutorials }。cache: このブラウザの控え { tutorials, at }（なければ null）
+  //   つながっていて置いてあれば 置き場所（cloud）。つながらないときは 控え（cache）。
+  //   控えがない（一度もつながったことがない）ときと、つながっているのにまだ置いていないときは コード（code）
+  // ---------------------------------------------------------------
+  // チュートリアルの id を、順番を決めていないときの並びで返す: first（初めからある①②③）のうち今あるものが先、足したものは足した順（at）
+  function tutorialIds(map, first) {
+    if (!isObj(map)) return [];
+    var head = (first || []).filter(function (id) { return !!map[id]; });
+    var rest = Object.keys(map).filter(function (id) { return head.indexOf(id) < 0 && !!map[id]; })
+      .sort(function (a, b) { return ((map[a].at || 0) - (map[b].at || 0)) || (a < b ? -1 : a > b ? 1 : 0); });
+    return head.concat(rest);
+  }
+  function hasTuts(t) { return isObj(t) && Object.keys(t).length > 0; }
+  function tutorialSource(shared, cache) {
+    var ok = !!(shared && shared.ok);
+    if (ok && hasTuts(shared.tutorials)) return { from: 'cloud', tutorials: shared.tutorials, at: 0 };
+    if (!ok && isObj(cache) && hasTuts(cache.tutorials)) return { from: 'cache', tutorials: cache.tutorials, at: cache.at || 0 };
+    return { from: 'code', tutorials: null, at: 0 };
+  }
+
+  // ---------------------------------------------------------------
+  // 並び替えの部品（オーナー 11/12）: チュートリアル・みんなのステージ・展示の並びの3か所で、同じこの2つを使う
+  //   applyOrder(keys, order): keys（今あるもの）を、手で決めた順番 order に並べる。order にないもの（新しいステージ）は、keys の順のまま末尾に足す。
+  //     order にあっても今ないもの（消したステージ）は飛ばす
+  //   moveTo(list, from, to): from 番目を to 番目へ動かした、新しい並び（元の並びは変えない。動かせないときは同じ並び）
+  //   placeAt(list, key, before, prev): ドラッグで落とした所へ key を入れた、新しい並び（オーナー 11/13）。
+  //     before（落とした所のすぐ下に見えている行）の前。なければ prev（すぐ上に見えている行）の後ろ。どちらもなければ末尾。
+  //     key が並びになければ足す（ほかの枠から来たもの）。札で絞っていて見えない行は、その場に残る
+  // ---------------------------------------------------------------
+  function applyOrder(keys, order) {
+    var has = {}, used = {}, out = [];
+    keys.forEach(function (k) { has[k] = true; });
+    (Array.isArray(order) ? order : []).forEach(function (k) { if (has[k] && !used[k]) { used[k] = true; out.push(k); } });
+    keys.forEach(function (k) { if (!used[k]) { used[k] = true; out.push(k); } });
+    return out;
+  }
+  function placeAt(list, key, before, prev) {
+    var out = list.filter(function (k) { return k !== key; });
+    var has = function (k) { return k !== undefined && k !== null && out.indexOf(k) >= 0; };
+    out.splice(has(before) ? out.indexOf(before) : has(prev) ? out.indexOf(prev) + 1 : out.length, 0, key);
+    return out;
+  }
+  function moveTo(list, from, to) {
+    var out = list.slice();
+    if (!(from % 1 === 0 && to % 1 === 0) || from < 0 || to < 0 || from >= out.length || to >= out.length || from === to) return out;
+    out.splice(to, 0, out.splice(from, 1)[0]);
+    return out;
+  }
 
   // ---------------------------------------------------------------
   // 自分のステージのゴミ箱（オーナー 11/03。IMPROVE_ステージ一覧 段3）。stages・trash はこのブラウザの入れ物（{ 名前: 中身 }）
@@ -351,10 +504,46 @@
     return { ok: true, name: name, def: def, state: b.state, texts: texts || blankTexts(name) };
   }
 
+  // ファイルから読む（オーナー 11/10「自分の使うブラウザがいい」）: 1つのファイルに、ステージを1つでも、まとめていくつでも入れられる。
+  //   読める形: ステージのファイル（toFile）1つ／その並び（配列）／{ format: 'cafilia-stages', stages: [ステージのファイル…] }。
+  //   戻り値 { items: [{ name, def, texts }], errors: [{ name, error }] }。読めないものは飛ばして、理由を errors に残す
+  var FORMAT_MANY = 'cafilia-stages';
+  function fromFiles(R, text) {
+    var d;
+    try { d = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return { items: [], errors: [{ name: '', error: 'JSON として読めない' }] }; }
+    var list = Array.isArray(d) ? d : isObj(d) && d.format === FORMAT_MANY && Array.isArray(d.stages) ? d.stages : [d];
+    var items = [], errors = [];
+    list.forEach(function (one, i) {
+      var f = fromFile(R, one, '読み込んだステージ');
+      if (f.ok) items.push({ name: f.name, def: f.def, texts: f.texts });
+      else errors.push({ name: (isObj(one) && one.name) || String(i + 1) + 'つ目', error: f.error });
+    });
+    return { items: items, errors: errors };
+  }
+  // 読んだステージを、自分のステージ（{ 名前: 記録 }）に足す。同じ名前があれば「名前（2）」にする（上書きしない）。
+  //   ファイルの順に、一覧（新しく直した順）の上から並ぶように、時刻を1ずつずらす
+  //   背番号（def.uid。プレイ集の記録が指す番号）: 読んだものは写しなので、新しい背番号（newUid() が作る。なければ付けずに置き、最初に読んだときに付く）
+  function addOwn(stages, items, now, newUid) {
+    stages = clone(stages || {});
+    now = now || Date.now();
+    var names = items.map(function (it, i) {
+      var name = freeName(it.name, stages);
+      var def = clone(it.def);
+      def.id = PREFIX + name; def.name = name; def.custom = true; def.tutorial = true;   // エディットで作ったステージと同じ（やり直し・ヒントが効く）
+      if (newUid) def.uid = newUid(); else delete def.uid;
+      var texts = clone(it.texts) || blankTexts(name);
+      texts.name = name;
+      stages[name] = { def: def, texts: texts, exKeep: null, base: null, at: now - i };
+      return name;
+    });
+    return { stages: stages, names: names };
+  }
+
   var api = {
-    PREFIX: PREFIX, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
+    PREFIX: PREFIX, tutorialSource: tutorialSource, tutorialIds: tutorialIds, applyOrder: applyOrder, moveTo: moveTo, placeAt: placeAt, STAGE_OVERRIDES: STAGE_OVERRIDES, fromFiles: fromFiles, addOwn: addOwn, FORMAT_MANY: FORMAT_MANY, WINS: WINS, DIFFICULTIES: DIFFICULTIES, diffOf: diffOf, magicsOf: magicsOf, winLabel: winLabel, winKind: winKind, WIN_KINDS: WIN_KINDS, plainTitle: plainTitle,
     trashPut: trashPut, trashRestore: trashRestore, toDef: toDef, build: build, checkDef: checkDef, fits: fits, resize: resize,
-    winOf: winOf, setWin: setWin, turnsOf: turnsOf, setHp: setHp,
+    winOf: winOf, setWin: setWin, turnsOf: turnsOf, keepEx: keepEx, setHp: setHp,
+    checkTalk: checkTalk, talkToText: talkToText, textToTalk: textToTalk, setTalk: setTalk, talkDue: talkDue,
     blankTexts: blankTexts, linesToText: linesToText, textToLines: textToLines, toFile: toFile, fromFile: fromFile, clone: clone
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

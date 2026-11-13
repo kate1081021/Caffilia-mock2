@@ -2,7 +2,7 @@
 
 このフォルダに、決まった名前の画像（.png）を入れると、奥行きの見た目でその駒が絵に変わります。
 入れていない駒は、今の丸い駒を立てたまま（仮置き）。入れたら、ページを読み込み直してください。
-真上の見た目では使いません。公開（tools/publish.js）では、このフォルダの画像も一緒に出ます。
+エディットの真上の見た目では使いません。公開（tools/publish.js）では、このフォルダの画像も一緒に出ます。
 
   味方   ally_<魔法>.png   草 ally_grass／水 ally_water／土 ally_earth／火 ally_fire／風 ally_wind
                            雷 ally_thunder／氷 ally_ice／旋風 ally_senpu／闇 ally_dark／山 ally_mount

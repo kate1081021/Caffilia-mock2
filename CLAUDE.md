@@ -107,7 +107,9 @@
 - ゲーム本体（`index.html` と `game/`）は、素の HTML / CSS / JavaScript だけ。外部ライブラリ・ビルド・`npm install` なし。ES Modules は使わず、普通の `<script src>` で読む。
 - `index.html` をダブルクリック（file://）でも、公開した URL でも、同じように遊べる。
 - ルールは `game/rules.js` の純粋な関数（状態 → 新しい状態＋出来事）。画面は `game/ui.js`、数値は `game/balance.js`、画面の文は `game/texts.js`。
-- ネットを使うのは共有だけ。みんなのステージと展示の並びは、Cloudflare の置き場所（`tools/stage_worker.mjs`。Workers KV）に置く。つながらないとき（ネットがない など）も、共有なしで遊べるように作る（展示はチュートリアル①②③だけになる）。
+- 勝ち・負け・「クリアする」・ミッションの条件は、コードではなくステージのデータ（`conditions`）に書く。`rules.js` が持つのは、盤面に問いかける部品と、条件を読むしくみ、条件の組のひな形だけ。書き方は `docs/条件の書き方.md`。新しい勝ち方は、まず今の部品の組み合わせで書けるかを見る。部品が足りないときだけ、部品を足す。
+- ステージの前後の会話（まえげき・あとげき）は、ステージのデータ（`talk`）に書く。画面は `game/talk.js`、キャラの登録は `game/chars.js`。書き方は `docs/会話の書き方.md`。
+- ネットを使うのは共有だけ。みんなのステージと展示の並びは、Cloudflare の置き場所（`tools/stage_worker.mjs`。Workers KV）に置く。つながらないとき（ネットがない など）も、共有なしで遊べるように作る（展示はチュートリアル①②③だけになる。中身は、そのブラウザが前につながったときの控え。控えがなければコードの①②③）。
   - file:// で開いて共有すると、公開先の本物の置き場所に書きこむ。試すときは `node tests/serve.js` で開く（手元に同じ置き場所が立つ）。
   - `tools/stage_worker.mjs` は Cloudflare で動くので ES Modules で書く（ゲーム本体の決まりの例外）。
 
@@ -125,7 +127,7 @@
 - 小さな変更（数値・形・見た目・1つのシナジー追加）はバイブコーディング。会話で直す → テストを通す → 画面で動いている所を見せる → `docs/` の枝を今の姿に直す → コミット。
 - 大きな作り直しは、仕様書（`.claude/IMPROVE_名前.md`）を書いてオーナーと決めてから、まとめて作る。終わった仕様書は `archive/仕様と調査/` へ移す。
 - シナジーは、8章「案の出し方」に沿って1つずつ出し、作って確かめる。
-- テスト: すべての .js に `node --check`（`for f in game/*.js tests/*.js tools/*.js; do node --check "$f"; done`）。ルールを変えたら `node tests/run.js`・`tests/scenarios.js`・`tests/simul.js`・`tests/ex3.js`・`tests/stages.js`・`tests/stage_api.js`・`tests/settings.js` をすべて通す。
+- テスト: すべての .js に `node --check`（`for f in game/*.js tests/*.js tools/*.js; do node --check "$f"; done`）。ルールを変えたら `node tests/run.js`・`tests/scenarios.js`・`tests/simul.js`・`tests/ex3.js`・`tests/stages.js`・`tests/stage_api.js`・`tests/settings.js`・`tests/plays.js`・`tests/conditions.js`・`tests/talk.js` をすべて通す。
   - ルールを変えたら、同じ変更の中でテストの期待も直す。直す前に、今の動きが法則どおりかを確かめる。テストを消したり、落ちたまま置いたりしない。
   - node のテストは「1人ずつ」（`balance.js` の `turnMode: 'single'`）で動く。画面はいつも「一斉」。結果が同じことは確かめてある。
 - 画面の確認は `node tests/serve.js`（http://localhost:8765。開発モードは `#dev`）で開く。パソコンのセッションは内蔵ブラウザ、クラウドのセッションは入っているブラウザ（Playwright）で撮って、オーナーに見せる。
