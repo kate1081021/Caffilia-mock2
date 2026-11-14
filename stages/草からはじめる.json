@@ -1,0 +1,827 @@
+{
+ "format": "cafilia-stages",
+ "version": 1,
+ "name": "草からはじめる",
+ "stages": [
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草01 火をつける",
+   "savedAt": "",
+   "def": {
+    "name": "草01 火をつける",
+    "rows": [
+     "FFF..",
+     "FFF..",
+     ".F...",
+     ".F...",
+     ".....",
+     "....."
+    ],
+    "allies": [
+     [
+      "fire",
+      0,
+      3,
+      {
+       "facing": "right"
+      }
+     ],
+     [
+      "wind",
+      1,
+      5,
+      {
+       "facing": "up",
+       "npc": true
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      1,
+      0,
+      {
+       "stand": "still"
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "tutorial"
+   },
+   "texts": {
+    "name": "草01 火をつける",
+    "goal": "仲間の風が吹く所に火をつけて、森ごと燃やそう",
+    "hint": {
+     "simul": "仲間の風が通るマスに、火があると…？",
+     "single": "仲間の風が通るマスに、火があると…？"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草04 仲間の火に合わせる",
+   "savedAt": "",
+   "def": {
+    "name": "草04 仲間の火に合わせる",
+    "rows": [
+     "......",
+     ".gg...",
+     ".gg...",
+     "......",
+     "......",
+     "......"
+    ],
+    "allies": [
+     [
+      "grass",
+      1,
+      4,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "fire",
+      4,
+      2,
+      {
+       "facing": "left",
+       "npc": true
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      2,
+      2,
+      {
+       "stand": "still",
+       "hp": 2
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "tutorial"
+   },
+   "texts": {
+    "name": "草04 仲間の火に合わせる",
+    "goal": "仲間の火が狙うマスに草を植えて、敵のいる草むらまで燃やそう",
+    "hint": {
+     "simul": "仲間の火は、いつも同じマスを狙っている。そこが草むらなら…？",
+     "single": "仲間の火は、いつも同じマスを狙っている。そこが草むらなら…？"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草06 2人で組む",
+   "savedAt": "",
+   "def": {
+    "name": "草06 2人で組む",
+    "rows": [
+     "......",
+     "......",
+     "......",
+     "......",
+     "......",
+     "......"
+    ],
+    "allies": [
+     [
+      "fire",
+      4,
+      4,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "grass",
+      2,
+      5,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      3,
+      1,
+      {
+       "stand": "still",
+       "hp": 3
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "tutorial"
+   },
+   "texts": {
+    "name": "草06 2人で組む",
+    "goal": "草むらを作って、火で燃やそう",
+    "hint": {
+     "simul": "発動の順番（右上の ▲▼）で、先に撃つ人を変えられる",
+     "single": "発動の順番（右上の ▲▼）で、先に撃つ人を変えられる"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草07 導火線",
+   "savedAt": "",
+   "def": {
+    "name": "草07 導火線",
+    "rows": [
+     "...R...",
+     "...Rgg.",
+     "...Rgg.",
+     "...R...",
+     "......."
+    ],
+    "allies": [
+     [
+      "grass",
+      1,
+      3,
+      {
+       "facing": "right"
+      }
+     ],
+     [
+      "fire",
+      2,
+      2,
+      {
+       "facing": "down"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      4,
+      2,
+      {
+       "stand": "still",
+       "hp": 2
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "easy"
+   },
+   "texts": {
+    "name": "草07 導火線",
+    "goal": "川の向こうの敵まで、草むらをつないで火を届けよう",
+    "hint": {
+     "simul": "炎は、ターンの終わりにとなりの草むらへ燃え移る",
+     "single": "炎は、ターンの終わりにとなりの草むらへ燃え移る"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草08 行き先に置く",
+   "savedAt": "",
+   "def": {
+    "name": "草08 行き先に置く",
+    "rows": [
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     "......."
+    ],
+    "allies": [
+     [
+      "grass",
+      1,
+      5,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "fire",
+      4,
+      5,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      3,
+      0,
+      {
+       "stand": "rush",
+       "hp": 3
+      },
+      "down"
+     ]
+    ],
+    "villages": [
+     [
+      3,
+      6
+     ]
+    ],
+    "mission": "defense",
+    "overrides": {
+     "mission.defense.turns": 3
+    },
+    "difficulty": "easy"
+   },
+   "texts": {
+    "name": "草08 行き先に置く",
+    "goal": "村へ走ってくる敵を、行き先の草むらで燃やそう",
+    "hint": {
+     "simul": "敵が次に止まるマスは、点線の丸で見えている",
+     "single": "敵が次に止まるマスは、点線の丸で見えている"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草09 一撃でやられる",
+   "savedAt": "",
+   "def": {
+    "name": "草09 一撃でやられる",
+    "rows": [
+     "......",
+     "......",
+     "......",
+     "......",
+     "......",
+     "......"
+    ],
+    "allies": [
+     [
+      "grass",
+      2,
+      2,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "fire",
+      4,
+      3,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      2,
+      1,
+      {
+       "aim": "near",
+       "hp": 3
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "easy"
+   },
+   "texts": {
+    "name": "草09 一撃でやられる",
+    "goal": "敵の火をよけて、敵を倒そう",
+    "hint": {
+     "simul": "敵の魔法が当たると、味方はひとたまりもない。紫の印のマスから動こう",
+     "single": "敵の魔法が当たると、味方はひとたまりもない。紫の印のマスから動こう"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草11 消火",
+   "savedAt": "",
+   "def": {
+    "name": "草11 消火",
+    "rows": [
+     "..M.M..",
+     "ggggggg",
+     "RRRgRRR",
+     "...g...",
+     "..ggg..",
+     "..g.g..",
+     "......."
+    ],
+    "allies": [
+     [
+      "water",
+      1,
+      4,
+      {
+       "facing": "right"
+      }
+     ],
+     [
+      "water",
+      5,
+      4,
+      {
+       "facing": "left"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      3,
+      0,
+      {
+       "aim": "nature",
+       "hp": 3
+      },
+      "down"
+     ]
+    ],
+    "villages": [
+     [
+      3,
+      5
+     ]
+    ],
+    "mission": "defense",
+    "overrides": {
+     "mission.defense.turns": 4
+    },
+    "difficulty": "easy"
+   },
+   "texts": {
+    "name": "草11 消火",
+    "goal": "燃え広がる炎を水で消して、村を守ろう",
+    "hint": {
+     "simul": "水を炎に当てると消える。草むらに当てると森になる（森も燃える）",
+     "single": "水を炎に当てると消える。草むらに当てると森になる（森も燃える）"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草13 山でふさぐ",
+   "savedAt": "",
+   "def": {
+    "name": "草13 山でふさぐ",
+    "rows": [
+     "MMM.MMM",
+     "MMM.MMM",
+     "MMM.MMM",
+     ".......",
+     ".......",
+     ".......",
+     "......."
+    ],
+    "allies": [
+     [
+      "mount",
+      2,
+      5,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      3,
+      0,
+      {
+       "stand": "rush"
+      },
+      "down"
+     ]
+    ],
+    "villages": [
+     [
+      3,
+      6
+     ]
+    ],
+    "mission": "defense",
+    "overrides": {
+     "mission.defense.turns": 3
+    },
+    "difficulty": "easy"
+   },
+   "texts": {
+    "name": "草13 山でふさぐ",
+    "goal": "山で道をふさいで、村を守ろう",
+    "hint": {
+     "simul": "山の魔法は十字の形。山は誰も通れない",
+     "single": "山の魔法は十字の形。山は誰も通れない"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草16 泥沼",
+   "savedAt": "",
+   "def": {
+    "name": "草16 泥沼",
+    "rows": [
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     "......."
+    ],
+    "allies": [
+     [
+      "water",
+      2,
+      5,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "mount",
+      4,
+      5,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      3,
+      0,
+      {
+       "stand": "rush"
+      },
+      "down"
+     ]
+    ],
+    "villages": [
+     [
+      3,
+      6
+     ]
+    ],
+    "mission": "defense",
+    "overrides": {
+     "mission.defense.turns": 3
+    },
+    "difficulty": "normal"
+   },
+   "texts": {
+    "name": "草16 泥沼",
+    "goal": "敵の足を止めて、村を守ろう",
+    "hint": {
+     "simul": "水たまりに山の魔法を当てると、泥沼になる",
+     "single": "水たまりに山の魔法を当てると、泥沼になる"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草17 風と順番",
+   "savedAt": "",
+   "def": {
+    "name": "草17 風と順番",
+    "rows": [
+     ".......",
+     "..ggg..",
+     "..ggg..",
+     ".......",
+     ".......",
+     ".......",
+     "......."
+    ],
+    "allies": [
+     [
+      "fire",
+      3,
+      4,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "wind",
+      5,
+      4,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      3,
+      1,
+      {
+       "stand": "still"
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "normal"
+   },
+   "texts": {
+    "name": "草17 風と順番",
+    "goal": "火と風で、草むらごと敵を燃やそう",
+    "hint": {
+     "simul": "火が先か、風が先かで、起きることが変わる",
+     "single": "火が先か、風が先かで、起きることが変わる"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草18 敵の火を使う",
+   "savedAt": "",
+   "def": {
+    "name": "草18 敵の火を使う",
+    "rows": [
+     ".......",
+     ".gggg..",
+     ".gggg..",
+     "..g....",
+     ".......",
+     ".......",
+     "......."
+    ],
+    "allies": [
+     [
+      "grass",
+      2,
+      4,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "wind",
+      4,
+      5,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      2,
+      3,
+      {
+       "aim": "near",
+       "hp": 3
+      },
+      "down"
+     ],
+     [
+      "fire",
+      1,
+      1,
+      {
+       "stand": "still"
+      },
+      "down"
+     ],
+     [
+      "fire",
+      4,
+      2,
+      {
+       "stand": "still"
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "normal"
+   },
+   "texts": {
+    "name": "草18 敵の火を使う",
+    "goal": "敵の火を、敵の草むらに落とさせよう",
+    "hint": {
+     "simul": "敵も同じ魔法を使う。敵の火も草むらを燃やす",
+     "single": "敵も同じ魔法を使う。敵の火も草むらを燃やす"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  },
+  {
+   "format": "cafilia-stage",
+   "version": 1,
+   "name": "草19 火山",
+   "savedAt": "",
+   "def": {
+    "name": "草19 火山",
+    "rows": [
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     ".......",
+     "......."
+    ],
+    "allies": [
+     [
+      "mount",
+      3,
+      6,
+      {
+       "facing": "up"
+      }
+     ],
+     [
+      "fire",
+      5,
+      6,
+      {
+       "facing": "up"
+      }
+     ]
+    ],
+    "enemies": [
+     [
+      "fire",
+      2,
+      0,
+      {
+       "stand": "march",
+       "hp": 4
+      },
+      "down"
+     ],
+     [
+      "fire",
+      4,
+      0,
+      {
+       "stand": "march",
+       "hp": 4
+      },
+      "down"
+     ]
+    ],
+    "difficulty": "normal"
+   },
+   "texts": {
+    "name": "草19 火山",
+    "goal": "火山の熱で、進んでくる敵を倒そう",
+    "hint": {
+     "simul": "山に火を撃つと火山になる。火山の隣は熱い（味方も）",
+     "single": "山に火を撃つと火山になる。火山の隣は熱い（味方も）"
+    },
+    "win": "",
+    "lose": "",
+    "scenes": {
+     "start": [],
+     "win": [],
+     "lose": []
+    }
+   }
+  }
+ ]
+}
