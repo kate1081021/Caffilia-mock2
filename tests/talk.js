@@ -144,9 +144,9 @@ test('初めてのときだけ出す。もう出したステージ・エディ�
   ok(!due({ editMode: true }) && !due({ replay: true }));
   ok(!due({ lines: [] }) && !due({ lines: undefined }), '会話を付けていないステージ');
 });
-test('並びごとに入切できる（balance.js の talk.show）。今は チュートリアル・みんなのステージ・自分のステージが入、展示モードは切', function () {
-  eq(B.talk.show, { tutorial: true, shared: true, own: true, exhibit: false });
-  eq(['tutorial', 'shared', 'own', 'exhibit'].map(function (c) { return due({ context: c }); }), [true, true, true, false]);
+test('並びごとに入切できる（balance.js の talk.show）。今はどれも入（展示モードも。オーナー 11/14）', function () {
+  eq(B.talk.show, { tutorial: true, shared: true, own: true, exhibit: true });
+  eq(['tutorial', 'shared', 'own', 'exhibit'].map(function (c) { return due({ context: c }); }), [true, true, true, true]);
   eq(['tutorial', 'exhibit'].map(function (c) { return due({ context: c, show: { tutorial: false, exhibit: true } }); }), [false, true]);
 });
 

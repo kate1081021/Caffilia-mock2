@@ -151,6 +151,7 @@
   // 会話の間は、キーをゲームより先に受け取る（Enter が発動に、数字が味方の選択に届かないように）
   document.addEventListener('keydown', function (e) {
     if (!now) return;
+    if (e.target && e.target.closest && e.target.closest('#talk-tune')) return;   // 設定の「会話で見ながら決める」の窓で打っているときは、窓へ
     e.preventDefault(); e.stopPropagation();
     if (e.key === 'Escape') close();
     else if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') next();
