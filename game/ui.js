@@ -2129,9 +2129,43 @@
   // 入力
   // ---------------------------------------------------------------
   function cellFrom(e) {
-    var c = e.target.closest ? e.target.closest('[data-x]') : null;
+    var t = e.target;
+    if (!t || !t.closest || !el.board.contains(t)) return null;
+    // 奥行きの見た目: 自然（山・丘の高さ、崖、印）は押す判定を持たない。押した所の真下の、平らな盤のマス（オーナー 11/15）。
+    //   駒は今までどおり押せる（駒を押したら、その駒のいるマス）
+    if (viewNow() === 'depth' && !t.closest('.unit') && typeof e.clientX === 'number') return flatCellAt(e.clientX, e.clientY);
+    var c = t.closest('[data-x]');
     if (!c || !el.board.contains(c)) return null;
     return { x: Number(c.getAttribute('data-x')), y: Number(c.getAttribute('data-y')) };
+  }
+  // 画面の点 → 傾けた盤（高さ0の面）のマス。盤の四すみに小さな印を置いて画面の位置を測り、
+  //   四すみの対応（射影）を逆にたどって、盤の上の位置にする。そこからマスの並び（余白・すき間）で何列・何行か
+  function flatCellAt(px, py) {
+    var b = el.board, q = [[0, 0], [100, 0], [100, 100], [0, 100]].map(function (p) {
+      var m = document.createElement('span');
+      m.style.cssText = 'position:absolute;width:0;height:0;padding:0;border:0;pointer-events:none;left:' + p[0] + '%;top:' + p[1] + '%';
+      b.appendChild(m);
+      var r = m.getBoundingClientRect();
+      b.removeChild(m);
+      return [r.left, r.top];
+    });
+    // 単位の正方形 → 四すみ（Heckbert の式）
+    var x0 = q[0][0], y0 = q[0][1], x1 = q[1][0], y1 = q[1][1], x2 = q[2][0], y2 = q[2][1], x3 = q[3][0], y3 = q[3][1];
+    var dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+    var det = dx1 * dy2 - dx2 * dy1, g = 0, h = 0;
+    if (Math.abs(dx3) + Math.abs(dy3) > 1e-6 && Math.abs(det) > 1e-9) { g = (dx3 * dy2 - dx2 * dy3) / det; h = (dx1 * dy3 - dx3 * dy1) / det; }
+    var a = x1 - x0 + g * x1, bb = x3 - x0 + h * x3, d = y1 - y0 + g * y1, ee = y3 - y0 + h * y3;
+    // 逆: (a - g X) u + (bb - h X) v = X - x0、(d - g Y) u + (ee - h Y) v = Y - y0
+    var A = a - g * px, B = bb - h * px, C = d - g * py, D = ee - h * py, den = A * D - B * C;
+    if (Math.abs(den) < 1e-9) return null;
+    var u = ((px - x0) * D - B * (py - y0)) / den, v = (A * (py - y0) - C * (px - x0)) / den;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+    var cs = getComputedStyle(b), n = Number(b.getAttribute('data-n')) || cellEls.length, rows = Math.round(cellEls.length / n);
+    var W = b.clientWidth, H = b.clientHeight, padL = parseFloat(cs.paddingLeft) || 0, padT = parseFloat(cs.paddingTop) || 0;
+    var gx = parseFloat(cs.columnGap) || 0, gy = parseFloat(cs.rowGap) || 0;
+    var cw = (W - padL - (parseFloat(cs.paddingRight) || 0) - (n - 1) * gx) / n, ch = (H - padT - (parseFloat(cs.paddingBottom) || 0) - (rows - 1) * gy) / rows;
+    var col = Math.floor((u * W - padL + gx / 2) / (cw + gx)), row = Math.floor((v * H - padT + gy / 2) / (ch + gy));
+    return { x: Math.max(0, Math.min(n - 1, col)), y: Math.max(0, Math.min(rows - 1, row)) };
   }
 
   el.board.addEventListener('pointerdown', function (e) {
