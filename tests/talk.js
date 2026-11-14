@@ -141,6 +141,8 @@ function due(more) {
 test('初めてのときだけ出す。もう出したステージ・エディット中・プレイ集を流している間・文のないステージでは出さない', function () {
   ok(due(), '初めて');
   ok(!due({ seen: true }), 'もう出した（やり直し・リセット・2度目の勝ち）');
+  ok(due({ seen: true, context: 'own' }), '自分のステージ（テストプレイも）は、もう出していても毎回出す（オーナー 11/14）');
+  ok(!due({ seen: true, context: 'shared' }) && !due({ seen: true, context: 'exhibit' }));
   ok(!due({ editMode: true }) && !due({ replay: true }));
   ok(!due({ lines: [] }) && !due({ lines: undefined }), '会話を付けていないステージ');
 });

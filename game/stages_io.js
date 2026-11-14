@@ -359,8 +359,9 @@
   }
   // 会話を出すか。o: { kind: 'before' | 'after', lines, context: 'tutorial' | 'shared' | 'own' | 'exhibit', show: 並びごとの入切, seen: もう出したか, editMode, replay }
   //   まえげきは「そのステージを初めて始めたとき」、あとげきは「初めて勝ったとき」に呼ぶ（やり直し・負けでは呼ばない。呼ぶ側は talk.js）
+  //   自分のステージ（テストプレイも。context 'own'）は、作りながら確かめるので、始めるたび・リセットのたび・勝つたびに出す（オーナー 11/14「A で」）
   function talkDue(o) {
-    if (!o || o.editMode || o.replay || o.seen) return false;
+    if (!o || o.editMode || o.replay || (o.seen && o.context !== 'own')) return false;
     if (!Array.isArray(o.lines) || !o.lines.length) return false;
     return !!(o.show && o.show[o.context]);
   }
