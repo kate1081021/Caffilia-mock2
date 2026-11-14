@@ -4082,6 +4082,20 @@
     if (testing()) setEditMode(true);
     else goHome();
   }
+  // メインBGM（オーナー 11/15: 1曲だけ、どの画面でもずっとループ）。ブラウザは触るまで音を出せないので、
+  //   最初に触ったときに鳴らし始める。鳴らせなかったら（まだ読めていない など）次に触ったときにもう一度
+  (function () {
+    var a = document.getElementById('bgm');
+    if (!a || !a.play) return;
+    a.loop = true;
+    a.volume = B.bgmVolume != null ? B.bgmVolume : 0.5;
+    function start() {
+      if (!a.paused) return;
+      var p = a.play();
+      if (p && p.catch) p.catch(function () { /* 次に触ったとき */ });
+    }
+    ['pointerdown', 'keydown'].forEach(function (n) { window.addEventListener(n, start, true); });
+  })();
   //   履歴は2つだけ使う: 下（base）と上（top）。いつも top にいて、「戻る」で base に来たら、アプリの中で1つ上の画面へ戻し、
   //   history.forward() で top に戻る（積み直さない）。URL は変えない（#dev のまま。hashchange は起きない）。
   //   top はページを触ったとき（ユーザーの操作の中）に積む。操作なしで積んだ履歴は、Chrome の「戻る」が飛ばしてしまうため。

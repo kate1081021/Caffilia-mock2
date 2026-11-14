@@ -30,10 +30,10 @@ function isForbidden(rel) {
   return /\.md$/i.test(p) || /^(\.claude|tests|tools|publish|dist|archive|v\d+)\//.test(p) || p.indexOf('..') !== -1;
 }
 
-// index.html が読み込むファイル（script src と link href）を拾う
+// index.html が読み込むファイル（script src・link href・audio src）を拾う
 function pageFiles(html) {
   var files = ['index.html'];
-  var re = /<(?:script[^>]*\ssrc|link[^>]*\shref)="([^"]+)"/g;
+  var re = /<(?:script[^>]*\ssrc|link[^>]*\shref|audio[^>]*\ssrc)="([^"]+)"/g;   // audio: メインBGM（11/15）
   var m;
   while ((m = re.exec(html))) {
     if (/^[a-z]+:|^\/\//i.test(m[1])) continue; // 外部のものは扱わない
