@@ -345,6 +345,12 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     var bad = [{ pieces: { size: 10 } }, { pieces: { size: 150.5 } }, { pieces: { boards: { five: 100 } } }, { pieces: { zoom: 1 } }, { pieces: [] }];
     for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
   });
+  await test('設定の会話のキャラ（talk）: 置ける。範囲の外・知らない項目は断る（オーナー 11/14）', async function () {
+    ok((await call('PUT', 'settings', { talk: { size: 110, lx: -5, ry: 10 } })).data.ok);
+    eq((await call('GET', 'all')).data.settings.talk, { size: 110, lx: -5, ry: 10 });
+    var bad = [{ talk: { size: 5 } }, { talk: { lx: 1.5 } }, { talk: { zoom: 1 } }, { talk: [] }];
+    for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
+  });
   await test('キャラ: 村・トロッコの絵（objects）も置ける。ほかの置きもの・よその絵は断る', async function () {
     var c = JSON.parse(JSON.stringify(CH));
     c.objects = { village: 'up:ia1', wagon: '' };
