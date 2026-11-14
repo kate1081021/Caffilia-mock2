@@ -1334,9 +1334,11 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .talk-skip { position: absolute; top: 14px; right: 16px; z-index: 3; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .7); background: rgba(0, 0, 0, .45); color: #fff; font-size: .95rem; cursor: pointer; }
 .talk-skip kbd { font-size: .75em; opacity: .8; margin-left: 4px; }
 .talk-stage { position: absolute; inset: 0; pointer-events: none; }
-.talk-char { position: absolute; bottom: 0; height: min(78vh, 62vw); width: min(46vw, 62vh); display: flex; align-items: flex-end; justify-content: center; transition: transform .25s ease, filter .25s ease, opacity .25s ease; }
-.talk-char.left { left: 0; animation: talk-left .35s ease-out both; }
-.talk-char.right { right: 0; animation: talk-right .35s ease-out both; }
+/* キャラの大きさと位置は設定で変える（--talk-size・--talk-lx・--talk-ly・--talk-rx・--talk-ry。game/settings.js の TALK。オーナー 11/14）。
+   大きさは絵の高さ（画面の高さの%）。幅は絵の縦横比のまま。位置は、それぞれの側のふち・下のふちからの距離 */
+.talk-char { position: absolute; height: calc(var(--talk-size, 78) * 1vh); display: flex; align-items: flex-end; justify-content: center; transition: transform .25s ease, filter .25s ease, opacity .25s ease; }
+.talk-char.left { left: calc(var(--talk-lx, 0) * 1vw); bottom: calc(var(--talk-ly, 0) * 1vh); animation: talk-left .35s ease-out both; }
+.talk-char.right { right: calc(var(--talk-rx, 0) * 1vw); bottom: calc(var(--talk-ry, 0) * 1vh); animation: talk-right .35s ease-out both; }
 .talk-char.right .talk-img, .talk-char.right .talk-dummy { transform: scaleX(-1); }   /* 右のキャラは左を向く（向かい合う） */
 .talk-char.right .talk-dummy b { transform: scaleX(-1); }
 .talk-char.on { transform: translateY(0) scale(1.03); filter: none; z-index: 2; }
@@ -1344,9 +1346,9 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .talk-char.empty { display: none; }
 @keyframes talk-left { from { translate: -40% 0; opacity: 0; } to { translate: 0 0; opacity: 1; } }
 @keyframes talk-right { from { translate: 40% 0; opacity: 0; } to { translate: 0 0; opacity: 1; } }
-.talk-img { max-height: 100%; max-width: 100%; object-fit: contain; object-position: bottom; }
+.talk-img { height: 100%; width: auto; max-width: none; object-fit: contain; object-position: bottom; }   /* 小さい絵も、大きさの設定まで引きのばす */
 /* 仮の絵（絵のファイルがないキャラ）: 色のついた頭と体に、名前の字 */
-.talk-dummy { position: relative; height: 92%; aspect-ratio: 3 / 5; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.talk-dummy { position: relative; height: 100%; aspect-ratio: 3 / 5; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
 .talk-head { width: 46%; aspect-ratio: 1; border-radius: 50%; background: var(--c); box-shadow: inset -10px -12px 0 rgba(0, 0, 0, .18), 0 0 0 4px rgba(255, 255, 255, .85); margin-bottom: -4%; z-index: 1; }
 .talk-body { width: 100%; height: 62%; border-radius: 46% 46% 0 0 / 30% 30% 0 0; background: var(--c); box-shadow: inset -18px -10px 0 rgba(0, 0, 0, .18), 0 0 0 4px rgba(255, 255, 255, .85); display: flex; align-items: center; justify-content: center; }
 .talk-body b { color: rgba(255, 255, 255, .92); font-size: min(14vh, 11vw); line-height: 1; }
@@ -1362,7 +1364,7 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .stage-talk textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: .85rem; line-height: 1.5; resize: vertical; }
 .stage-talk label { display: block; margin-bottom: 6px; }
 .stage-talk code { background: rgba(0, 0, 0, .06); padding: 1px 4px; border-radius: 4px; }
-@media (max-width: 640px) { .talk-box { padding: 18px 16px 10px; bottom: 2vh; } .talk-char { height: 60vh; } }
+@media (max-width: 640px) { .talk-box { padding: 18px 16px 10px; bottom: 2vh; } }
 
 /* キャラの画面（開発モード。オーナー 11/13。.claude/IMPROVE_キャラ.md）: キャラ1人が1枚のカード。左に名前と色、下に戦闘の絵と会話の絵（表情ごと） */
 .ch-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px; margin-bottom: 10px; }
@@ -1395,3 +1397,15 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 /* 絵の大きさの欄（設定。オーナー 11/13）: 数と % を横に並べる */
 .set-names label.set-pctl { flex-direction: row; align-items: center; gap: 4px; font-size: 14px; }
 .set-names input.set-pct { width: 6em; }
+
+/* 会話で見ながら決める（設定。オーナー 11/14）: 会話の画面の上、右上に重ねる窓 */
+#talk-tune { position: fixed; top: 64px; right: 16px; z-index: 950; width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow: auto;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); padding: 12px 14px; cursor: default; }
+#talk-tune[hidden] { display: none; }
+#talk-tune .tt-head { display: flex; flex-direction: column; margin-bottom: 8px; }
+#talk-tune .tt-head small { color: var(--muted); }
+#talk-tune .tt-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 4.2em; align-items: center; gap: 6px; margin: 6px 0; font-size: 13px; }
+#talk-tune .tt-row span { display: flex; flex-direction: column; }
+#talk-tune .tt-row span small { color: var(--muted); font-size: 10px; }
+#talk-tune .tt-row select { grid-column: 2 / -1; }
+#talk-tune .tt-btns { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }

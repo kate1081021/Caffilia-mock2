@@ -4,6 +4,8 @@
  *   このブラウザにも写し（CACHE_KEY）を覚えて、開いたらすぐ（つながる前に）その色で出す。つながらないときは写しか、元の色と名前。
  *   形: { colors: { '--bg': '#rrggbb', … }, tiles: { forest: { name, label } }, magics: { grass: '草' }, synergies: { 燃え広がり: '…' },
  *         pieces: { size: キャラの高さ, object: 置きものの高さ, boards: { '5x5': キャラの高さ } }, at }
+ *         talk: { size, lx, ly, rx, ry }（会話のキャラの大きさと位置。オーナー 11/14）
+ *     talk: size は画面の高さの何%、lx・rx は左右のふちから内へ（画面の幅の%）、ly・ry は下のふちから上へ（画面の高さの%）。負なら外へ
  *     pieces（オーナー 11/13）: 盤面に立てる絵の高さ（マスの何%）。boards は盤面の大きさ（横x縦）ごとの、キャラの高さ（なければ size）
  *     どれも元と違うものだけを持つ（空なら元のまま）。ルールが見分けに使う名前は変えない。画面に出す名前だけを変える。
  *   game/mode.js のすぐあとに読む（色を早く当てて、元の色が一瞬見えないように）。名前は ui.js が rules.js を読んでから当てる。
@@ -31,6 +33,15 @@
   // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）。元の値は style.css の .unit.has-img と同じ
   var PIECES = { size: 165, object: 110, min: 50, max: 400 };
   function okPct(v) { return typeof v === 'number' && Math.round(v) === v && v >= PIECES.min && v <= PIECES.max; }
+  // 会話のキャラの大きさと位置（オーナー 11/14）。元の値と、打てる範囲
+  var TALK = {
+    size: { def: 78, min: 20, max: 150, name: '大きさ', note: '画面の高さの何%' },
+    lx: { def: 0, min: -50, max: 100, name: '左のキャラ 横', note: '左のふちから内へ（画面の幅の%）' },
+    ly: { def: 0, min: -50, max: 100, name: '左のキャラ 縦', note: '下のふちから上へ（画面の高さの%）' },
+    rx: { def: 0, min: -50, max: 100, name: '右のキャラ 横', note: '右のふちから内へ（画面の幅の%）' },
+    ry: { def: 0, min: -50, max: 100, name: '右のキャラ 縦', note: '下のふちから上へ（画面の高さの%）' }
+  };
+  function okTalk(k, v) { var t = TALK[k]; return !!t && typeof v === 'number' && Math.round(v) === v && v >= t.min && v <= t.max; }
   function okBoard(k) { return typeof k === 'string' && /^([1-9]|[1-3][0-9])x([1-9]|[1-3][0-9])$/.test(k); }
 
   function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
@@ -41,7 +52,8 @@
   // 設定の形を整える（知らない項目・正しくない値・元と同じ色・空の名前は捨てる）。いつも4つの入れ物を持つ形で返す
   function clean(s) {
     s = isObj(s) ? s : {};
-    var out = { colors: {}, tiles: {}, magics: {}, synergies: {}, pieces: {} };
+    var out = { colors: {}, tiles: {}, magics: {}, synergies: {}, pieces: {}, talk: {} };
+    if (isObj(s.talk)) Object.keys(TALK).forEach(function (k) { if (okTalk(k, s.talk[k]) && s.talk[k] !== TALK[k].def) out.talk[k] = s.talk[k]; });
     if (isObj(s.pieces)) {
       var p = s.pieces;
       if (okPct(p.size) && p.size !== PIECES.size) out.pieces.size = p.size;
@@ -75,7 +87,7 @@
   }
   function isEmpty(s) {
     s = clean(s);
-    return !Object.keys(s.colors).length && !Object.keys(s.tiles).length && !Object.keys(s.magics).length && !Object.keys(s.synergies).length && !Object.keys(s.pieces).length;
+    return !Object.keys(s.colors).length && !Object.keys(s.tiles).length && !Object.keys(s.magics).length && !Object.keys(s.synergies).length && !Object.keys(s.pieces).length && !Object.keys(s.talk).length;
   }
   // 色 ⇄ RGB（0〜255 の3つの数）
   function rgbOf(hex) { return isHex(hex) ? [1, 3, 5].map(function (i) { return parseInt(hex.slice(i, i + 2), 16); }) : [0, 0, 0]; }
@@ -92,6 +104,8 @@
       if (s.colors[c.key]) st.setProperty(c.key, s.colors[c.key]);
       else st.removeProperty(c.key);
     });
+    // 会話のキャラの大きさと位置（style.css の #talk が読む）
+    Object.keys(TALK).forEach(function (k) { if (s.talk[k] !== undefined) st.setProperty('--talk-' + k, s.talk[k]); else st.removeProperty('--talk-' + k); });   // ない値は style.css の元の値
   }
 
   // 名前を当てる。R: rules.js（TILE_INFO・MAGIC_INFO）、T: texts.js（finishers）。最初に元の名前を覚え、設定にないものは元に戻す
@@ -136,7 +150,7 @@
   }
 
   var api = {
-    COLORS: COLORS, MAX_NAME: MAX_NAME, MAX_LABEL: MAX_LABEL, CACHE_KEY: CACHE_KEY, PIECES: PIECES, okBoard: okBoard, okPct: okPct, pieceSize: pieceSize,
+    COLORS: COLORS, MAX_NAME: MAX_NAME, MAX_LABEL: MAX_LABEL, CACHE_KEY: CACHE_KEY, PIECES: PIECES, TALK: TALK, okTalk: okTalk, okBoard: okBoard, okPct: okPct, pieceSize: pieceSize,
     clean: clean, isEmpty: isEmpty, rgbOf: rgbOf, hexOf: hexOf, colorDef: colorDef,
     applyColors: applyColors, applyNames: applyNames, originals: function (R, T) { return originals(R, T); },
     cacheGet: cacheGet, cacheSet: cacheSet
