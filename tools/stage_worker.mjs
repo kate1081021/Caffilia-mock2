@@ -20,7 +20,9 @@
  *     plays  … プレイ集の記録 { id: { id, name, stage: { kind, uid, name }, turns, at } }（チュートリアル・みんなのステージの分。game/plays.js。オーナー 11/10）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
  *     GET    /api/all             … { stages, lineup, trash, settings, plays, tutorials, order, chars }（tutorials・order はまだ置いていなければ null。trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
- *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts }。答えの uid が置いた背番号
+ *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts, from }。答えの uid が置いた背番号
+ *       from（オーナー 11/16）: 名前を変えて上書きするときの、元の名前。元のステージ（背番号のまま）を新しい名前に付け替えて上書きする。
+ *       一覧の順番・展示の並び（メインステージ）・プレイ集の記録の名前も付け替える。新しい名前のステージがもうあれば断る（409）
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
@@ -169,6 +171,38 @@ function stampUids(map, nameOf) {
 }
 function inLineup(lineup, name) { const r = 'all:' + name; return !!lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(r) >= 0; }); }
 
+// 名前を変えて上書きする（オーナー 11/16）: from のステージを、背番号のまま name に付け替えて、b の中身で上書きする。
+//   ほかのものが名前で指しているところ（一覧の順番・展示の並び・プレイ集の記録の名前）も付け替える
+async function renameStage(kv, stages, from, name, b) {
+  if (!okName(from)) return fail('元の名前が正しくない');
+  const prev = stages[from];
+  if (!prev) return fail('元のステージ「' + from + '」が見つからない（消されたかもしれない）', 404);
+  if (stages[name]) return fail('「' + name + '」はもうある（別のステージ）。別の名前にしてください', 409);
+  const at = Date.now();
+  b.def.uid = prev.def && okUid(prev.def.uid) ? prev.def.uid : 'n:' + from;
+  stages[name] = { def: b.def, texts: b.texts && typeof b.texts === 'object' ? b.texts : null, at: at };
+  delete stages[from];
+  await kv.put('stages', JSON.stringify(stages));
+  const order = await kv.get('order', 'json');
+  if (order && Array.isArray(order.all) && order.all.indexOf(from) >= 0) {
+    order.all = order.all.map(function (k) { return k === from ? name : k; }).filter(function (k, i, a) { return a.indexOf(k) === i; });
+    await kv.put('order', JSON.stringify(order));
+  }
+  const lineup = await kv.get('lineup', 'json'), fromRef = 'all:' + from;
+  if (lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(fromRef) >= 0; })) {
+    ['start', 'pick'].forEach(function (k) { lineup[k] = (lineup[k] || []).map(function (r) { return r === fromRef ? 'all:' + name : r; }); });
+    await kv.put('lineup', JSON.stringify(lineup));
+  }
+  const plays = (await kv.get('plays', 'json')) || {};
+  let changed = 0;
+  Object.keys(plays).forEach(function (id) {
+    const st = plays[id] && plays[id].stage;
+    if (st && st.kind === 'all' && st.uid === b.def.uid && st.name !== name) { st.name = name; changed++; }
+  });
+  if (changed) await kv.put('plays', JSON.stringify(plays));
+  return json({ ok: true, at: at, uid: b.def.uid, renamed: from });
+}
+
 // /api/ の1件に答える。kv は Workers KV（get(key, 'json')・put(key, text)）
 export async function handleApi(req, kv) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -227,6 +261,7 @@ export async function handleApi(req, kv) {
       if (req.method === 'PUT') {
         const b = await body(req);
         if (!b || typeof b.def !== 'object' || !b.def || !Array.isArray(b.def.rows)) return fail('ステージの中身が正しくない');
+        if (b.from !== undefined && b.from !== null && b.from !== name) return renameStage(kv, stages, b.from, name, b);
         if (!stages[name] && Object.keys(stages).length >= MAX_STAGES) return fail('みんなのステージがいっぱい（' + MAX_STAGES + '）');
         const at = Date.now();
         // 背番号: 同じ名前の上書きは、前の背番号のまま（記録がついていく）。新しく置くときは送られてきた背番号。

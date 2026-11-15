@@ -773,7 +773,7 @@
     var b = rec && SIO.build(R, rec.def);
     if (!b || !b.ok) return null;
     delete b.state.stage;
-    return { state: b.state, name: name, key: name, texts: fillTexts(rec.texts, name), exKeep: rec.exKeep || null, base: rec.base || null, difficulty: SIO.diffOf(rec.def), uid: P.uidOf(rec, name) };
+    return { state: b.state, name: name, key: name, texts: fillTexts(rec.texts, name), exKeep: rec.exKeep || null, base: rec.base || null, difficulty: SIO.diffOf(rec.def), uid: P.uidOf(rec, name), from: rec.from || null };
   }
   // 作るステージを d に替える。それまでのステージは自分のステージに残っている。新しく増えるものは名前が重ならないようにする
   function startDraft(d) {
@@ -802,7 +802,8 @@
     var def = SIO.toDef(R, s, d.name);
     if (d.difficulty) def.difficulty = d.difficulty;   // 難易度（オーナー 11/03）
     if (d.uid) def.uid = d.uid;   // 背番号（オーナー 11/10）
-    return { def: def, texts: d.texts, exKeep: d.exKeep || null, base: d.base || null };   // base: 最後に共有した（写した）ときの中身のしるし（段4）
+    //   base: 最後に共有した（写した）ときの中身のしるし（段4）。from: 元のみんなのステージの背番号（共有すると、名前が変わっていてもそこへ上書き。オーナー 11/16）
+    return { def: def, texts: d.texts, exKeep: d.exKeep || null, base: d.base || null, from: d.from || null };
   }
   function keepDraft() {
     var d = app.draft;
@@ -813,7 +814,7 @@
     if (d.key !== d.name && stages[d.name]) d.name = uniqueName(d.name, stages);   // ほかの自分のステージには上書きしない
     var rec = draftRecord(), moved = d.key !== d.name;
     keepDraft.last = JSON.stringify([d.name, rec]);
-    if (d.key && moved) { delete stages[d.key]; d.base = rec.base = null; }   // 名前を変えたら、共有の元は別のステージ
+    if (d.key && moved) { delete stages[d.key]; if (!d.from) d.base = rec.base = null; }   // 名前を変えても、元のみんなのステージ（from）があれば、そこが共有の元のまま
     rec.at = Date.now();
     stages[d.name] = rec;
     d.key = d.name;
@@ -2639,11 +2640,16 @@
     for (var i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
     return h.toString(36) + ':' + str.length;
   }
+  // 共有すると上書きするみんなのステージ（オーナー 11/16）: 元の背番号（from）のステージがあれば、名前が変わっていてもそれ。
+  //   前からの自分のステージは from がないので、自分の背番号で共有したものを探す。どちらもなければ、同じ名前のもの（今までどおり）。なければ null
+  function cloudByUid(uid) { return !uid ? null : sharedList().filter(function (nm) { return P.uidOf(app.shared.stages[nm], nm) === uid; })[0] || null; }
+  function shareTarget(d) { return cloudByUid(d.from) || cloudByUid(d.uid) || (app.shared.stages[d.name] ? d.name : null); }
   // 共有のようす: none まだない・same 同じ・mine 自分が直した・theirs ほかの人が直した・both 両方が直した
   //   （一度も共有・写しをしていないのに同じ名前のものがあるときも both。共有すると、その人のものが消えるため）
   var SHARE_TEXT = { none: 'みんなのステージにはまだありません', same: 'みんなのステージと同じです', mine: '共有したあとに直した所があります', theirs: 'ほかの人が直しています', both: '共有すると、ほかの人が直した所が消えます ⚠' };
+  //   name: 上書きするみんなのステージの名前（shareTarget。なければ null）
   function shareState(name, rec) {
-    var cloud = app.shared.stages[name];
+    var cloud = name ? app.shared.stages[name] : null;
     if (!cloud) return 'none';
     var mine = stageSig(rec), theirs = stageSig(cloud), base = rec.base;
     if (mine === theirs) return 'same';
@@ -2658,10 +2664,13 @@
     if (d.tut) { renderTutShare(); return; }
     el.btnShare.textContent = '共有する';
     el.btnShare.disabled = !app.shared.ok || !!app.sharing;
-    el.shareNote.textContent = app.sharing ? '共有しています…' : !app.shared.loaded ? '読み込み中…' : app.shared.ok ? SHARE_TEXT[shareState(d.name, draftRecord())] : app.shared.why;
-    el.shareNote.classList.toggle('danger', app.shared.ok && shareState(d.name, draftRecord()) === 'both');
+    var target = app.shared.ok ? shareTarget(d) : null, st = app.shared.ok ? shareState(target, draftRecord()) : '';
+    var renamed = target && target !== d.name ? (app.shared.stages[d.name] ? '（「' + d.name + '」は別のステージにあるので、名前を変えないと共有できません）' : '（「' + target + '」の名前を変えて上書きします）') : '';
+    el.shareNote.textContent = app.sharing ? '共有しています…' : !app.shared.loaded ? '読み込み中…' : app.shared.ok ? SHARE_TEXT[st] + renamed : app.shared.why;
+    el.shareNote.classList.toggle('danger', app.shared.ok && (st === 'both' || (!!renamed && !!app.shared.stages[d.name])));
   }
-  // 共有する: 同じ名前があれば確かめてから上書き（ほかの人が直した所が消えるときは ⚠ を足す）
+  // 共有する: 同じステージ（元の背番号）があれば確かめてから上書き。名前を変えていたら、元のステージの名前も変える（オーナー 11/16）。
+  //   ほかの人が直した所が消えるときは ⚠ を足す
   function shareDraft() {
     var d = app.draft;
     if (!d || app.sharing) return;
@@ -2672,26 +2681,43 @@
     var stop = function (msg) { app.sharing = false; renderShare(); if (msg) window.alert(msg); };
     fetchShared().then(function () {
       if (!app.shared.ok) { stop(app.shared.why); return; }
-      var rec = draftRecord(), name = d.name, st = shareState(name, rec);
-      if (st === 'same') { stop('みんなのステージと同じです（共有しなくてよい）'); return; }
-      if (st !== 'none' && !window.confirm('同じ名前のステージがあります。上書きしますか？' + (st === 'both' || st === 'theirs' ? '\n⚠ ほかの人が直した所が消えます' : ''))) { stop(); return; }
-      // 背番号（オーナー 11/10）: 上書きなら、みんなのステージの背番号のまま（プレイ集の記録がついていく）。
-      //   新しく置くときは自分のステージの背番号。ほかのみんなのステージがもう使っていれば、新しい背番号
-      var cloud = app.shared.stages[name];
-      var taken = sharedList().some(function (nm) { return nm !== name && P.uidOf(app.shared.stages[nm], nm) === d.uid; });
-      rec.def.uid = cloud ? P.uidOf(cloud, name) : d.uid && !taken ? d.uid : P.newId('s');
-      api('PUT', 'stages/' + encodeURIComponent(name), { def: rec.def, texts: rec.texts }).then(function (res) {
-        if (!res.ok) { stop('共有できませんでした: ' + netWhy(res)); return; }
-        if (res.data.uid) rec.def.uid = res.data.uid;   // 置き場所が決めた背番号（上書きなら前のまま）
-        app.shared.stages[name] = { def: rec.def, texts: rec.texts, at: res.data.at };
-        d.base = stageSig(rec);
-        keepDraft();
-        app.sharing = false;
-        addLog('「' + name + '」を共有した（みんなのステージ）', 'system');
-        say('「' + name + '」を共有しました');
-        render();
-        renderShare();
-      });
+      var rec = draftRecord(), name = d.name, target = shareTarget(d), st = shareState(target, rec), rename = !!target && target !== name;
+      if (rename && app.shared.stages[name]) { stop('みんなのステージに「' + name + '」がもうあります（別のステージ）。\n名前を変えてから共有してください'); return; }
+      if (st === 'same' && !rename) { stop('みんなのステージと同じです（共有しなくてよい）'); return; }
+      var warn = st === 'both' || st === 'theirs' ? '\n⚠ ほかの人が直した所が消えます' : '';
+      // 背番号（オーナー 11/10・11/16）: 上書きなら、みんなのステージの背番号のまま（プレイ集の記録・一覧の場所がついていく）。
+      //   新しく置くときは自分のステージの背番号。別のステージとして置くときは新しい背番号
+      var put = function (asNew) {
+        var over = target && !asNew;
+        rec.def.uid = over ? P.uidOf(app.shared.stages[target], target) : asNew ? P.newId('s') : d.uid || P.newId('s');
+        var body = { def: rec.def, texts: rec.texts };
+        if (over && rename) body.from = target;
+        api('PUT', 'stages/' + encodeURIComponent(name), body).then(function (res) {
+          if (!res.ok) { stop('共有できませんでした: ' + netWhy(res)); return; }
+          if (res.data.uid) rec.def.uid = res.data.uid;   // 置き場所が決めた背番号（上書きなら前のまま）
+          if (res.data.renamed) delete app.shared.stages[res.data.renamed];
+          app.shared.stages[name] = { def: rec.def, texts: rec.texts, at: res.data.at };
+          d.from = rec.def.uid;   // 次に共有するときも、ここへ上書きする
+          d.base = stageSig(rec);
+          keepDraft();
+          app.sharing = false;
+          var msg = res.data.renamed ? '「' + res.data.renamed + '」を「' + name + '」に変えて共有した' : '「' + name + '」を共有した';
+          addLog(msg + '（みんなのステージ）', 'system');
+          say(msg.replace(/した$/, 'しました'));
+          if (res.data.renamed) fetchShared();   // 一覧の順番・メインステージの名前も付け替わっている
+          render();
+          renderShare();
+        });
+      };
+      if (rename) {
+        choose('みんなのステージ「' + target + '」を、名前を「' + name + '」に変えて上書きしますか？' + warn.replace('\n', ' '), [
+          ['上書きする（名前を変える）', function () { put(false); }],
+          ['別のステージとして共有する', function () { put(true); }]
+        ], function () { stop(); });
+        return;
+      }
+      if (st !== 'none' && !window.confirm('同じステージがみんなのステージにあります。上書きしますか？' + warn)) { stop(); return; }
+      put(false);
     });
   }
   el.btnShare.addEventListener('click', shareDraft);
@@ -2712,7 +2738,8 @@
       var bs = SIO.build(R, cloud.def).state;
       delete bs.stage;
       //   背番号: 写しは新しい背番号。自分のステージを置きかえるときは、その自分のステージの背番号のまま（記録がついていく）
-      return { state: bs, name: name, key: key, texts: fillTexts(cloud.texts, name), exKeep: null, base: stageSig(cloud), difficulty: SIO.diffOf(cloud.def), uid: key ? P.uidOf(own, key) : P.newId('s') };
+      //   from: 元のみんなのステージの背番号（名前を変えて共有しても、そこへ上書きする。オーナー 11/16）
+      return { state: bs, name: name, key: key, texts: fillTexts(cloud.texts, name), exKeep: null, base: stageSig(cloud), difficulty: SIO.diffOf(cloud.def), uid: key ? P.uidOf(own, key) : P.newId('s'), from: P.uidOf(cloud, name) };
     };
     var go = function (d) { startDraft(d); enterEdit(false); };
     if (!own) { go(fromCloud()); return; }
@@ -2725,7 +2752,9 @@
   }
   // 選ぶ窓（遊び方の窓と同じ見た目）。options: [[ボタンの文, 押したとき], …]。「やめる」も出す
   //   窓の外を押す・Esc は「やめる」。開いている間のキーは盤面に届かない（Enter で発動しない）
-  function choose(title, options) {
+  //   onCancel: 「やめる」・窓の外・Esc で閉じたときに呼ぶ（なくてもよい）
+  function choose(title, options, onCancel) {
+    choose.cancel = onCancel || null;
     el.choiceTitle.textContent = title;
     el.choiceButtons.innerHTML = options.map(function (o, i) { return '<button type="button" data-c="' + i + '"' + (i === 0 ? ' class="primary"' : '') + '>' + esc(o[0]) + '</button>'; }).join('') +
       '<button type="button" data-c="-1">やめる</button>';
@@ -2735,14 +2764,16 @@
       var b = e.target.closest && e.target.closest('[data-c]');
       if (!b) return;
       el.choice.hidden = true;
-      var i = Number(b.getAttribute('data-c'));
-      if (i >= 0) options[i][1]();
+      var i = Number(b.getAttribute('data-c')), c = choose.cancel;
+      choose.cancel = null;
+      if (i >= 0) options[i][1](); else if (c) c();
     };
   }
-  el.choice.addEventListener('click', function (e) { if (e.target === el.choice) el.choice.hidden = true; });
+  function chooseCancel() { el.choice.hidden = true; var c = choose.cancel; choose.cancel = null; if (c) c(); }
+  el.choice.addEventListener('click', function (e) { if (e.target === el.choice) chooseCancel(); });
   el.choice.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    if (e.key === 'Escape') { e.preventDefault(); el.choice.hidden = true; }
+    if (e.key === 'Escape') { e.preventDefault(); chooseCancel(); }
   });
 
   // ---------------------------------------------------------------
@@ -4255,7 +4286,7 @@
   function navBack() {
     if (app.replay) { stopReplay(); return; }   // プレイ集を流している間は、止めて一覧へ
     if (!el.howto.hidden) { setHowto(false); return; }
-    if (!el.choice.hidden) { el.choice.hidden = true; return; }
+    if (!el.choice.hidden) { chooseCancel(); return; }
     if (app.closeDialog) { app.closeDialog(); return; }
     if (app.busy) skipPlayback();
     if (app.home) {
