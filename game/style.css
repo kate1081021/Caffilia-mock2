@@ -169,8 +169,9 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
   gap: 3px;
   padding: 6px;
-  width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)));
-  min-width: 300px;
+  /* 5×5 より小さい盤面（1マスまで。オーナー 11/15）は、マスの大きさを 5×5 のときと同じにする（最後の項。5×5 の1マス × 横のマス数） */
+  width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)), calc(min(92vw / 5, 120px, (100vh - var(--above, 230px)) / 5) * var(--n)));
+  min-width: min(300px, calc(60px * var(--n)));
   aspect-ratio: var(--n) / var(--rows);
   background: var(--board-frame);
   border-radius: 12px;
@@ -1153,7 +1154,7 @@ body.at-home #btnTitle { display: none !important; }
 /* 盤面が横に並ぶ広さ（981px〜）では、横の欄（380px）と余白の分を引いた幅に収める（③ 12×7 が 1024px の画面で左にはみ出していた。10/29）
  *   6×6 などは今までと同じ大きさ（高さの決まりの方が小さい） */
 @media (min-width: 981px) {
-  .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows))); }
+  .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)), calc(min((100vw - 440px) / 5, 120px, (100vh - var(--above, 230px)) / 5) * var(--n))); }
 }
 
 /* ---------------------------------------------------------------

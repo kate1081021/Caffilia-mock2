@@ -115,7 +115,9 @@ eq(S.textToLines(S.linesToText(lines)), lines, '書いて読み直すと同じ')
 
 // ファイル: 変なものは読まない。前の「配置」の JSON も読める
 ok(!S.fromFile(R, '{').ok, '壊れた JSON');
-ok(!S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":["..."],"allies":[],"enemies":[]}}').ok, '小さすぎる盤面');
+ok(!S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":[""],"allies":[],"enemies":[]}}').ok, '0マスの盤面（1マスまでは作れる。オーナー 11/15）');
+ok(S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":["."],"allies":[],"enemies":[]}}').ok, '1×1 の盤面は読める');
+ok(!S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":["' + '.'.repeat(B.maxBoardSize + 1) + '"],"allies":[],"enemies":[]}}').ok, '大きすぎる盤面');
 ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', def: { rows: ['.....', '.....', '.....', '.....', '.....'], allies: [['fire', 9, 9]], enemies: [] } })).ok, '盤の外の味方');
 ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', def: { rows: ['.....', '.....', '.....', '.....', '.....'], allies: [['nope', 1, 1]], enemies: [] } })).ok, '知らない魔法');
 ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', def: { rows: ['M....', '.....', '.....', '.....', '.....'], allies: [['fire', 0, 0]], enemies: [] } })).ok, '山の上の味方');
@@ -127,7 +129,7 @@ eq([file.ok, file.name, file.texts.scenes.start.length], [true, '③の改造', 
 // ファイルから読む（オーナー 11/10）: まとめたファイルからいくつでも。読めないものは飛ばして理由を残す。同じ名前は上書きしない
 var one = JSON.parse(S.toFile({ name: 'あ', def: S.toDef(R, R.loadPreset('tut1'), 'あ') }));
 var two = JSON.parse(S.toFile({ name: 'い', def: S.toDef(R, R.loadPreset('tut2'), 'い'), texts: { goal: '守る', hint: { simul: 'ヒント', single: 'ヒント' } } }));
-var bad = { format: 'cafilia-stage', name: 'う', def: { rows: ['...'], allies: [], enemies: [] } };
+var bad = { format: 'cafilia-stage', name: 'う', def: { rows: [''], allies: [], enemies: [] } };
 var many = S.fromFiles(R, JSON.stringify({ format: S.FORMAT_MANY, stages: [one, bad, two] }));
 eq([many.items.map(function (it) { return it.name; }), many.errors.map(function (e) { return e.name; })], [['あ', 'い'], ['う']], 'まとめたファイル: 読めるものだけ読み、読めないものは理由つきで残す');
 eq(S.fromFiles(R, JSON.stringify([one, two])).items.length, 2, '並び（配列）でも読める');

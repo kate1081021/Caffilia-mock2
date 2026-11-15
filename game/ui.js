@@ -1025,8 +1025,10 @@
     if (!depth || !b.offsetParent) { b.style.removeProperty('--fit'); return; }
     b.style.setProperty('--fit', 1);
     var r = b.getBoundingClientRect(), area = el.boardWrap.parentNode.getBoundingClientRect();
-    var availH = window.innerHeight - r.top - 16, s = area.width / r.width;
-    if (availH > 200) s = Math.min(s, availH / r.height);   // 縦に並ぶ狭い画面では、横だけで決める
+    // 5×5 より小さい盤面は、5×5 の盤面だったときと同じだけ大きくする（マスの大きさを 5×5 と同じに。オーナー 11/15）
+    var n = app.state.size, rows = R.rowsOf(app.state), vw = r.width * Math.max(n, 5) / n, vh = r.height * Math.max(rows, 5) / rows;
+    var availH = window.innerHeight - r.top - 16, s = area.width / vw;
+    if (availH > 200) s = Math.min(s, availH / vh);   // 縦に並ぶ狭い画面では、横だけで決める
     b.style.setProperty('--fit', Math.max(0.5, s * 0.98).toFixed(3));
   }
 

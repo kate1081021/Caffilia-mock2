@@ -6,7 +6,7 @@
   var BALANCE = {
     // 盤面
     boardSize: 6,
-    minBoardSize: 5,
+    minBoardSize: 1,    // 1マスまで小さくできる（オーナー 11/15「縦も横も1マスまで」。マスの大きさは 5×5 のときと同じ。style.css の .board）
     maxBoardSize: 12,   // 【縮尺】12まで広げた（見本の「大きい世界」は10）
 
     // 味方
