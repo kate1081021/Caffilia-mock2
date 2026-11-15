@@ -1251,7 +1251,7 @@
     var img = unitImg(u);
     if (img) cls.push('has-img');
     var h = '<div class="' + cls.join(' ') + '" data-id="' + u.id + '" style="--rot:' + DIR_ROT[facing] + 'deg' + (u.size > 1 ? ';--sz:' + u.size : '') + '">' +
-      '<span class="u-shadow"></span>' + (img ? '<img class="u-img" src="' + img + '" alt="">' : '') +
+      '<span class="u-shadow"></span>' + (u.npc ? '<span class="u-nomove" title="構える味方は動かせない"></span>' : '') + (img ? '<img class="u-img" src="' + img + '" alt="">' : '') +
       '<span class="facing"></span><span class="u-name">' + name + '</span><span class="u-hp">HP' + u.hp + '</span>';
     if (u.side === 'enemy') {
       if (u.stand !== 'rush') h += '<span class="u-magic">' + esc(R.magicName(u.magic)) + '</span>';   // 突進の敵は魔法を撃たない
@@ -1262,7 +1262,7 @@
     if (u.burn > 0) h += '<span class="u-burn" title="火傷: ターン終了ごとに' + B.fire.burnDamage + '（水か氷で治る）">火傷' + u.burn + '</span>';
     if (view.warn) h += '<span class="u-warn">予告 -' + view.warn + '</span>';
     if (view.dmg) h += '<span class="u-dmg">-' + view.dmg.amount + (view.dmg.dies ? ' 倒れる' : '') + '</span>';
-    if (view.order) h += '<span class="u-order" title="' + view.order + '番目に発動">' + (ORDER_MARK[view.order] || view.order) + '</span>';   // 【一斉】構えの順番
+    // 構えの順番の札（駒の右上の丸）は出さない（オーナー 11/15「これいらないので消して」）。順番は右の「発動の順番」で見る
     return h + '</div>';
   }
 

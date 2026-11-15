@@ -910,13 +910,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .cell.st-shot { box-shadow: inset 0 0 0 3px rgba(29, 78, 216, .9); }
 .b-fc .ally.stance { font-size: .68em; letter-spacing: -.02em; }
 .b-fc .ally.stance.npc { background: #60a5fa; }
-.unit .u-order {
-  position: absolute; left: -12%; top: -14%;
-  min-width: 1.5em; height: 1.5em; line-height: 1.5em; text-align: center;
-  font-size: .72em; font-weight: bold;
-  background: var(--ally); color: #fff; border-radius: 999px; border: 2px solid #fff;
-  z-index: 6; pointer-events: none;
-}
 /* 発動の順番の一覧（▲▼はスマホでも押せる大きさ） */
 .order-panel { margin: 8px 0 10px; padding: 8px 10px; border: 2px solid #bfd3f7; border-radius: 10px; background: #f3f7ff; }
 .order-panel h3 { margin: 0 0 6px; color: #1e3a8a; }
@@ -965,8 +958,8 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   100% { opacity: 0; transform: translate(-50%, -75%) scale(1); }
 }
 
-/* 大きい敵（③のボス）・浮く体（③の取り巻き）・構えの順番の札。前は試作ラボの見た目と一緒に書いてあった。
- *   IMPROVE_v3 段1 でラボを外したとき、今の画面が使っているものだけ残した（構えの順番の札は、前のとおり上の .unit .u-order に重ねる） */
+/* 大きい敵（③のボス）・浮く体（③の取り巻き）。前は試作ラボの見た目と一緒に書いてあった。
+ *   IMPROVE_v3 段1 でラボを外したとき、今の画面が使っているものだけ残した（構えの順番の札は 11/15 に外した） */
 .unit.big {
   position: absolute; left: 6%; top: 6%;
   width: calc(var(--sz) * 100% + (var(--sz) - 1) * 3px - 12%);
@@ -975,7 +968,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 }
 .unit.boss { border-width: 5px; box-shadow: 0 0 0 3px #fde047, 0 4px 10px rgba(0,0,0,.4); }
 .unit.body-float { background: radial-gradient(circle, #e9d5ff, #7c3aed); border-style: dashed; transform: translateY(-6%) rotate(var(--rot)); }
-.unit .u-order { position: absolute; left: auto; right: -10%; top: -10%; font-size: .55em; font-weight: bold; color: #fff; background: var(--enemy-fc); border-radius: 50%; min-width: 1.4em; height: 1.4em; line-height: 1.4em; text-align: center; z-index: 6; transform: none; }   /* left: auto（上の left と right の両方が効いて札が横に伸び、向きで回ると縦長に見えた。最初から全員構えるようになって目立った 11/03） */
 
 /* ---------- 展示ステージ③（3人でつなぐ） ---------- */
 
@@ -1241,7 +1233,8 @@ html.view-depth .unit.big.has-img {
 html.view-depth .unit.has-img::before, html.view-depth .unit.has-img::after { display: none; }
 html.view-depth .unit.has-img .u-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; pointer-events: none; }
 html.view-depth .unit.has-img .u-name { display: none; }
-html.view-depth .unit.has-img .u-hp { position: absolute; bottom: -4%; left: 50%; transform: translateX(-50%); margin: 0; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); color: #1c1917; opacity: 1; font-weight: bold; }
+/*   HP の札は足もとより上に置き、絵より手前へ（床より下へはみ出すと床に隠れて、下半分が見切れた。オーナー 11/15） */
+html.view-depth .unit.has-img .u-hp { position: absolute; bottom: 1%; left: 50%; transform: translateX(-50%) translateZ(4px); margin: 0; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); color: #1c1917; opacity: 1; font-weight: bold; z-index: 2; }
 /* 向き: ↓ 手前・← → 横は、足もとの床に寝かせた三角（となりのマスを床の上で指す。駒の真ん中の高さに浮かせると、奥のマスを指して見えるため。オーナー 11/15）。
  *   床より少し上に浮かせて、床に負けないように。↑ 奥だけは、床に寝かせると駒の陰に隠れるので、頭の上に立てたまま。
  *   見せるだけの印なので、押してもすり抜ける（奥のマスを押せるように） */
@@ -1252,6 +1245,19 @@ html.view-depth .unit .facing {
 html.view-depth .unit.face-down .facing { transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(3px) rotate(var(--rot)) translateY(calc(-.24 * 100cqi / var(--n))); }
 html.view-depth .unit.face-up .facing { left: 50%; top: -9%; transform: translate(-50%, -50%) rotate(var(--rot)); }
 .facing { pointer-events: none; }
+/* 動かせない味方（構える味方。① の風 など）: 足もとに赤いバツ（オーナー 11/15「移動できないのでそれを明示したい。足元にバツを付けてほしい」）。
+ *   奥行きの見た目では足もとの床に寝かせる（向きの三角と同じ置き方）。真上の見た目では駒の下のふちに出す */
+.u-nomove { position: absolute; left: 50%; top: 100%; width: 1.6em; height: 1.6em; transform: translate(-50%, -60%); pointer-events: none; z-index: 1; }
+.u-nomove::before, .u-nomove::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 100%; height: 22%; border-radius: 999px;
+  background: #dc2626; box-shadow: 0 0 0 2px #fff;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.u-nomove::after { transform: translate(-50%, -50%) rotate(-45deg); }
+html.view-depth .unit .u-nomove {
+  width: calc(.5 * 100cqi / var(--n)); height: calc(.5 * 100cqi / var(--n));
+  transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(2px) translateY(calc(.2 * 100cqi / var(--n)));   /* 手前へ（駒と HP の札に隠れないように） */
+}
 html.view-depth .unit.has-img.selected { box-shadow: none; }
 html.view-depth .unit.has-img.selected .u-img { filter: drop-shadow(0 0 3px #f5c518) drop-shadow(0 0 6px rgba(245, 197, 24, .9)); }
 
