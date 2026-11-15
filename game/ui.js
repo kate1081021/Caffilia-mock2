@@ -634,15 +634,24 @@
     runEndTurn();
   }
 
-  // 【一斉】発動の順番を並べ替える（▲▼）
-  function reorder(id, delta) {
+  // 【一斉】発動の順番を並べ替える（ドラッグ。オーナー 11/15「上下のボタンをやめて、ドラッグで変えられるように」）。
+  //   to: 構えている味方（構える味方を除く）の中で、何番目（0から）へ。1つずつとなりと入れ替えて、そこへ差しこむ（1手で戻せる）
+  function reorderTo(id, to) {
     if (!canControl() || !simul()) return;
-    var res = R.reorderStance(app.state, id, delta);
-    if (!res.ok) { say(res.error); return; }
+    var mine = R.stanceList(app.state).filter(function (a) { return !a.npc; }).map(function (a) { return a.id; });
+    var from = mine.indexOf(id);
+    if (from < 0 || to < 0 || to >= mine.length || to === from) { render(); return; }
+    var step = to > from ? 1 : -1, s = app.state, evs = [], ops = [];
+    for (var k = from; k !== to; k += step) {
+      var res = R.reorderStance(s, id, step);
+      if (!res.ok) { say(res.error); render(); return; }
+      s = res.state; ops.push(['order', id, step]);
+      evs = res.events;   // 記録には最後の位置だけ書く
+    }
     pushHistory();
-    app.state = res.state;
-    recOp(['order', id, delta]);
-    res.events.forEach(function (e) { addLog(e.text, 'event'); });
+    app.state = s;
+    ops.forEach(recOp);
+    evs.forEach(function (e) { addLog(e.text, 'event'); });
     render();
   }
 
@@ -1855,7 +1864,7 @@
     renderActPanel();
   }
 
-  // 【一斉】発動の順番の一覧（▲▼で並べ替え。構える味方はいつも最後で動かせない）と、合体の予告
+  // 【一斉】発動の順番の一覧（行をドラッグで並べ替え。構える味方はいつも最後で動かせない）と、合体の予告
   function renderOrderPanel(fa) {
     if (!el.orderPanel) return;
     var st = app.state;
@@ -1869,12 +1878,11 @@
       var a = x.a, p = x.p, fixed = !!a.npc, k = mine.indexOf(a.id), planned = !fixed && k < 0;
       var res = p && !p.cancelled ? planText(p, st).replace(/^予告: /, '') : '';
       if (shapeOnly() && p) res = DIR_ARROW[p.dir] + ' ' + R.magicName(a.magic);   // 展示ステージ③: 何が起きるかは出さない
-      return '<li class="order-row' + (fixed ? ' fixed' : '') + (a.id === app.sel ? ' selected' : '') + '">' +
+      var drag = !planned && !fixed && can && mine.length > 1;   // つかんで動かせる行
+      return '<li class="order-row' + (fixed ? ' fixed' : '') + (drag ? ' draggable' : '') + (a.id === app.sel ? ' selected' : '') + '"' + (drag ? ' data-drag="' + a.id + '" title="ドラッグで順番を変える"' : '') + '>' +
         '<span class="o-no">' + (ORDER_MARK[i + 1] || (i + 1)) + '</span>' +
         '<span class="o-name"><b>' + esc(R.unitLabel(st, a)) + (planned ? '（選んでいる構え）' : '') + '</b>' + (res ? '<small>' + esc(res) + '</small>' : '') + '</span>' +
-        (planned ? '' : fixed ? '<span class="o-fixed">' + esc(ui('orderLast', '最後（動かせない）')) + '</span>'
-          : '<span class="o-move"><button type="button" class="o-btn" data-order="' + a.id + '" data-delta="-1" aria-label="1つ前へ"' + (k <= 0 || !can ? ' disabled' : '') + '>▲</button>' +
-            '<button type="button" class="o-btn" data-order="' + a.id + '" data-delta="1" aria-label="1つ後ろへ"' + (k >= mine.length - 1 || !can ? ' disabled' : '') + '>▼</button></span>') +
+        (fixed ? '<span class="o-fixed">' + esc(ui('orderLast', '最後（動かせない）')) + '</span>' : drag ? '<span class="o-grip" aria-hidden="true">≡</span>' : '') +
         '</li>';
     }).join('');
     var combos = [];
@@ -2214,10 +2222,37 @@
   el.btnReset.addEventListener('click', reset);
   el.btnEdit.addEventListener('click', function () { setEditMode(!app.editMode); });
   el.btnEditDone.addEventListener('click', function () { setEditMode(false); });
-  if (el.orderPanel) el.orderPanel.addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('[data-order]');
-    if (b && !b.disabled) reorder(b.getAttribute('data-order'), Number(b.getAttribute('data-delta')));
-  });
+  // 発動の順番: 行をつかんで上下に動かし、離した所の順番にする（構える味方の行・選んでいる構えの行は動かない）
+  if (el.orderPanel) (function () {
+    var drag = null;
+    var rowsOf = function () { return Array.prototype.slice.call(el.orderPanel.querySelectorAll('.order-list:not(.order-waits) > .order-row[data-drag]')); };
+    el.orderPanel.addEventListener('pointerdown', function (e) {
+      var row = e.target.closest && e.target.closest('.order-row[data-drag]');
+      if (!row || e.button > 0) return;
+      e.preventDefault();
+      drag = { row: row, id: row.getAttribute('data-drag'), y: e.clientY, moved: false };
+      row.classList.add('dragging');
+      try { row.setPointerCapture(e.pointerId); } catch (x) { /* つかめなくても、window で追う */ }
+    });
+    window.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      if (Math.abs(e.clientY - drag.y) > 4) drag.moved = true;
+      // 指より下にある最初の行（動かせる行の中で）の前へ。なければ動かせる行の最後へ
+      var rows = rowsOf(), list = drag.row.parentNode;
+      var before = rows.filter(function (x) { if (x === drag.row) return false; var r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; })[0] || null;
+      if (before) { if (before !== drag.row.nextElementSibling) list.insertBefore(drag.row, before); }
+      else { var last = rows.filter(function (x) { return x !== drag.row; }).pop(); if (last && last.nextElementSibling !== drag.row) list.insertBefore(drag.row, last.nextSibling); }
+    });
+    var end = function () {
+      if (!drag) return;
+      var d = drag;
+      drag = null;
+      d.row.classList.remove('dragging');
+      reorderTo(d.id, rowsOf().indexOf(d.row));
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  })();
 
   // 遊び方（texts.js の操作の案内。ターンの形に合う行だけ）。初めて開いたときに1回だけ自動で出す（閉じたら覚える）
   var HOWTO_KEY = 'caffilia-howto-seen';
