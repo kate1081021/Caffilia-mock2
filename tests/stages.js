@@ -194,5 +194,14 @@ eq(S.placeAt(['a', 'h1', 'b', 'h2', 'c'], 'c', 'b', 'a'), ['a', 'h1', 'c', 'b', 
 eq([S.placeAt(mvList, 'a', 'zz', 'c'), S.placeAt(mvList, 'a', 'zz', 'yy')], [['b', 'c', 'a', 'd'], ['b', 'c', 'd', 'a']], '知らない行を指していたら、上の行の後ろ・末尾');
 eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない（placeAt）');
 
+// 構える味方の発動の番（fireAt。オーナー 11/15）: ステージの定義に書き出して読み直しても残る。正しくない番は読まない
+(function () {
+  var s = R.buildPreset({ rows: ['.....', '.....', '.....'], allies: [['mount', 0, 1, { npc: true, facing: 'right', fireAt: 1 }], ['water', 1, 2, { facing: 'up' }]], enemies: [['fire', 4, 0]] });
+  var def = S.toDef(R, s, 'x'), b = S.build(R, def);
+  eq(def.allies[0][3].fireAt, 1, '定義に発動の番が入る');
+  ok(b.ok && R.alliesOf(b.state)[0].fireAt === 1, '読み直しても発動の番が残る');
+  ok(!S.build(R, JSON.parse(JSON.stringify(def).replace('"fireAt":1', '"fireAt":1.5'))).ok, '整数でない番は読まない');
+})();
+
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;

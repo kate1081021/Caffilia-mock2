@@ -83,6 +83,7 @@
       if (u.side === 'ally') {
         var a = { facing: u.facing || 'up' };
         if (u.npc) a.npc = true;
+        if (u.npc && u.fireAt) a.fireAt = u.fireAt;   // 構える味方の発動の番（なければ最後）
         def.allies.push([u.magic, u.x, u.y, a]);
       } else if (u.side === 'enemy') {
         var o = {};
@@ -149,6 +150,7 @@
       if (o !== undefined && !isObj(o)) return true;
       o = o || {};
       if (o.facing !== undefined && !R.DIRS[o.facing]) return true;
+      if (side === 'ally' && !R.validFireAt(o.fireAt)) return true;
       if (side === 'enemy') {
         if (u[4] !== undefined && !R.DIRS[u[4]]) return true;
         if (Object.keys(R.PERSONA).some(function (f) { return o[f] !== undefined && !R.PERSONA[f][o[f]]; })) return true;

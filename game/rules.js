@@ -208,13 +208,20 @@
 
   // 【一斉】ターンの形（IMPROVE_simul）。'simul' のとき、味方の手番は「移動 → 向き → 構える」。
   //   構え（u.stance = { n }）はまだ起きず、味方の予告として盤面に出る。ターンの終わり（敵の発動の前）に、構えた順に発動する。
-  //   構える味方（チュートリアル）の構えは、いつも最後。そのターンのうちなら構え直せる（移動は戻らない）。構えた順は並べ替えられる
+  //   構える味方（チュートリアル）の構えは、ステージで決めた番（なければ最後）。そのターンのうちなら構え直せる（移動は戻らない）。構えた順は並べ替えられる
   function simulOn() { return B.turnMode === 'simul'; }
-  // 発動する順の味方: 構えた味方（n の小さい順）→ 構える味方（いつも最後）
+  // 発動する順の味方: 構えた味方（n の小さい順）に、構える味方を差しこむ。
+  //   構える味方は、ステージで番（fireAt。1から）を決めていればその番、なければ最後（オーナー 11/15「この順番、ステージごとに変えられるように」）。
+  //   番が並ぶ人数より大きいときは最後。番の小さい構える味方から順に差しこむ
   function stanceList(s) {
-    var mine = alliesOf(s).filter(function (a) { return !a.npc && a.stance; }).sort(function (a, b) { return a.stance.n - b.stance.n; });
-    return mine.concat(alliesOf(s).filter(function (a) { return a.npc && a.intent; }));
+    var list = alliesOf(s).filter(function (a) { return !a.npc && a.stance; }).sort(function (a, b) { return a.stance.n - b.stance.n; });
+    var npcs = alliesOf(s).filter(function (a) { return a.npc && a.intent; });
+    npcs.filter(function (a) { return a.fireAt; }).sort(function (a, b) { return a.fireAt - b.fireAt; })
+      .forEach(function (a) { list.splice(Math.min(a.fireAt - 1, list.length), 0, a); });
+    return list.concat(npcs.filter(function (a) { return !a.fireAt; }));
   }
+  // 構える味方の発動の番（1から。0 か無しは最後）
+  function validFireAt(v) { return v === undefined || v === 0 || (typeof v === 'number' && v >= 1 && v <= 9 && v % 1 === 0); }
   // 発動の順番（1から）。構えていなければ 0
   function stanceOrder(s, id) {
     var list = stanceList(s);
@@ -2291,7 +2298,7 @@
     return { ok: true, state: s, events: ev, steps: [{ state: clone(s), events: ev.slice() }] };
   }
 
-  // 【一斉】構えた順を並べ替える（delta: -1 で1つ前へ、+1 で1つ後ろへ）。構える味方（いつも最後）は動かせない
+  // 【一斉】構えた順を並べ替える（delta: -1 で1つ前へ、+1 で1つ後ろへ）。構える味方（ステージで決めた番）は動かせない
   function reorderStance(s0, unitId, delta) {
     var list = alliesOf(s0).filter(function (a) { return !a.npc && a.stance; }).sort(function (a, b) { return a.stance.n - b.stance.n; });
     var i = -1;
@@ -3521,7 +3528,17 @@
     if (!u0 || u0.side !== 'ally') return fail(s0, '味方がいない');
     var s = clone(s0);
     var u = findUnit(s, unitId);
-    if (on) u.npc = true; else { delete u.npc; delete u.intent; }
+    if (on) u.npc = true; else { delete u.npc; delete u.intent; delete u.fireAt; }
+    return ok(s);
+  }
+  // 構える味方の発動の番を決める（n: 1から。0 で最後）
+  function editSetFireAt(s0, unitId, n) {
+    var u0 = findUnit(s0, unitId);
+    if (!u0 || u0.side !== 'ally' || !u0.npc) return fail(s0, '構える味方がいない');
+    n = Number(n) || 0;
+    if (!validFireAt(n)) return fail(s0, '発動の番が正しくない');
+    var s = clone(s0), u = findUnit(s, unitId);
+    if (n) u.fireAt = n; else delete u.fireAt;
     return ok(s);
   }
 
@@ -3624,6 +3641,7 @@
         if (u.side === 'object') return { side: 'object', kind: u.kind, x: u.x, y: u.y };
         var o = { side: u.side, magic: u.magic, x: u.x, y: u.y, facing: u.facing };
         if (u.npc) o.npc = true;
+        if (u.npc && u.fireAt) o.fireAt = u.fireAt;
         if (u.side === 'enemy') PERSONA_FIELDS.forEach(function (f) { if (u[f] !== undefined) o[f] = u[f]; });
         return o;
       })
@@ -3677,7 +3695,11 @@
       if (u.side === 'object' ? !OBJECT_INFO[u.kind] : !MAGIC_INFO[u.magic]) return { ok: false, error: u.side === 'object' ? '知らない置きものがある' : '知らない魔法がある' };
       if (!inBounds(s, u.x, u.y) || unitAt(s, u.x, u.y) || !isPassable(getTile(s, u.x, u.y))) return { ok: false, error: 'ユニットの位置が正しくない' };
       if (u.side === 'object') addObject(s, u.kind, u.x, u.y);
-      else if (u.side === 'ally') { var a = addAlly(s, u.magic, u.x, u.y, DIRS[u.facing] ? u.facing : 'up'); if (u.npc) a.npc = true; }
+      else if (u.side === 'ally') {
+        var a = addAlly(s, u.magic, u.x, u.y, DIRS[u.facing] ? u.facing : 'up');
+        if (u.npc) a.npc = true;
+        if (u.npc && u.fireAt) { if (!validFireAt(u.fireAt)) return { ok: false, error: '構える味方の発動の番が正しくない' }; a.fireAt = u.fireAt; }
+      }
       else {
         var e = addEnemy(s, u.magic, u.x, u.y, DIRS[u.facing] ? u.facing : 'down');
         PERSONA_FIELDS.forEach(function (f) { if (u[f] !== undefined) { if (!PERSONA[f][u[f]]) bad = true; else e[f] = u[f]; } });
@@ -3999,6 +4021,7 @@
       var o = a[3] || {};
       var u = addAlly(s, a[0], a[1], a[2], o.facing || 'up');
       if (o.npc) u.npc = true;
+      if (o.npc && o.fireAt) u.fireAt = o.fireAt;   // 構える味方の発動の番（1から。なければ最後）
     });
     p.enemies.forEach(function (e) {
       var u = addEnemy(s, e[0], e[1], e[2], e[4] || 'down');
@@ -4102,7 +4125,7 @@
     editPlaceObject: editPlaceObject, editSetMission: editSetMission, editToggleCell: editToggleCell, editPlaceTreasure: editPlaceTreasure,
     // チュートリアル（構える味方・動かない敵・このシナリオだけの数値）
     TUTORIALS: TUTORIALS, findPreset: findPreset, isNpc: isNpc, controllableOf: controllableOf,
-    npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, validOverrides: validOverrides,
+    npcHintCells: withStage(npcHintCells), editSetNpc: editSetNpc, editSetFireAt: editSetFireAt, validFireAt: validFireAt, validOverrides: validOverrides,
     slopeMap: withStage(slopeMap), mountainSlopes: withStage(mountainSlopes),   // 山の斜面（10/29 からどの山にも）
     // チュートリアル②（横長・縦長の盤面・突進の敵・山の頂上と腕・やり直しとヒント）
     rowsOf: rowsOf, rushRoute: withStage(rushRoute), retryStage: retryStage, stageHint: stageHint,

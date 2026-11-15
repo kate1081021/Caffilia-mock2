@@ -211,6 +211,43 @@ test('① 一斉: 構える味方は最初から構えていて、順番はい�
   s = act(s, byMagic(s, 'fire').id, [1, 2], 'up').state;
   eq(R.stanceList(s).map(function (a) { return a.npc ? 'npc' : a.magic; }), ['fire', 'npc']);
 });
+// 構える味方の発動の番（オーナー 11/15「この順番、ステージごとに変えられるように」）。
+//   山（構える味方）は (1,3) を含む十字に山を盛り、水は (1,3) に当たる。水 → 山の順なら (1,3) は泥沼（② と同じ法則）、山 → 水なら泥沼にならない
+var FIRE_AT = {
+  rows: ['.....', '.....', '.....', '.....', '.....'],
+  allies: [['mount', 0, 3, { npc: true, facing: 'right', fireAt: 1 }], ['water', 1, 4, { facing: 'up' }]],
+  enemies: [['fire', 4, 0]], enemyActs: false
+};
+test('構える味方の発動の番: fireAt 1 なら最初に撃ち、その結果に後の味方が重なる', function () {
+  mode('simul');
+  var s = R.startBattle(R.buildPreset(FIRE_AT)).state;
+  eq(R.stanceList(s).map(function (a) { return a.npc ? 'npc' : a.magic; }), ['npc', 'water'], '構える味方が1番目');
+  var r = R.fireAllStances(s);
+  eq(R.forecast(s).allies.map(function (p) { return p.magic; }), ['mount', 'water'], '予告でも山が先');
+  ok(R.getTile(r.after, 1, 3) !== 'mud', '山 → 水: 泥沼にならない（' + R.getTile(r.after, 1, 3) + '）');
+});
+test('構える味方の発動の番: なければ最後（今までどおり）。人数より大きい番も最後', function () {
+  mode('simul');
+  [undefined, 9].forEach(function (n) {
+    var d = JSON.parse(JSON.stringify(FIRE_AT));
+    if (n) d.allies[0][3].fireAt = n; else delete d.allies[0][3].fireAt;
+    var s = R.startBattle(R.buildPreset(d)).state;
+    eq(R.stanceList(s).map(function (a) { return a.npc ? 'npc' : a.magic; }), ['water', 'npc'], 'fireAt ' + n);
+    eq(R.getTile(R.fireAllStances(s).after, 1, 3), 'mud', '水 → 山: 泥沼');
+  });
+});
+test('構える味方の発動の番: エディットで決め、保存（JSON）でも残る。構える味方でなくすと消える', function () {
+  var s = R.buildPreset(FIRE_AT), npc = R.alliesOf(s).filter(function (a) { return a.npc; })[0];
+  eq(npc.fireAt, 1);
+  var s2 = R.editSetFireAt(s, npc.id, 2).state;
+  eq(R.findUnit(s2, npc.id).fireAt, 2);
+  eq(R.findUnit(R.editSetFireAt(s2, npc.id, 0).state, npc.id).fireAt, undefined, '0 で最後');
+  ok(!R.editSetFireAt(s2, npc.id, 1.5).ok, '番は整数');
+  ok(!R.editSetFireAt(s2, byMagic(s2, 'water').id, 1).ok, '構える味方だけ');
+  var back = R.importLayout(R.exportLayout(s2));
+  eq(R.alliesOf(back.state).filter(function (a) { return a.npc; })[0].fireAt, 2, '保存して読んでも残る');
+  eq(R.findUnit(R.editSetNpc(s2, npc.id, false).state, npc.id).fireAt, undefined);
+});
 test('① 一斉: 外すと「火は点いたのに、風は別の所」。構える味方の風は (1,1)(2,1) を吹く（風は2マス）', function () {
   mode('simul');
   var t = playTurn(start('tut1'), [['fire', [0, 3], 'up']]);

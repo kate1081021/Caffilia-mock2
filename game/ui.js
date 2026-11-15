@@ -1864,7 +1864,7 @@
     renderActPanel();
   }
 
-  // 【一斉】発動の順番の一覧（行をドラッグで並べ替え。構える味方はいつも最後で動かせない）と、合体の予告
+  // 【一斉】発動の順番の一覧（行をドラッグで並べ替え。構える味方はステージで決めた番で動かせない）と、合体の予告
   function renderOrderPanel(fa) {
     if (!el.orderPanel) return;
     var st = app.state;
@@ -1882,7 +1882,7 @@
       return '<li class="order-row' + (fixed ? ' fixed' : '') + (drag ? ' draggable' : '') + (a.id === app.sel ? ' selected' : '') + '"' + (drag ? ' data-drag="' + a.id + '" title="ドラッグで順番を変える"' : '') + '>' +
         '<span class="o-no">' + (ORDER_MARK[i + 1] || (i + 1)) + '</span>' +
         '<span class="o-name"><b>' + esc(R.unitLabel(st, a)) + (planned ? '（選んでいる構え）' : '') + '</b>' + (res ? '<small>' + esc(res) + '</small>' : '') + '</span>' +
-        (fixed ? '<span class="o-fixed">' + esc(ui('orderLast', '最後（動かせない）')) + '</span>' : drag ? '<span class="o-grip" aria-hidden="true">≡</span>' : '') +
+        (fixed ? '<span class="o-fixed">' + esc(a.fireAt ? ui('orderFixed', '動かせない') : ui('orderLast', '最後（動かせない）')) + '</span>' : drag ? '<span class="o-grip" aria-hidden="true">≡</span>' : '') +
         '</li>';
     }).join('');
     var combos = [];
@@ -1963,6 +1963,13 @@
       h += '<div class="u-card-row"><span class="lbl">指示</span><select data-id="' + id + '" data-field="npc">' +
         '<option value=""' + (u.npc ? '' : ' selected') + '>プレイヤーが動かす</option>' +
         '<option value="1"' + (u.npc ? ' selected' : '') + '>構える味方（毎ターン今の向きで構えて撃つ）</option></select></div>';
+      // 構える味方の発動の番（オーナー 11/15）。最後か、1番目〜味方の人数番目
+      if (u.npc) {
+        var nAl = Math.max(R.alliesOf(app.state).length, u.fireAt || 0);
+        var fopts = ['<option value="0"' + (u.fireAt ? '' : ' selected') + '>最後</option>'];
+        for (var fn = 1; fn <= nAl; fn++) fopts.push('<option value="' + fn + '"' + (u.fireAt === fn ? ' selected' : '') + '>' + (fn === 1 ? '最初（1番目）' : fn + '番目') + '</option>');
+        h += '<div class="u-card-row"><span class="lbl">発動の番</span><select data-id="' + id + '" data-field="fireAt" title="一斉に発動するとき、何番目に撃つか">' + fopts.join('') + '</select></div>';
+      }
     } else {
       h += '<div class="u-card-grid">' + Object.keys(R.PERSONA).map(function (f) {
         var label = { aim: '狙い', avoid: '避ける', cross: '越える', stand: '動き' }[f] || f;
@@ -2313,6 +2320,7 @@
     var res = field === 'magic' ? R.editSetMagic(app.state, id, s.value)
       : field === 'facing' ? R.editSetFacing(app.state, id, s.value)
       : field === 'npc' ? R.editSetNpc(app.state, id, !!s.value)
+      : field === 'fireAt' ? R.editSetFireAt(app.state, id, Number(s.value))
       : field === 'hp' ? SIO.setHp(R, app.state, id, s.value)
       : R.editSetPersona(app.state, id, field, s.value);
     if (res.ok) { pushHistory(); app.state = res.state; render(); } else { say(res.error); sideSig = ''; render(); }
