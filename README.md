@@ -61,6 +61,7 @@ game/        ゲーム本体
   settings.js  設定（画面の主な色と、自然・魔法・シナジーの名前）
   style.css    見た目
   img/         駒の絵（名前の一覧.txt）
+  sound/       メインBGM（ずっとループ）
 tests/       テストと調べもの用の道具
 tools/       公開（publish.js）と共有の置き場所（stage_worker.mjs）
 archive/     活動ログと昔の版

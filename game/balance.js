@@ -212,6 +212,9 @@
       { tile: 'deadforest', magic: 'fire', name: 'オバケヤシキ' }
     ],
 
+    // 画面: メインBGM の音量（0〜1。オーナー 11/15【仮】）。曲は index.html の <audio id="bgm">
+    bgmVolume: 0.5,
+
     // 画面: ターン終了処理などを1つずつ見せる間隔（ミリ秒）
     stepDelayMs: 400,
 

@@ -1237,12 +1237,16 @@ html.view-depth .unit.has-img::before, html.view-depth .unit.has-img::after { di
 html.view-depth .unit.has-img .u-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; pointer-events: none; }
 html.view-depth .unit.has-img .u-name { display: none; }
 html.view-depth .unit.has-img .u-hp { position: absolute; bottom: -4%; left: 50%; transform: translateX(-50%); margin: 0; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); color: #1c1917; opacity: 1; font-weight: bold; }
-/* 向き: 立てた駒の、向いている側のふちに三角（↑ 奥は頭の上、↓ 手前は足もと、← → は横）。床に寝かせると、↑ が駒の陰に隠れるため */
-html.view-depth .unit .facing { transform: translate(-50%, -50%) rotate(var(--rot)); }
-html.view-depth .unit.face-up .facing { left: 50%; top: -9%; }
-html.view-depth .unit.face-down .facing { left: 50%; top: 109%; }
-html.view-depth .unit.face-left .facing { left: -10%; top: 60%; }
-html.view-depth .unit.face-right .facing { left: 110%; top: 60%; }
+/* 向き: ↓ 手前・← → 横は、足もとの床に寝かせた三角（となりのマスを床の上で指す。駒の真ん中の高さに浮かせると、奥のマスを指して見えるため。オーナー 11/15）。
+ *   床より少し上に浮かせて、床に負けないように。↑ 奥だけは、床に寝かせると駒の陰に隠れるので、頭の上に立てたまま。
+ *   見せるだけの印なので、押してもすり抜ける（奥のマスを押せるように） */
+html.view-depth .unit .facing {
+  left: 50%; top: 100%;
+  transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(3px) rotate(var(--rot)) translateY(calc(-.42 * 100cqi / var(--n)));
+}
+html.view-depth .unit.face-down .facing { transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(3px) rotate(var(--rot)) translateY(calc(-.24 * 100cqi / var(--n))); }
+html.view-depth .unit.face-up .facing { left: 50%; top: -9%; transform: translate(-50%, -50%) rotate(var(--rot)); }
+.facing { pointer-events: none; }
 html.view-depth .unit.has-img.selected { box-shadow: none; }
 html.view-depth .unit.has-img.selected .u-img { filter: drop-shadow(0 0 3px #f5c518) drop-shadow(0 0 6px rgba(245, 197, 24, .9)); }
 
