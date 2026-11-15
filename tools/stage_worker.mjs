@@ -9,7 +9,7 @@
  *     order  … 一覧の順番 { tut: [id…], all: [名前…], at }（開発モードの一覧で、手で決めた順番。オーナー 11/12）。
  *       入っていないもの（新しいステージ）は画面が末尾に足す。もうないものが入っていても画面が飛ばす。まだ誰も並べていなければ null
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
- *     settings … 設定 { colors, tiles, magics, synergies, pieces, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
+ *     settings … 設定 { colors, tiles, magics, synergies, pieces, talk, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
  *     chars … キャラ { list, cast, objects, at }（objects は村・トロッコの絵）（キャラの一覧と、魔法 → キャラ。game/chars.js。オーナー 11/13。.claude/IMPROVE_キャラ.md）。まだなければ null
  *     img:<id> … 開発モードから上げた絵（data URL の字。1枚 MAX_IMG まで）。同じ id の絵は変わらない
  *     imgs … 上げた絵の一覧 { id: { at, size } }（数を数える・使っていない絵を消すため）
@@ -20,7 +20,9 @@
  *     plays  … プレイ集の記録 { id: { id, name, stage: { kind, uid, name }, turns, at } }（チュートリアル・みんなのステージの分。game/plays.js。オーナー 11/10）
  *   API（ファイルから開いたページ（file://）からも使えるように、CORS は * にする。URL が合言葉の代わり）:
  *     GET    /api/all             … { stages, lineup, trash, settings, plays, tutorials, order, chars }（tutorials・order はまだ置いていなければ null。trash・settings・plays があれば、ゴミ箱・設定・プレイ集のある置き場所。画面はそれで見分ける。settings はまだなければ null）
- *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts }。答えの uid が置いた背番号
+ *     PUT    /api/stages/<名前>    … 共有する（同じ名前は上書き。背番号は前のまま）。本文 { def, texts, from }。答えの uid が置いた背番号
+ *       from（オーナー 11/16）: 名前を変えて上書きするときの、元の名前。元のステージ（背番号のまま）を新しい名前に付け替えて上書きする。
+ *       一覧の順番・展示の並び（メインステージ）・プレイ集の記録の名前も付け替える。新しい名前のステージがもうあれば断る（409）
  *     DELETE /api/stages/<名前>    … ゴミ箱へ移す（展示の並びに入っているものは移せない。ゴミ箱がいっぱいなら断る。11/03 から。前は完全に消した）
  *     POST   /api/trash/<鍵>/restore … ゴミ箱から戻す（同じ名前があれば「名前（2）」）。答えの name が戻した名前
  *     DELETE /api/trash/<鍵>       … ゴミ箱から完全に消す
@@ -87,16 +89,19 @@ function okSettings(b) {
   const isObj = function (o) { return !!o && typeof o === 'object' && !Array.isArray(o); };
   const okStr = function (v, max) { return typeof v === 'string' && v.length <= max; };
   if (!isObj(b)) return false;
-  const parts = ['colors', 'tiles', 'magics', 'synergies', 'pieces'];
+  const parts = ['colors', 'tiles', 'magics', 'synergies', 'pieces', 'talk'];
   if (Object.keys(b).some(function (k) { return parts.indexOf(k) < 0; })) return false;
   const c = b.colors || {}, t = b.tiles || {}, m = b.magics || {}, s = b.synergies || {};
   if (![c, t, m, s].every(isObj)) return false;
   if (Object.keys(c).length + Object.keys(t).length + Object.keys(m).length + Object.keys(s).length > 300) return false;
+  // 会話のキャラの大きさと位置（オーナー 11/14。game/settings.js の TALK と同じ範囲）
+  const tk = b.talk === undefined ? {} : b.talk, TR = { size: [20, 150], lx: [-50, 100], ly: [-50, 100], rx: [-50, 100], ry: [-50, 100] };
+  if (!isObj(tk) || !Object.keys(tk).every(function (k) { const r = TR[k], v = tk[k]; return !!r && typeof v === 'number' && Math.round(v) === v && v >= r[0] && v <= r[1]; })) return false;
   // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）
   const pc = b.pieces === undefined ? {} : b.pieces;
   const pct = function (v) { return typeof v === 'number' && Math.round(v) === v && v >= 50 && v <= 400; };
-  if (!isObj(pc) || Object.keys(pc).some(function (k) { return ['size', 'object', 'boards'].indexOf(k) < 0; })) return false;
-  if ((pc.size !== undefined && !pct(pc.size)) || (pc.object !== undefined && !pct(pc.object))) return false;
+  if (!isObj(pc) || Object.keys(pc).some(function (k) { return ['size', 'object', 'boss', 'boards'].indexOf(k) < 0; })) return false;
+  if (['size', 'object', 'boss'].some(function (k) { return pc[k] !== undefined && !pct(pc[k]); })) return false;
   if (pc.boards !== undefined && !(isObj(pc.boards) && Object.keys(pc.boards).length <= 100 &&
     Object.keys(pc.boards).every(function (k) { return /^([1-9]|[1-3][0-9])x([1-9]|[1-3][0-9])$/.test(k) && pct(pc.boards[k]); }))) return false;
   return Object.keys(c).every(function (k) { return /^--[a-z-]{1,30}$/.test(k) && /^#[0-9a-f]{6}$/i.test(c[k]); }) &&
@@ -166,6 +171,38 @@ function stampUids(map, nameOf) {
 }
 function inLineup(lineup, name) { const r = 'all:' + name; return !!lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(r) >= 0; }); }
 
+// 名前を変えて上書きする（オーナー 11/16）: from のステージを、背番号のまま name に付け替えて、b の中身で上書きする。
+//   ほかのものが名前で指しているところ（一覧の順番・展示の並び・プレイ集の記録の名前）も付け替える
+async function renameStage(kv, stages, from, name, b) {
+  if (!okName(from)) return fail('元の名前が正しくない');
+  const prev = stages[from];
+  if (!prev) return fail('元のステージ「' + from + '」が見つからない（消されたかもしれない）', 404);
+  if (stages[name]) return fail('「' + name + '」はもうある（別のステージ）。別の名前にしてください', 409);
+  const at = Date.now();
+  b.def.uid = prev.def && okUid(prev.def.uid) ? prev.def.uid : 'n:' + from;
+  stages[name] = { def: b.def, texts: b.texts && typeof b.texts === 'object' ? b.texts : null, at: at };
+  delete stages[from];
+  await kv.put('stages', JSON.stringify(stages));
+  const order = await kv.get('order', 'json');
+  if (order && Array.isArray(order.all) && order.all.indexOf(from) >= 0) {
+    order.all = order.all.map(function (k) { return k === from ? name : k; }).filter(function (k, i, a) { return a.indexOf(k) === i; });
+    await kv.put('order', JSON.stringify(order));
+  }
+  const lineup = await kv.get('lineup', 'json'), fromRef = 'all:' + from;
+  if (lineup && ['start', 'pick'].some(function (k) { return (lineup[k] || []).indexOf(fromRef) >= 0; })) {
+    ['start', 'pick'].forEach(function (k) { lineup[k] = (lineup[k] || []).map(function (r) { return r === fromRef ? 'all:' + name : r; }); });
+    await kv.put('lineup', JSON.stringify(lineup));
+  }
+  const plays = (await kv.get('plays', 'json')) || {};
+  let changed = 0;
+  Object.keys(plays).forEach(function (id) {
+    const st = plays[id] && plays[id].stage;
+    if (st && st.kind === 'all' && st.uid === b.def.uid && st.name !== name) { st.name = name; changed++; }
+  });
+  if (changed) await kv.put('plays', JSON.stringify(plays));
+  return json({ ok: true, at: at, uid: b.def.uid, renamed: from });
+}
+
 // /api/ の1件に答える。kv は Workers KV（get(key, 'json')・put(key, text)）
 export async function handleApi(req, kv) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -224,6 +261,7 @@ export async function handleApi(req, kv) {
       if (req.method === 'PUT') {
         const b = await body(req);
         if (!b || typeof b.def !== 'object' || !b.def || !Array.isArray(b.def.rows)) return fail('ステージの中身が正しくない');
+        if (b.from !== undefined && b.from !== null && b.from !== name) return renameStage(kv, stages, b.from, name, b);
         if (!stages[name] && Object.keys(stages).length >= MAX_STAGES) return fail('みんなのステージがいっぱい（' + MAX_STAGES + '）');
         const at = Date.now();
         // 背番号: 同じ名前の上書きは、前の背番号のまま（記録がついていく）。新しく置くときは送られてきた背番号。
@@ -295,7 +333,7 @@ export async function handleApi(req, kv) {
     if (req.method === 'PUT' && path === 'settings') {
       const b = await body(req);
       if (!okSettings(b)) return fail('設定の形が正しくない');
-      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, pieces: b.pieces || {}, at: Date.now() };
+      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, pieces: b.pieces || {}, talk: b.talk || {}, at: Date.now() };
       await kv.put('settings', JSON.stringify(settings));
       return json({ ok: true, at: settings.at });
     }

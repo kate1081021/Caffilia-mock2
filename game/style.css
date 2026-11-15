@@ -169,8 +169,9 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
   gap: 3px;
   padding: 6px;
-  width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)));
-  min-width: 300px;
+  /* 5×5 より小さい盤面（1マスまで。オーナー 11/15）は、マスの大きさを 5×5 のときと同じにする（最後の項。5×5 の1マス × 横のマス数） */
+  width: min(92vw, calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)), calc(min(92vw / 5, 120px, (100vh - var(--above, 230px)) / 5) * var(--n)));
+  min-width: min(300px, calc(60px * var(--n)));
   aspect-ratio: var(--n) / var(--rows);
   background: var(--board-frame);
   border-radius: 12px;
@@ -910,13 +911,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .cell.st-shot { box-shadow: inset 0 0 0 3px rgba(29, 78, 216, .9); }
 .b-fc .ally.stance { font-size: .68em; letter-spacing: -.02em; }
 .b-fc .ally.stance.npc { background: #60a5fa; }
-.unit .u-order {
-  position: absolute; left: -12%; top: -14%;
-  min-width: 1.5em; height: 1.5em; line-height: 1.5em; text-align: center;
-  font-size: .72em; font-weight: bold;
-  background: var(--ally); color: #fff; border-radius: 999px; border: 2px solid #fff;
-  z-index: 6; pointer-events: none;
-}
 /* 発動の順番の一覧（▲▼はスマホでも押せる大きさ） */
 .order-panel { margin: 8px 0 10px; padding: 8px 10px; border: 2px solid #bfd3f7; border-radius: 10px; background: #f3f7ff; }
 .order-panel h3 { margin: 0 0 6px; color: #1e3a8a; }
@@ -928,8 +922,10 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .order-row .o-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .order-row .o-name small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .order-row .o-fixed { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.order-row .o-move { display: flex; gap: 4px; }
-.o-btn { min-width: 44px; min-height: 44px; font-size: 18px; padding: 0; }
+/*   行をつかんで上下に動かす（オーナー 11/15）。指でもつかめるように、行の高さは 44px 以上・つかんでいる間は画面を動かさない */
+.order-row.draggable { min-height: 44px; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.order-row.dragging { cursor: grabbing; border-color: var(--ally); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); position: relative; z-index: 1; }
+.order-row .o-grip { font-size: 22px; line-height: 1; color: var(--muted); padding: 0 6px; }
 .order-combo { margin: 8px 0 0; font-weight: bold; color: #be185d; }
 /* 右下のボタン: 押せば進むとき（全員構えた・②でふさいだ）は光る */
 #btnGo.fire-ready { animation: fireReady 1.2s ease-in-out infinite; }
@@ -948,7 +944,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .banner.combo.show { animation-duration: 2.4s; }
 @media (max-width: 600px) { .banner { white-space: normal; text-align: center; width: 92vw; } }
 /* 目標（チュートリアル） */
-.m-goal-text { flex-basis: 100%; color: #1e3a8a; }
+.m-goal-text { flex-basis: 100%; min-height: 1.5em; color: var(--ink); font-size: 16px; font-weight: bold; }   /* 一言が空でも枠の高さは変えない */
 /* 構えの発動: 当たったマスに浮かぶ札 */
 .cast-mark {
   position: absolute; transform: translate(-50%, -50%);
@@ -965,8 +961,8 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
   100% { opacity: 0; transform: translate(-50%, -75%) scale(1); }
 }
 
-/* 大きい敵（③のボス）・浮く体（③の取り巻き）・構えの順番の札。前は試作ラボの見た目と一緒に書いてあった。
- *   IMPROVE_v3 段1 でラボを外したとき、今の画面が使っているものだけ残した（構えの順番の札は、前のとおり上の .unit .u-order に重ねる） */
+/* 大きい敵（③のボス）・浮く体（③の取り巻き）。前は試作ラボの見た目と一緒に書いてあった。
+ *   IMPROVE_v3 段1 でラボを外したとき、今の画面が使っているものだけ残した（構えの順番の札は 11/15 に外した） */
 .unit.big {
   position: absolute; left: 6%; top: 6%;
   width: calc(var(--sz) * 100% + (var(--sz) - 1) * 3px - 12%);
@@ -975,7 +971,6 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 }
 .unit.boss { border-width: 5px; box-shadow: 0 0 0 3px #fde047, 0 4px 10px rgba(0,0,0,.4); }
 .unit.body-float { background: radial-gradient(circle, #e9d5ff, #7c3aed); border-style: dashed; transform: translateY(-6%) rotate(var(--rot)); }
-.unit .u-order { position: absolute; left: auto; right: -10%; top: -10%; font-size: .55em; font-weight: bold; color: #fff; background: var(--enemy-fc); border-radius: 50%; min-width: 1.4em; height: 1.4em; line-height: 1.4em; text-align: center; z-index: 6; transform: none; }   /* left: auto（上の left と right の両方が効いて札が横に伸び、向きで回ると縦長に見えた。最初から全員構えるようになって目立った 11/03） */
 
 /* ---------- 展示ステージ③（3人でつなぐ） ---------- */
 
@@ -1110,6 +1105,21 @@ html.mode-exhibit .home.ex-title-view { max-width: none; margin: 0; min-height: 
 .ex-menu-big { flex-direction: column; align-items: center; gap: 18px; }
 .ex-menu-big .home-stage { min-height: 96px; min-width: 13em; max-width: 100%; padding: 12px 40px; font-size: clamp(22px, 3.4vw, 32px); border-radius: 18px; }
 .ex-touch { margin: 0; font-size: clamp(32px, 5.5vw, 56px); font-weight: bold; color: var(--accent); letter-spacing: .06em; }
+/* 展示モードの「選んで遊ぶ」（オーナー 11/16）: 開発の一覧と同じ行。つかむ所と右のボタンの欄はなく、タイトルを押しやすく大きく */
+html.mode-exhibit .home.ex-pick-view { max-width: 900px; }
+.ex-sec { width: 100%; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.ex-sec h3 { margin: 0; font-size: 18px; }
+.ex-rows { width: 100%; text-align: left; }
+.home-row.ex-row { grid-template-columns: 7.5em minmax(0, 1fr) 12em 5em; padding: 6px 12px; }
+.home-row.ex-row .row-lead, .home-row.ex-row .row-btns { display: none; }
+.home-row.ex-row .home-title { min-height: 52px; font-size: 18px; }
+.home-row.ex-row .diff-tag { font-size: 14px; }
+.home-row.ex-row .home-magic, .home-row.ex-row .home-win { font-size: 15px; }
+@media (max-width: 640px) {
+  .home-row.ex-row { grid-template-columns: 6.4em minmax(0, 1fr); }
+  .home-row.ex-row .home-win { grid-column: 1; grid-row: 2; }
+  .home-row.ex-row .home-magic { grid-column: 2; grid-row: 2; }
+}
 /* 開発モードの「展示の並び」（IMPROVE_v3 段3）: ≡ をつかんでドラッグで並び替え */
 .lu-warn { margin: 0; padding: 8px 12px; border: 2px solid #f59e0b; border-radius: 10px; background: #fef3c7; color: #92400e; font-weight: bold; }
 .lu-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: lu; }
@@ -1159,7 +1169,7 @@ body.at-home #btnTitle { display: none !important; }
 /* 盤面が横に並ぶ広さ（981px〜）では、横の欄（380px）と余白の分を引いた幅に収める（③ 12×7 が 1024px の画面で左にはみ出していた。10/29）
  *   6×6 などは今までと同じ大きさ（高さの決まりの方が小さい） */
 @media (min-width: 981px) {
-  .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows))); }
+  .board { width: min(calc(100vw - 440px), calc(600px * var(--n) / var(--rows)), calc((100vh - var(--above, 230px)) * var(--n) / var(--rows)), calc(min((100vw - 440px) / 5, 120px, (100vh - var(--above, 230px)) / 5) * var(--n))); }
 }
 
 /* ---------------------------------------------------------------
@@ -1214,7 +1224,7 @@ html.view-depth .unit {
   transform-origin: 50% 100%;
   transform: translateX(-50%) rotateX(calc(-1 * var(--tilt)));
   transform-style: preserve-3d;
-  pointer-events: auto;   /* 立てた駒の上の方は奥のマスに重なる。駒を押したら、その駒のいるマス */
+  pointer-events: none;   /* 駒（キャラの絵）は押す判定を持たない。押したら、その下の盤のマス（オーナー 11/15） */
 }
 /* 大きい敵（③のボス）: 体のマスの手前のふちに立てる。高さは体の幅より低くして、奥のマスを隠しすぎない */
 html.view-depth .unit.big {
@@ -1233,16 +1243,41 @@ html.view-depth .unit.big {
 /*   高さは設定で変えられる（--piece-k・--object-k。元の高さに対する倍率。ui.js の renderBoard。オーナー 11/13）。幅も同じ倍率で広げ、足もとの真ん中はそのまま */
 html.view-depth .unit.has-img { width: calc(100% * var(--piece-k, 1)); height: calc(165% * var(--piece-k, 1)); background: none; border: 0; border-radius: 0; box-shadow: none; justify-content: flex-end; }
 html.view-depth .unit.object.has-img { width: calc(100% * var(--object-k, 1)); height: calc(110% * var(--object-k, 1)); }
+/* 絵が入ったボス（大きい体）: 高さは設定の「ボス」（--boss-k。ふだんのキャラ 165% に対する倍率。オーナー 11/15）。体の横の真ん中・手前のふちに立てる */
+html.view-depth .unit.big.has-img {
+  width: calc(100% * var(--boss-k, 2)); height: calc(165% * var(--boss-k, 2));
+  left: calc((var(--sz) * 100% + (var(--sz) - 1) * 3px - 100% * var(--boss-k, 2)) / 2);
+}
 html.view-depth .unit.has-img::before, html.view-depth .unit.has-img::after { display: none; }
 html.view-depth .unit.has-img .u-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; pointer-events: none; }
 html.view-depth .unit.has-img .u-name { display: none; }
-html.view-depth .unit.has-img .u-hp { position: absolute; bottom: -4%; left: 50%; transform: translateX(-50%); margin: 0; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); color: #1c1917; opacity: 1; font-weight: bold; }
-/* 向き: 立てた駒の、向いている側のふちに三角（↑ 奥は頭の上、↓ 手前は足もと、← → は横）。床に寝かせると、↑ が駒の陰に隠れるため */
-html.view-depth .unit .facing { transform: translate(-50%, -50%) rotate(var(--rot)); }
-html.view-depth .unit.face-up .facing { left: 50%; top: -9%; }
-html.view-depth .unit.face-down .facing { left: 50%; top: 109%; }
-html.view-depth .unit.face-left .facing { left: -10%; top: 60%; }
-html.view-depth .unit.face-right .facing { left: 110%; top: 60%; }
+/*   HP の札は足もとより上に置き、絵より手前へ（床より下へはみ出すと床に隠れて、下半分が見切れた。オーナー 11/15） */
+html.view-depth .unit.has-img .u-hp { position: absolute; bottom: 1%; left: 50%; transform: translateX(-50%) translateZ(4px); margin: 0; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); color: #1c1917; opacity: 1; font-weight: bold; z-index: 2; }
+/* 向き: ↓ 手前・← → 横は、足もとの床に寝かせた三角（となりのマスを床の上で指す。駒の真ん中の高さに浮かせると、奥のマスを指して見えるため。オーナー 11/15）。
+ *   床より少し上に浮かせて、床に負けないように。↑ 奥だけは、床に寝かせると駒の陰に隠れるので、頭の上に立てたまま。
+ *   見せるだけの印なので、押してもすり抜ける（奥のマスを押せるように） */
+html.view-depth .unit .facing {
+  left: 50%; top: 100%;
+  transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(3px) rotate(var(--rot)) translateY(calc(-.42 * 100cqi / var(--n)));
+}
+html.view-depth .unit.face-down .facing { transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(3px) rotate(var(--rot)) translateY(calc(-.24 * 100cqi / var(--n))); }
+html.view-depth .unit.face-up .facing { left: 50%; top: -9%; transform: translate(-50%, -50%) rotate(var(--rot)); }
+/*   絵の入った駒は背が高いので、頭の上の枠のふちから、マス1つ分（床の奥行きが画面で見える長さ）下げる（オーナー 11/15「上向きの印の位置が上すぎ。マス一つ分下げて」） */
+html.view-depth .unit.has-img.face-up .facing { transform: translate(-50%, calc(-50% + cos(var(--tilt)) * 100cqi / var(--n))) rotate(var(--rot)); }
+.facing { pointer-events: none; }
+/* 動かせない味方（構える味方。① の風 など）: 足もとに赤いバツ（オーナー 11/15「移動できないのでそれを明示したい。足元にバツを付けてほしい」）。
+ *   奥行きの見た目では足もとの床に寝かせる（向きの三角と同じ置き方）。真上の見た目では駒の下のふちに出す */
+.u-nomove { position: absolute; left: 50%; top: 100%; width: 1.6em; height: 1.6em; transform: translate(-50%, -60%); pointer-events: none; z-index: 1; }
+.u-nomove::before, .u-nomove::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 100%; height: 22%; border-radius: 999px;
+  background: #dc2626; box-shadow: 0 0 0 2px #fff;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.u-nomove::after { transform: translate(-50%, -50%) rotate(-45deg); }
+html.view-depth .unit .u-nomove {
+  width: calc(.5 * 100cqi / var(--n)); height: calc(.5 * 100cqi / var(--n));
+  transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(2px) translateY(calc(.2 * 100cqi / var(--n)));   /* 手前へ（駒と HP の札に隠れないように） */
+}
 html.view-depth .unit.has-img.selected { box-shadow: none; }
 html.view-depth .unit.has-img.selected .u-img { filter: drop-shadow(0 0 3px #f5c518) drop-shadow(0 0 6px rgba(245, 197, 24, .9)); }
 
@@ -1334,9 +1369,11 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .talk-skip { position: absolute; top: 14px; right: 16px; z-index: 3; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .7); background: rgba(0, 0, 0, .45); color: #fff; font-size: .95rem; cursor: pointer; }
 .talk-skip kbd { font-size: .75em; opacity: .8; margin-left: 4px; }
 .talk-stage { position: absolute; inset: 0; pointer-events: none; }
-.talk-char { position: absolute; bottom: 0; height: min(78vh, 62vw); width: min(46vw, 62vh); display: flex; align-items: flex-end; justify-content: center; transition: transform .25s ease, filter .25s ease, opacity .25s ease; }
-.talk-char.left { left: 0; animation: talk-left .35s ease-out both; }
-.talk-char.right { right: 0; animation: talk-right .35s ease-out both; }
+/* キャラの大きさと位置は設定で変える（--talk-size・--talk-lx・--talk-ly・--talk-rx・--talk-ry。game/settings.js の TALK。オーナー 11/14）。
+   大きさは絵の高さ（画面の高さの%）。幅は絵の縦横比のまま。位置は、それぞれの側のふち・下のふちからの距離 */
+.talk-char { position: absolute; height: calc(var(--talk-size, 78) * 1vh); display: flex; align-items: flex-end; justify-content: center; transition: transform .25s ease, filter .25s ease, opacity .25s ease; }
+.talk-char.left { left: calc(var(--talk-lx, 0) * 1vw); bottom: calc(var(--talk-ly, 0) * 1vh); animation: talk-left .35s ease-out both; }
+.talk-char.right { right: calc(var(--talk-rx, 0) * 1vw); bottom: calc(var(--talk-ry, 0) * 1vh); animation: talk-right .35s ease-out both; }
 .talk-char.right .talk-img, .talk-char.right .talk-dummy { transform: scaleX(-1); }   /* 右のキャラは左を向く（向かい合う） */
 .talk-char.right .talk-dummy b { transform: scaleX(-1); }
 .talk-char.on { transform: translateY(0) scale(1.03); filter: none; z-index: 2; }
@@ -1344,9 +1381,9 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .talk-char.empty { display: none; }
 @keyframes talk-left { from { translate: -40% 0; opacity: 0; } to { translate: 0 0; opacity: 1; } }
 @keyframes talk-right { from { translate: 40% 0; opacity: 0; } to { translate: 0 0; opacity: 1; } }
-.talk-img { max-height: 100%; max-width: 100%; object-fit: contain; object-position: bottom; }
+.talk-img { height: 100%; width: auto; max-width: none; object-fit: contain; object-position: bottom; }   /* 小さい絵も、大きさの設定まで引きのばす */
 /* 仮の絵（絵のファイルがないキャラ）: 色のついた頭と体に、名前の字 */
-.talk-dummy { position: relative; height: 92%; aspect-ratio: 3 / 5; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.talk-dummy { position: relative; height: 100%; aspect-ratio: 3 / 5; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
 .talk-head { width: 46%; aspect-ratio: 1; border-radius: 50%; background: var(--c); box-shadow: inset -10px -12px 0 rgba(0, 0, 0, .18), 0 0 0 4px rgba(255, 255, 255, .85); margin-bottom: -4%; z-index: 1; }
 .talk-body { width: 100%; height: 62%; border-radius: 46% 46% 0 0 / 30% 30% 0 0; background: var(--c); box-shadow: inset -18px -10px 0 rgba(0, 0, 0, .18), 0 0 0 4px rgba(255, 255, 255, .85); display: flex; align-items: center; justify-content: center; }
 .talk-body b { color: rgba(255, 255, 255, .92); font-size: min(14vh, 11vw); line-height: 1; }
@@ -1362,7 +1399,7 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 .stage-talk textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: .85rem; line-height: 1.5; resize: vertical; }
 .stage-talk label { display: block; margin-bottom: 6px; }
 .stage-talk code { background: rgba(0, 0, 0, .06); padding: 1px 4px; border-radius: 4px; }
-@media (max-width: 640px) { .talk-box { padding: 18px 16px 10px; bottom: 2vh; } .talk-char { height: 60vh; } }
+@media (max-width: 640px) { .talk-box { padding: 18px 16px 10px; bottom: 2vh; } }
 
 /* キャラの画面（開発モード。オーナー 11/13。.claude/IMPROVE_キャラ.md）: キャラ1人が1枚のカード。左に名前と色、下に戦闘の絵と会話の絵（表情ごと） */
 .ch-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px; margin-bottom: 10px; }
@@ -1395,3 +1432,15 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 /* 絵の大きさの欄（設定。オーナー 11/13）: 数と % を横に並べる */
 .set-names label.set-pctl { flex-direction: row; align-items: center; gap: 4px; font-size: 14px; }
 .set-names input.set-pct { width: 6em; }
+
+/* 会話で見ながら決める（設定。オーナー 11/14）: 会話の画面の上、右上に重ねる窓 */
+#talk-tune { position: fixed; top: 64px; right: 16px; z-index: 950; width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow: auto;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); padding: 12px 14px; cursor: default; }
+#talk-tune[hidden] { display: none; }
+#talk-tune .tt-head { display: flex; flex-direction: column; margin-bottom: 8px; }
+#talk-tune .tt-head small { color: var(--muted); }
+#talk-tune .tt-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 4.2em; align-items: center; gap: 6px; margin: 6px 0; font-size: 13px; }
+#talk-tune .tt-row span { display: flex; flex-direction: column; }
+#talk-tune .tt-row span small { color: var(--muted); font-size: 10px; }
+#talk-tune .tt-row select { grid-column: 2 / -1; }
+#talk-tune .tt-btns { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }

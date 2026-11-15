@@ -115,7 +115,9 @@ eq(S.textToLines(S.linesToText(lines)), lines, '書いて読み直すと同じ')
 
 // ファイル: 変なものは読まない。前の「配置」の JSON も読める
 ok(!S.fromFile(R, '{').ok, '壊れた JSON');
-ok(!S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":["..."],"allies":[],"enemies":[]}}').ok, '小さすぎる盤面');
+ok(!S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":[""],"allies":[],"enemies":[]}}').ok, '0マスの盤面（1マスまでは作れる。オーナー 11/15）');
+ok(S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":["."],"allies":[],"enemies":[]}}').ok, '1×1 の盤面は読める');
+ok(!S.fromFile(R, '{"format":"cafilia-stage","def":{"rows":["' + '.'.repeat(B.maxBoardSize + 1) + '"],"allies":[],"enemies":[]}}').ok, '大きすぎる盤面');
 ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', def: { rows: ['.....', '.....', '.....', '.....', '.....'], allies: [['fire', 9, 9]], enemies: [] } })).ok, '盤の外の味方');
 ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', def: { rows: ['.....', '.....', '.....', '.....', '.....'], allies: [['nope', 1, 1]], enemies: [] } })).ok, '知らない魔法');
 ok(!S.fromFile(R, JSON.stringify({ format: 'cafilia-stage', def: { rows: ['M....', '.....', '.....', '.....', '.....'], allies: [['fire', 0, 0]], enemies: [] } })).ok, '山の上の味方');
@@ -127,7 +129,7 @@ eq([file.ok, file.name, file.texts.scenes.start.length], [true, '③の改造', 
 // ファイルから読む（オーナー 11/10）: まとめたファイルからいくつでも。読めないものは飛ばして理由を残す。同じ名前は上書きしない
 var one = JSON.parse(S.toFile({ name: 'あ', def: S.toDef(R, R.loadPreset('tut1'), 'あ') }));
 var two = JSON.parse(S.toFile({ name: 'い', def: S.toDef(R, R.loadPreset('tut2'), 'い'), texts: { goal: '守る', hint: { simul: 'ヒント', single: 'ヒント' } } }));
-var bad = { format: 'cafilia-stage', name: 'う', def: { rows: ['...'], allies: [], enemies: [] } };
+var bad = { format: 'cafilia-stage', name: 'う', def: { rows: [''], allies: [], enemies: [] } };
 var many = S.fromFiles(R, JSON.stringify({ format: S.FORMAT_MANY, stages: [one, bad, two] }));
 eq([many.items.map(function (it) { return it.name; }), many.errors.map(function (e) { return e.name; })], [['あ', 'い'], ['う']], 'まとめたファイル: 読めるものだけ読み、読めないものは理由つきで残す');
 eq(S.fromFiles(R, JSON.stringify([one, two])).items.length, 2, '並び（配列）でも読める');
@@ -193,6 +195,15 @@ eq([S.placeAt(mvList, 'x', 'c', 'b'), S.placeAt(mvList, 'x', null, null), S.plac
 eq(S.placeAt(['a', 'h1', 'b', 'h2', 'c'], 'c', 'b', 'a'), ['a', 'h1', 'c', 'b', 'h2'], '札で絞っていて見えない行（h1・h2）は、その場に残る');
 eq([S.placeAt(mvList, 'a', 'zz', 'c'), S.placeAt(mvList, 'a', 'zz', 'yy')], [['b', 'c', 'a', 'd'], ['b', 'c', 'd', 'a']], '知らない行を指していたら、上の行の後ろ・末尾');
 eq(mvList, ['a', 'b', 'c', 'd'], '元の並びは変えない（placeAt）');
+
+// 構える味方の発動の番（fireAt。オーナー 11/15）: ステージの定義に書き出して読み直しても残る。正しくない番は読まない
+(function () {
+  var s = R.buildPreset({ rows: ['.....', '.....', '.....'], allies: [['mount', 0, 1, { npc: true, facing: 'right', fireAt: 1 }], ['water', 1, 2, { facing: 'up' }]], enemies: [['fire', 4, 0]] });
+  var def = S.toDef(R, s, 'x'), b = S.build(R, def);
+  eq(def.allies[0][3].fireAt, 1, '定義に発動の番が入る');
+  ok(b.ok && R.alliesOf(b.state)[0].fireAt === 1, '読み直しても発動の番が残る');
+  ok(!S.build(R, JSON.parse(JSON.stringify(def).replace('"fireAt":1', '"fireAt":1.5'))).ok, '整数でない番は読まない');
+})();
 
 console.log((fails ? 'NG ' + fails + ' / ' : 'OK ') + count + ' 件');
 process.exitCode = fails ? 1 : 0;

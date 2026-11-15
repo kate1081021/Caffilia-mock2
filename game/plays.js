@@ -122,7 +122,7 @@
     };
     var norm = function (s) {
       var x = clone(s);
-      (x.units || []).forEach(function (u) { if (u.stance) u.stance.n = R.stanceOrder(s, u.id); });   // ルールが読む順番（構える味方はいつも最後）
+      (x.units || []).forEach(function (u) { if (u.stance) u.stance.n = R.stanceOrder(s, u.id); });   // ルールが読む順番（構える味方はステージで決めた番）
       return str(x);
     };
     return norm(a) === norm(b);

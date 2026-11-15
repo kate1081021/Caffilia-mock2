@@ -6,7 +6,7 @@
   var BALANCE = {
     // 盤面
     boardSize: 6,
-    minBoardSize: 5,
+    minBoardSize: 1,    // 1マスまで小さくできる（オーナー 11/15「縦も横も1マスまで」。マスの大きさは 5×5 のときと同じ。style.css の .board）
     maxBoardSize: 12,   // 【縮尺】12まで広げた（見本の「大きい世界」は10）
 
     // 味方
@@ -55,9 +55,9 @@
 
     // ステージの前後の会話（まえげき・あとげき。オーナー 11/13）: 並びごとに、出す・出さない。
     //   tutorial チュートリアル／shared みんなのステージ／own 自分のステージ（テストプレイも）／exhibit 展示モード（どの並びでも）。
-    //   展示でどうするかは未定なので、今は切（展示モードの動きは変えない）。試遊で見るときは exhibit を true にする
+    //   展示モードも入（オーナー 11/14「展示で表示したい」）。展示では、題字の画面に戻るまでが「初めて」（次の人には、また出る）
     talk: {
-      show: { tutorial: true, shared: true, own: true, exhibit: false }
+      show: { tutorial: true, shared: true, own: true, exhibit: true }
     },
 
     // 敵だけの魔法。ここに入れた魔法は、味方のエディットの選択肢に出さない（シナリオごとにも足せる）
@@ -211,6 +211,9 @@
       { tile: 'firewhirl', magic: 'water', name: 'センタクキ' },
       { tile: 'deadforest', magic: 'fire', name: 'オバケヤシキ' }
     ],
+
+    // 画面: メインBGM の音量（0〜1。オーナー 11/15【仮】）。曲は index.html の <audio id="bgm">
+    bgmVolume: 0.5,
 
     // 画面: ターン終了処理などを1つずつ見せる間隔（ミリ秒）
     stepDelayMs: 400,

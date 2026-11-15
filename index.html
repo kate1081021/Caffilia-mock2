@@ -117,8 +117,8 @@
           <label class="toggle check-only" title="ふつうは敵が動く。確かめたいときだけ、敵が動かない版を作れる（ステージと一緒に保存される）"><input id="enemyStill" type="checkbox"> 確認用: 敵を動かさない</label>
         </div>
         <div class="edit-group row">
-          <label>盤面 横 <input id="boardW" type="number" min="5" max="12" step="1" value="6"></label>
-          <label>× 縦 <input id="boardH" type="number" min="5" max="12" step="1" value="6"></label>
+          <label>盤面 横 <input id="boardW" type="number" min="1" max="12" step="1" value="6"></label>
+          <label>× 縦 <input id="boardH" type="number" min="1" max="12" step="1" value="6"></label>
           <button id="btnResize" type="button">変更</button>
           <button id="btnClearTiles" type="button">地形を全部空きに</button>
         </div>
@@ -128,6 +128,9 @@
           <h3>ステージ <small id="stageSaveNote">直すたびに自動で残る</small></h3>
           <div class="row">
             <label>名前 <input id="saveName" type="text" placeholder="ステージの名前" maxlength="40"></label>
+          </div>
+          <div class="row">
+            <label>一言 <input id="txGoal" type="text" placeholder="このステージで何をすればいいか（盤面の上の枠に出る）" maxlength="60"></label>
           </div>
           <div class="row">
             <label>難易度 <select id="saveDiff" title="開発の最初の画面の一覧で、難易度ごとに分けられる"></select></label>
@@ -186,6 +189,10 @@
 
   <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どちらのモードでも同じ位置・同じ見た目 -->
   <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
+
+  <!-- メインBGM（オーナー 11/15: 1曲だけ、ずっとループ）。ブラウザは触るまで音を出せないので、最初に触ったときに ui.js が鳴らす。
+       ここに書いておくと tools/publish.js が公開するファイルに含める -->
+  <audio id="bgm" src="game/sound/Caffilia_battlesound.mp3" loop preload="auto"></audio>
 
   <script src="game/balance.js"></script>
   <script src="game/texts.js"></script>

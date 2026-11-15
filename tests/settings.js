@@ -31,16 +31,26 @@ test('RGB ⇄ 色: 0〜255 に収める', function () {
 test('形を整える: 知らない色・正しくない値・元と同じ色は捨てる', function () {
   var c = S.clean({ colors: { '--bg': '#112233', '--panel': '#FFFDF8', '--nope': '#000000', '--ink': 'red' } });
   eq(c.colors, { '--bg': '#112233' });
-  eq(S.clean(null), { colors: {}, tiles: {}, magics: {}, synergies: {}, pieces: {} }, '空でも5つの入れ物（絵の高さ pieces はオーナー 11/13）');
+  eq(S.clean(null), { colors: {}, tiles: {}, magics: {}, synergies: {}, pieces: {}, talk: {} }, '空でも6つの入れ物（絵の高さ pieces はオーナー 11/13・会話のキャラ talk は 11/14）');
   ok(S.isEmpty({ colors: { '--bg': '#f4f1ea' } }), '元と同じだけなら空');
 });
 test('盤面に立てる絵の高さ: 元の値（キャラ165%・置きもの110%）・盤面の大きさごと。外れた値・知らない形は捨てる（オーナー 11/13）', function () {
-  eq(S.pieceSize({}, 5, 5), { size: 165, object: 110 });
-  var s = { pieces: { size: 150, object: 120, boards: { '5x5': 200, '6x6': 180, 'x': 100, '7x7': 10, '8x8': 120.5 } } };
-  eq(S.clean(s).pieces, { size: 150, object: 120, boards: { '5x5': 200, '6x6': 180 } });
-  eq([S.pieceSize(s, 5, 5), S.pieceSize(s, 6, 6), S.pieceSize(s, 5, 8)], [{ size: 200, object: 120 }, { size: 180, object: 120 }, { size: 150, object: 120 }]);
-  eq(S.clean({ pieces: { size: 165, object: 110 } }).pieces, {}, '元と同じ値は持たない');
+  eq(S.pieceSize({}, 5, 5), { size: 165, object: 110, boss: 330 });
+  var s = { pieces: { size: 150, object: 120, boss: 300, boards: { '5x5': 200, '6x6': 180, 'x': 100, '7x7': 10, '8x8': 120.5 } } };
+  eq(S.clean(s).pieces, { size: 150, object: 120, boss: 300, boards: { '5x5': 200, '6x6': 180 } });
+  eq([S.pieceSize(s, 5, 5), S.pieceSize(s, 6, 6), S.pieceSize(s, 5, 8)], [{ size: 200, object: 120, boss: 300 }, { size: 180, object: 120, boss: 300 }, { size: 150, object: 120, boss: 300 }]);
+  eq(S.clean({ pieces: { size: 165, object: 110, boss: 330 } }).pieces, {}, '元と同じ値は持たない');
+  eq(S.clean({ pieces: { boss: 500 } }).pieces, {}, 'ボスも 50〜400（オーナー 11/15）');
   ok(!S.isEmpty({ pieces: { boards: { '5x5': 200 } } }));
+});
+test('会話のキャラの大きさと位置: 範囲の中の整数だけ。元の値は持たない。画面には --talk-* で当たる（オーナー 11/14）', function () {
+  eq(S.clean({ talk: { size: 120, lx: -10, ly: 5, rx: 0, ry: 200, zoom: 3, size2: 1 } }).talk, { size: 120, lx: -10, ly: 5 });
+  eq(S.clean({ talk: { size: 78 } }).talk, {}, '元と同じ');
+  eq(S.clean({ talk: { size: 10.5 } }).talk, {});
+  var props = {};
+  var doc = { documentElement: { style: { setProperty: function (k, v) { props[k] = v; }, removeProperty: function (k) { delete props[k]; } } } };
+  S.applyColors(doc, { talk: { size: 120 } });
+  eq([props['--talk-size'], props['--talk-lx']], [120, undefined], '元の値は style.css の側');
 });
 test('色を当てる: 設定にない色は元に戻す', function () {
   var props = {};

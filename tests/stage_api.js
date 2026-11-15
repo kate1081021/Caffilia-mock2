@@ -340,9 +340,15 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq([(await call('GET', 'img/ia2')).status, (await call('GET', 'img/ia1')).status, (await call('GET', 'img/ic1')).status], [404, 200, 200]);
   });
   await test('設定の絵の高さ（pieces）: 置ける。外れた値・知らない形は断る（オーナー 11/13）', async function () {
-    ok((await call('PUT', 'settings', { pieces: { size: 180, object: 100, boards: { '5x5': 200 } } })).data.ok);
-    eq((await call('GET', 'all')).data.settings.pieces, { size: 180, object: 100, boards: { '5x5': 200 } });
-    var bad = [{ pieces: { size: 10 } }, { pieces: { size: 150.5 } }, { pieces: { boards: { five: 100 } } }, { pieces: { zoom: 1 } }, { pieces: [] }];
+    ok((await call('PUT', 'settings', { pieces: { size: 180, object: 100, boss: 300, boards: { '5x5': 200 } } })).data.ok);
+    eq((await call('GET', 'all')).data.settings.pieces, { size: 180, object: 100, boss: 300, boards: { '5x5': 200 } });
+    var bad = [{ pieces: { size: 10 } }, { pieces: { boss: 500 } }, { pieces: { size: 150.5 } }, { pieces: { boards: { five: 100 } } }, { pieces: { zoom: 1 } }, { pieces: [] }];
+    for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
+  });
+  await test('設定の会話のキャラ（talk）: 置ける。範囲の外・知らない項目は断る（オーナー 11/14）', async function () {
+    ok((await call('PUT', 'settings', { talk: { size: 110, lx: -5, ry: 10 } })).data.ok);
+    eq((await call('GET', 'all')).data.settings.talk, { size: 110, lx: -5, ry: 10 });
+    var bad = [{ talk: { size: 5 } }, { talk: { lx: 1.5 } }, { talk: { zoom: 1 } }, { talk: [] }];
     for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
   });
   await test('キャラ: 村・トロッコの絵（objects）も置ける。ほかの置きもの・よその絵は断る', async function () {
@@ -354,6 +360,37 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq((await call('PUT', 'chars', c)).status, 400);
     c.objects = { village: 'https://x/y.png' };
     eq((await call('PUT', 'chars', c)).status, 400);
+  });
+  // 名前を変えて上書き（オーナー 11/16）
+  await test('from: 元の名前のステージを、背番号のまま新しい名前に付け替えて上書きする。順番・展示の並び・記録の名前もついていく', async function () {
+    var m = {}, store = {
+      get: function (k, type) { return Promise.resolve(k in m ? (type === 'json' ? JSON.parse(m[k]) : m[k]) : null); },
+      put: function (k, v) { m[k] = String(v); return Promise.resolve(); }
+    };
+    m.stages = JSON.stringify({ '村を守ろう': { def: Object.assign({ uid: 'sAAA' }, DEF), texts: null, at: 1 }, '山の道': { def: Object.assign({ uid: 'sBBB' }, DEF), texts: null, at: 2 } });
+    m.order = JSON.stringify({ all: ['山の道', '村を守ろう'], at: 1 });
+    m.lineup = JSON.stringify({ start: [], pick: ['all:村を守ろう'], at: 1 });
+    m.plays = JSON.stringify({ p1: { id: 'p1', name: 'a', stage: { kind: 'all', uid: 'sAAA', name: '村を守ろう' }, turns: [[['fire']]], at: 1 } });
+    var r = await call('PUT', 'stages/' + encodeURIComponent('村を守れ'), { def: Object.assign({ uid: 'sZZZ' }, DEF, { rows: ['F.....'] }), texts: null, from: '村を守ろう' }, store);
+    eq([r.status, r.data.uid, r.data.renamed], [200, 'sAAA', '村を守ろう'], '背番号は元のまま');
+    var all = (await call('GET', 'all', undefined, store)).data;
+    eq(Object.keys(all.stages).sort(), ['山の道', '村を守れ'].sort(), '元の名前は残らない');
+    eq(all.stages['村を守れ'].def.rows, ['F.....'], '中身は上書き');
+    eq(all.order.all, ['山の道', '村を守れ'], '順番は同じ位置');
+    eq(all.lineup.pick, ['all:村を守れ'], 'メインステージのまま');
+    eq(all.plays.p1.stage, { kind: 'all', uid: 'sAAA', name: '村を守れ' }, '記録の名前も');
+  });
+  await test('from: 新しい名前がもうある・元が見つからないときは断る（何も変えない）', async function () {
+    var m = {}, store = {
+      get: function (k, type) { return Promise.resolve(k in m ? (type === 'json' ? JSON.parse(m[k]) : m[k]) : null); },
+      put: function (k, v) { m[k] = String(v); return Promise.resolve(); }
+    };
+    m.stages = JSON.stringify({ 'A': { def: Object.assign({ uid: 'sA' }, DEF), texts: null, at: 1 }, 'B': { def: Object.assign({ uid: 'sB' }, DEF), texts: null, at: 2 } });
+    var before = m.stages;
+    eq((await call('PUT', 'stages/B', { def: DEF, texts: null, from: 'A' }, store)).status, 409, '新しい名前がもうある');
+    eq((await call('PUT', 'stages/C', { def: DEF, texts: null, from: 'X' }, store)).status, 404, '元が見つからない');
+    eq(m.stages, before, '何も変わらない');
+    ok((await call('PUT', 'stages/A', { def: DEF, texts: null, from: 'A' }, store)).data.ok, '同じ名前なら、ふつうの上書き');
   });
   await test('置き場所（KV）がつながっていないときは 503', async function () {
     eq((await call('GET', 'all', undefined, null)).status, 503);
