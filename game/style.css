@@ -941,7 +941,7 @@ button.active kbd, button.primary kbd { background: transparent; color: #f3f3f3;
 .banner.combo.show { animation-duration: 2.4s; }
 @media (max-width: 600px) { .banner { white-space: normal; text-align: center; width: 92vw; } }
 /* 目標（チュートリアル） */
-.m-goal-text { flex-basis: 100%; color: #1e3a8a; }
+.m-goal-text { flex-basis: 100%; min-height: 1.5em; color: var(--ink); font-size: 16px; font-weight: bold; }   /* 一言が空でも枠の高さは変えない */
 /* 構えの発動: 当たったマスに浮かぶ札 */
 .cast-mark {
   position: absolute; transform: translate(-50%, -50%);

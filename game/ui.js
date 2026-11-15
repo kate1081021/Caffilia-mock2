@@ -132,7 +132,7 @@
     'btnGo', 'btnUndo', 'btnReset', 'btnEdit', 'side', 'playSide', 'playPanel', 'ctrlPanel', 'editPanel', 'roster', 'actPanel',
     'dirCenter', 'btnShoot', 'btnWait', 'enemyList', 'tilePalette', 'unitTools', 'unitList',
     'enemyStill', 'boardW', 'boardH', 'btnResize', 'btnClearTiles', 'saveName', 'saveDiff', 'stageSaveNote', 'btnShare', 'shareNote', 'btnHome', 'btnTitle', 'home', 'choice', 'choiceTitle', 'choiceButtons',
-    'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txHintSimul', 'txHintSingle',
+    'btnEditDone', 'btnTestPlay', 'winSelect', 'winTurns', 'winTurnsLabel', 'winNote', 'txGoal', 'txHintSimul', 'txHintSingle',
     'txTalkBefore', 'txTalkAfter', 'btnTalkBefore', 'btnTalkAfter', 'btnTalkForget', 'talkChars',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose',
@@ -1032,25 +1032,20 @@
   }
   window.addEventListener('resize', function () { app.aboveH = null; fitBoard(); fitDepth(); });
 
-  // お題: 名前・勝ち方・負け方・残りの数を常に出す
+  // 盤面の上の枠: このステージで何をすればいいかの一言（ステージの文 texts.goal）と、ミッションだけを出す。
+  //   お題の名前・勝ち方・残りの数は出さない（オーナー 11/15「お題を消したい。敵残り一体もいらない」）
   var missionSig = '';
   function renderMission() {
     var info = R.missionInfo(app.state);
-    // 護衛: 味方の予測を出している間は、その手のあと（敵の発動のあと）のトロッコの歩数も出す
-    if (info.type === 'escort' && selUnit() && app.plan) {
-      var fw = forecastNow(true);
-      if (fw && fw.wagon) info.status.splice(2, 0, 'この手なら ' + (fw.wagon.steps === null ? '道がない' : (fw.wagon.steps + '歩')));
-    }
-    var stx = stageTexts(app.state.stage);   // チュートリアルの目標（texts.js）
+    // 一言: エディット中は作っているステージの文、遊んでいるときはそのステージの文
+    var stx = app.editMode && app.draft ? app.draft.texts : stageTexts(app.state.stage);
+    var goal = (stx && stx.goal) || '';
     // ミッション（then が mission の条件。最初から出す。達成したら ✔）
     var exm = (info.missions || []).map(function (m) {
       return '<span class="m-ex-mission' + (m.done ? ' done' : '') + '">' +
         '<b>' + esc(ui('exMission', 'ミッション')) + '</b> ' + esc(missionName(m)) + ' <span class="m-check">' + (m.done ? '✔ ' + esc(ui('exMissionDone', 'ミッション達成！')) : '□') + '</span></span>';
     }).join('');
-    var html = (stx && stx.goal ? '<span class="m-goal-text"><b>' + esc(ui('goal', '目標')) + '</b> ' + esc(stx.goal) + '</span>' : '') + exm +
-      '<span class="m-name m-' + info.type + '">お題: ' + esc(info.name) + '</span>' +
-      '<span class="m-rule m-win"><b>勝ち</b> ' + esc(info.win) + '</span>' +
-      '<span class="m-status">' + info.status.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</span>';
+    var html = '<span class="m-goal-text">' + esc(goal) + '</span>' + exm;
     if (html === missionSig) return;
     missionSig = html;
     el.missionBar.innerHTML = html;
@@ -2036,6 +2031,7 @@
     if (document.activeElement !== el.saveDiff) el.saveDiff.value = d.tut ? 'tutorial' : d.difficulty || '';
     el.saveDiff.disabled = !!d.tut;   // チュートリアルの難易度は、いつも「チュートリアル」
     el.stageSaveNote.textContent = d.tut ? '「チュートリアルに保存する」を押すまで変わらない' : '直すたびに自動で残る';
+    put(el.txGoal, tx.goal || '');
     put(el.txHintSimul, hint.simul || '');
     put(el.txHintSingle, hint.single || '');
     // 会話（まえげき・あとげき）: 盤面（エディットの状態）が持っている
@@ -2360,6 +2356,14 @@
     });
   });
   el.btnTalkForget.addEventListener('click', function () { if (app.talk) { app.talk.forget(); say('会話の「見たしるし」を消しました'); } });
+  // 一言（盤面の上の枠に出る、このステージで何をすればいいか）
+  el.txGoal.addEventListener('change', function () {
+    var t = app.draft.texts, v = el.txGoal.value.trim();
+    if ((t.goal || '') === v) return;
+    pushHistory();
+    t.goal = v;
+    render();
+  });
   [['txHintSimul', 'simul'], ['txHintSingle', 'single']].forEach(function (p) {
     el[p[0]].addEventListener('change', function () {
       var t = app.draft.texts;
