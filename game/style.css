@@ -1107,6 +1107,8 @@ html.mode-exhibit .home.ex-title-view { max-width: none; margin: 0; min-height: 
 .ex-touch { margin: 0; font-size: clamp(32px, 5.5vw, 56px); font-weight: bold; color: var(--accent); letter-spacing: .06em; }
 /* 展示モードの「選んで遊ぶ」（オーナー 11/16）: 開発の一覧と同じ行。つかむ所と右のボタンの欄はなく、タイトルを押しやすく大きく */
 html.mode-exhibit .home.ex-pick-view { max-width: 900px; }
+.ex-sec { width: 100%; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.ex-sec h3 { margin: 0; font-size: 18px; }
 .ex-rows { width: 100%; text-align: left; }
 .home-row.ex-row { grid-template-columns: 7.5em minmax(0, 1fr) 12em 5em; padding: 6px 12px; }
 .home-row.ex-row .row-lead, .home-row.ex-row .row-btns { display: none; }
