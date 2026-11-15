@@ -98,8 +98,8 @@ function okSettings(b) {
   // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）
   const pc = b.pieces === undefined ? {} : b.pieces;
   const pct = function (v) { return typeof v === 'number' && Math.round(v) === v && v >= 50 && v <= 400; };
-  if (!isObj(pc) || Object.keys(pc).some(function (k) { return ['size', 'object', 'boards'].indexOf(k) < 0; })) return false;
-  if ((pc.size !== undefined && !pct(pc.size)) || (pc.object !== undefined && !pct(pc.object))) return false;
+  if (!isObj(pc) || Object.keys(pc).some(function (k) { return ['size', 'object', 'boss', 'boards'].indexOf(k) < 0; })) return false;
+  if (['size', 'object', 'boss'].some(function (k) { return pc[k] !== undefined && !pct(pc[k]); })) return false;
   if (pc.boards !== undefined && !(isObj(pc.boards) && Object.keys(pc.boards).length <= 100 &&
     Object.keys(pc.boards).every(function (k) { return /^([1-9]|[1-3][0-9])x([1-9]|[1-3][0-9])$/.test(k) && pct(pc.boards[k]); }))) return false;
   return Object.keys(c).every(function (k) { return /^--[a-z-]{1,30}$/.test(k) && /^#[0-9a-f]{6}$/i.test(c[k]); }) &&

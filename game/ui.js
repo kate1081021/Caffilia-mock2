@@ -1362,6 +1362,7 @@
       var ps = CS.pieceSize(curSettings, n, rows);
       el.board.style.setProperty('--piece-k', ps.size / CS.PIECES.size);
       el.board.style.setProperty('--object-k', ps.object / CS.PIECES.object);
+      el.board.style.setProperty('--boss-k', ps.boss / CS.PIECES.size);   // ボスは、ふだんのキャラ（165%）に対する倍率
     }
 
     // 動きのアニメーション用: 描き直す前の位置（奥行きの見た目では、傾ける前の盤面の上の位置）
@@ -2981,6 +2982,7 @@
     var pieceRows =
       '<div class="set-row set-names"><span class="set-name"><b>キャラ</b><small>どの盤面でも（下で盤面ごとに変えられる）</small></span><label class="set-pctl">' + pctInput('data-pc', 'size', pc.size, P.size, 'キャラの高さ') + '%</label></div>' +
       '<div class="set-row set-names"><span class="set-name"><b>村・トロッコ</b><small>置きもの</small></span><label class="set-pctl">' + pctInput('data-pc', 'object', pc.object, P.object, '置きものの高さ') + '%</label></div>' +
+      '<div class="set-row set-names"><span class="set-name"><b>ボス</b><small>大きい体の敵（③）。体の真ん中に立てる</small></span><label class="set-pctl">' + pctInput('data-pc', 'boss', pc.boss, P.boss, 'ボスの高さ') + '%</label></div>' +
       bk.map(function (k) {
         var used = sizes[k];
         return '<div class="set-row set-names"><span class="set-name"><b>' + esc(k.replace('x', '×')) + ' の盤面のキャラ</b><small>' + esc(used.length ? used.slice(0, 3).join('・') + (used.length > 3 ? ' ほか' + (used.length - 3) : '') : '今はこの大きさのステージがない') + '</small></span>' +

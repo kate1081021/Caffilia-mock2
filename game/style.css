@@ -1233,6 +1233,11 @@ html.view-depth .unit.big {
 /*   高さは設定で変えられる（--piece-k・--object-k。元の高さに対する倍率。ui.js の renderBoard。オーナー 11/13）。幅も同じ倍率で広げ、足もとの真ん中はそのまま */
 html.view-depth .unit.has-img { width: calc(100% * var(--piece-k, 1)); height: calc(165% * var(--piece-k, 1)); background: none; border: 0; border-radius: 0; box-shadow: none; justify-content: flex-end; }
 html.view-depth .unit.object.has-img { width: calc(100% * var(--object-k, 1)); height: calc(110% * var(--object-k, 1)); }
+/* 絵が入ったボス（大きい体）: 高さは設定の「ボス」（--boss-k。ふだんのキャラ 165% に対する倍率。オーナー 11/15）。体の横の真ん中・手前のふちに立てる */
+html.view-depth .unit.big.has-img {
+  width: calc(100% * var(--boss-k, 2)); height: calc(165% * var(--boss-k, 2));
+  left: calc((var(--sz) * 100% + (var(--sz) - 1) * 3px - 100% * var(--boss-k, 2)) / 2);
+}
 html.view-depth .unit.has-img::before, html.view-depth .unit.has-img::after { display: none; }
 html.view-depth .unit.has-img .u-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; pointer-events: none; }
 html.view-depth .unit.has-img .u-name { display: none; }

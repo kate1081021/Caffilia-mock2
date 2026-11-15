@@ -3,10 +3,11 @@
  *   設定は共有の置き場所（Cloudflare の KV の settings。tools/stage_worker.mjs）に置き、展示モードもその設定で出す。
  *   このブラウザにも写し（CACHE_KEY）を覚えて、開いたらすぐ（つながる前に）その色で出す。つながらないときは写しか、元の色と名前。
  *   形: { colors: { '--bg': '#rrggbb', … }, tiles: { forest: { name, label } }, magics: { grass: '草' }, synergies: { 燃え広がり: '…' },
- *         pieces: { size: キャラの高さ, object: 置きものの高さ, boards: { '5x5': キャラの高さ } }, at }
+ *         pieces: { size: キャラの高さ, object: 置きものの高さ, boss: ボスの高さ, boards: { '5x5': キャラの高さ } }, at }
  *         talk: { size, lx, ly, rx, ry }（会話のキャラの大きさと位置。オーナー 11/14）
  *     talk: size は画面の高さの何%、lx・rx は左右のふちから内へ（画面の幅の%）、ly・ry は下のふちから上へ（画面の高さの%）。負なら外へ
- *     pieces（オーナー 11/13）: 盤面に立てる絵の高さ（マスの何%）。boards は盤面の大きさ（横x縦）ごとの、キャラの高さ（なければ size）
+ *     pieces（オーナー 11/13）: 盤面に立てる絵の高さ（マスの何%）。boards は盤面の大きさ（横x縦）ごとの、キャラの高さ（なければ size）。
+ *       boss は大きい体の敵（③のボス）の絵の高さ（オーナー 11/15。盤面の大きさによらない）
  *     どれも元と違うものだけを持つ（空なら元のまま）。ルールが見分けに使う名前は変えない。画面に出す名前だけを変える。
  *   game/mode.js のすぐあとに読む（色を早く当てて、元の色が一瞬見えないように）。名前は ui.js が rules.js を読んでから当てる。
  */
@@ -31,7 +32,7 @@
   var MAX_NAME = 12;   // 名前の長さ
   var MAX_LABEL = 3;   // マップに出る字の長さ
   // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）。元の値は style.css の .unit.has-img と同じ
-  var PIECES = { size: 165, object: 110, min: 50, max: 400 };
+  var PIECES = { size: 165, object: 110, boss: 330, min: 50, max: 400 };
   function okPct(v) { return typeof v === 'number' && Math.round(v) === v && v >= PIECES.min && v <= PIECES.max; }
   // 会話のキャラの大きさと位置（オーナー 11/14）。元の値と、打てる範囲
   var TALK = {
@@ -58,6 +59,7 @@
       var p = s.pieces;
       if (okPct(p.size) && p.size !== PIECES.size) out.pieces.size = p.size;
       if (okPct(p.object) && p.object !== PIECES.object) out.pieces.object = p.object;
+      if (okPct(p.boss) && p.boss !== PIECES.boss) out.pieces.boss = p.boss;
       if (isObj(p.boards)) Object.keys(p.boards).forEach(function (k) {
         if (okBoard(k) && okPct(p.boards[k])) { out.pieces.boards = out.pieces.boards || {}; out.pieces.boards[k] = p.boards[k]; }
       });
@@ -134,10 +136,10 @@
     }
   }
 
-  // 盤面に立てる絵の高さ（マスの何%）。w×h の盤面のキャラと、置きもの
+  // 盤面に立てる絵の高さ（マスの何%）。w×h の盤面のキャラと、置きものと、ボス
   function pieceSize(s, w, h) {
     var p = clean(s).pieces, b = p.boards && p.boards[w + 'x' + h];
-    return { size: b || p.size || PIECES.size, object: p.object || PIECES.object };
+    return { size: b || p.size || PIECES.size, object: p.object || PIECES.object, boss: p.boss || PIECES.boss };
   }
 
   // このブラウザの写し（読めない・書けない環境では何もしない）

@@ -340,9 +340,9 @@ import(url.pathToFileURL(path.join(__dirname, '..', 'tools', 'stage_worker.mjs')
     eq([(await call('GET', 'img/ia2')).status, (await call('GET', 'img/ia1')).status, (await call('GET', 'img/ic1')).status], [404, 200, 200]);
   });
   await test('設定の絵の高さ（pieces）: 置ける。外れた値・知らない形は断る（オーナー 11/13）', async function () {
-    ok((await call('PUT', 'settings', { pieces: { size: 180, object: 100, boards: { '5x5': 200 } } })).data.ok);
-    eq((await call('GET', 'all')).data.settings.pieces, { size: 180, object: 100, boards: { '5x5': 200 } });
-    var bad = [{ pieces: { size: 10 } }, { pieces: { size: 150.5 } }, { pieces: { boards: { five: 100 } } }, { pieces: { zoom: 1 } }, { pieces: [] }];
+    ok((await call('PUT', 'settings', { pieces: { size: 180, object: 100, boss: 300, boards: { '5x5': 200 } } })).data.ok);
+    eq((await call('GET', 'all')).data.settings.pieces, { size: 180, object: 100, boss: 300, boards: { '5x5': 200 } });
+    var bad = [{ pieces: { size: 10 } }, { pieces: { boss: 500 } }, { pieces: { size: 150.5 } }, { pieces: { boards: { five: 100 } } }, { pieces: { zoom: 1 } }, { pieces: [] }];
     for (var i = 0; i < bad.length; i++) eq((await call('PUT', 'settings', bad[i])).status, 400, JSON.stringify(bad[i]));
   });
   await test('設定の会話のキャラ（talk）: 置ける。範囲の外・知らない項目は断る（オーナー 11/14）', async function () {
