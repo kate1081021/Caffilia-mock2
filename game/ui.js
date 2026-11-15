@@ -2799,9 +2799,14 @@
     var logo = '<h2 class="ex-head ex-logo">' + esc(ui('exTitle', 'カフィーリア')) + '</h2>';
     // 最初の画面だけ: 題字を上に大きく、ボタンを真ん中に大きく、その下に「タッチでプレイ！！」（オーナー 10/31）
     el.home.classList.toggle('ex-title-view', view !== 'pick' && view !== 'thanks' && view !== 'clear');
+    el.home.classList.toggle('ex-pick-view', view === 'pick');
     if (view === 'pick') {
+      // 選んで遊ぶ: 開発の一覧と同じ行（難易度の札・タイトル・使う魔法・クリア方法）。タイトルを押すと遊ぶ。並び替え・消すはない（オーナー 11/16）
       el.home.innerHTML = '<h2 class="ex-head">' + esc(ui('exPick', 'ステージを選んで遊ぶ')) + '</h2>' +
-        '<div class="home-list ex-menu">' + L.pick.map(function (r) { return btn('data-play="' + esc(r) + '"', refName(r)); }).join('') + '</div>' +
+        '<div class="home-rows ex-rows">' + L.pick.map(function (r) {
+          var tut = refKind(r) === 'tut', def = tut ? R.findPreset(refId(r)) : app.shared.stages[refId(r)].def;
+          return stageRow({ cls: 'ex-row', open: r, title: refName(r), def: def, diff: tut ? 'tutorial' : SIO.diffOf(def) });
+        }).join('') + '</div>' +
         '<div class="home-list ex-menu">' + back + '</div>';
     } else if (view === 'thanks' || view === 'clear') {
       // ありがとう！（チュートリアルを遊び終えたあと）・クリア！（選んで遊ぶ）: 試遊アンケートの QR とひとこと（オーナー 10/31）
@@ -4355,7 +4360,7 @@
     var b = e.target.closest && e.target.closest('button');
     if (!b) return;
     if (EXHIBIT) {   // 展示モードの最初の画面・ありがとう！・選んで遊ぶ
-      var ex = b.getAttribute('data-ex'), play = b.getAttribute('data-play');
+      var ex = b.getAttribute('data-ex'), play = b.getAttribute('data-open');   // 選んで遊ぶ: 行のタイトル（開発の一覧と同じ data-open）
       if (ex === 'start') exhibitPlay('start', exhibitLists().start, 0);
       else if (ex) exhibitScreen(ex);
       else if (play) exhibitPlay('pick', [play], 0);
