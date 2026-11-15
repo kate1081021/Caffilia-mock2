@@ -187,6 +187,10 @@
   <!-- 展示モードとの切り替え（mode.js・ui.js。オーナー 10/30）: 右下の小さな点。2秒長押しのときだけ効く。どちらのモードでも同じ位置・同じ見た目 -->
   <button id="modeSwitch" class="mode-switch" type="button" tabindex="-1" aria-label="モードの切り替え（長押し）"><span class="ms-bar"></span></button>
 
+  <!-- メインBGM（オーナー 11/15: 1曲だけ、ずっとループ）。ブラウザは触るまで音を出せないので、最初に触ったときに ui.js が鳴らす。
+       ここに書いておくと tools/publish.js が公開するファイルに含める -->
+  <audio id="bgm" src="game/sound/Caffilia_battlesound.mp3" loop preload="auto"></audio>
+
   <script src="game/balance.js"></script>
   <script src="game/texts.js"></script>
   <script src="game/chars.js"></script>

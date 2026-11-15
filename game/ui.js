@@ -2129,9 +2129,43 @@
   // 入力
   // ---------------------------------------------------------------
   function cellFrom(e) {
-    var c = e.target.closest ? e.target.closest('[data-x]') : null;
+    var t = e.target;
+    if (!t || !t.closest || !el.board.contains(t)) return null;
+    // 奥行きの見た目: 自然（山・丘の高さ、崖、印）は押す判定を持たない。押した所の真下の、平らな盤のマス（オーナー 11/15）。
+    //   駒は今までどおり押せる（駒を押したら、その駒のいるマス）
+    if (viewNow() === 'depth' && !t.closest('.unit') && typeof e.clientX === 'number') return flatCellAt(e.clientX, e.clientY);
+    var c = t.closest('[data-x]');
     if (!c || !el.board.contains(c)) return null;
     return { x: Number(c.getAttribute('data-x')), y: Number(c.getAttribute('data-y')) };
+  }
+  // 画面の点 → 傾けた盤（高さ0の面）のマス。盤の四すみに小さな印を置いて画面の位置を測り、
+  //   四すみの対応（射影）を逆にたどって、盤の上の位置にする。そこからマスの並び（余白・すき間）で何列・何行か
+  function flatCellAt(px, py) {
+    var b = el.board, q = [[0, 0], [100, 0], [100, 100], [0, 100]].map(function (p) {
+      var m = document.createElement('span');
+      m.style.cssText = 'position:absolute;width:0;height:0;padding:0;border:0;pointer-events:none;left:' + p[0] + '%;top:' + p[1] + '%';
+      b.appendChild(m);
+      var r = m.getBoundingClientRect();
+      b.removeChild(m);
+      return [r.left, r.top];
+    });
+    // 単位の正方形 → 四すみ（Heckbert の式）
+    var x0 = q[0][0], y0 = q[0][1], x1 = q[1][0], y1 = q[1][1], x2 = q[2][0], y2 = q[2][1], x3 = q[3][0], y3 = q[3][1];
+    var dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+    var det = dx1 * dy2 - dx2 * dy1, g = 0, h = 0;
+    if (Math.abs(dx3) + Math.abs(dy3) > 1e-6 && Math.abs(det) > 1e-9) { g = (dx3 * dy2 - dx2 * dy3) / det; h = (dx1 * dy3 - dx3 * dy1) / det; }
+    var a = x1 - x0 + g * x1, bb = x3 - x0 + h * x3, d = y1 - y0 + g * y1, ee = y3 - y0 + h * y3;
+    // 逆: (a - g X) u + (bb - h X) v = X - x0、(d - g Y) u + (ee - h Y) v = Y - y0
+    var A = a - g * px, B = bb - h * px, C = d - g * py, D = ee - h * py, den = A * D - B * C;
+    if (Math.abs(den) < 1e-9) return null;
+    var u = ((px - x0) * D - B * (py - y0)) / den, v = (A * (py - y0) - C * (px - x0)) / den;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+    var cs = getComputedStyle(b), n = Number(b.getAttribute('data-n')) || cellEls.length, rows = Math.round(cellEls.length / n);
+    var W = b.clientWidth, H = b.clientHeight, padL = parseFloat(cs.paddingLeft) || 0, padT = parseFloat(cs.paddingTop) || 0;
+    var gx = parseFloat(cs.columnGap) || 0, gy = parseFloat(cs.rowGap) || 0;
+    var cw = (W - padL - (parseFloat(cs.paddingRight) || 0) - (n - 1) * gx) / n, ch = (H - padT - (parseFloat(cs.paddingBottom) || 0) - (rows - 1) * gy) / rows;
+    var col = Math.floor((u * W - padL + gx / 2) / (cw + gx)), row = Math.floor((v * H - padT + gy / 2) / (ch + gy));
+    return { x: Math.max(0, Math.min(n - 1, col)), y: Math.max(0, Math.min(rows - 1, row)) };
   }
 
   el.board.addEventListener('pointerdown', function (e) {
@@ -2807,6 +2841,86 @@
     app.homeView = 'settings';
     renderSettings();
   }
+  // 会話のキャラの大きさと位置の欄（設定の画面）
+  function talkRows() {
+    var d = app.settingsDraft.talk || {};
+    return Object.keys(CS.TALK).map(function (k) {
+      var t = CS.TALK[k];
+      return '<div class="set-row set-names"><span class="set-name"><b>' + esc(t.name) + '</b><small>' + esc(t.note) + '・元 ' + t.def + '</small></span>' +
+        '<label class="set-pctl"><input type="number" class="set-pct" min="' + t.min + '" max="' + t.max + '" step="1" inputmode="numeric" data-talkset="' + k + '" value="' + (d[k] !== undefined ? d[k] : '') + '" placeholder="' + t.def + '" aria-label="' + esc(t.name) + '">%</label></div>';
+    }).join('');
+  }
+  // 会話で見ながら決める（オーナー 11/14「数字を入れるだけだと分からないから、実際にプレビューしながら決めたい」）:
+  //   本物の会話の画面（talk.js）を見本の文で開き、その上に動かす窓を重ねる。動かすとすぐ下書きに入り、画面に当たる。閉じると設定の画面に戻る（保存はまだ）
+  var tuneEl = null;
+  function talkTune() {
+    if (!app.talk || !CS) return;
+    var ids = Object.keys(window.CHARS || {});
+    if (!ids.length) { window.alert('キャラがいません（「キャラ」で足してください）'); return; }
+    app.tuneL = ids.indexOf(app.tuneL) >= 0 ? app.tuneL : ids[0];
+    app.tuneR = ids.indexOf(app.tuneR) >= 0 ? app.tuneR : ids[Math.min(1, ids.length - 1)];
+    var d = app.settingsDraft;
+    d.talk = d.talk || {};
+    var val = function (k) { return d.talk[k] !== undefined ? d.talk[k] : CS.TALK[k].def; };
+    var opt = function (sel) { return ids.map(function (id) { return '<option value="' + esc(id) + '"' + (id === sel ? ' selected' : '') + '>' + esc(window.CHARS[id].name) + '</option>'; }).join(''); };
+    if (!tuneEl) { tuneEl = document.createElement('div'); tuneEl.id = 'talk-tune'; document.body.appendChild(tuneEl); }
+    tuneEl.innerHTML = '<div class="tt-head"><b>会話のキャラ</b><small>動かすとすぐ画面に出る（まだ保存していない）</small></div>' +
+      Object.keys(CS.TALK).map(function (k) {
+        var t = CS.TALK[k];
+        return '<label class="tt-row"><span>' + esc(t.name) + '<small>' + esc(t.note) + '</small></span>' +
+          '<input type="range" min="' + t.min + '" max="' + t.max + '" step="1" data-tt="' + k + '" value="' + val(k) + '">' +
+          '<input type="number" min="' + t.min + '" max="' + t.max + '" step="1" data-tt="' + k + '" value="' + val(k) + '"></label>';
+      }).join('') +
+      '<label class="tt-row"><span>左に出す</span><select data-tt-who="left">' + opt(app.tuneL) + '</select></label>' +
+      '<label class="tt-row"><span>右に出す</span><select data-tt-who="right">' + opt(app.tuneR) + '</select></label>' +
+      '<div class="tt-btns"><button type="button" data-tt-reset="1">元の値に戻す</button><button type="button" class="primary" data-tt-close="1">閉じる</button></div>';
+    tuneEl.hidden = false;
+    var lines = function () {
+      return [{ who: app.tuneL, side: 'left', text: '（見本）左のキャラが喋っている。押すと次の文へ' }, { who: app.tuneR, side: 'right', text: '（見本）右のキャラが喋っている。右上の窓で大きさと位置を動かす' },
+        { who: app.tuneL, side: 'left', text: '（見本）会話の窓の文は、この長さくらい。最後まで進むと、また最初から' }];
+    };
+    var play = function () { app.talk.open(lines(), 'before', function () { if (tuneEl && !tuneEl.hidden) play(); }); };
+    play();
+    app.tuneReplay = function () { app.talk.close(); };   // 閉じると done で最初から（キャラを替えたとき）
+  }
+  function talkTuneClose() {
+    if (!tuneEl || tuneEl.hidden) return;
+    tuneEl.hidden = true;
+    if (app.talk) app.talk.close();
+    renderSettings();
+  }
+  function talkTuneSet(k, v) {
+    var d = app.settingsDraft, t = CS.TALK[k];
+    v = Math.round(Number(v));
+    if (!CS.okTalk(k, v)) return;
+    d.talk = d.talk || {};
+    if (v === t.def) delete d.talk[k]; else d.talk[k] = v;
+    Array.prototype.forEach.call(tuneEl.querySelectorAll('[data-tt="' + k + '"]'), function (n) { if (Number(n.value) !== v) n.value = v; });
+    applySettings(d);
+  }
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (!tuneEl || tuneEl.hidden || !tuneEl.contains(t)) return;
+    if (t.hasAttribute('data-tt')) talkTuneSet(t.getAttribute('data-tt'), t.value);
+  });
+  // Esc は、会話（talk.js）より先に受け取って、見ながら決める窓ごと閉じる
+  document.addEventListener('keydown', function (e) {
+    if (!tuneEl || tuneEl.hidden || e.key !== 'Escape') return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    talkTuneClose();
+  }, true);
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (!tuneEl || tuneEl.hidden || !tuneEl.contains(t) || !t.hasAttribute('data-tt-who')) return;
+    if (t.getAttribute('data-tt-who') === 'left') app.tuneL = t.value; else app.tuneR = t.value;
+    app.tuneReplay();
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('#talk-tune button');
+    if (!b) return;
+    if (b.hasAttribute('data-tt-close')) talkTuneClose();
+    else if (b.hasAttribute('data-tt-reset')) Object.keys(CS.TALK).forEach(function (k) { talkTuneSet(k, CS.TALK[k].def); });
+  });
   // 今あるステージの盤面の大きさ（'横x縦' → ステージの名前の並び）: チュートリアル・みんなのステージ・自分のステージ
   function boardSizes() {
     var out = {}, add = function (def, name) {
@@ -2878,6 +2992,8 @@
       '<section class="home-sec"><h3>自然の名前 <small>表示名（押したマスの情報・ログ など）と、マップに出る字（' + CS.MAX_LABEL + '文字まで）。空なら元の名前</small></h3>' + tileRows + '</section>' +
       '<section class="home-sec"><h3>魔法の名前 <small>駒の字・ログ など。空なら元の名前</small></h3>' + magicRows + '</section>' +
       '<section class="home-sec"><h3>シナジーの名前 <small>真ん中に出る文字・ログ など。空なら元の名前</small></h3>' + synRows + '</section>' +
+      '<section class="home-sec"><h3>会話のキャラの大きさと位置 <small>まえげき・あとげき（オーナー 11/14）。数で決めるか、「会話で見ながら決める」で本物の会話の画面を見ながら動かす。空なら元の値</small></h3>' + talkRows() +
+        '<div class="home-list"><button type="button" class="primary" data-talk-tune="1">会話で見ながら決める</button></div></section>' +
       '<section class="home-sec"><h3>盤面に立てる絵の大きさ <small>マスの高さの何%か（' + P.min + '〜' + P.max + '）。絵を入れた駒だけに効く（奥行きの見た目）。空なら元の大きさ。幅も同じ割合で変わる</small></h3>' + pieceRows + '</section>' +
       '<div class="home-list set-actions"><button type="button" class="primary" data-set-save="1">この設定で保存する</button>' +
       '<button type="button" data-set-back="1"></button>' +
@@ -2896,6 +3012,7 @@
   function settingsAction(b) {
     var d = app.settingsDraft;
     if (b.hasAttribute('data-set-back')) { settingsBack(); return; }
+    if (b.hasAttribute('data-talk-tune')) { talkTune(); return; }
     if (b.hasAttribute('data-creset')) { delete d.colors[b.getAttribute('data-creset')]; applySettings(d); renderSettings(); return; }
     if (b.hasAttribute('data-set-clear')) { app.settingsDraft = CS.clean({}); applySettings(app.settingsDraft); app.settingsNote = '元の色と名前にした（まだ保存していない）'; renderSettings(); return; }
     if (b.hasAttribute('data-set-save')) {
@@ -2936,6 +3053,11 @@
     else if (t.hasAttribute('data-tlabel')) put(d.tiles, t.getAttribute('data-tlabel'), 'label', t.value);
     else if (t.hasAttribute('data-mname')) put(d.magics, t.getAttribute('data-mname'), null, t.value);
     else if (t.hasAttribute('data-sname')) put(d.synergies, t.getAttribute('data-sname'), null, t.value);
+    else if (t.hasAttribute('data-talkset')) {
+      var tk = t.getAttribute('data-talkset'), tv = t.value === '' ? null : Math.round(Number(t.value));
+      d.talk = d.talk || {};
+      if (tv === null || !CS.okTalk(tk, tv) || tv === CS.TALK[tk].def) delete d.talk[tk]; else d.talk[tk] = tv;
+    }
     else if (t.hasAttribute('data-pc') || t.hasAttribute('data-pc-board')) {
       var pk = t.getAttribute('data-pc'), bkey = t.getAttribute('data-pc-board'), num = t.value === '' ? null : Math.round(Number(t.value));
       var box = pk ? d.pieces : (d.pieces.boards = d.pieces.boards || {}), key2 = pk || bkey;
@@ -4082,6 +4204,20 @@
     if (testing()) setEditMode(true);
     else goHome();
   }
+  // メインBGM（オーナー 11/15: 1曲だけ、どの画面でもずっとループ）。ブラウザは触るまで音を出せないので、
+  //   最初に触ったときに鳴らし始める。鳴らせなかったら（まだ読めていない など）次に触ったときにもう一度
+  (function () {
+    var a = document.getElementById('bgm');
+    if (!a || !a.play) return;
+    a.loop = true;
+    a.volume = B.bgmVolume != null ? B.bgmVolume : 0.5;
+    function start() {
+      if (!a.paused) return;
+      var p = a.play();
+      if (p && p.catch) p.catch(function () { /* 次に触ったとき */ });
+    }
+    ['pointerdown', 'keydown'].forEach(function (n) { window.addEventListener(n, start, true); });
+  })();
   //   履歴は2つだけ使う: 下（base）と上（top）。いつも top にいて、「戻る」で base に来たら、アプリの中で1つ上の画面へ戻し、
   //   history.forward() で top に戻る（積み直さない）。URL は変えない（#dev のまま。hashchange は起きない）。
   //   top はページを触ったとき（ユーザーの操作の中）に積む。操作なしで積んだ履歴は、Chrome の「戻る」が飛ばしてしまうため。

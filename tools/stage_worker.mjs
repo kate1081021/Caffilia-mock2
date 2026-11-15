@@ -9,7 +9,7 @@
  *     order  … 一覧の順番 { tut: [id…], all: [名前…], at }（開発モードの一覧で、手で決めた順番。オーナー 11/12）。
  *       入っていないもの（新しいステージ）は画面が末尾に足す。もうないものが入っていても画面が飛ばす。まだ誰も並べていなければ null
  *     lineup … 展示の並び { start: [...], pick: [...], at }（中身は 'tut:tut1' か 'all:名前'）
- *     settings … 設定 { colors, tiles, magics, synergies, pieces, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
+ *     settings … 設定 { colors, tiles, magics, synergies, pieces, talk, at }（画面の主な色と名前。game/settings.js。オーナー 11/03）
  *     chars … キャラ { list, cast, objects, at }（objects は村・トロッコの絵）（キャラの一覧と、魔法 → キャラ。game/chars.js。オーナー 11/13。.claude/IMPROVE_キャラ.md）。まだなければ null
  *     img:<id> … 開発モードから上げた絵（data URL の字。1枚 MAX_IMG まで）。同じ id の絵は変わらない
  *     imgs … 上げた絵の一覧 { id: { at, size } }（数を数える・使っていない絵を消すため）
@@ -87,11 +87,14 @@ function okSettings(b) {
   const isObj = function (o) { return !!o && typeof o === 'object' && !Array.isArray(o); };
   const okStr = function (v, max) { return typeof v === 'string' && v.length <= max; };
   if (!isObj(b)) return false;
-  const parts = ['colors', 'tiles', 'magics', 'synergies', 'pieces'];
+  const parts = ['colors', 'tiles', 'magics', 'synergies', 'pieces', 'talk'];
   if (Object.keys(b).some(function (k) { return parts.indexOf(k) < 0; })) return false;
   const c = b.colors || {}, t = b.tiles || {}, m = b.magics || {}, s = b.synergies || {};
   if (![c, t, m, s].every(isObj)) return false;
   if (Object.keys(c).length + Object.keys(t).length + Object.keys(m).length + Object.keys(s).length > 300) return false;
+  // 会話のキャラの大きさと位置（オーナー 11/14。game/settings.js の TALK と同じ範囲）
+  const tk = b.talk === undefined ? {} : b.talk, TR = { size: [20, 150], lx: [-50, 100], ly: [-50, 100], rx: [-50, 100], ry: [-50, 100] };
+  if (!isObj(tk) || !Object.keys(tk).every(function (k) { const r = TR[k], v = tk[k]; return !!r && typeof v === 'number' && Math.round(v) === v && v >= r[0] && v <= r[1]; })) return false;
   // 盤面に立てる絵の高さ（マスの何%。オーナー 11/13）
   const pc = b.pieces === undefined ? {} : b.pieces;
   const pct = function (v) { return typeof v === 'number' && Math.round(v) === v && v >= 50 && v <= 400; };
@@ -295,7 +298,7 @@ export async function handleApi(req, kv) {
     if (req.method === 'PUT' && path === 'settings') {
       const b = await body(req);
       if (!okSettings(b)) return fail('設定の形が正しくない');
-      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, pieces: b.pieces || {}, at: Date.now() };
+      const settings = { colors: b.colors || {}, tiles: b.tiles || {}, magics: b.magics || {}, synergies: b.synergies || {}, pieces: b.pieces || {}, talk: b.talk || {}, at: Date.now() };
       await kv.put('settings', JSON.stringify(settings));
       return json({ ok: true, at: settings.at });
     }

@@ -7,8 +7,8 @@
  *     押す（タップ・クリック・Enter・スペース）と次の文へ。「とばす」（か Esc）でいつでも終わる。会話の間は盤面の操作を受け付けない。
  *     重ねる層の色と透明度は style.css の --talk-veil の1か所。
  *   いつ出すか（決めるのは stages_io.js の talkDue）:
- *     まえげき … そのステージを初めて始めたときだけ（やり直し・リセットでは出さない）
- *     あとげき … そのステージに初めて勝ったときだけ（負けたときは出さない）
+ *     まえげき … そのステージを初めて始めたときだけ（やり直し・リセットでは出さない）。自分のステージ（テストプレイも）は、始めるたび・リセットのたび
+ *     あとげき … そのステージに初めて勝ったときだけ（負けたときは出さない）。自分のステージは、勝つたび
  *     並びごとの入切は balance.js の talk.show（tutorial チュートリアル・shared みんなのステージ・own 自分のステージ・exhibit 展示モード）
  *   「初めて」の覚え: 開発モードはこのブラウザ（localStorage の SEEN_KEY）。展示モードは、題字の画面に戻るまで（次の人には、また出る）
  *   遊んでいる最中の会話（何ターン目・決め手が起きた など）はまだない。足すときは、ステージの条件（conditions）に
@@ -151,6 +151,7 @@
   // 会話の間は、キーをゲームより先に受け取る（Enter が発動に、数字が味方の選択に届かないように）
   document.addEventListener('keydown', function (e) {
     if (!now) return;
+    if (e.target && e.target.closest && e.target.closest('#talk-tune')) return;   // 設定の「会話で見ながら決める」の窓で打っているときは、窓へ
     e.preventDefault(); e.stopPropagation();
     if (e.key === 'Escape') close();
     else if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') next();
