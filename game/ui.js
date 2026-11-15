@@ -2731,9 +2731,11 @@
   //   ありがとう！・クリア！では [最初の画面に戻る] [ほかのステージで遊ぶ]。文は texts.js の ui に置けば替わる（なければ【仮】の文）
   // ---------------------------------------------------------------
   // 遊べる並び（見つからないものは飛ばす）。どちらも空なら、チュートリアル①②③を「はじめから」にする【仮】
+  //   はじめから: 開発の一覧のチュートリアルの並び（≡ のドラッグ・▲▼ で決める順番）そのまま。足したチュートリアルも自動で入る
+  //   （オーナー 11/15「現状の動かし方で、実際の展示でも出せるようにしてほしいだけ」）。選んで遊ぶ: 展示の並びの pick
   function exhibitLists() {
     if (!app.shared.ok) { var tuts = lineupDefault().start; return { start: tuts, pick: tuts.slice() }; }   // つながっていないとき: チュートリアル①②③だけ（どちらも）
-    var v = lineupGet(), start = v.start.filter(refOk), pick = v.pick.filter(refOk);
+    var start = tutList().map(function (id) { return 'tut:' + id; }).filter(refOk), pick = lineupGet().pick.filter(refOk);
     if (!start.length && !pick.length) start = lineupDefault().start;
     return { start: start, pick: pick };
   }
@@ -2808,15 +2810,21 @@
       return '<section class="home-sec"><h3>' + esc(title) + ' <small>' + esc(note) + '</small></h3><div class="home-rows lu-list" data-list="lu:' + list + '">' +
         (d[list].length ? d[list].map(function (r, i) { return item(list, r, i, d[list].length); }).join('') : '<p class="lu-empty muted">まだありません（展示では、この段のボタンを出さない）</p>') + '</div></section>';
     };
+    // はじめから遊ぶ: チュートリアルの一覧の並びそのまま（ここでは変えない。オーナー 11/15）
+    var tutRows = tutList().map(function (id, i) {
+      return stageRow({ cls: 'lu-row', attrs: '', lead: '<b class="lu-no">' + (i + 1) + '</b>', open: 'tut:' + id, title: stageName(R.findPreset(id)),
+        def: R.findPreset(id), diff: 'tutorial', note: '', btns: '' });
+    }).join('');
     var opts = tutList().map(function (id) { return '<option value="tut:' + id + '">' + esc(stageName(R.findPreset(id))) + '（チュートリアル）</option>'; }).join('') +
       sharedList().map(function (nm) { return '<option value="all:' + esc(nm) + '">' + esc(nm) + '（みんなのステージ）</option>'; }).join('');
     el.home.innerHTML = '<h2>展示の並び <small>展示モードで遊ぶステージと順番</small></h2>' +
       '<p class="lu-warn">⚠ 注意！ここを変えると、展示モードの並びがどのパソコンでも変わります</p>' +
-      sec('start', 'はじめから遊ぶ の順番', '▲▼ かドラッグ（≡）で並び替え。タイトルを押すと開く') +
+      '<section class="home-sec"><h3>はじめから遊ぶ の順番 <small>チュートリアルの一覧の並びどおり（一覧の ≡ のドラッグか ▲▼ で並び替える。足したチュートリアルも入る）</small></h3>' +
+        '<div class="home-rows">' + (tutRows || '<p class="lu-empty muted">チュートリアルがありません</p>') + '</div></section>' +
       sec('pick', '選んで遊ぶ に出すもの', '開発で選んだものだけが、展示の一覧に出る。「消す」は並びから外すだけ') +
-      '<section class="home-sec"><h3>＋ 足す <small>チュートリアル・みんなのステージから（自分のステージは、共有してから）</small></h3>' +
+      '<section class="home-sec"><h3>＋ 選んで遊ぶ に足す <small>チュートリアル・みんなのステージから（自分のステージは、共有してから）</small></h3>' +
       '<div class="row"><select id="luAdd" aria-label="足すステージ">' + opts + '</select>' +
-      '<button type="button" data-add="start">はじめから に足す</button><button type="button" data-add="pick">選んで遊ぶ に足す</button></div></section>' +
+      '<button type="button" data-add="pick">選んで遊ぶ に足す</button></div></section>' +
       '<div class="home-list"><button type="button" class="primary" data-lu-save="1"' + (dirty ? '' : ' disabled') + '>この並びで展示する</button>' +
       '<button type="button" data-lu-back="1">' + (dirty ? 'やめて一覧に戻る（変えたところは捨てる）' : '一覧に戻る') + '</button></div>' +
       (dirty ? '<p class="note">まだ展示モードは変わっていません。「この並びで展示する」を押すと変わります。</p>' : app.lineupSaved ? '<p class="note">展示モードの並びを、この並びにしました。</p>' : '');
