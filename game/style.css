@@ -1206,7 +1206,7 @@ html.view-depth .unit {
   transform-origin: 50% 100%;
   transform: translateX(-50%) rotateX(calc(-1 * var(--tilt)));
   transform-style: preserve-3d;
-  pointer-events: auto;   /* 立てた駒の上の方は奥のマスに重なる。駒を押したら、その駒のいるマス */
+  pointer-events: none;   /* 駒（キャラの絵）は押す判定を持たない。押したら、その下の盤のマス（オーナー 11/15） */
 }
 /* 大きい敵（③のボス）: 体のマスの手前のふちに立てる。高さは体の幅より低くして、奥のマスを隠しすぎない */
 html.view-depth .unit.big {
@@ -1244,6 +1244,8 @@ html.view-depth .unit .facing {
 }
 html.view-depth .unit.face-down .facing { transform: translate(-50%, -50%) rotateX(var(--tilt)) translateZ(3px) rotate(var(--rot)) translateY(calc(-.24 * 100cqi / var(--n))); }
 html.view-depth .unit.face-up .facing { left: 50%; top: -9%; transform: translate(-50%, -50%) rotate(var(--rot)); }
+/*   絵の入った駒は背が高いので、頭の上の枠のふちから、マス1つ分（床の奥行きが画面で見える長さ）下げる（オーナー 11/15「上向きの印の位置が上すぎ。マス一つ分下げて」） */
+html.view-depth .unit.has-img.face-up .facing { transform: translate(-50%, calc(-50% + cos(var(--tilt)) * 100cqi / var(--n))) rotate(var(--rot)); }
 .facing { pointer-events: none; }
 /* 動かせない味方（構える味方。① の風 など）: 足もとに赤いバツ（オーナー 11/15「移動できないのでそれを明示したい。足元にバツを付けてほしい」）。
  *   奥行きの見た目では足もとの床に寝かせる（向きの三角と同じ置き方）。真上の見た目では駒の下のふちに出す */

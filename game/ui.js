@@ -2128,9 +2128,9 @@
   function cellFrom(e) {
     var t = e.target;
     if (!t || !t.closest || !el.board.contains(t)) return null;
-    // 奥行きの見た目: 自然（山・丘の高さ、崖、印）は押す判定を持たない。押した所の真下の、平らな盤のマス（オーナー 11/15）。
-    //   駒は今までどおり押せる（駒を押したら、その駒のいるマス）
-    if (viewNow() === 'depth' && !t.closest('.unit') && typeof e.clientX === 'number') return flatCellAt(e.clientX, e.clientY);
+    // 奥行きの見た目: 自然（山・丘の高さ、崖、印）も駒（キャラの絵）も押す判定を持たない。押した所の真下の、平らな盤のマス
+    //   （オーナー 11/15「キャラに当たり判定いらない。マスにほしい」）
+    if (viewNow() === 'depth' && typeof e.clientX === 'number') return flatCellAt(e.clientX, e.clientY);
     var c = t.closest('[data-x]');
     if (!c || !el.board.contains(c)) return null;
     return { x: Number(c.getAttribute('data-x')), y: Number(c.getAttribute('data-y')) };
