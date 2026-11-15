@@ -2092,6 +2092,9 @@
     var h = el.hint;
     h.className = 'hint';
     h.title = '';
+    // 遊んでいるときは、ここに文字を出さない（オーナー 11/15「みんな構えている…・緑のマスを押すと…のところ、いらない。ここに表示される文字が一つもいらない」）。
+    //   場所はそのまま空けておく（盤面がずれないように）。エディット中の道具の案内だけは出す
+    if (!app.editMode) { if (h.textContent) h.textContent = ''; return; }
     if (app.message && app.message.until > Date.now()) {
       h.textContent = app.message.text;
       h.classList.add('warn');
