@@ -427,16 +427,51 @@
   // ダメージ（1発の中では1ユニットに1回だけ。一番大きいもの）
   // ---------------------------------------------------------------
   // after: ダメージを入れたあとに動かす処理（倒れた者のマスに山を盛る など）
-  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [], after: [], notes: [] }; }
+  function newShot() { return { hits: {}, order: [], phrases: [], finishers: [], cells: [], grows: [], after: [], notes: [], trace: [] }; }
 
-  // cell: 決め手がどのマスで当たったか
+  // ---------------------------------------------------------------
+  // 途中の見せ方（オーナー 11/16。試作）: 魔法が触れた瞬間を、触れた順に記す（ctx.trace → cast の出来事の trace）。画面はこれを順に再生する（ui.js の midPlay）
+  //   1つの瞬間 = { by: 何が触れたか（魔法の名前。風に運ばれて流れる炎も 'fire'）, dir: どちらへ進んでいたか, what: 何をしたか, at: 触れたマス, cells: [{ x, y, from, to }] }
+  //   what: cast 形のマスに同時に触れた／pass 吹き抜けた／stop ぶつかって止まった／fan 炎や火山に当たった／swell 炎がふくらんだ／spread 炎が流れて触れた／kindle 山脈に火が点いた
+  //   fn の中でマスを変えると、変える前と後が from・to に入る。記すだけで、盤面の結果は変えない
+  // ---------------------------------------------------------------
+  function moment(s, ctx, by, dir, what, cells, fn, at) {
+    var from = cells.map(function (c) { return getTile(s, c[0], c[1]); });
+    if (fn) fn();
+    var m = { by: by, dir: dir || null, what: what, at: at || (cells.length ? [cells[0][0], cells[0][1]] : null),
+      cells: cells.map(function (c, i) { return { x: c[0], y: c[1], from: from[i], to: getTile(s, c[0], c[1]) }; }) };
+    ctx.trace.push(m);
+    return m;
+  }
+  // そのマスに最後に触れた瞬間の番号（なければ -1）
+  function momentAt(ctx, x, y) {
+    for (var i = ctx.trace.length - 1; i >= 0; i--) if (ctx.trace[i].cells.some(function (c) { return c.x === x && c.y === y; })) return i;
+    return -1;
+  }
+  // あとから変わったマス（吹き抜けたあとに風が残る・燃えた村のマスが炎になる など）を、そのマスに最後に触れた瞬間の to に書き足す
+  function retouch(s, ctx, x, y) {
+    var i = momentAt(ctx, x, y);
+    if (i < 0) return;
+    ctx.trace[i].cells.forEach(function (c) { if (c.x === x && c.y === y) c.to = getTile(s, x, y); });
+  }
+  // 形のマスを全部済ませてから、その瞬間の to を決める。あとの瞬間（山に火で火山 など）が同じマスに触れていれば、そこまで（あとの瞬間の from）
+  function closeMoment(s, ctx, m) {
+    var i = ctx.trace.indexOf(m);
+    m.cells.forEach(function (c) {
+      var later = null;
+      for (var j = i + 1; j < ctx.trace.length && !later; j++) ctx.trace[j].cells.forEach(function (d) { if (!later && d.x === c.x && d.y === c.y) later = d; });
+      c.to = later ? later.from : getTile(s, c.x, c.y);
+    });
+  }
+
+  // cell: どのマスで当たったか（途中の見せ方: ダメージの数字をそのマスに、そのマスが変わるのに合わせて出す）
   function addHit(ctx, u, amount, src, cell) {
     var h = ctx.hits[u.id];
     if (!h) {
-      ctx.hits[u.id] = { amount: amount, src: src };
+      ctx.hits[u.id] = { amount: amount, src: src, cell: cell || null };
       ctx.order.push(u.id);
     } else if (amount > h.amount) {
-      h.amount = amount; h.src = src;
+      h.amount = amount; h.src = src; h.cell = cell || null;
     }
   }
 
@@ -447,10 +482,13 @@
       if (!u) return;
       var h = ctx.hits[id];
       u.hp -= h.amount;
-      ev.push({
+      var d = {
         type: 'damage', id: u.id, side: u.side, amount: h.amount, src: h.src, cells: [[u.x, u.y]],
         text: unitLabel(s, u) + 'に' + h.amount + 'ダメージ' + (SRC_NOTE[h.src] !== undefined ? SRC_NOTE[h.src] : '（直撃）') + '（残りHP ' + Math.max(0, u.hp) + '）'
-      });
+      };
+      // 途中の見せ方: 当たったマス（at）と、その魔法が触れた何番目の瞬間か（when。cast の trace の番号）。画面はその瞬間に数字を出す
+      if (h.cell) { d.at = [h.cell[0], h.cell[1]]; var w = momentAt(ctx, h.cell[0], h.cell[1]); if (w >= 0) d.when = w; }
+      ev.push(d);
       // 弱い炎に当たった者は火傷（重ねても残りの回数が最大に戻るだけ）
       if (h.src === 'weakfire' && u.hp > 0) {
         u.burn = B.fire.burnTurns;
@@ -906,12 +944,16 @@
     }
 
     // 地形: 通り道の空きは小さな炎、燃えた森は炎。起点の炎はそのまま
-    var trail = 0;
+    //   途中の見せ方: 起点の炎が風にあおられてふくらみ（swell）、風下へ1マスずつ流れて、触れたマスがそのとき変わる（spread）
+    moment(s, ctx, 'fire', dir, 'swell', [[ox, oy]]);
     path.forEach(function (c) {
-      if (getTile(s, c[0], c[1]) === 'empty') { setTile(s, c[0], c[1], 'smallfire'); trail++; }
-      else if (B.ideas.spreadMeltsIce && getTile(s, c[0], c[1]) === 'ice') setTile(s, c[0], c[1], 'puddle');   // 【新案】燃え広がりは氷を溶かす
+      moment(s, ctx, 'fire', dir, 'spread', [c], function () {
+        var t = getTile(s, c[0], c[1]);
+        if (t === 'empty') setTile(s, c[0], c[1], 'smallfire');
+        else if (B.ideas.spreadMeltsIce && t === 'ice') setTile(s, c[0], c[1], 'puddle');   // 【新案】燃え広がりは氷を溶かす
+        else if (isPlant(t)) setTile(s, c[0], c[1], 'fire');
+      });
     });
-    burnedList.forEach(function (c) { setTile(s, c[0], c[1], 'fire'); });
 
     var cells = [[ox, oy]].concat(path);
     burnedList.forEach(function (c) {
@@ -924,7 +966,7 @@
     cells.forEach(function (c) {
       var u = unitAt(s, c[0], c[1]);
       if (!u) return;
-      if (isVillage(u)) { burnVillage(s, u, ctx); villagesBurned++; return; }   // 通り道の村は燃える（マスは炎。燃え広がりはそのまま先へ走る。オーナー 11/03）
+      if (isVillage(u)) { burnVillage(s, u, ctx); retouch(s, ctx, c[0], c[1]); villagesBurned++; return; }   // 通り道の村は燃える（マスは炎。燃え広がりはそのまま先へ走る。オーナー 11/03）
       if (burnsStrong(burned[key(c[0], c[1])])) addHit(ctx, u, B.fire.strongDamage, 'finisher', c);
       else addHit(ctx, u, B.fire.weakDamage, 'weakfire', c);
     });
@@ -943,7 +985,7 @@
         (grassN ? '。草むら' + grassN + 'マスも燃えた（弱い炎）' : '') +
         (villagesBurned ? '。村' + villagesBurned + 'つも燃えた' : '')
     });
-    if (mountainAt) { ctx.phrases.push('燃え広がりが山に届いて火が点いた'); doFunka(s, mountainAt[0], mountainAt[1], ctx, ev, {}); }
+    if (mountainAt) { ctx.phrases.push('燃え広がりが山に届いて火が点いた'); doFunka(s, mountainAt[0], mountainAt[1], ctx, ev, {}, dir); }
     return fin;
   }
 
@@ -1223,11 +1265,14 @@
   function placeOrIgnite(s, u, facing, ctx, ev) {
     var shocked = {}, erupted = {}, planted = [], growFrom = [], raised = [];   // raised: 足元に山ができた人（形のマスを全部済ませてから押し出す）
     var raise = function (o, x, y) { if (o && !isPassable(getTile(s, x, y)) && raised.indexOf(o) < 0) raised.push(o); };
-    castCells(s, u, facing).forEach(function (c) {
+    // 途中の見せ方: 形のマスすべてに同時に魔法が触れる（cast）。何に変わったかは、形のマスを全部済ませてから決める（closeMoment）
+    var cells = castCells(s, u, facing);
+    var cast = moment(s, ctx, u.magic, facing, 'cast', cells);
+    cells.forEach(function (c) {
       var x = c[0], y = c[1];
       ctx.cells.push([x, y]);
       var o = unitAt(s, x, y);
-      if (o) addHit(ctx, o, u.power, 'direct');
+      if (o) addHit(ctx, o, u.power, 'direct', [x, y]);
       if (ENEMY_ATTACK[u.magic]) { if (o) ctx.phrases.push(unitLabel(s, o) + 'に当たった'); return; }   // 展示ステージ③の敵の攻撃: 自然は作らない
       var t = getTile(s, x, y);
       if (isAiry(t) && PLACE_OVER_AIR[u.magic]) { setTile(s, x, y, 'empty'); t = 'empty'; }   // 風・花びらの上にも置ける（isAiry）
@@ -1261,7 +1306,7 @@
         else if (t === 'deadforest') { ctx.phrases.push('【新案】死の森に火が灯った'); doHaunt(s, x, y, ctx, ev); }
         else if (isWind(t)) { ctx.phrases.push('【新案】吹いている' + tileName(t) + 'に火が入った'); doFireWhirl(s, x, y, facing, ctx, ev); }
         else if (isPlant(t)) { setTile(s, x, y, 'fire'); ctx.phrases.push(tileName(t) + 'が燃えた'); }
-        else if (t === 'mountain' && !erupted[key(x, y)]) { ctx.phrases.push('【新案】山に火が点いた'); doFunka(s, x, y, ctx, ev, erupted); }
+        else if (t === 'mountain' && !erupted[key(x, y)]) { ctx.phrases.push('【新案】山に火が点いた'); doFunka(s, x, y, ctx, ev, erupted, facing); }
         else if (t === 'puddle') { setTile(s, x, y, 'mirage'); ctx.phrases.push('【新案】水たまりが蜃気楼になった'); }
         else if (t === 'ice') { setTile(s, x, y, 'puddle'); ctx.phrases.push('【新案】氷が溶けて水たまりになった'); }
         else if (t === 'tornado') {
@@ -1272,6 +1317,7 @@
         }
       }
     });
+    closeMoment(s, ctx, cast);
     if (raised.length) { var ctr = castCenter(s, u, facing); raised.forEach(function (o) { pushOffMountain(s, o, ctr, ev); }); }
     // 【育つ】草むらに草: 草むらを元に、まわりの空きと草むらが森に茂る（森は通れるので押し出さない）
     if (u.magic === 'grass') growFrom.forEach(function (c) {
@@ -1356,7 +1402,8 @@
 
   // 【新案】噴火: 火が山に点くと、その山とつながった山（山脈）がまとめて火山になり、まわりへ溶岩があふれる
   //   あふれた先: 空き・小さな炎 → 溶岩、森 → 炎、川・水たまり・氷 → 冷えて山、ユニット → ダメージ（足元は小さな炎）
-  function doFunka(s, sx, sy, ctx, ev, done) {
+  // dir: 火がどちらへ進んで山に届いたか（途中の見せ方。火の魔法で点けたときは術者の向き）
+  function doFunka(s, sx, sy, ctx, ev, done, dir) {
     var range = [], seen = {}, dist = {};
     var queue = [[sx, sy]];
     seen[key(sx, sy)] = true; dist[key(sx, sy)] = 0;
@@ -1370,7 +1417,10 @@
         queue.push([n.x, n.y]);
       });
     }
-    range.forEach(function (c) { setTile(s, c[0], c[1], 'volcano'); done[key(c[0], c[1])] = true; });
+    // 途中の見せ方: 火が点いた山から、山脈ごと一気に火山になる（kindle。wave は点いた所からの歩数）
+    moment(s, ctx, 'fire', dir, 'kindle', range, function () {
+      range.forEach(function (c) { setTile(s, c[0], c[1], 'volcano'); done[key(c[0], c[1])] = true; });
+    }, [sx, sy]).wave = range.map(function (c) { return dist[key(c[0], c[1])]; });
     // 【新案・試し】溶岩なし（funka.lava が false）: 山脈が火山になるだけ。決め手ではない（決め手は風で桜吹雪）
     if (!B.funka.lava) {
       ctx.phrases.push('【新案】山脈' + range.length + 'つが火山になった');
@@ -1950,16 +2000,19 @@
         limit = i + B.grow.galeLength - 1;
         ctx.phrases.push('【育つ】' + tileName(t) + 'に風が重なって強風に育った');
       }
-      if (t === 'mountain') { ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
-      if (t === 'tornado') { ctx.phrases.push('【新案】風が竜巻に吸いこまれた'); blocked = true; break; }
-      if (t === 'whirlwind' && B.tornadoRecipe === 'windWind') { whirl = [x, y]; ctx.cells.push([x, y]); break; }
-      if (t === 'sakura' || t === 'hillsakura' || (t === 'volcano' && B.sakura.from === 'fire')) { volcano = [x, y]; ctx.cells.push([x, y]); break; }
-      if (t === 'volcano') { ctx.phrases.push('火山の陰で風が止まった'); blocked = true; break; }
-      if (t === 'haunted') { ctx.phrases.push('オバケヤシキで風が止まった'); blocked = true; break; }
-      if (t === 'fire' || t === 'smallfire' || t === 'firewhirl') { origin = [x, y]; ctx.cells.push([x, y]); break; }
+      // 途中の見せ方: 風が1マスずつ吹いていき（pass）、ぶつかった所で止まる（stop）か、炎・火山に当たる（fan）
+      if (t === 'mountain') { moment(s, ctx, 'wind', facing, 'stop', [[x, y]]); ctx.phrases.push('山の陰で風が止まった'); blocked = true; break; }   // 溶岩は低いので、風はその上を吹き抜ける
+      if (t === 'tornado') { moment(s, ctx, 'wind', facing, 'stop', [[x, y]]); ctx.phrases.push('【新案】風が竜巻に吸いこまれた'); blocked = true; break; }
+      if (t === 'whirlwind' && B.tornadoRecipe === 'windWind') { moment(s, ctx, 'wind', facing, 'fan', [[x, y]]); whirl = [x, y]; ctx.cells.push([x, y]); break; }
+      if (t === 'sakura' || t === 'hillsakura' || (t === 'volcano' && B.sakura.from === 'fire')) { moment(s, ctx, 'wind', facing, 'fan', [[x, y]]); volcano = [x, y]; ctx.cells.push([x, y]); break; }
+      if (t === 'volcano') { moment(s, ctx, 'wind', facing, 'stop', [[x, y]]); ctx.phrases.push('火山の陰で風が止まった'); blocked = true; break; }
+      if (t === 'haunted') { moment(s, ctx, 'wind', facing, 'stop', [[x, y]]); ctx.phrases.push('オバケヤシキで風が止まった'); blocked = true; break; }
+      if (t === 'fire' || t === 'smallfire' || t === 'firewhirl') { moment(s, ctx, 'wind', facing, 'fan', [[x, y]]); origin = [x, y]; ctx.cells.push([x, y]); break; }
       path.push([x, y]);
       ctx.cells.push([x, y]);
-      if (B.ideas.windClearsMirage && t === 'mirage') { setTile(s, x, y, 'empty'); ctx.phrases.push('【新案】風で蜃気楼が晴れた'); }
+      moment(s, ctx, 'wind', facing, 'pass', [[x, y]], function () {
+        if (B.ideas.windClearsMirage && t === 'mirage') { setTile(s, x, y, 'empty'); ctx.phrases.push('【新案】風で蜃気楼が晴れた'); }
+      });
     }
     // 【新案】水を運ぶ: 通り道の川は水たまりになり、その川より風下の通り道の空きも水たまりになる
     var firstRiver = -1;
@@ -1980,7 +2033,7 @@
       var nx = cx + F.dx, ny = cy + F.dy;
       var o = unitAt(s, cx, cy);
       if (!o) continue;
-      addHit(ctx, o, u.power, 'direct');
+      addHit(ctx, o, u.power, 'direct', [cx, cy]);
       var moved = pushOne(s, o, facing, ev, unitLabel(s, o) + 'を' + F.name + 'へ1マス運んだ');
       // 【育つ】強風の通り道の者は、もう1マス運ぶ（押せなくなったら、泥沼にはまったらそこで止まる）
       if (moved && galeAt >= 0 && k >= galeAt && getTile(s, o.x, o.y) !== 'mud') pushOne(s, o, facing, ev, '【育つ】強風で' + unitLabel(s, o) + 'をさらに' + F.name + 'へ1マス運んだ');
@@ -2010,6 +2063,7 @@
         ctx.phrases.push('【新案】吹き抜けた先につむじ風が残った');
       }
     }
+    path.forEach(function (c) { retouch(s, ctx, c[0], c[1]); });   // 途中の見せ方: 吹き抜けたあとに残った風・運ばれた水を、吹き抜けた瞬間に書き足す
     if (origin) {
       ctx.phrases.push(tileName(getTile(s, origin[0], origin[1])) + 'に風が当たった');
       doSpread(s, origin[0], origin[1], facing, ctx, ev, galeAt >= 0 ? B.grow.galeSpreadBonus : 0);   // 【育つ】強風で起こした燃え広がりは遠くまで走る
@@ -2045,6 +2099,7 @@
     else placeOrIgnite(s, u, facing, ctx, ev);
     castEv.cells = ctx.cells;
     if (ctx.grows.length) castEv.grows = ctx.grows;   // 【育つ】育ったマスと、育てなかったマス（見せ方用）
+    if (ctx.trace.length) castEv.trace = ctx.trace;   // 途中の見せ方: 魔法が触れた瞬間の並び（見せ方用。ui.js の midPlay）
     var any = ctx.phrases.length || ctx.order.length;
     castEv.text = label + 'が' + DIRS[facing].name + 'へ' + magicName(u.magic) + 'の魔法（' + MAGIC_INFO[u.magic].verb + '）→ ' +
       (ctx.phrases.length ? summarize(ctx.phrases) : (any ? '' : '何も起きなかった'));

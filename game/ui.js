@@ -7,6 +7,15 @@
 
   var R = window.Rules;
   var B = window.BALANCE;
+  // 途中の見せ方の数値（balance.js の fx.mid。オーナー 11/16）: 開発モードのパネルで動かした値を、このブラウザに覚えている（MID_KEY）。元の値は MID_DEF
+  var MID_KEY = 'cafilia-mock-midfx';
+  var MID_DEF = JSON.parse(JSON.stringify((B.fx && B.fx.mid) || {}));
+  (function () {
+    try {
+      var o = JSON.parse(window.localStorage.getItem(MID_KEY) || 'null');
+      if (o && B.fx && B.fx.mid) Object.keys(B.fx.mid).forEach(function (k) { if (typeof o[k] === typeof B.fx.mid[k]) B.fx.mid[k] = o[k]; });
+    } catch (e) { /* 覚えていなければ balance.js の値 */ }
+  })();
 
   // 【一斉】画面に出す文（texts.js）。文章パネルで書き換えられるので、使うたびに読む
   function TX() { return window.TEXTS || {}; }
@@ -135,7 +144,7 @@
     'txTalkBefore', 'txTalkAfter', 'btnTalkBefore', 'btnTalkAfter', 'btnTalkForget', 'talkChars',
     'missionBar', 'missionTools', 'stageHint', 'cellInfo',
     'orderPanel', 'btnHowto', 'howto', 'howtoTitle', 'howtoList', 'howtoClose',
-    'btnSavePlay', 'rpCard', 'rpBar', 'rpStop', 'rpSpeed', 'rpNow'].forEach(function (id) { el[id] = $(id); });
+    'btnSavePlay', 'rpCard', 'rpBar', 'rpStop', 'rpSpeed', 'rpNow', 'btnMidTune'].forEach(function (id) { el[id] = $(id); });
 
   function esc(t) {
     return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -412,7 +421,7 @@
       events.forEach(function (e) { if (e.type === 'cast' && e.order) fxStance(e); });   // 【一斉】発動した構えが、どのマスに当たったか
       if (B.fx.grow) events.forEach(function (e) { (e.grows || []).forEach(fxGrow); });
       events.forEach(function (e) {
-        if (e.type === 'damage' && e.cells) {
+        if (e.type === 'damage' && e.cells && !e.midShown) {   // 途中の見せ方で、当たったマスに出したものは出さない
           var c = e.cells[0];
           popup(c[0], c[1], '-' + e.amount, (e.side === 'ally' ? 'ally ' : '') + (e.amount >= 4 ? 'big' : ''));
         }
@@ -424,6 +433,7 @@
   //   charges（プレイ集を流すときだけ）: { 何番目の出来事: 決め手を起こす構えの発動 }。その出来事の前に「ため」を見せる
   function play(steps, finalState, done, charges) {
     app.busy = true;
+    app.lastPlay = { prev: app.state, steps: steps, final: finalState };   // 途中の見せ方のパネル「もう一度見る」が使う
     app.playback = { steps: steps, i: 0, final: finalState, done: done, timer: null, charges: charges || null };
     nextStep();
   }
@@ -441,23 +451,28 @@
     pb.charged = false;
     var ex = exOf(st.state);
     pb.i++;
-    app.state = st.state;
-    showEvents(st.events, true);
-    render(true);
-    // 【一斉】構えの発動は1人ずつ間をあけて見せる
-    var stance = st.events.some(function (e) { return e.type === 'cast' && e.order; });
-    var wait = stance ? ((B.simul && B.simul.fireDelayMs) || 900) : B.stepDelayMs;
-    if (st.events.every(function (e) { return e.type === 'stance'; })) wait = 120;   // 構えただけ（まだ何も起きない）は、すぐ次へ
-    else if (st.events.every(function (e) { return e.type === 'move' || e.type === 'mud' || e.type === 'treasure'; })) wait = 300;   // 歩いただけは、すべり終えたら次へ
-    // 展示ステージ③: シナジー（火山・決め手）が起きたら、少し間を取る
-    if (ex && st.events.some(function (e) { return e.type === 'finisher' || (e.type === 'kindle' && e.made === 'volcano') || e.type === 'mission'; })) wait += B.stage3.synergyPauseMs;
-    if (app.replay) wait = rpStepWait(st.events);   // プレイ集: 動きは速めに、決め手はしっかり間を取る（速さで割る）
-    pb.timer = setTimeout(nextStep, wait);
+    // 途中の見せ方: 魔法が触れた順に、発動前の盤面を1マスずつ変えて見せてから、結果の盤面へ（決め手の名前と光はそのあと）
+    midPlay(app.state, st, function () {
+      if (app.playback !== pb) return;
+      app.state = st.state;
+      showEvents(st.events, true);
+      render(true);
+      // 【一斉】構えの発動は1人ずつ間をあけて見せる
+      var stance = st.events.some(function (e) { return e.type === 'cast' && e.order; });
+      var wait = stance ? ((B.simul && B.simul.fireDelayMs) || 900) : B.stepDelayMs;
+      if (st.events.every(function (e) { return e.type === 'stance'; })) wait = 120;   // 構えただけ（まだ何も起きない）は、すぐ次へ
+      else if (st.events.every(function (e) { return e.type === 'move' || e.type === 'mud' || e.type === 'treasure'; })) wait = 300;   // 歩いただけは、すべり終えたら次へ
+      // 展示ステージ③: シナジー（火山・決め手）が起きたら、少し間を取る
+      if (ex && st.events.some(function (e) { return e.type === 'finisher' || (e.type === 'kindle' && e.made === 'volcano') || e.type === 'mission'; })) wait += B.stage3.synergyPauseMs;
+      if (app.replay) wait = rpStepWait(st.events);   // プレイ集: 動きは速めに、決め手はしっかり間を取る（速さで割る）
+      pb.timer = setTimeout(nextStep, wait);
+    });
   }
   function finishPlayback() {
     var pb = app.playback;
     if (!pb) return;
     clearTimeout(pb.timer);
+    midStop();
     app.playback = null;
     app.busy = false;
     app.state = pb.final;
@@ -506,9 +521,210 @@
     var pb = app.playback;
     if (!pb) return;
     clearTimeout(pb.timer);
+    if (app.mid) { var ms = app.mid.step; midStop(); showEvents(ms.events, false); }   // 途中の見せ方の途中なら、その出来事のログだけ足して先へ
     while (pb.i < pb.steps.length) showEvents(pb.steps[pb.i++].events, false);
     finishPlayback();
   }
+
+  // ---------------------------------------------------------------
+  // 途中の見せ方（オーナー 11/16。試作）: 魔法の姿が進み、触れたマスがその場で変わるのを、触れた順に見せる。
+  //   ルールの cast の出来事に付く trace（rules.js の moment）を順に再生する。盤面は発動前の盤面から始め、瞬間ごとにそのマスだけ描き直す。
+  //   ダメージの数字は、当たったマスで、そのマスが変わるのに合わせて出す（damage の出来事の at・when）。決め手の名前と光は、変わり終わってから（nextStep の showEvents）。
+  //   敵の魔法も同じ道を通る（法則に例外はない）。数値は balance.js の fx.mid（開発モードの「途中の見せ方」パネル）。キーで飛ばすと途中でやめる（midStop）
+  // ---------------------------------------------------------------
+  function midCfg() { return (B.fx && B.fx.mid) || {}; }
+  function midMs(k) { var rp = app.replay; return Math.round((midCfg()[k] || 0) / ((rp && rp.speed) || 1)); }   // プレイ集の速さで割る
+  var DIR_VEC = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
+  function cellW() { var c = cellEls[0]; return c ? c.el.getBoundingClientRect().width : 0; }
+  // マスの真ん中。盤の外のマス（術者が盤のふちにいて、その外から風が吹き始める など）は、となりのマスから延ばす
+  function cellPos(x, y) {
+    var st = app.state, n = st.size, rows = R.rowsOf(st);
+    var cx = Math.max(0, Math.min(n - 1, x)), cy = Math.max(0, Math.min(rows - 1, y));
+    var p = cellCenter(cx, cy);
+    if (!p || (cx === x && cy === y)) return p;
+    var w = cellW() + 3;
+    var ax = cx + (cx < n - 1 ? 1 : -1), ay = cy + (cy < rows - 1 ? 1 : -1);
+    var px = n > 1 ? cellCenter(ax, cy) : null, py = rows > 1 ? cellCenter(cx, ay) : null;
+    var ex = px ? { x: (px.x - p.x) * (ax - cx), y: (px.y - p.y) * (ax - cx) } : { x: w, y: 0 };
+    var ey = py ? { x: (py.x - p.x) * (ay - cy), y: (py.y - p.y) * (ay - cy) } : { x: 0, y: w };
+    return { x: p.x + ex.x * (x - cx) + ey.x * (y - cy), y: p.y + ex.y * (x - cx) + ey.y * (y - cy) };
+  }
+  // 魔法の姿（風の筋・炎の玉 など。style.css の .mid-body）。by ごとに1つ。なければ、触れるマスの手前（進んできた側）に出す。here: そのマスに出す
+  function midBody(mid, by, dir, at, here) {
+    var b = mid.bodies[by];
+    if (b) return b;
+    var v = here ? [0, 0] : (DIR_VEC[dir] || [0, 0]);
+    var p = cellPos(at[0] - v[0], at[1] - v[1]);
+    var d = document.createElement('div');
+    d.className = 'mid-body b-' + by;
+    d.innerHTML = '<span class="mb"></span>';
+    d.style.setProperty('--cw', cellW() + 'px');
+    d.style.setProperty('--rot', (DIR_ROT[dir] || 0) + 'deg');
+    if (p) { d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; }
+    el.fx.appendChild(d);
+    void d.offsetWidth;
+    d.classList.add('on');
+    mid.els.push(d);
+    return (mid.bodies[by] = { el: d });
+  }
+  function midGlide(b, at, ms) {
+    var p = cellPos(at[0], at[1]);
+    if (!p) return;
+    b.el.style.transitionDuration = ms + 'ms, ' + ms + 'ms, .18s';
+    b.el.style.left = p.x + 'px'; b.el.style.top = p.y + 'px';
+  }
+  function midFadeEl(d, ms) { setTimeout(function () { d.classList.add('off'); }, Math.max(0, ms - 180)); }
+  function midDrop(mid, by, ms) { var b = mid.bodies[by]; if (!b) return; delete mid.bodies[by]; midFadeEl(b.el, ms); }
+  // 魔法の姿を触れるマスへ進める（かかる時間を返す）
+  function midMove(mid, m, at) {
+    var ms = midMs('moveMs');
+    if (m.what === 'cast') {   // 形のマスすべてに、術者の側から同時に現れる（1マスの形なら、その姿がそのまま先へ進める）
+      m.cells.forEach(function (c) {
+        var b = midBody({ bodies: {}, els: mid.els }, m.by, m.dir, [c.x, c.y]);
+        if (m.cells.length === 1) mid.bodies[m.by] = b; else mid.loose.push(b);
+        midGlide(b, [c.x, c.y], ms);
+      });
+      return ms;
+    }
+    var b = midBody(mid, m.by, m.dir, at, m.what === 'swell');
+    midGlide(b, at, ms);
+    return m.what === 'swell' ? 40 : ms;
+  }
+  // 触れたマスで起きること（ふくらむ・ほどける・燃え上がる・火山になる）。かかる時間を返す
+  function midTouch(mid, m) {
+    var b = mid.bodies[m.by], ms;
+    var changed = m.cells.filter(function (c) { return c.to !== c.from; });
+    var stamp = function (cls, t) { if (!b) return; b.el.style.setProperty('--ms', t + 'ms'); b.el.classList.remove('swell', 'fan', 'stop'); void b.el.offsetWidth; b.el.classList.add(cls); };
+    if (m.what === 'swell') { ms = midMs('swellMs'); stamp('swell', ms); }
+    else if (m.what === 'fan' || m.what === 'stop') { ms = midMs('touchMs'); stamp(m.what, ms); midDrop(mid, m.by, ms); }
+    else if (m.what === 'kindle') {
+      ms = midMs('kindleMs');
+      m.cells.forEach(function (c, i) { if (c.to !== c.from) midBurst(c, ms, ((m.wave && m.wave[i]) || 0) * 50); });
+      midDrop(mid, m.by, Math.round(ms * 0.6));
+    } else {
+      ms = changed.length ? midMs('changeMs') : midMs('touchMs');
+      changed.forEach(function (c) { midBurst(c, ms, 0); });
+      if (m.what === 'cast') { mid.loose.forEach(function (lb) { midFadeEl(lb.el, ms); }); mid.loose = []; }
+    }
+    return ms;
+  }
+  // 変わる瞬間の光（変わった先の自然の色）。炎・火山になったマスは火の粉
+  function midBurst(c, ms, delay) {
+    var p = cellCenter(c.x, c.y);
+    if (!p) return;
+    var d = document.createElement('div');
+    d.className = 'mid-burst to-' + c.to + ' from-' + c.from;
+    d.style.left = p.x + 'px'; d.style.top = p.y + 'px';
+    d.style.setProperty('--cw', cellW() + 'px');
+    d.style.setProperty('--ms', ms + 'ms');
+    d.style.animationDelay = delay + 'ms';
+    if (c.to === 'fire' || c.to === 'volcano') for (var k = 0; k < 3; k++) {
+      var sp = document.createElement('span');
+      sp.className = 'mid-spark';
+      sp.textContent = c.to === 'fire' ? '🔥' : '✦';
+      sp.style.setProperty('--dx', ((k - 1) * 30) + '%');
+      sp.style.animationDelay = (delay + k * 70) + 'ms';
+      d.appendChild(sp);
+    }
+    el.fx.appendChild(d);
+    if (app.mid) app.mid.els.push(d);   // 飛ばしたら光も消す
+    setTimeout(function () { d.remove(); }, ms + delay + 300);
+  }
+  // 1つの途中の状態（step）の中の cast を、発動前の盤面（prev）から順に見せる。終わったら done（見せるものがなければすぐ）
+  function midPlay(prev, st, done) {
+    var cfg = midCfg(), casts = [], ci = -1, dmg = {};
+    st.events.forEach(function (e) {
+      if (e.type === 'cast') { ci++; if (e.trace && e.trace.length) casts.push({ e: e, ci: ci }); }
+      else if (e.type === 'damage' && e.when !== undefined && e.at) (dmg[ci + ':' + e.when] = dmg[ci + ':' + e.when] || []).push(e);   // その魔法の、その瞬間に出すダメージ
+    });
+    if (!cfg.enabled || !casts.length || !cellEls.length || app.editMode) { done(); return; }
+    var queue = [];
+    casts.forEach(function (c) { c.e.trace.forEach(function (m, i) { queue.push({ m: m, key: c.ci + ':' + i, last: i === c.e.trace.length - 1 }); }); });
+    var disp = R.clone(prev);
+    app.state = disp;
+    app.hl = {};
+    renderBoard(false);
+    var mid = app.mid = { timers: [], els: [], bodies: {}, loose: [], step: st };
+    var later = function (fn, ms) { mid.timers.push(setTimeout(fn, ms)); };
+    var k = 0;
+    var next = function () {
+      if (mid !== app.mid) return;
+      if (k >= queue.length) { later(function () { if (mid !== app.mid) return; midStop(); done(); }, midMs('afterMs')); return; }
+      var q = queue[k++], m = q.m, at = m.at || [m.cells[0].x, m.cells[0].y];
+      var t = midMove(mid, m, at);
+      later(function () {
+        if (mid !== app.mid) return;
+        var changed = m.cells.filter(function (c) { return c.to !== c.from; });
+        changed.forEach(function (c) { R.setTile(disp, c.x, c.y, c.to); });
+        if (changed.length) renderBoard(false);
+        var ms = midTouch(mid, m);
+        (dmg[q.key] || []).forEach(function (e) { e.midShown = true; popup(e.at[0], e.at[1], '-' + e.amount, (e.side === 'ally' ? 'ally ' : '') + (e.amount >= 4 ? 'big' : '')); });
+        if (q.last) Object.keys(mid.bodies).forEach(function (by) { midDrop(mid, by, ms + 200); });   // この魔法の姿は、触れ終わったら消える
+        later(next, ms);
+      }, t);
+    };
+    next();
+  }
+  function midStop() {
+    var mid = app.mid;
+    if (!mid) return;
+    app.mid = null;
+    mid.timers.forEach(clearTimeout);
+    mid.els.forEach(function (d) { d.remove(); });
+  }
+  // 数値を動かすパネル（開発モード。オーナー 11/16「調整パネルで変えられるように」）。動かすとすぐ効き、このブラウザに覚える（MID_KEY）
+  var MID_ROWS = [
+    { k: 'moveMs', name: '1マス進む', note: '魔法の姿が1マス進む時間（ミリ秒）', max: 1500 },
+    { k: 'touchMs', name: '触れる', note: '変わらないマスで止まる時間', max: 1500 },
+    { k: 'changeMs', name: '変わる', note: 'マスが変わる瞬間（燃え上がる など）', max: 2500 },
+    { k: 'swellMs', name: 'ふくらむ', note: '風にあおられて炎がふくらむ', max: 2500 },
+    { k: 'kindleMs', name: '火山になる', note: '山脈が火山になる', max: 2500 },
+    { k: 'afterMs', name: '名前まで', note: '変わり終わってから決め手の名前まで', max: 2000 }
+  ];
+  var midTuneEl = null;
+  function midTuneSave() { try { window.localStorage.setItem(MID_KEY, JSON.stringify(midCfg())); } catch (e) { /* 覚えられなくても、このページの間は効く */ } }
+  function midTune() {
+    if (!midTuneEl) { midTuneEl = document.createElement('div'); midTuneEl.id = 'mid-tune'; document.body.appendChild(midTuneEl); }
+    var c = midCfg();
+    midTuneEl.innerHTML = '<div class="tt-head"><b>途中の見せ方</b><small>動かすとすぐ効く（このブラウザに覚える）</small></div>' +
+      '<label class="tt-row"><span>途中を見せる<small>切ると今までどおり（結果の形を一度に）</small></span><input type="checkbox" data-mt="enabled"' + (c.enabled ? ' checked' : '') + '></label>' +
+      MID_ROWS.map(function (r) {
+        return '<label class="tt-row"><span>' + esc(r.name) + '<small>' + esc(r.note) + '</small></span>' +
+          '<input type="range" min="0" max="' + r.max + '" step="10" data-mt="' + r.k + '" value="' + c[r.k] + '">' +
+          '<input type="number" min="0" max="' + r.max + '" step="10" data-mt="' + r.k + '" value="' + c[r.k] + '"></label>';
+      }).join('') +
+      '<div class="tt-btns"><button type="button" data-mt-again="1" title="最後の発動を、同じ盤面でもう一度見る（発動の直後だけ）">もう一度見る</button><button type="button" data-mt-reset="1">元の値に戻す</button><button type="button" class="primary" data-mt-close="1">閉じる</button></div>';
+    midTuneEl.hidden = false;
+  }
+  function midTuneSet(k, v) {
+    var c = midCfg();
+    if (k === 'enabled') c.enabled = !!v;
+    else { v = Math.round(Number(v)); if (!(v >= 0)) return; c[k] = v; }
+    midTuneSave();
+    if (midTuneEl) Array.prototype.forEach.call(midTuneEl.querySelectorAll('[data-mt="' + k + '"]'), function (n) { if (n.type === 'checkbox') n.checked = !!c.enabled; else if (Number(n.value) !== c[k]) n.value = c[k]; });
+  }
+  // 最後の発動を、同じ盤面でもう一度見る（発動の直後だけ。そのあと何かすると見られない）
+  function midAgain() {
+    var lp = app.lastPlay;
+    if (!lp || app.busy || app.editMode || app.replay || app.state !== lp.final) { say('もう一度見られるのは、最後の発動の直後だけです'); return; }
+    app.state = lp.prev;
+    app.sel = null; app.plan = null;
+    render();
+    play(lp.steps, lp.final, function () {});
+  }
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (!midTuneEl || midTuneEl.hidden || !midTuneEl.contains(t) || !t.hasAttribute('data-mt')) return;
+    midTuneSet(t.getAttribute('data-mt'), t.type === 'checkbox' ? t.checked : t.value);
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('#mid-tune button');
+    if (!b) return;
+    if (b.hasAttribute('data-mt-close')) midTuneEl.hidden = true;
+    else if (b.hasAttribute('data-mt-again')) midAgain();
+    else if (b.hasAttribute('data-mt-reset')) Object.keys(MID_DEF).forEach(function (k) { midTuneSet(k, MID_DEF[k]); });
+  });
+  if (el.btnMidTune) el.btnMidTune.addEventListener('click', function () { midTune(); el.btnMidTune.blur(); });
 
   // ---------------------------------------------------------------
   // 選択と行動
@@ -3948,6 +4164,7 @@
     clearTimeout(rp.timer);
     app.replay = null;
     if (app.playback) { clearTimeout(app.playback.timer); app.playback = null; }
+    midStop();
     app.busy = false;
     app.sel = null; clearPlans(); app.hl = {}; app.flash = {}; app.chain = null; app.chainCombo = null;
     app.history = [];
