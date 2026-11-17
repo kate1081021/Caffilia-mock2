@@ -443,6 +443,17 @@
     ctx.trace.push(m);
     return m;
   }
+  // 通ったマスの並び（[x, y, 通る前の自然]）を、通った順に瞬間にする（水・川）。通ったあとの自然を to にする。
+  //   変わったマスは spread（触れて変わる）、変わらないマスは pass（通る）。stopped なら最後のマスは stop（ぶつかって止まる。変わっていてもよい）
+  //   body: 魔法の姿の見分け（向きごとに流れる川は、それぞれ別の姿。画面は body ごとに1つ姿を出す）
+  function walkMoments(s, ctx, by, dir, visited, stopped, body) {
+    visited.forEach(function (v, i) {
+      var to = getTile(s, v[0], v[1]), last = i === visited.length - 1;
+      var m = { by: by, dir: dir, what: last && stopped ? 'stop' : to !== v[2] ? 'spread' : 'pass', at: [v[0], v[1]], cells: [{ x: v[0], y: v[1], from: v[2], to: to }] };
+      if (body) m.body = body;
+      ctx.trace.push(m);
+    });
+  }
   // そのマスに最後に触れた瞬間の番号（なければ -1）
   function momentAt(ctx, x, y) {
     for (var i = ctx.trace.length - 1; i >= 0; i--) if (ctx.trace[i].cells.some(function (c) { return c.x === x && c.y === y; })) return i;
@@ -1813,9 +1824,11 @@
   //   ほかの置きもの（トロッコ）の手前、ほかの自然で止まり、炎は消して止まる。overHill(cx, cy, 前のマス) が true の山のマスは、山のまま越える（山肌を下る）
   function runRiver(s, sx, sy, d, ctx, overHill) {
     var F = DIRS[d], g = { origin: [sx, sy], tile: 'river', cells: [], tiles: [], wave: [], blocked: [], pushed: [] }, stop = null, prev = [sx, sy], over = 0, flooded = [];
+    var visited = [];   // 途中の見せ方: 川が通ったマス（山肌を下るマスも）
     for (var i = 1; ; i++) {
       var cx = sx + F.dx * i, cy = sy + F.dy * i;
       if (!inBounds(s, cx, cy)) { stop = '盤の端まで流れた'; break; }
+      visited.push([cx, cy, getTile(s, cx, cy)]);
       if (overHill && overHill(cx, cy, prev)) { prev = [cx, cy]; over++; continue; }
       prev = [cx, cy];
       var o = unitAt(s, cx, cy), t = getTile(s, cx, cy);
@@ -1834,6 +1847,7 @@
       stop = tileName(t) + 'で止まった';
       break;
     }
+    walkMoments(s, ctx, 'water', d, visited, !!stop && stop !== '盤の端まで流れた', 'river-' + d);   // 途中の見せ方: 川が1マスずつ流れ下る
     if (g.cells.length) { ctx.grows.push(g); ctx.phrases.push(F.name + 'へ川が' + g.cells.length + 'マス流れた'); }
     Array.prototype.push.apply(ctx.phrases, flooded);
     if (stop) ctx.phrases.push(stop);
@@ -1849,7 +1863,14 @@
     var at = ctx.phrases.length;
     ctx.phrases.push('');
     var ways = 0;
-    (sl === 'peak' ? DIR_ORDER : [sl]).forEach(function (d) { if (runRiver(s, x, y, d, ctx, down)) ways++; });
+    var lines = [];
+    (sl === 'peak' ? DIR_ORDER : [sl]).forEach(function (d) { var m0 = ctx.trace.length; if (runRiver(s, x, y, d, ctx, down)) ways++; lines.push(ctx.trace.splice(m0)); });
+    // 途中の見せ方: 何本も流れ出すときは、それぞれの k 歩目を同じ拍（beat）にする。画面は同じ拍の瞬間をいっしょに再生する（4方向へ同時に流れ下る）
+    var most = Math.max.apply(null, lines.map(function (l) { return l.length; }).concat([0]));
+    for (var k = 0; k < most; k++) {
+      var beat = lines.length > 1 ? (ctx.beats = (ctx.beats || 0) + 1) : 0;
+      lines.forEach(function (l) { if (!l[k]) return; if (beat) l[k].beat = beat; ctx.trace.push(l[k]); });
+    }
     ctx.phrases[at] = sl === 'peak' ? '山の頂上に当たって、' + ways + '方向へ川が流れ出した' : '山の斜面に当たって、下りの' + DIRS[sl].name + 'へ川が流れ出した';
   }
 
@@ -1864,17 +1885,21 @@
     var plainPuddle = B.waterPuddle && !growOn && !B.tutorial.slope;   // 水だけなら水たまり、が育つ・②の決まりでなく標準の決まりとして効いている
     var growing = false, left = 0, river = null;   // 【育つ】水たまりから川に育っている途中か、あと何マス進めるか、育った川のマス
     var pondLen = B.shape.frontOne ? 1 : B.waterLength;
+    // 途中の見せ方: 水が通ったマス。山に当たって川が流れ出す前と、流れ終えたあとに瞬間にする（flushWater）
+    var visited = [], flushed = 0;
+    var flushWater = function (stopped) { walkMoments(s, ctx, 'water', facing, visited.slice(flushed), stopped); flushed = visited.length; };
     for (var i = 1; ; i++) {
       if (!sourced && !growing && i > pondLen) break;   // 【縮尺】正面1マスなら池（水たまり）も1マス
       if (growing && B.grow.riverLength > 0 && left <= 0) break;
       var x = from.x + F.dx * i, y = from.y + F.dy * i;
       if (!inBounds(s, x, y)) { if (sourced || growing) stop = '盤の端まで流れた'; break; }
       ctx.cells.push([x, y]);
+      visited.push([x, y, getTile(s, x, y)]);
       var o = unitAt(s, x, y);
       var t = getTile(s, x, y);
       if (isAiry(t)) t = 'empty';   // 風・花びらのマスも流れる（isAiry）
       if (o) {
-        addHit(ctx, o, u.power, 'direct'); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
+        addHit(ctx, o, u.power, 'direct', [x, y]); cureBurn(s, o, ctx); stop = unitLabel(s, o) + 'に当たって止まった';
         // 人の足元にも自然ができる（オーナー 10/30: 人のいないマスと同じ作用）: 空き・水たまり・蜃気楼・草むらは水たまり（元の池なら川）、炎は消える
         if (B.ideas.natureUnderUnits && !sourced && !growing) {
           if (soakThicket(s, x, y, ctx)) ctx.phrases.push('【試し】足元の草むらが水を吸って森になった');
@@ -1909,6 +1934,7 @@
       if (t === 'mountain' && !sourced && B.tutorial.slope) {
         if (made) ctx.phrases.push(pondName + 'ができた（' + made + 'マス）');
         pond = made; made = 0; sourced = true;
+        flushWater(true);   // 途中の見せ方: 水が山に当たって止まり、そこから川が流れ下る
         slopeRivers(s, x, y, ctx);
         break;
       }
@@ -1944,6 +1970,7 @@
       stop = tileName(t) + 'で止まった';
       break;
     }
+    flushWater(!!stop && stop !== '盤の端まで流れた');
     if (made) ctx.phrases.push(sourced || growing ? '川が' + made + 'マス流れた' : pondName + 'ができた（' + made + 'マス）');
     if (stop) ctx.phrases.push(stop);
     if (!made && !pond && !stop && !sourced) ctx.phrases.push('水の上を流れた');

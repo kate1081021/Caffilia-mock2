@@ -3218,6 +3218,75 @@ test('overrides: このシナリオの中だけで効き、ほかのシナリオ
   eq([tile(r.state, 3, 3), tile(r.state, 3, 2), tile(r.state, 3, 0), tile(r.state, 4, 3)], ['mountain', 'river', 'river', 'empty'], '上の斜面から上へ。水の向き（右）には流れない');
 });
 
+console.log('\n■ 途中の見せ方（魔法が触れた瞬間の並び。オーナー 11/16・11/17）');
+
+// cast の出来事の trace を「何が・何をした・どこ・何から何に」の短い字に
+function traceOf(r) {
+  var out = [];
+  r.events.forEach(function (e) {
+    if (e.type !== 'cast') return;
+    (e.trace || []).forEach(function (m) {
+      out.push((m.body || m.by) + ' ' + m.what + ' ' + m.cells.map(function (c) { return c.x + ',' + c.y + (c.from !== c.to ? ' ' + c.from + '>' + c.to : ''); }).join(' ') + (m.beat ? ' #' + m.beat : ''));
+    });
+  });
+  return out;
+}
+
+test('燃え広がり: 風が炎に当たる → 炎がふくらむ → 風下へ1マスずつ流れて、触れた森が燃える。ダメージは燃えたマスの瞬間', function () {
+  var s = board(['......', '.s.FF.', '......', '......', '......', '......']);
+  var e = tough(s, R.addEnemy(s, 'fire', 4, 1));
+  var r = fire(s, R.addAlly(s, 'wind', 0, 1, 'right'), 'right');
+  eq(traceOf(r), ['wind fan 1,1', 'fire swell 1,1', 'fire spread 2,1 empty>smallfire', 'fire spread 3,1 forest>fire', 'fire spread 4,1 forest>fire']);
+  var d = r.events.filter(function (x) { return x.type === 'damage' && x.id === e.id; })[0];
+  eq([d.at, d.when], [[4, 1], 4], '当たったマスと、その瞬間');
+});
+test('燃え広がりが山に届く: 流れて触れたあと、山脈ごと一度に火山になる（kindle）', function () {
+  var s = board(['......', '.s.M..', '...M..', '......', '......', '......']);
+  var r = fire(s, R.addAlly(s, 'wind', 0, 1, 'right'), 'right');
+  eq(traceOf(r), ['wind fan 1,1', 'fire swell 1,1', 'fire spread 2,1 empty>smallfire', 'fire kindle 3,1 mountain>volcano 3,2 mountain>volcano']);
+});
+test('置く・点ける: 形のマスすべてに同時に触れる（cast）。何に変わったかは形を全部済ませてから', function () {
+  var s = board(['.....', '.....', '..F..', '.....', '.....']);
+  var r = fire(s, R.addAlly(s, 'fire', 2, 3, 'up'), 'up');
+  eq(traceOf(r), ['fire cast 2,2 forest>fire']);
+});
+test('水: 正面へ進んで、触れた空きが水たまりになる', function () {
+  var s = empty(5);
+  var r = fire(s, R.addAlly(s, 'water', 2, 4, 'up'), 'up');
+  eq(traceOf(r), ['water spread 2,3 empty>puddle']);
+});
+test('水: 炎を消して止まる（止まった所も変わる）。人に当たって止まり、ダメージはそのマスの瞬間', function () {
+  var s = board(['.....', '.....', '..X..', '.....', '.....']);
+  eq(traceOf(fire(s, R.addAlly(s, 'water', 2, 3, 'up'), 'up')), ['water stop 2,2 fire>empty']);
+  var s2 = empty(5);
+  var en = tough(s2, R.addEnemy(s2, 'fire', 2, 3));
+  var r2 = fire(s2, R.addAlly(s2, 'water', 2, 4, 'up'), 'up');
+  eq(traceOf(r2), ['water stop 2,3 empty>puddle'], '人の足元も水たまり');
+  var d = r2.events.filter(function (x) { return x.type === 'damage' && x.id === en.id; })[0];
+  eq([d.at, d.when], [[2, 3], 0]);
+});
+test('山に水: 水が山の斜面で止まり、そこから下りへ川が1マスずつ流れ下る（川の姿は向きごと）', function () {
+  var s = board(['......', '......', '......', '.MM...', '......', '......']);
+  var r = fire(s, R.addAlly(s, 'water', 2, 4, 'up'), 'up');
+  eq(traceOf(r), ['water stop 2,3', 'river-right spread 3,3 empty>river', 'river-right spread 4,3 empty>river', 'river-right spread 5,3 empty>river']);
+});
+test('山の頂上に水: 4方向へ同時に流れ下る（k 歩目どうしが同じ拍）', function () {
+  var s = board(['.....', '.....', '..M..', '.....', '.....']);
+  var r = fire(s, R.addAlly(s, 'water', 2, 3, 'up'), 'up');
+  var t = traceOf(r);
+  eq(t[0], 'water stop 2,2', '頂上で止まる');
+  eq(t.slice(1, 5).map(function (x) { return x.split(' ')[0] + ' ' + x.split(' ').pop(); }), ['river-up #1', 'river-right #1', 'river-down #1', 'river-left #1'], '1歩目は4本とも同じ拍');
+  eq(t.slice(5, 9).map(function (x) { return x.split(' ').pop(); }), ['#2', '#2', '#2', '#2'], '2歩目も同じ拍');
+  eq(t.length, 9, '水1つと、川4本×2歩');
+});
+test('途中の見せ方を記しても、盤面の結果は変わらない（記すだけ）', function () {
+  var s = board(['......', '.s.FF.', '......', '.MM...', '......', '......']);
+  var r = fire(s, R.addAlly(s, 'wind', 0, 1, 'right'), 'right');
+  var last = {};
+  r.events.forEach(function (e) { (e.trace || []).forEach(function (m) { m.cells.forEach(function (c) { last[c.x + ',' + c.y] = c.to; }); }); });
+  Object.keys(last).forEach(function (k) { var p = k.split(','); eq(last[k], tile(r.state, +p[0], +p[1]), k + ' の最後の瞬間の自然が、結果の盤面と同じ'); });
+});
+
 // ---------------------------------------------------------------
 console.log('\n' + passed + ' 件成功 / ' + failed.length + ' 件失敗');
 if (failed.length) {

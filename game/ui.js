@@ -549,23 +549,25 @@
     var ey = py ? { x: (py.x - p.x) * (ay - cy), y: (py.y - p.y) * (ay - cy) } : { x: 0, y: w };
     return { x: p.x + ex.x * (x - cx) + ey.x * (y - cy), y: p.y + ex.y * (x - cx) + ey.y * (y - cy) };
   }
-  // 魔法の姿（風の筋・炎の玉 など。style.css の .mid-body）。by ごとに1つ。なければ、触れるマスの手前（進んできた側）に出す。here: そのマスに出す
-  function midBody(mid, by, dir, at, here) {
-    var b = mid.bodies[by];
+  // 魔法の姿（風の筋・炎の玉・水の玉 など。style.css の .mid-body）。姿の見分け（m.body。なければ m.by）ごとに1つ。
+  //   なければ、触れるマスの手前（進んできた側）に出す。here: そのマスに出す
+  function bodyKey(m) { return m.body || m.by; }
+  function midBody(mid, m, at, here) {
+    var bk = bodyKey(m), b = mid.bodies[bk];
     if (b) return b;
-    var v = here ? [0, 0] : (DIR_VEC[dir] || [0, 0]);
+    var v = here ? [0, 0] : (DIR_VEC[m.dir] || [0, 0]);
     var p = cellPos(at[0] - v[0], at[1] - v[1]);
     var d = document.createElement('div');
-    d.className = 'mid-body b-' + by;
+    d.className = 'mid-body b-' + m.by;
     d.innerHTML = '<span class="mb"></span>';
     d.style.setProperty('--cw', cellW() + 'px');
-    d.style.setProperty('--rot', (DIR_ROT[dir] || 0) + 'deg');
+    d.style.setProperty('--rot', (DIR_ROT[m.dir] || 0) + 'deg');
     if (p) { d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; }
     el.fx.appendChild(d);
     void d.offsetWidth;
     d.classList.add('on');
     mid.els.push(d);
-    return (mid.bodies[by] = { el: d });
+    return (mid.bodies[bk] = { el: d });
   }
   function midGlide(b, at, ms) {
     var p = cellPos(at[0], at[1]);
@@ -574,38 +576,38 @@
     b.el.style.left = p.x + 'px'; b.el.style.top = p.y + 'px';
   }
   function midFadeEl(d, ms) { setTimeout(function () { d.classList.add('off'); }, Math.max(0, ms - 180)); }
-  function midDrop(mid, by, ms) { var b = mid.bodies[by]; if (!b) return; delete mid.bodies[by]; midFadeEl(b.el, ms); }
+  function midDrop(mid, bk, ms) { var b = mid.bodies[bk]; if (!b) return; delete mid.bodies[bk]; midFadeEl(b.el, ms); }
   // 魔法の姿を触れるマスへ進める（かかる時間を返す）
-  function midMove(mid, m, at) {
-    var ms = midMs('moveMs');
+  function midMove(mid, m) {
+    var ms = midMs('moveMs'), at = m.at || [m.cells[0].x, m.cells[0].y];
     if (m.what === 'cast') {   // 形のマスすべてに、術者の側から同時に現れる（1マスの形なら、その姿がそのまま先へ進める）
       m.cells.forEach(function (c) {
-        var b = midBody({ bodies: {}, els: mid.els }, m.by, m.dir, [c.x, c.y]);
-        if (m.cells.length === 1) mid.bodies[m.by] = b; else mid.loose.push(b);
+        var b = midBody({ bodies: {}, els: mid.els }, m, [c.x, c.y]);
+        if (m.cells.length === 1) mid.bodies[bodyKey(m)] = b; else mid.loose.push(b);
         midGlide(b, [c.x, c.y], ms);
       });
       return ms;
     }
-    var b = midBody(mid, m.by, m.dir, at, m.what === 'swell');
+    var b = midBody(mid, m, at, m.what === 'swell');
     midGlide(b, at, ms);
     return m.what === 'swell' ? 40 : ms;
   }
-  // 触れたマスで起きること（ふくらむ・ほどける・燃え上がる・火山になる）。かかる時間を返す
+  // 触れたマスで起きること（変わる・ふくらむ・ほどける・止まる・火山になる）。かかる時間を返す
   function midTouch(mid, m) {
-    var b = mid.bodies[m.by], ms;
+    var bk = bodyKey(m), b = mid.bodies[bk], ms;
     var changed = m.cells.filter(function (c) { return c.to !== c.from; });
     var stamp = function (cls, t) { if (!b) return; b.el.style.setProperty('--ms', t + 'ms'); b.el.classList.remove('swell', 'fan', 'stop'); void b.el.offsetWidth; b.el.classList.add(cls); };
-    if (m.what === 'swell') { ms = midMs('swellMs'); stamp('swell', ms); }
-    else if (m.what === 'fan' || m.what === 'stop') { ms = midMs('touchMs'); stamp(m.what, ms); midDrop(mid, m.by, ms); }
-    else if (m.what === 'kindle') {
+    if (m.what === 'kindle') {
       ms = midMs('kindleMs');
       m.cells.forEach(function (c, i) { if (c.to !== c.from) midBurst(c, ms, ((m.wave && m.wave[i]) || 0) * 50); });
-      midDrop(mid, m.by, Math.round(ms * 0.6));
-    } else {
-      ms = changed.length ? midMs('changeMs') : midMs('touchMs');
-      changed.forEach(function (c) { midBurst(c, ms, 0); });
-      if (m.what === 'cast') { mid.loose.forEach(function (lb) { midFadeEl(lb.el, ms); }); mid.loose = []; }
+      midDrop(mid, bk, Math.round(ms * 0.6));
+      return ms;
     }
+    ms = m.what === 'swell' ? midMs('swellMs') : changed.length ? midMs('changeMs') : midMs('touchMs');
+    changed.forEach(function (c) { midBurst(c, ms, 0); });   // 止まった所（炎を消して止まる・足元が変わる など）も変わる
+    if (m.what === 'swell') stamp('swell', ms);
+    else if (m.what === 'fan' || m.what === 'stop') { stamp(m.what, ms); midDrop(mid, bk, ms); }
+    else if (m.what === 'cast') { mid.loose.forEach(function (lb) { midFadeEl(lb.el, ms); }); mid.loose = []; }
     return ms;
   }
   // 変わる瞬間の光（変わった先の自然の色）。炎・火山になったマスは火の粉
@@ -638,8 +640,15 @@
       else if (e.type === 'damage' && e.when !== undefined && e.at) (dmg[ci + ':' + e.when] = dmg[ci + ':' + e.when] || []).push(e);   // その魔法の、その瞬間に出すダメージ
     });
     if (!cfg.enabled || !casts.length || !cellEls.length || app.editMode) { done(); return; }
-    var queue = [];
-    casts.forEach(function (c) { c.e.trace.forEach(function (m, i) { queue.push({ m: m, key: c.ci + ':' + i, last: i === c.e.trace.length - 1 }); }); });
+    // 再生の単位: ふつうは瞬間1つ。同じ拍（beat）の瞬間が続いたら、ひとまとめにしていっしょに再生する（頂上から4方向へ同時に流れ下る川 など）
+    var groups = [];
+    casts.forEach(function (c) {
+      c.e.trace.forEach(function (m, i) {
+        var q = { m: m, key: c.ci + ':' + i, last: i === c.e.trace.length - 1 }, g = groups[groups.length - 1];
+        if (m.beat && g && g.ci === c.ci && g.beat === m.beat) g.items.push(q);
+        else groups.push({ ci: c.ci, beat: m.beat || 0, items: [q] });
+      });
+    });
     var disp = R.clone(prev);
     app.state = disp;
     app.hl = {};
@@ -649,17 +658,19 @@
     var k = 0;
     var next = function () {
       if (mid !== app.mid) return;
-      if (k >= queue.length) { later(function () { if (mid !== app.mid) return; midStop(); done(); }, midMs('afterMs')); return; }
-      var q = queue[k++], m = q.m, at = m.at || [m.cells[0].x, m.cells[0].y];
-      var t = midMove(mid, m, at);
+      if (k >= groups.length) { later(function () { if (mid !== app.mid) return; midStop(); done(); }, midMs('afterMs')); return; }
+      var g = groups[k++];
+      var t = Math.max.apply(null, g.items.map(function (q) { return midMove(mid, q.m); }));
       later(function () {
         if (mid !== app.mid) return;
-        var changed = m.cells.filter(function (c) { return c.to !== c.from; });
-        changed.forEach(function (c) { R.setTile(disp, c.x, c.y, c.to); });
-        if (changed.length) renderBoard(false);
-        var ms = midTouch(mid, m);
-        (dmg[q.key] || []).forEach(function (e) { e.midShown = true; popup(e.at[0], e.at[1], '-' + e.amount, (e.side === 'ally' ? 'ally ' : '') + (e.amount >= 4 ? 'big' : '')); });
-        if (q.last) Object.keys(mid.bodies).forEach(function (by) { midDrop(mid, by, ms + 200); });   // この魔法の姿は、触れ終わったら消える
+        var any = false;
+        g.items.forEach(function (q) { q.m.cells.forEach(function (c) { if (c.to !== c.from) { R.setTile(disp, c.x, c.y, c.to); any = true; } }); });
+        if (any) renderBoard(false);
+        var ms = Math.max.apply(null, g.items.map(function (q) { return midTouch(mid, q.m); }));
+        g.items.forEach(function (q) {
+          (dmg[q.key] || []).forEach(function (e) { e.midShown = true; popup(e.at[0], e.at[1], '-' + e.amount, (e.side === 'ally' ? 'ally ' : '') + (e.amount >= 4 ? 'big' : '')); });
+        });
+        if (g.items.some(function (q) { return q.last; })) Object.keys(mid.bodies).forEach(function (bk) { midDrop(mid, bk, ms + 200); });   // この魔法の姿は、触れ終わったら消える
         later(next, ms);
       }, t);
     };

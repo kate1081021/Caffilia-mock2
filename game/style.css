@@ -1470,22 +1470,27 @@ html.replaying .so-line.e-l { border-left-width: 5px; }
 @keyframes midSwell { 0% { transform: scale(1); } 40% { transform: scale(2, 2.3) translateY(-14%); } 100% { transform: scale(1.35, 1.5) translateY(-8%); } }
 /* ほかの魔法（草・土・山・水 など）: 魔法の色の光る玉。何の魔法かは字で */
 .mid-body .mb::after { font-size: calc(var(--cw) * .3); font-weight: bold; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .45); }
-.mid-body.b-grass .mb, .mid-body.b-earth .mb, .mid-body.b-mount .mb, .mid-body.b-water .mb, .mid-body.b-ice .mb, .mid-body.b-thunder .mb, .mid-body.b-dark .mb, .mid-body.b-senpu .mb, .mid-body.b-bite .mb, .mid-body.b-boss .mb {
+.mid-body.b-grass .mb, .mid-body.b-earth .mb, .mid-body.b-mount .mb, .mid-body.b-ice .mb, .mid-body.b-thunder .mb, .mid-body.b-dark .mb, .mid-body.b-senpu .mb, .mid-body.b-bite .mb, .mid-body.b-boss .mb {
   width: 56%; height: 56%; margin: auto; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .4) 45%, var(--mc, #a8a29e) 70%); box-shadow: 0 0 10px 3px var(--mc, #a8a29e); animation: midOrb .5s ease-in-out infinite alternate; }
 @keyframes midOrb { from { transform: scale(.95); } to { transform: scale(1.08); } }
 .mid-body.b-grass .mb { --mc: #4d8b3f; } .mid-body.b-grass .mb::after { content: '草'; }
 .mid-body.b-earth .mb, .mid-body.b-mount .mb { --mc: #8a7a66; } .mid-body.b-earth .mb::after { content: '土'; } .mid-body.b-mount .mb::after { content: '山'; }
-.mid-body.b-water .mb { --mc: #3a7fc4; } .mid-body.b-water .mb::after { content: '水'; }
+/* 水: 流れるしずく（進む向きへ少し傾け、揺れる） */
+.mid-body.b-water .mb { font-size: calc(var(--cw) * .62); line-height: 1; filter: drop-shadow(0 0 4px #7dd3fc) drop-shadow(0 0 12px rgba(14, 165, 233, .85)); animation: midDrip .26s ease-in-out infinite alternate; }
+.mid-body.b-water .mb::before { content: '💧'; }
+@keyframes midDrip { from { transform: rotate(calc(var(--rot) * .15)) scale(1, 1); } to { transform: rotate(calc(var(--rot) * .15)) scale(1.12, .9); } }
 .mid-body.b-ice .mb { --mc: #60a5fa; } .mid-body.b-ice .mb::after { content: '氷'; }
 .mid-body.b-thunder .mb { --mc: #eab308; } .mid-body.b-thunder .mb::after { content: '雷'; }
 .mid-body.b-dark .mb { --mc: #4c1d95; } .mid-body.b-dark .mb::after { content: '闇'; }
 .mid-body.b-senpu .mb { --mc: #94a3b8; } .mid-body.b-senpu .mb::after { content: '旋'; }
 .mid-body.b-bite .mb, .mid-body.b-boss .mb { --mc: #b91c1c; } .mid-body.b-bite .mb::after, .mid-body.b-boss .mb::after { content: '打'; }
 /* 当たった（fan）・ぶつかった（stop）風は、そこでほどけて消える */
+.mid-body .mb { --mbrot: 0deg; }
+.mid-body.b-wind .mb { --mbrot: var(--rot); }
 .mid-body.fan .mb { animation: midFan var(--ms) ease-out forwards; }
-@keyframes midFan { 0% { transform: rotate(var(--rot)) scale(1); opacity: 1; } 100% { transform: rotate(var(--rot)) scale(1.7, .5); opacity: 0; } }
+@keyframes midFan { 0% { transform: rotate(var(--mbrot)) scale(1); opacity: 1; } 100% { transform: rotate(var(--mbrot)) scale(1.7, .5); opacity: 0; } }
 .mid-body.stop .mb { animation: midStop var(--ms) ease-out forwards; }
-@keyframes midStop { 0% { transform: rotate(var(--rot)) scale(1); } 45% { transform: rotate(var(--rot)) scale(.7, 1.25); } 100% { transform: rotate(var(--rot)) scale(1.5, .3); opacity: 0; } }
+@keyframes midStop { 0% { transform: rotate(var(--mbrot)) scale(1); } 45% { transform: rotate(var(--mbrot)) scale(.7, 1.25); } 100% { transform: rotate(var(--mbrot)) scale(1.5, .3); opacity: 0; } }
 /* 変わる瞬間: 変わった先の自然の色の光 */
 .mid-burst { position: absolute; width: calc(var(--cw) * 1.35); height: calc(var(--cw) * 1.35); margin: calc(var(--cw) * -.675) 0 0 calc(var(--cw) * -.675); border-radius: 50%; pointer-events: none; opacity: 0; z-index: 1;
   background: radial-gradient(circle, rgba(255, 255, 255, .95) 0 18%, rgba(255, 255, 255, .45) 45%, transparent 70%); animation: midBurst var(--ms) ease-out forwards; }
